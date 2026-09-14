@@ -117,3 +117,6 @@ main {
 .add-path { display: flex; gap: 6px; }
 .add-path input { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; }
 .muted.small { font-size: 11px; margin-top: 8px; }
+
+/* The hidden attribute must beat every display rule below, or both views render at once. */
+[hidden] { display: none !important; }
