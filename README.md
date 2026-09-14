@@ -53,6 +53,19 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
 
 `CLAUDE_SESSION_ID` in the environment is used as the id when present.
 
+## The board is a roadmap, not a kanban
+
+- **Roadmap** (the Priority section). Its `###` groups are releases, top to bottom in
+  deployment order; the numbered order inside a release is that deployment's runway.
+  "+ release" adds a `### name` heading to the section; drag a card into a release to plan
+  it. Items above the first release are "unassigned".
+- **In progress** and **Backlog** are the matching sections; each lane folds away (the
+  fold is remembered per browser).
+- **Done, awaiting deploy** gathers the "recently shipped, pending release" section plus
+  every checked-off item from the other sections: merged or finished, not yet in
+  production. Nothing in it is draggable. At ship time the ship workflow archives it.
+- Checked items never show in the other lanes, so nothing is struck through on the board.
+
 ## Working in a session from the console
 
 Every session row has **open**: a background agent is attached (`claude attach <id>`), an
@@ -67,7 +80,7 @@ The terminal is a real pty: `bin/ptybridge.py` (Python standard library, no nati
 module) wraps the `claude` process; the server streams its bytes to the page over
 Server-Sent Events and posts keystrokes and resizes back. The page renders it with
 xterm.js loaded from jsdelivr (pinned 5.5.0 + fit addon 0.10.0), the one runtime
-dependency, fetched by the browser, not installed. Fonts (IBM Plex Sans, JetBrains Mono)
+dependency, fetched by the browser, not installed. Fonts (Chakra Petch for display, IBM Plex Sans, JetBrains Mono)
 come from Google Fonts with local fallbacks.
 
 **Development focus.** The board hides items tagged administrative (`[BIZ]`,
@@ -93,4 +106,4 @@ that follows it. A move relocates that whole block and touches nothing else.
 
 ## Not built yet
 
-Checkbox flips from the UI, the archive-on-ship button, audit parents and the manager agent, and the Electron shell (the server is already shaped as its main process).
+Checkbox flips from the UI, the archive-on-ship button, per-release deploy dates, audit parents and the manager agent, and the Electron shell (the server is already shaped as its main process).
