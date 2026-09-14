@@ -171,8 +171,10 @@ input[type="text"]:focus-visible { outline: 2px solid var(--bolt-glow); outline-
 }
 .project-list li:hover { box-shadow: 0 0 0 1px var(--bolt-glow), 0 0 24px var(--bolt-dim); }
 .project-list a { font-family: var(--display); font-size: 16px; font-weight: 600; text-decoration: none; color: var(--ink); }
-.project-list .muted { grid-column: 1; }
-.project-list button { grid-row: 1 / span 2; align-self: center; }
+.project-list a { grid-column: 1; grid-row: 1; }
+.project-list .muted { grid-column: 1; grid-row: 2; }
+/* Items with a definite row are auto-placed first, so pin the column too or the button lands in column 1. */
+.project-list button { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 .picker-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .add-path { display: flex; gap: 6px; flex: 1; }
 .add-path input { flex: 1; min-width: 200px; }
