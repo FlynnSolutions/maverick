@@ -38,7 +38,18 @@ const readClaudeSessions = async (): Promise<ClaudeSession[]> => {
       .filter((n) => /^\d+\.json$/.test(n))
       .map(async (n) => JSON.parse(await readFile(join(claudeSessionsDir, n), "utf8")) as ClaudeSession),
   );
-  return records.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  // The registry keeps files for processes that have exited; only a live pid is a session.
+  return records.filter((r) => isAlive(r.pid)).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+};
+
+const isAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ESRCH") return false;
+    throw err;
+  }
 };
 
 export interface LiveSignals {
