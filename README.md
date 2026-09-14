@@ -53,6 +53,28 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
 
 `CLAUDE_SESSION_ID` in the environment is used as the id when present.
 
+## Working in a session from the console
+
+Every session row has **open**: a background agent is attached (`claude attach <id>`), an
+interactive session is resumed (`claude --resume <sessionId>`), a worktree gets a fresh
+`claude`. **New session** starts one in the project root. **spawn** on a card starts a
+headless agent on that item (`claude --bg`, auto permission mode, the item text as its
+prompt, a session record written for it) and attaches it. Each opens in the terminal dock
+at the bottom; closing a tab leaves the session running, **stop** on a background agent
+ends it (`claude stop`, conversation kept).
+
+The terminal is a real pty: `bin/ptybridge.py` (Python standard library, no native
+module) wraps the `claude` process; the server streams its bytes to the page over
+Server-Sent Events and posts keystrokes and resizes back. The page renders it with
+xterm.js loaded from jsdelivr (pinned 5.5.0 + fit addon 0.10.0), the one runtime
+dependency, fetched by the browser, not installed. Fonts (IBM Plex Sans, JetBrains Mono)
+come from Google Fonts with local fallbacks.
+
+**Development focus.** The board hides items tagged administrative (`[BIZ]`,
+`[STRATEGY]`, `[NOTE]`, `[IDEA]`, `[DECISION]`) unless "show non-dev items" is on. Items
+with engineering tags or no tag at all always show. The tag vocabulary is the checklist's
+own; change the two sets at the top of `web/app.js` to retune it.
+
 ## Two kinds of session data
 
 - **Running sessions** come from Claude Code's own registry, `~/.claude/sessions/<pid>.json`
@@ -71,4 +93,4 @@ that follows it. A move relocates that whole block and touches nothing else.
 
 ## Not built yet
 
-Checkbox flips from the UI, the archive-on-ship button, and the Electron shell.
+Checkbox flips from the UI, the archive-on-ship button, audit parents and the manager agent, and the Electron shell (the server is already shaped as its main process).

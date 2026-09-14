@@ -22,6 +22,8 @@ export interface SessionRecord {
   project?: string;
   worktree?: string;
   pr?: string;
+  /** The `claude --bg` id when the console spawned this session; links the record to the live agent. */
+  claudeId?: string;
 }
 
 export const readSessions = async (dir: string): Promise<SessionRecord[]> => {

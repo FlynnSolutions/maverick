@@ -1,22 +1,26 @@
 /**
- * Session console: a local HTTP server over one project's markdown trackers, its session
- * records and its live repo signals. The UI in web/ is plain static files talking to
- * /api/*, so the same page runs in a browser today and inside an Electron window later,
- * where this file becomes the main process.
+ * Session console: a local HTTP server over one project's markdown trackers, its Claude
+ * sessions (with embedded terminals to work in them), and its live repo signals. The UI in
+ * web/ is plain static files talking to /api/*, so the same page runs in a browser today
+ * and inside an Electron window later, where this file becomes the main process.
  *
  * Run: node server.ts   (Node 22.18+ strips the types itself; no build, no dependencies)
  */
+import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { config } from "./src/config.ts";
 import { commitFile } from "./src/git.ts";
 import { liveSignals } from "./src/live.ts";
-import { addProject, chooseFolder, projectById, readProjects, removeProject } from "./src/projects.ts";
-import { sessionsForProject } from "./src/sessions.ts";
+import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
+import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
+import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
 import { applyMove, parseTracker, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
+const run = promisify(execFile);
 const webRoot = join(fileURLToPath(new URL(".", import.meta.url)), "web");
 
 const MIME: Record<string, string> = {
@@ -31,28 +35,32 @@ const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
   res.end(JSON.stringify(body));
 };
 
-const readJson = async <T>(req: IncomingMessage): Promise<T> => {
+const readBodyBytes = async (req: IncomingMessage): Promise<Buffer> => {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
-  const raw = Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
+};
+
+const readJson = async <T>(req: IncomingMessage): Promise<T> => {
+  const raw = (await readBodyBytes(req)).toString("utf8");
   return (raw ? JSON.parse(raw) : {}) as T;
 };
 
-const requireProject = async (url: URL) => {
+const requireProject = async (url: URL): Promise<Project> => {
   const id = url.searchParams.get("project");
   if (!id) throw new Error("project query parameter is required");
   return projectById(id);
 };
 
-const board = async (projectId: string) => {
-  const project = await projectById(projectId);
-  return Promise.all(
+/* ---------- board ---------- */
+
+const board = async (project: Project) =>
+  Promise.all(
     project.trackers.map(async (tracker, index) => {
       const text = await readFile(tracker.path, "utf8");
       return { index, label: tracker.label, path: tracker.path, ...parseTracker(text) };
     }),
   );
-};
 
 interface MoveBody extends MoveRequest {
   project: string;
@@ -71,6 +79,85 @@ const move = async (body: MoveBody): Promise<{ commit: string }> => {
   const commit = await commitFile(tracker.path, `console: move "${title}" to ${where} #${body.targetIndex + 1}`);
   return { commit };
 };
+
+/* ---------- sessions and terminals ---------- */
+
+interface OpenTerminalBody {
+  project: string;
+  /** attach a background agent, resume an interactive session, start a fresh claude, or spawn a task agent and attach it. */
+  kind: "attach" | "resume" | "new" | "spawn";
+  id?: string;
+  sessionId?: string;
+  title?: string;
+  prompt?: string;
+  /** Working directory for a fresh session; must sit inside the project (a worktree, say). */
+  cwd?: string;
+  cols?: number;
+  rows?: number;
+}
+
+const writeSessionRecord = async (record: SessionRecord): Promise<void> => {
+  await mkdir(config.sessionsDir, { recursive: true });
+  await writeFile(join(config.sessionsDir, `${record.id}.json`), `${JSON.stringify(record, null, 2)}\n`, "utf8");
+};
+
+/** `claude --bg` prints "backgrounded · <id> · <name>"; the id is what attach/stop/logs take. */
+const spawnBackgroundAgent = async (cwd: string, prompt: string, name: string): Promise<string> => {
+  const { stdout } = await run("claude", ["--bg", "--name", name, "--permission-mode", "auto", prompt], { cwd });
+  const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
+  if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);
+  return id;
+};
+
+const spawnPrompt = (project: Project, title: string, body: string, trackerPath: string): string =>
+  [
+    `You are a develop session for the project at ${project.path}. Your one loop is: ${title}.`,
+    `Follow the "Session discipline" section of ~/.claude/CLAUDE.md: work only this loop, park tangents as one line in the tracker, and end with one line saying whether the loop closed and where the handoff lives.`,
+    `The item, verbatim from ${trackerPath}:`,
+    "",
+    body,
+    "",
+    `When the loop closes, update that item in the tracker (mark it done or record the handoff) and commit the tracker file alone.`,
+  ].join("\n");
+
+const openTerminalFor = async (body: OpenTerminalBody) => {
+  const project = await projectById(body.project);
+  const size = { cols: body.cols ?? 120, rows: body.rows ?? 36 };
+  switch (body.kind) {
+    case "attach": {
+      if (!body.id) throw new Error("attach needs id");
+      return openTerminal(body.title ?? `attach ${body.id}`, ["claude", "attach", body.id], project.path, size.cols, size.rows);
+    }
+    case "resume": {
+      if (!body.sessionId) throw new Error("resume needs sessionId");
+      return openTerminal(body.title ?? `resume ${body.sessionId.slice(0, 8)}`, ["claude", "--resume", body.sessionId], project.path, size.cols, size.rows);
+    }
+    case "new": {
+      const cwd = body.cwd ?? project.path;
+      if (cwd !== project.path && !cwd.startsWith(`${project.path}/`)) throw new Error(`cwd ${cwd} is outside the project`);
+      return openTerminal(body.title ?? `claude · ${project.name}`, ["claude"], cwd, size.cols, size.rows);
+    }
+    case "spawn": {
+      if (!body.prompt || !body.title) throw new Error("spawn needs title and prompt");
+      const trackerPath = project.trackers[0]?.path ?? project.path;
+      const id = await spawnBackgroundAgent(project.path, spawnPrompt(project, body.title, body.prompt, trackerPath), body.title.slice(0, 60));
+      await writeSessionRecord({
+        id: `bg-${id}`,
+        role: "develop",
+        loop: body.title,
+        status: "open",
+        started: new Date().toISOString(),
+        project: project.id,
+        claudeId: id,
+      });
+      return { ...openTerminal(body.title, ["claude", "attach", id], project.path, size.cols, size.rows), agentId: id };
+    }
+    default:
+      throw new Error(`unknown terminal kind "${String(body.kind)}"`);
+  }
+};
+
+/* ---------- static ---------- */
 
 const serveStatic = async (pathname: string, res: ServerResponse): Promise<void> => {
   const rel = pathname === "/" ? "/index.html" : pathname;
@@ -92,10 +179,13 @@ const serveStatic = async (pathname: string, res: ServerResponse): Promise<void>
   }
 };
 
+/* ---------- routing ---------- */
+
 const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
   const url = new URL(req.url ?? "/", "http://localhost");
   const { method } = req;
   const path = url.pathname;
+  const termMatch = path.match(/^\/api\/terminals\/([^/]+)(?:\/(stream|input|resize))?$/);
 
   if (method === "GET" && path === "/api/projects") return sendJson(res, 200, await readProjects());
   if (method === "POST" && path === "/api/projects/import") {
@@ -111,9 +201,8 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     await removeProject(decodeURIComponent(path.slice("/api/projects/".length)));
     return sendJson(res, 200, { ok: true });
   }
-  if (method === "GET" && path === "/api/board") {
-    return sendJson(res, 200, await board((await requireProject(url)).id));
-  }
+
+  if (method === "GET" && path === "/api/board") return sendJson(res, 200, await board(await requireProject(url)));
   if (method === "GET" && path === "/api/live") {
     return sendJson(res, 200, await liveSignals(await requireProject(url), url.searchParams.has("refresh")));
   }
@@ -122,14 +211,39 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     return sendJson(res, 200, await sessionsForProject(config.sessionsDir, project.id, project.name));
   }
   if (method === "POST" && path === "/api/move") {
-    const body = await readJson<MoveBody>(req);
     try {
-      return sendJson(res, 200, await move(body));
+      return sendJson(res, 200, await move(await readJson<MoveBody>(req)));
     } catch (err) {
       if (err instanceof StaleMoveError) return sendJson(res, 409, { error: err.message });
       throw err;
     }
   }
+
+  if (method === "GET" && path === "/api/terminals") return sendJson(res, 200, listTerminals());
+  if (method === "POST" && path === "/api/terminals") return sendJson(res, 200, await openTerminalFor(await readJson<OpenTerminalBody>(req)));
+  if (termMatch) {
+    const [, id, action] = termMatch;
+    if (method === "GET" && action === "stream") return subscribe(id, res);
+    if (method === "POST" && action === "input") {
+      writeInput(id, await readBodyBytes(req));
+      return sendJson(res, 200, { ok: true });
+    }
+    if (method === "POST" && action === "resize") {
+      const { cols, rows } = await readJson<{ cols: number; rows: number }>(req);
+      resize(id, cols, rows);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (method === "DELETE" && !action) {
+      closeTerminal(id);
+      return sendJson(res, 200, { ok: true });
+    }
+  }
+  if (method === "POST" && path.startsWith("/api/agents/") && path.endsWith("/stop")) {
+    const id = path.slice("/api/agents/".length, -"/stop".length);
+    const { stdout } = await run("claude", ["stop", id]);
+    return sendJson(res, 200, { ok: true, output: stdout.trim() });
+  }
+
   if (method === "GET") return serveStatic(path, res);
   res.writeHead(405).end();
 };
