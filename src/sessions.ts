@@ -18,6 +18,7 @@ export interface SessionRecord {
   handoff?: string;
   started: string;
   ended?: string;
+  /** Project id or name as given to session-open; matched against both. */
   project?: string;
   worktree?: string;
   pr?: string;
@@ -38,3 +39,6 @@ export const readSessions = async (dir: string): Promise<SessionRecord[]> => {
   );
   return records.sort((a, b) => b.started.localeCompare(a.started));
 };
+
+export const sessionsForProject = async (dir: string, projectId: string, projectName: string): Promise<SessionRecord[]> =>
+  (await readSessions(dir)).filter((r) => r.project === projectId || r.project === projectName);

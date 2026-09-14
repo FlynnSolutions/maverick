@@ -1,5 +1,6 @@
 // The console UI. Plain DOM and fetch; the same file runs in a browser or an Electron
-// window because it only ever talks to /api/*.
+// window because it only ever talks to /api/*. One project at a time: `?project=<id>`
+// in the URL selects it, no parameter shows the picker.
 
 const COLUMNS = [
   ["priority", "Priority"],
@@ -14,10 +15,10 @@ const el = (tag, attrs = {}, ...children) => {
   for (const [k, v] of Object.entries(attrs)) {
     if (k === "class") node.className = v;
     else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
-    else if (k === "dataset") Object.assign(node.dataset, v);
+    else if (k === "hidden") node.hidden = Boolean(v);
     else node.setAttribute(k, v);
   }
-  node.append(...children.filter((c) => c !== null && c !== undefined));
+  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
   return node;
 };
 
@@ -33,6 +34,67 @@ const api = async (path, init) => {
   if (!res.ok) throw new Error(body.error ?? `${res.status} on ${path}`);
   return body;
 };
+const post = (path, body) =>
+  api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+
+const projectId = new URLSearchParams(location.search).get("project");
+
+/* ---------- picker ---------- */
+
+const renderPicker = async () => {
+  $("#picker").hidden = false;
+  const projects = await api("/api/projects");
+  const list = $("#project-list");
+  list.replaceChildren(
+    ...projects.map((p) =>
+      el(
+        "li",
+        {},
+        el("a", { href: `/?project=${encodeURIComponent(p.id)}`, class: "project-link" }, p.name),
+        el("div", { class: "muted" }, `${p.path} · ${p.trackers.length ? p.trackers.map((t) => t.label).join(", ") : "no tracker found"}`),
+        el(
+          "button",
+          {
+            type: "button",
+            class: "small",
+            onclick: async () => {
+              if (!confirm(`Forget "${p.name}"? The directory is untouched.`)) return;
+              await api(`/api/projects/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+              renderPicker();
+            },
+          },
+          "forget",
+        ),
+      ),
+    ),
+  );
+  if (!projects.length) list.append(el("li", { class: "muted" }, "No projects yet. Import one below."));
+};
+
+$("#import").addEventListener("click", async () => {
+  setStatus("Waiting for the Finder dialog…");
+  try {
+    const result = await post("/api/projects/import");
+    if (result.cancelled) return setStatus("Cancelled.");
+    location.href = `/?project=${encodeURIComponent(result.id)}`;
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+});
+
+$("#add-path").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const path = new FormData(e.currentTarget).get("path").trim();
+  if (!path) return;
+  try {
+    const project = await post("/api/projects", { path });
+    location.href = `/?project=${encodeURIComponent(project.id)}`;
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+});
+
+/* ---------- board ---------- */
 
 let dragging = null;
 
@@ -80,19 +142,16 @@ const itemsList = (trackerIndex, section, group) => {
     if (!dragging || dragging.trackerIndex !== trackerIndex) return;
     const targetIndex = dropIndexIn(list, e.clientY);
     const { item } = dragging;
-    setStatus(`Moving "${item.title.slice(0, 50)}"...`);
+    setStatus(`Moving "${item.title.slice(0, 50)}"…`);
     try {
-      const { commit } = await api("/api/move", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          tracker: trackerIndex,
-          itemStart: item.start,
-          itemFirstLine: item.firstLine,
-          targetHeading: section.heading,
-          targetGroup: group.name,
-          targetIndex,
-        }),
+      const { commit } = await post("/api/move", {
+        project: projectId,
+        tracker: trackerIndex,
+        itemStart: item.start,
+        itemFirstLine: item.firstLine,
+        targetHeading: section.heading,
+        targetGroup: group.name,
+        targetIndex,
       });
       setStatus(`Committed ${commit}`);
     } catch (err) {
@@ -125,13 +184,15 @@ const renderBoard = (tracker) => {
 
 const loadBoard = async () => {
   try {
-    const trackers = await api("/api/board");
-    const boards = $("#boards");
-    boards.replaceChildren(...trackers.map(renderBoard));
+    const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
+    $("#boards").replaceChildren(...trackers.map(renderBoard));
+    if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "This project has no tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
   } catch (err) {
     setStatus(err.message, true);
   }
 };
+
+/* ---------- rail ---------- */
 
 const renderSessions = (records) => {
   const byParent = new Map();
@@ -149,67 +210,100 @@ const renderSessions = (records) => {
           { class: `session ${r.status}`, style: `--depth:${depth}`, title: r.handoff ?? "" },
           el("span", { class: "role" }, r.role),
           document.createTextNode(r.loop),
-          el("div", { class: "muted" }, `${r.status}${r.project ? ` · ${r.project}` : ""}${r.pr ? ` · ${r.pr}` : ""}`),
+          el("div", { class: "muted" }, `${r.status}${r.pr ? ` · ${r.pr}` : ""}`),
         ),
       );
       walk(r.id, depth + 1);
     }
   };
   walk("", 0);
-  if (!records.length) list.append(el("li", { class: "muted" }, "No session records yet (bin/session-open writes them)."));
+  if (!records.length) list.append(el("li", { class: "muted" }, "No session records for this project yet."));
   return list;
 };
 
-const renderLive = (live) => {
+const shortPath = (p, projectPath) => (projectPath && p.startsWith(projectPath) ? p.slice(projectPath.length).replace(/^\//, "") || "." : p);
+
+const renderLive = (live, project) => {
   const out = el("div");
-  const claude = el("ul");
+
+  const running = el("ul");
   for (const s of live.claudeSessions) {
-    const where = s.cwd.replace(/^\/Users\/[^/]+\/Projects\//, "");
-    claude.append(
+    running.append(
       el(
         "li",
         { class: `claude-session ${s.status ?? ""}`, title: `pid ${s.pid} · ${s.sessionId}` },
         el("span", { class: "role" }, s.status ?? "?"),
-        document.createTextNode(`${s.name ?? s.pid} · ${where}`),
+        document.createTextNode(`${s.name ?? s.pid} · ${shortPath(s.cwd, project.path)}`),
         s.waitingFor ? el("div", { class: "muted" }, s.waitingFor) : null,
       ),
     );
   }
-  if (!live.claudeSessions.length) claude.append(el("li", { class: "muted" }, "no running Claude sessions"));
-  out.append(el("h2", {}, "Running Claude sessions"), claude);
+  for (const a of live.backgroundAgents) {
+    running.append(
+      el(
+        "li",
+        { class: `claude-session ${a.state ?? ""}`, title: a.sessionId },
+        el("span", { class: "role" }, `bg · ${a.state ?? "?"}`),
+        document.createTextNode(a.name ?? a.id),
+        el("div", { class: "muted" }, `claude attach ${a.id}`),
+      ),
+    );
+  }
+  if (!live.claudeSessions.length && !live.backgroundAgents.length) running.append(el("li", { class: "muted" }, "none running under this project"));
+  out.append(el("h2", {}, "Running Claude sessions"), running);
+
   const servers = el("ul");
   for (const s of live.devServers) servers.append(el("li", {}, `${s.branch ?? "?"} → :${s.port ?? "?"}`));
   if (!live.devServers.length) servers.append(el("li", { class: "muted" }, "no dev servers"));
   out.append(el("h2", {}, "Dev servers"), servers);
+
   for (const repo of live.repos) {
     const ul = el("ul");
     for (const pr of repo.pullRequests) {
-      ul.append(el("li", {}, el("a", { href: pr.url, target: "_blank" }, `#${pr.number}`), ` ${pr.isDraft ? "(draft) " : ""}${pr.title}`));
+      ul.append(el("li", {}, el("a", { href: pr.url, target: "_blank" }, `#${pr.number}`), ` ${pr.isDraft ? "(draft) " : ""}${pr.title}`, el("div", { class: "muted" }, `${pr.headRefName} → ${pr.baseRefName}`)));
     }
     for (const wt of repo.worktrees) {
-      if (wt.branch === "develop") continue;
+      if (wt.path === repo.path) continue;
       ul.append(el("li", { class: "muted" }, `worktree ${wt.branch} @ ${wt.head}`));
     }
     if (repo.error) ul.append(el("li", { class: "muted" }, repo.error));
+    if (!ul.childElementCount) ul.append(el("li", { class: "muted" }, "no open PRs or worktrees"));
     out.append(el("h2", {}, `${repo.label}: PRs + worktrees`), ul);
   }
-  out.append(el("div", { class: "muted" }, `fetched ${live.fetchedAt}`));
+  out.append(el("div", { class: "muted small" }, `fetched ${new Date(live.fetchedAt).toLocaleTimeString()}`));
   return out;
 };
 
-const loadRail = async () => {
+const loadRail = async (project, refresh = false) => {
   try {
-    const [sessions, live] = await Promise.all([api("/api/sessions"), api("/api/live")]);
+    const q = `project=${encodeURIComponent(projectId)}${refresh ? "&refresh" : ""}`;
+    const [sessions, live] = await Promise.all([api(`/api/sessions?project=${encodeURIComponent(projectId)}`), api(`/api/live?${q}`)]);
     $("#sessions").replaceChildren(renderSessions(sessions));
-    $("#live").replaceChildren(renderLive(live));
+    $("#live").replaceChildren(renderLive(live, project));
   } catch (err) {
     setStatus(err.message, true);
   }
 };
 
-$("#reload").addEventListener("click", () => {
-  loadBoard();
-  loadRail();
-});
-loadBoard();
-loadRail();
+/* ---------- boot ---------- */
+
+const boot = async () => {
+  if (!projectId) return renderPicker();
+  const projects = await api("/api/projects");
+  const project = projects.find((p) => p.id === projectId);
+  if (!project) {
+    setStatus(`No project "${projectId}"`, true);
+    return renderPicker();
+  }
+  document.title = `${project.name} · Session Console`;
+  $("#project-name").textContent = project.name;
+  $("#project").hidden = false;
+  $("#reload").hidden = false;
+  $("#reload").addEventListener("click", () => {
+    loadBoard();
+    loadRail(project, true);
+  });
+  await Promise.all([loadBoard(), loadRail(project)]);
+};
+
+boot().catch((err) => setStatus(err.message, true));

@@ -104,3 +104,16 @@ main {
   main { grid-template-columns: 1fr; }
   .columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.brand { color: var(--ink); text-decoration: none; font-weight: 600; }
+.project-name { font-weight: 600; color: var(--accent); }
+.picker { display: block; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+.picker h2 { font-size: 18px; }
+.picker ul { list-style: none; padding: 0; margin: 0 0 20px; }
+.picker li { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; position: relative; }
+.project-link { font-size: 15px; font-weight: 600; color: var(--ink); text-decoration: none; }
+.picker li .small { position: absolute; right: 10px; top: 10px; font-size: 12px; }
+.picker-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.add-path { display: flex; gap: 6px; }
+.add-path input { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; }
+.muted.small { font-size: 11px; margin-top: 8px; }

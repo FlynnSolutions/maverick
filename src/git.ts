@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { dirname } from "node:path";
+import { readdir, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -16,9 +17,30 @@ export const repoRootOf = async (filePath: string): Promise<string> => {
 export const commitFile = async (filePath: string, message: string): Promise<string> => {
   const root = await repoRootOf(filePath);
   await run("git", ["-C", root, "add", "--", filePath]);
-  const { stdout } = await run("git", ["-C", root, "commit", "-q", "-m", message, "--", filePath]);
+  await run("git", ["-C", root, "commit", "-q", "-m", message, "--", filePath]);
   const { stdout: sha } = await run("git", ["-C", root, "rev-parse", "--short", "HEAD"]);
-  return `${sha.trim()}${stdout.trim() ? ` ${stdout.trim()}` : ""}`;
+  return sha.trim();
+};
+
+const isGitRepo = async (dir: string): Promise<boolean> => {
+  try {
+    return (await stat(join(dir, ".git"))).isDirectory() || (await stat(join(dir, ".git"))).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/** The project directory itself if it is a repo, plus any immediate child repos (a multi-repo project like Realtime). */
+export const reposUnder = async (projectPath: string): Promise<Array<{ label: string; path: string }>> => {
+  const found: Array<{ label: string; path: string }> = [];
+  if (await isGitRepo(projectPath)) found.push({ label: "root", path: projectPath });
+  const entries = await readdir(projectPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "worktrees") continue;
+    const child = join(projectPath, entry.name);
+    if (await isGitRepo(child)) found.push({ label: entry.name, path: child });
+  }
+  return found;
 };
 
 export const worktrees = async (repoPath: string): Promise<Array<{ path: string; branch: string; head: string }>> => {
@@ -44,12 +66,37 @@ export interface PullRequest {
   url: string;
   isDraft: boolean;
   headRefName: string;
+  baseRefName: string;
 }
 
-export const openPullRequests = async (ghRepo: string): Promise<PullRequest[]> => {
-  const { stdout } = await run("gh", [
-    "pr", "list", "-R", ghRepo, "--base", "develop",
-    "--json", "number,title,url,isDraft,headRefName",
-  ]);
-  return JSON.parse(stdout) as PullRequest[];
+/** Open PRs for the repo at `repoPath`; a repo with no GitHub remote yields none rather than an error. */
+export const openPullRequests = async (repoPath: string): Promise<PullRequest[]> => {
+  try {
+    const { stdout } = await run(
+      "gh",
+      ["pr", "list", "--json", "number,title,url,isDraft,headRefName,baseRefName"],
+      { cwd: repoPath },
+    );
+    return JSON.parse(stdout) as PullRequest[];
+  } catch (err) {
+    const message = (err as { stderr?: string }).stderr ?? "";
+    if (/no git remotes|not a git repository|could not determine|none of the git remotes/i.test(message)) return [];
+    throw err;
+  }
+};
+
+export interface BackgroundAgent {
+  id: string;
+  sessionId: string;
+  cwd: string;
+  name?: string;
+  state?: string;
+  startedAt?: number;
+}
+
+/** Claude Code's own background sessions started under `cwd` (`claude --bg`), via its JSON listing. */
+export const backgroundAgents = async (cwd: string): Promise<BackgroundAgent[]> => {
+  const { stdout } = await run("claude", ["agents", "--json", "--all", "--cwd", cwd]);
+  const all = JSON.parse(stdout) as Array<BackgroundAgent & { kind: string }>;
+  return all.filter((a) => a.kind === "background");
 };

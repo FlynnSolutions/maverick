@@ -8,16 +8,27 @@
 </head>
 <body>
   <header>
-    <h1>Session Console</h1>
+    <a id="home" href="/" class="brand">Session Console</a>
+    <span id="project-name" class="project-name"></span>
     <span id="status" class="status"></span>
-    <button id="reload" type="button">Reload</button>
+    <button id="reload" type="button" hidden>Reload</button>
   </header>
-  <main>
+  <main id="picker" class="picker" hidden>
+    <h2>Which project?</h2>
+    <ul id="project-list"></ul>
+    <div class="picker-actions">
+      <button id="import" type="button">Import a directory from Finder…</button>
+      <form id="add-path" class="add-path">
+        <input name="path" type="text" placeholder="or paste an absolute path" size="48" />
+        <button type="submit">Add</button>
+      </form>
+    </div>
+  </main>
+  <main id="project" class="project" hidden>
     <section id="boards" class="boards"></section>
     <aside id="rail" class="rail">
       <h2>Sessions</h2>
       <div id="sessions"></div>
-      <h2>Live</h2>
       <div id="live"></div>
     </aside>
   </main>

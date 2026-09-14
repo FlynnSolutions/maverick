@@ -1,9 +1,15 @@
 # Session console
 
-The one screen Cory manages work from: the roadmap columns (Priority, In progress, Backlog,
-Shipped) read straight from the markdown trackers, drag to sequence or move items, a tree
-of Claude sessions (driver / develop / audit / plan) and the live signals those sessions
-own (dev servers, worktrees, open PRs).
+The one screen Cory manages work from, one project at a time: the roadmap columns
+(Priority, In progress, Backlog, Shipped) read straight from that project's markdown
+trackers, drag to sequence or move items, the Claude sessions running under the project
+(interactive and background), our session records (driver / develop / audit / plan), and
+the live signals those sessions own (dev servers, worktrees, open PRs).
+
+Opening the console shows the project picker. Import a directory from Finder (a native
+folder dialog) or paste a path; the console finds the tracker files it recognises
+(`deliverables/CHECKLIST.md`, `CHECKLIST.md`, `PUNCHLIST.md`, `TODO.md`, `NEXT_STEPS.md`)
+and remembers the project in `~/.claude/session-console/projects.json`.
 
 **The markdown trackers stay the source of truth.** The console reads them and writes each
 drag back as one line move, committed immediately in the tracker's repo so every other open
@@ -23,9 +29,8 @@ Environment overrides (see `src/config.ts`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `SESSION_CONSOLE_PORT` | `8766` | listen port |
-| `SESSION_CONSOLE_TRACKERS` | hq PUNCHLIST + Realtime CHECKLIST | `label=path,label=path` |
+| `SESSION_CONSOLE_HOME` | `~/.claude/session-console` | holds `projects.json` |
 | `SESSION_CONSOLE_SESSIONS` | `~/.claude/console-sessions` | session record directory |
-| `SESSION_CONSOLE_PROJECTS` | `~/Projects` | root the defaults are built from |
 
 ## Layout
 
@@ -33,7 +38,8 @@ Environment overrides (see `src/config.ts`):
   Becomes the Electron main process later; nothing in it assumes a browser tab.
 - `web/` the UI, plain HTML/CSS/JS, talks only to `/api/*`.
 - `src/trackers.ts` parses a tracker into sections, groups and items, and applies a move.
-- `src/git.ts` commit one file; worktree and PR reads.
+- `src/projects.ts` the project registry, tracker detection, the Finder picker.
+- `src/git.ts` commit one file; repo discovery, worktree, PR and `claude agents` reads.
 - `src/live.ts`, `src/sessions.ts` the side rail data.
 - `bin/session-open`, `bin/session-close` write the per-session JSON record
   (`~/.claude/console-sessions/<id>.json`) that the session tree is drawn from.
