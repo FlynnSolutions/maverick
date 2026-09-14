@@ -18,7 +18,7 @@ import { liveSignals } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
-import { applyMove, parseTracker, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
+import { addGroup, applyMove, parseTracker, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
 const run = promisify(execFile);
 const webRoot = join(fileURLToPath(new URL(".", import.meta.url)), "web");
@@ -78,6 +78,24 @@ const move = async (body: MoveBody): Promise<{ commit: string }> => {
   const where = body.targetGroup ? `${body.targetHeading} / ${body.targetGroup}` : body.targetHeading;
   const commit = await commitFile(tracker.path, `console: move "${title}" to ${where} #${body.targetIndex + 1}`);
   return { commit };
+};
+
+interface GroupBody {
+  project: string;
+  tracker: number;
+  heading: string;
+  name: string;
+}
+
+const createGroup = async (body: GroupBody): Promise<{ commit: string }> => {
+  const project = await projectById(body.project);
+  const tracker = project.trackers[body.tracker];
+  if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
+  const name = body.name.trim();
+  if (!name || name.includes("\n")) throw new Error("a group name is one non-empty line");
+  const after = addGroup(await readFile(tracker.path, "utf8"), body.heading, name);
+  await writeFile(tracker.path, after, "utf8");
+  return { commit: await commitFile(tracker.path, `console: add group "${name}" under ${body.heading}`) };
 };
 
 /* ---------- sessions and terminals ---------- */
@@ -218,6 +236,8 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       throw err;
     }
   }
+
+  if (method === "POST" && path === "/api/groups") return sendJson(res, 200, await createGroup(await readJson<GroupBody>(req)));
 
   if (method === "GET" && path === "/api/terminals") return sendJson(res, 200, listTerminals());
   if (method === "POST" && path === "/api/terminals") return sendJson(res, 200, await openTerminalFor(await readJson<OpenTerminalBody>(req)));

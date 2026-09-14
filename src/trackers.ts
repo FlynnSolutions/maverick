@@ -195,8 +195,27 @@ export const applyMove = (text: string, move: MoveRequest): string => {
   // Adjacent bullets are fine markdown; only a heading or note line directly above needs a
   // blank between it and the block, so a move never introduces spacing the file did not have.
   const above = insertAt > 0 ? out[insertAt - 1] : "";
+  const below = insertAt < out.length ? out[insertAt] : "";
   const needsBlankBefore = insertAt > 0 && !isBlank(above) && !isBullet(above) && !isContinuation(above);
-  out.splice(insertAt, 0, ...(needsBlankBefore ? [""] : []), ...block);
+  const needsBlankAfter = below.startsWith("#") || below.trim() === "---";
+  out.splice(insertAt, 0, ...(needsBlankBefore ? [""] : []), ...block, ...(needsBlankAfter ? [""] : []));
+  return out.join("\n");
+};
+
+/**
+ * Add a `### name` group at the end of a section (before its closing `---`, if any). A
+ * release on the roadmap is exactly this: a group inside the Priority section, so the
+ * markdown stays the source of truth and a drag between releases is a plain group move.
+ */
+export const addGroup = (text: string, heading: string, name: string): string => {
+  const lines = text.split("\n");
+  const section = parseTracker(text).sections.find((s) => s.heading === heading);
+  if (!section) throw new Error(`no section headed "${heading}"`);
+  if (section.groups.some((g) => g.name === name)) throw new Error(`"${heading}" already has a group "${name}"`);
+  let at = section.end;
+  while (at > section.start + 1 && (isBlank(lines[at - 1]) || lines[at - 1].trim() === "---")) at -= 1;
+  const out = [...lines];
+  out.splice(at, 0, "", `### ${name}`, "");
   return out.join("\n");
 };
 

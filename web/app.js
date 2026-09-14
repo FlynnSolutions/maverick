@@ -1,13 +1,8 @@
 // The console UI. Plain DOM and fetch; the same file runs in a browser or an Electron
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
 // selects it, no parameter shows the picker.
+import { strike, scheduleWeather } from "./bolt.js";
 
-const LANES = [
-  ["priority", "Runway", "runway"],
-  ["in-progress", "In progress", ""],
-  ["backlog", "Backlog", ""],
-  ["shipped", "Shipped", ""],
-];
 
 /** Tags that mark engineering work. Items carrying any of these (or no tag at all) are development items. */
 const DEV_TAGS = new Set(["ENG", "DEBT", "GS", "INFRA", "OPS", "DOCS", "UI", "TEST", "DESIGN", "FEATURE", "BUG", "FIX", "PERF", "E2E"]);
@@ -33,10 +28,14 @@ const el = (tag, attrs = {}, ...children) => {
 };
 const text = (s) => document.createTextNode(s);
 
+let statusTimer = null;
 const setStatus = (msg, isError = false) => {
   const s = $("#status");
   s.textContent = msg;
   s.classList.toggle("error", isError);
+  s.classList.add("flash");
+  window.clearTimeout(statusTimer);
+  statusTimer = window.setTimeout(() => s.classList.remove("flash"), 900);
 };
 
 const api = async (path, init) => {
@@ -112,16 +111,35 @@ $("#add-path").addEventListener("submit", async (e) => {
 
 /* ---------- board ---------- */
 
+// Lanes. Priority is the roadmap: its `###` groups are releases, ordered top to bottom,
+// and the order inside a release is the runway for that deployment. Done gathers every
+// checked item plus the "shipped, pending release" section: merged, waiting on a deploy.
+const LANES = [
+  ["priority", "Roadmap", "runway"],
+  ["in-progress", "In progress", ""],
+  ["backlog", "Backlog", ""],
+  ["shipped", "Done · awaiting deploy", "done"],
+];
+
+let collapsed = new Set();
+try {
+  collapsed = new Set(JSON.parse(localStorage.getItem("console.collapsed") ?? "[]"));
+} catch {}
+const persistCollapsed = () => {
+  try { localStorage.setItem("console.collapsed", JSON.stringify([...collapsed])); } catch {}
+};
+
 let dragging = null;
 
-const cardFor = (trackerIndex, item, number) =>
+const cardFor = (trackerIndex, item, number, draggable = true) =>
   el(
     "div",
     {
       class: `card${item.checked ? " checked" : ""}`,
-      draggable: "true",
+      draggable: draggable ? "true" : "false",
       title: item.body,
       ondragstart: (e) => {
+        if (!draggable) return e.preventDefault();
         dragging = { trackerIndex, item };
         e.currentTarget.classList.add("dragging");
         e.dataTransfer.effectAllowed = "move";
@@ -134,19 +152,21 @@ const cardFor = (trackerIndex, item, number) =>
     el("span", { class: "num" }, number === null ? "" : String(number)),
     el("div", { class: "title" }, item.title),
     el("div", { class: "meta" }, item.tags.length ? el("span", { class: "tag" }, item.tags.map((t) => `[${t}]`).join(" ")) : null, el("span", {}, `L${item.start + 1}`)),
-    el(
-      "button",
-      {
-        type: "button",
-        class: "spawn primary",
-        title: "Spawn a headless Claude session on this item and open it below",
-        onclick: (e) => {
-          e.stopPropagation();
-          spawnOnItem(item);
-        },
-      },
-      "spawn",
-    ),
+    item.checked
+      ? null
+      : el(
+          "button",
+          {
+            type: "button",
+            class: "spawn primary",
+            title: "Spawn a headless Claude session on this item and open it below",
+            onclick: (e) => {
+              e.stopPropagation();
+              spawnOnItem(item, e.currentTarget.closest(".card"));
+            },
+          },
+          "spawn",
+        ),
   );
 
 /** Index the dragged card would take among a list's visible cards, from the pointer's y position. */
@@ -156,10 +176,16 @@ const dropIndexIn = (list, y) => {
   return idx < 0 ? cards.length : idx;
 };
 
-const itemsList = (trackerIndex, section, group, numbered) => {
+const showsInLane = (item, laneId) => {
+  if (laneId === "shipped") return true;
+  if (item.checked) return false;
+  return showAll || isDevItem(item);
+};
+
+const itemsList = (trackerIndex, section, group, laneId, numbered) => {
   const list = el("div", { class: "items" });
-  const visible = group.items.filter((item) => showAll || isDevItem(item));
-  visible.forEach((item, i) => list.append(cardFor(trackerIndex, item, numbered ? i + 1 : null)));
+  const visible = group.items.filter((item) => showsInLane(item, laneId));
+  visible.forEach((item, i) => list.append(cardFor(trackerIndex, item, numbered ? i + 1 : null, !item.checked)));
   list.addEventListener("dragover", (e) => {
     if (!dragging || dragging.trackerIndex !== trackerIndex) return;
     e.preventDefault();
@@ -174,8 +200,7 @@ const itemsList = (trackerIndex, section, group, numbered) => {
     // The drop index counts visible cards; the file move needs the index among ALL items
     // in the group, so land before the visible neighbour, or at the group's end.
     const visibleOthers = visible.filter((v) => v.start !== item.start);
-    const visibleIdx = dropIndexIn(list, e.clientY);
-    const neighbour = visibleOthers[visibleIdx];
+    const neighbour = visibleOthers[dropIndexIn(list, e.clientY)];
     const others = group.items.filter((v) => v.start !== item.start);
     const targetIndex = neighbour ? others.findIndex((v) => v.start === neighbour.start) : others.length;
     setStatus(`moving "${item.title.slice(0, 50)}"`);
@@ -190,6 +215,7 @@ const itemsList = (trackerIndex, section, group, numbered) => {
         targetIndex,
       });
       setStatus(`committed ${commit}`);
+      strike(list);
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -198,21 +224,95 @@ const itemsList = (trackerIndex, section, group, numbered) => {
   return list;
 };
 
+const cleanGroupName = (name) => name.replace(/\[(.*?)\]\(.*?\)/g, "$1").trim();
+
+const addReleaseButton = (trackerIndex, section, lane) =>
+  el(
+    "button",
+    {
+      type: "button",
+      class: "ghost add-release",
+      onclick: async () => {
+        const name = prompt("Name the release (it becomes a ### heading under Priority):", "");
+        if (!name) return;
+        try {
+          const { commit } = await post("/api/groups", { project: projectId, tracker: trackerIndex, heading: section.heading, name });
+          setStatus(`committed ${commit}`);
+          strike(lane);
+          await loadBoard();
+        } catch (err) {
+          setStatus(err.message, true);
+        }
+      },
+    },
+    "+ release",
+  );
+
+/** Checked items from every non-done section, shown read-only in the Done lane. */
+const doneElsewhere = (tracker) =>
+  tracker.sections
+    .filter((s) => s.column && s.column !== "shipped")
+    .flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => i.checked)));
+
+const renderLane = (tracker, [laneId, label, extraClass]) => {
+  const sections = tracker.sections.filter((s) => s.column === laneId);
+  const key = `${tracker.index}:${laneId}`;
+  const isCollapsed = collapsed.has(key);
+  const extras = laneId === "shipped" ? doneElsewhere(tracker) : [];
+  const count =
+    sections.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.items.filter((i) => showsInLane(i, laneId)).length, 0), 0) + extras.length;
+
+  const lane = el("div", { class: `lane ${extraClass}${isCollapsed ? " collapsed" : ""}` });
+  lane.append(
+    el(
+      "h3",
+      { class: "lane-title" },
+      el(
+        "button",
+        {
+          type: "button",
+          class: "ghost fold",
+          title: isCollapsed ? "show" : "hide",
+          onclick: () => {
+            if (isCollapsed) collapsed.delete(key);
+            else collapsed.add(key);
+            persistCollapsed();
+            loadBoard();
+          },
+        },
+        isCollapsed ? "▸" : "▾",
+      ),
+      el("span", { class: "label" }, label),
+      el("span", { class: "count" }, String(count)),
+    ),
+  );
+  if (isCollapsed) return lane;
+
+  for (const section of sections) {
+    if (sections.length > 1) lane.append(el("div", { class: "group-name" }, section.heading));
+    const releases = laneId === "priority";
+    for (const group of section.groups) {
+      const block = el("div", { class: releases && group.name ? "release" : "group" });
+      if (group.name) block.append(el("div", { class: releases ? "release-name" : "group-name" }, cleanGroupName(group.name)));
+      else if (releases && section.groups.length > 1) block.append(el("div", { class: "release-name unfiled" }, "unassigned"));
+      block.append(itemsList(tracker.index, section, group, laneId, releases));
+      lane.append(block);
+    }
+    if (releases) lane.append(addReleaseButton(tracker.index, section, lane));
+  }
+  if (extras.length) {
+    lane.append(el("div", { class: "group-name" }, "checked off elsewhere"));
+    const list = el("div", { class: "items" });
+    for (const item of extras) list.append(cardFor(tracker.index, item, null, false));
+    lane.append(list);
+  }
+  return lane;
+};
+
 const renderBoard = (tracker) => {
   const lanes = el("div", { class: "lanes" });
-  for (const [columnId, label, extraClass] of LANES) {
-    const sections = tracker.sections.filter((s) => s.column === columnId);
-    const count = sections.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.items.filter((i) => showAll || isDevItem(i)).length, 0), 0);
-    const lane = el("div", { class: `lane ${extraClass}` }, el("h3", { class: "lane-title" }, label, el("span", { class: "count" }, String(count))));
-    for (const section of sections) {
-      if (sections.length > 1) lane.append(el("div", { class: "group-name" }, section.heading));
-      for (const group of section.groups) {
-        if (group.name) lane.append(el("div", { class: "group-name" }, group.name.replace(/\[.*?\]\(.*?\)/g, "").trim()));
-        lane.append(itemsList(tracker.index, section, group, columnId === "priority"));
-      }
-    }
-    lanes.append(lane);
-  }
+  for (const lane of LANES) lanes.append(renderLane(tracker, lane));
+  lanes.style.gridTemplateColumns = LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "minmax(0, 0.16fr)" : id === "priority" ? "1.5fr" : "1fr")).join(" ");
   return el(
     "section",
     { class: "board" },
@@ -250,12 +350,14 @@ const renderSessions = (records, live) => {
   const byClaudeId = new Map(records.filter((r) => r.claudeId).map((r) => [r.claudeId, r]));
 
   const running = el("ul");
-  for (const s of live.claudeSessions) {
+  const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3 };
+  const ordered = [...live.claudeSessions].sort((a, b) => (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  for (const s of ordered) {
     running.append(
       sessionRow(
         s.status ?? "",
         `${s.name ?? s.pid}`,
-        `${s.status ?? "?"}${s.waitingFor ? ` · ${s.waitingFor}` : ""} · ${s.cwd.replace(project.path, "").replace(/^\//, "") || "."}`,
+        [s.status ?? "?", s.waitingFor, s.cwd.replace(project.path, "").replace(/^\//, "")].filter(Boolean).join(" · "),
         [btn("open", () => openTerminal({ kind: "resume", sessionId: s.sessionId, title: s.name ?? s.sessionId.slice(0, 8) }))],
         `pid ${s.pid}`,
       ),
@@ -382,12 +484,16 @@ const closeDockTerminal = async (id) => {
   if (activeTerminal === id) {
     const next = [...dockTerminals.keys()].pop();
     if (next) activate(next);
-    else $("#dock").hidden = true;
+    else {
+      $("#dock").hidden = true;
+      document.body.classList.remove("docked");
+    }
   }
 };
 
 const mountTerminal = (info) => {
   $("#dock").hidden = false;
+  document.body.classList.add("docked");
   const term = new window.Terminal({
     fontFamily: "JetBrains Mono, Menlo, monospace",
     fontSize: 13,
@@ -432,6 +538,7 @@ const mountTerminal = (info) => {
 
   dockTerminals.set(info.id, { term, fit, tab, container, source });
   activate(info.id);
+  strike(tab, { from: { x: tab.getBoundingClientRect().left + 20, y: window.innerHeight * 0.35 } });
 };
 
 const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd }) => {
@@ -446,8 +553,9 @@ const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd }) => {
   }
 };
 
-const spawnOnItem = (item) => {
+const spawnOnItem = (item, card) => {
   if (!confirm(`Spawn a headless Claude session on:\n\n${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.`)) return;
+  strike(card);
   openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body });
 };
 
@@ -491,6 +599,7 @@ const boot = async () => {
   $("#new-session").addEventListener("click", () => openTerminal({ kind: "new", title: `claude · ${project.name}` }));
 
   await Promise.all([loadBoard(), loadRail()]);
+  scheduleWeather();
   const existing = await api("/api/terminals");
   for (const t of existing) if (t.exitCode === null) mountTerminal(t);
 };
