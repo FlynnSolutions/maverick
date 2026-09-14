@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Close a session record: status closed or handed-off, with the one-line handoff.
+# Usage: session-close --id <id> --status closed|handed-off [--handoff "where the next session starts"] [--pr <ref>]
+set -euo pipefail
+
+dir="${SESSION_CONSOLE_SESSIONS:-$HOME/.claude/console-sessions}"
+id="${CLAUDE_SESSION_ID:-}" status="" handoff="" pr=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --id) id="$2"; shift 2 ;;
+    --status) status="$2"; shift 2 ;;
+    --handoff) handoff="$2"; shift 2 ;;
+    --pr) pr="$2"; shift 2 ;;
+    *) echo "session-close: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+
+[[ -n "$id" ]] || { echo "session-close: --id is required (no CLAUDE_SESSION_ID in env)" >&2; exit 2; }
+case "$status" in closed|handed-off) ;; *) echo "session-close: --status must be closed|handed-off (got '$status')" >&2; exit 2 ;; esac
+[[ -f "$dir/$id.json" ]] || { echo "session-close: no record at $dir/$id.json" >&2; exit 1; }
+
+python3 - "$dir/$id.json" "$status" "$handoff" "$pr" <<'EOF'
+import json, sys, datetime
+path, status, handoff, pr = sys.argv[1:]
+with open(path) as f:
+    record = json.load(f)
+record["status"] = status
+record["ended"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+if handoff:
+    record["handoff"] = handoff
+if pr:
+    record["pr"] = pr
+with open(path, "w") as f:
+    json.dump(record, f, indent=2)
+EOF
+echo "$id: $status"

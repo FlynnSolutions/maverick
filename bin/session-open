@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Write the open record for the current Claude session.
+# Usage: session-open --role driver|develop|audit|plan --loop "one line" [--exit "..."]
+#        [--parent <id>] [--project <name>] [--worktree <path>] [--pr <ref>] [--id <id>]
+# Prints the session id. Records live in ~/.claude/console-sessions (or $SESSION_CONSOLE_SESSIONS).
+set -euo pipefail
+
+dir="${SESSION_CONSOLE_SESSIONS:-$HOME/.claude/console-sessions}"
+id="${CLAUDE_SESSION_ID:-$(date +%Y%m%dT%H%M%S)}"
+role="" loop="" exit_criterion="" parent="" project="" worktree="" pr=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --role) role="$2"; shift 2 ;;
+    --loop) loop="$2"; shift 2 ;;
+    --exit) exit_criterion="$2"; shift 2 ;;
+    --parent) parent="$2"; shift 2 ;;
+    --project) project="$2"; shift 2 ;;
+    --worktree) worktree="$2"; shift 2 ;;
+    --pr) pr="$2"; shift 2 ;;
+    --id) id="$2"; shift 2 ;;
+    *) echo "session-open: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+
+case "$role" in driver|develop|audit|plan) ;; *) echo "session-open: --role must be driver|develop|audit|plan (got '$role')" >&2; exit 2 ;; esac
+[[ -n "$loop" ]] || { echo "session-open: --loop is required" >&2; exit 2; }
+
+mkdir -p "$dir"
+python3 - "$dir/$id.json" "$id" "$role" "$loop" "$exit_criterion" "$parent" "$project" "$worktree" "$pr" <<'EOF'
+import json, sys, datetime
+path, id_, role, loop, exit_, parent, project, worktree, pr = sys.argv[1:]
+record = {"id": id_, "role": role, "loop": loop, "status": "open",
+          "started": datetime.datetime.now().astimezone().isoformat(timespec="seconds")}
+for key, value in [("exit", exit_), ("parent", parent), ("project", project), ("worktree", worktree), ("pr", pr)]:
+    if value:
+        record[key] = value
+with open(path, "w") as f:
+    json.dump(record, f, indent=2)
+EOF
+echo "$id"
