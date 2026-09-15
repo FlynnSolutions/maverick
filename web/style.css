@@ -583,3 +583,22 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .card .meta { gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .drawer-meta { align-items: center; gap: 6px; flex-wrap: wrap; }
 .drawer-meta .spacer { flex: 1; }
+
+/* ---------- charge ---------- */
+
+.crackle { position: fixed; inset: 0; pointer-events: none; z-index: 48; overflow: visible; }
+.crackle path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.crackle .crackle-glow { stroke: #4f9cff; filter: blur(3px); }
+.crackle .crackle-core { stroke: #e9f3ff; }
+.charging {
+  box-shadow: 0 0 0 1px var(--bolt-hot), 0 0 14px var(--bolt-glow), 0 0 40px var(--bolt-dim) !important;
+  animation: charge-pulse 520ms ease-in infinite alternate !important;
+}
+@keyframes charge-pulse {
+  from { box-shadow: 0 0 0 1px var(--bolt), 0 0 10px var(--bolt-glow), 0 0 24px var(--bolt-dim); }
+  to { box-shadow: 0 0 0 1.5px var(--bolt-core), 0 0 22px var(--bolt-glow), 0 0 70px var(--bolt-dim); }
+}
+.bolt.burst { animation: burst-flicker 320ms steps(1, end) forwards; }
+.bolt.burst .burst-glow { stroke: #4f9cff; filter: blur(4px); }
+.bolt.burst .burst-core { stroke: #ffffff; filter: drop-shadow(0 0 3px #bfe3ff); }
+@keyframes burst-flicker { 0% { opacity: 1; } 30% { opacity: 0.35; } 45% { opacity: 0.9; } 70% { opacity: 0.2; } 100% { opacity: 0; } }

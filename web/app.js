@@ -1,7 +1,7 @@
 // The console UI. Plain DOM and fetch; the same file runs in a browser or an Electron
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
 // selects it, no parameter shows the picker.
-import { strike, scheduleWeather } from "./bolt.js";
+import { strike, scheduleWeather, charge, discharge, dischargeAll } from "./bolt.js";
 
 
 /** Tags that mark engineering work. Items carrying any of these (or no tag at all) are development items. */
@@ -841,6 +841,25 @@ const spawnOnItem = (item, card) => {
 window.addEventListener("resize", () => {
   if (activeTerminal) dockTerminals.get(activeTerminal)?.fit.fit();
 });
+
+
+/* ---------- charge on press, discharge on release ---------- */
+
+const CHARGEABLE = "button, .card, .row, .cal-event, .dock-tab, .project-list li, .switcher";
+document.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  const target = e.target.closest(CHARGEABLE);
+  if (!target || target.closest(".term")) return;
+  charge(target);
+});
+document.addEventListener("pointerup", (e) => {
+  const target = e.target.closest(CHARGEABLE);
+  if (target) discharge(target, { strike: target.matches("button.primary, .cal-event.release") });
+  dischargeAll();
+});
+document.addEventListener("pointercancel", dischargeAll);
+window.addEventListener("blur", dischargeAll);
+document.addEventListener("dragstart", dischargeAll);
 
 /* ---------- boot ---------- */
 

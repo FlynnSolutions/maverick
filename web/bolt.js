@@ -130,3 +130,94 @@ export const scheduleWeather = () => {
   };
   window.setTimeout(tick, 15_000);
 };
+
+/* ---------- charge and discharge ---------- */
+
+/** Short arcs leaving the edge of a rect, re-rolled every few frames so they crackle. */
+const crackleArcs = (rect, count) => {
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    const side = Math.floor(rand(0, 4));
+    const x = side === 3 ? rect.left : side === 1 ? rect.right : rand(rect.left, rect.right);
+    const y = side === 0 ? rect.top : side === 2 ? rect.bottom : rand(rect.top, rect.bottom);
+    const len = rand(8, 26);
+    const dx = side === 3 ? -len : side === 1 ? len : rand(-len, len) * 0.4;
+    const dy = side === 0 ? -len : side === 2 ? len : rand(-len, len) * 0.4;
+    out.push(toPath(channel(x, y, x + dx, y + dy, 3, 0.35)));
+  }
+  return out;
+};
+
+const charging = new Map();
+
+/** Start charging an element: a growing glow plus crackle that intensifies while held. */
+export const charge = (target) => {
+  if (!target || charging.has(target)) return;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "crackle");
+  svg.setAttribute("width", String(window.innerWidth));
+  svg.setAttribute("height", String(window.innerHeight));
+  document.body.append(svg);
+  target.classList.add("charging");
+  const started = performance.now();
+  let last = 0;
+  const state = { svg, raf: 0 };
+  const frame = (now) => {
+    if (now - last > 55) {
+      last = now;
+      const held = now - started;
+      const count = Math.min(10, 3 + Math.floor(held / 140));
+      const rect = target.getBoundingClientRect();
+      svg.replaceChildren();
+      for (const d of crackleArcs(rect, count)) {
+        svg.append(layer(d, "crackle-glow", 3.5, { opacity: String(rand(0.25, 0.5)) }));
+        svg.append(layer(d, "crackle-core", 0.9, { opacity: String(rand(0.6, 1)) }));
+      }
+    }
+    state.raf = requestAnimationFrame(frame);
+  };
+  state.raf = requestAnimationFrame(frame);
+  charging.set(target, state);
+};
+
+/** Release: the charge leaves as a burst of radial bolts, or as a full strike for primary actions. */
+export const discharge = (target, { strike: full = false } = {}) => {
+  const state = charging.get(target);
+  if (!state) return;
+  cancelAnimationFrame(state.raf);
+  state.svg.remove();
+  charging.delete(target);
+  target.classList.remove("charging");
+  if (full) strike(target);
+  else burst(target);
+};
+
+export const dischargeAll = () => {
+  for (const target of [...charging.keys()]) discharge(target, { strike: false });
+};
+
+/** Four to seven short bolts leaving the element outward, one quick flicker. */
+export const burst = (target) => {
+  const rect = target.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "bolt burst");
+  svg.setAttribute("width", String(window.innerWidth));
+  svg.setAttribute("height", String(window.innerHeight));
+  const n = Math.floor(rand(4, 8));
+  for (let i = 0; i < n; i += 1) {
+    const angle = (i / n) * Math.PI * 2 + rand(-0.4, 0.4);
+    const r0 = Math.min(rect.width, rect.height) * 0.45;
+    const r1 = r0 + rand(28, 70);
+    const d = toPath(channel(cx + Math.cos(angle) * r0, cy + Math.sin(angle) * r0, cx + Math.cos(angle) * r1, cy + Math.sin(angle) * r1, 4, 0.3));
+    svg.append(layer(d, "burst-glow", 5, { opacity: "0.35" }));
+    svg.append(layer(d, "burst-core", 1.1, { opacity: "0.95" }));
+  }
+  document.body.append(svg);
+  target.classList.add("struck");
+  window.setTimeout(() => {
+    svg.remove();
+    target.classList.remove("struck");
+  }, 320);
+};
