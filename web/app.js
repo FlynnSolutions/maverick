@@ -137,7 +137,8 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
     {
       class: `card${item.checked ? " checked" : ""}`,
       draggable: draggable ? "true" : "false",
-      title: item.body,
+      onmouseenter: (e) => scheduleHover(e.currentTarget, item),
+      onmouseleave: hideHover,
       ondragstart: (e) => {
         if (!draggable) return e.preventDefault();
         dragging = { trackerIndex, item };
@@ -150,12 +151,13 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
       },
       onclick: (e) => {
         if (e.target.closest("button")) return;
+        hideHover();
         openDrawer(trackerIndex, item);
       },
     },
     el("span", { class: "num" }, number === null ? "" : String(number)),
     el("div", { class: "title" }, item.title),
-    el("div", { class: "meta" }, dueChip(item), ...tagChips(item), createdOf(item) ? el("span", { class: "since", title: item.created ? "created" : "entry last changed" }, createdOf(item).slice(5)) : null),
+    el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), createdOf(item) ? el("span", { class: "since", title: item.created ? "created" : "entry last changed" }, createdOf(item).slice(5)) : null),
     item.checked
       ? null
       : el(
@@ -219,6 +221,19 @@ const editItemBody = async (trackerIndex, item, newBody, label) => {
   setStatus(commit === "no change" ? "no change" : `committed ${commit}`);
 };
 const createdOf = (item) => item.created ?? item.lineDate;
+/** The source line minus the date already shown as created ("Cory, 2026-09-14." becomes "Cory"). */
+const sourceWithoutDate = (item) => {
+  if (!item.source) return "";
+  const stripped = item.created ? item.source.replace(item.created, "") : item.source;
+  return stripped.replace(/^[\s,.;:]+|[\s,.;:]+$/g, "").replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim();
+};
+const releaseChip = (item) => {
+  const slot = item.fields?.release;
+  if (!slot || !lastTrackers.length) return null;
+  const slots = planningSlots(lastTrackers);
+  const label = slot === "next" ? slots.next.label : slot === "next+1" ? slots.nextNext.label : slot;
+  return el("span", { class: "chip release", title: slot === "next" ? "planned for the next release" : "planned for the release after next" }, label);
+};
 
 /** Calendar colour: done is green; within a week (or overdue) is yellow when in progress, red when not. */
 const eventState = (e) => {
@@ -418,6 +433,44 @@ const loadBoard = async () => {
 };
 
 
+
+/* ---------- hover card ---------- */
+
+let hoverTimer = null;
+let hoverNode = null;
+const hideHover = () => {
+  window.clearTimeout(hoverTimer);
+  hoverTimer = null;
+  hoverNode?.remove();
+  hoverNode = null;
+};
+const scheduleHover = (card, item) => {
+  hideHover();
+  hoverTimer = window.setTimeout(() => {
+    if (dragging || !card.isConnected) return;
+    const rect = card.getBoundingClientRect();
+    const node = el("div", { class: "hovercard" });
+    const text = el("div", { class: "hovercard-text" });
+    const description = item.description || "(no description)";
+    text.innerHTML = renderInline(description.length > 700 ? `${description.slice(0, 699)}…` : description);
+    node.append(
+      el("div", { class: "hovercard-title" }, item.title),
+      el("div", { class: "hovercard-meta" }, releaseChip(item), dueChip(item), ...tagChips(item), item.created ? el("span", { class: "muted mono" }, `created ${item.created}`) : null, sourceWithoutDate(item) ? el("span", { class: "muted" }, sourceWithoutDate(item)) : null),
+      text,
+      el("div", { class: "hovercard-hint muted mono" }, "click to open · drag to move"),
+    );
+    document.body.append(node);
+    const width = Math.min(420, window.innerWidth - 24);
+    const left = Math.min(Math.max(12, rect.right + 12), window.innerWidth - width - 12);
+    const fitsRight = rect.right + 12 + width <= window.innerWidth;
+    node.style.width = `${width}px`;
+    node.style.left = `${fitsRight ? rect.right + 12 : Math.max(12, rect.left - width - 12)}px`;
+    node.style.top = `${Math.min(rect.top, window.innerHeight - node.offsetHeight - 12)}px`;
+    void left;
+    hoverNode = node;
+  }, 380);
+};
+
 /* ---------- item drawer ---------- */
 
 const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
@@ -445,7 +498,7 @@ const openDrawer = (trackerIndex, item) => {
   const head = el("h2", {}, item.title);
   const actions = el("div", { class: "drawer-actions" });
 
-  const FIELD_ORDER = ["due", "release", "size", "kind", "status", "owner", "plan", "pr", "blocked-by", "links"];
+  const FIELD_ORDER = ["size", "kind", "status", "owner", "plan", "pr", "blocked-by", "links"];
   const saveBody = async (newBody, label) => {
     setStatus(label);
     try {
@@ -462,12 +515,12 @@ const openDrawer = (trackerIndex, item) => {
     const addField = (k, v, cls = "") => grid.append(el("dt", {}, k), el("dd", { class: cls }, v));
     if (item.created) addField("created", item.created);
     else if (item.lineDate) addField("created", `unknown; the entry was last changed ${item.lineDate}`);
-    if (item.source) addField("source", item.source);
+    const sourceText = sourceWithoutDate(item);
+    if (sourceText) addField("source", sourceText);
     for (const k of FIELD_ORDER) {
       if (!item.fields[k]) continue;
       const v = item.fields[k];
-      if (k === "due") addField("due", `${v}${dueState(v, item.checked) === "overdue" ? " · overdue" : ""}`, dueState(v, item.checked));
-      else if (/^(https?:\/\/|plans\/|deliverables\/|\.\.\/)/.test(v)) addField(k, el("code", {}, v));
+      if (/^(https?:\/\/|plans\/|deliverables\/|\.\.\/)/.test(v)) addField(k, el("code", {}, v));
       else addField(k, v);
     }
     const slotsNow = planningSlots(lastTrackers);
@@ -485,6 +538,7 @@ const openDrawer = (trackerIndex, item) => {
       dueInput,
       btn("set", () => saveBody(withDue(item.body, dueInput.value), "setting deadline"), "primary"),
       item.fields.due ? btn("clear", () => saveBody(withDue(item.body, ""), "clearing deadline"), "ghost") : null,
+      item.fields.due ? el("span", { class: `due ${dueState(item.fields.due, item.checked)}` }, dueState(item.fields.due, item.checked) === "overdue" ? "overdue" : dueState(item.fields.due, item.checked) === "soon" ? "within a week" : "later") : null,
     );
     const prose = el("div", { class: "drawer-text" });
     prose.innerHTML = renderInline(item.description || "(no description)");

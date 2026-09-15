@@ -713,3 +713,22 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .release-summary { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .release-list h4 { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-ghost); margin: 8px 0 4px; }
 .release-list li .key { font-family: var(--mono); font-size: 10px; color: var(--ink-ghost); margin-left: 6px; }
+
+/* ---------- hover card, release chip ---------- */
+
+.chip.release { background: rgba(94, 177, 255, 0.22); color: #dff0ff; box-shadow: 0 0 0 1px rgba(94, 177, 255, 0.35); }
+.hovercard {
+  position: fixed;
+  z-index: 20;
+  padding: 12px 14px;
+  border-radius: var(--radius-m);
+  background: var(--sky-1);
+  box-shadow: 0 0 0 1px var(--cloud-strong), 0 16px 40px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  animation: settle 140ms var(--ease-out) both;
+}
+.hovercard-title { font-weight: 600; margin-bottom: 6px; line-height: 1.35; }
+.hovercard-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; font-size: 11px; }
+.hovercard-text { font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); white-space: pre-wrap; max-height: 260px; overflow: hidden; }
+.hovercard-text code { font-family: var(--mono); font-size: 11.5px; color: var(--bolt-hot); }
+.hovercard-hint { margin-top: 8px; font-size: 10.5px; }
