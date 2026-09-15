@@ -75,18 +75,29 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
 - **Calendar** (top bar toggle): the releases strip, a month grid of items with a `due` date
   and releases with a deploy date, and the roadmap items that have no deadline yet. Drag an
   item onto a day to set its `due` (one commit per drop).
-- **Releases are real.** The strip reads the project's changelog (`contracts/CHANGELOG.md`
-  or `CHANGELOG.md`, Keep-a-Changelog shape): **Next** is the `[Unreleased]` block with its
-  added / fixed counts and every PR merged since the last version tag in the repos that carry
-  that tag; shipped versions show their added / fixed / changed counts. Click a card for the
-  PR list (linked, feat / fix by title prefix), the GitHub compare link per repo, and the
-  changelog bullets; `#release-1.8.1` or `#release-next` deep-links a card's drawer. PRs are
-  assigned to a version by tag date (merged at or before the tag, after the previous one), from
-  the last 400 merged PRs per repo, so versions older than that window undercount. A **planned**
-  release is a `###` group under Priority named like one (`v1.10`, or containing "release" or
-  "deploy"); its card counts its items, and its drawer sets the deploy date, which is
-  written into the heading as `(deploy YYYY-MM-DD)`. Put an item into a planned release by
-  dragging it into that group on the board.
+- **Releases are real, and two are planned.** The strip reads the project's changelog
+  (`contracts/CHANGELOG.md` or `CHANGELOG.md`, Keep-a-Changelog shape) and GitHub. **Next**
+  is the `[Unreleased]` block plus every PR merged since the last version tag plus the items
+  planned for it; **the one after** holds the items planned beyond that. Each slot's version
+  is computed from its contents (a feature anywhere bumps the minor, only fixes bump the
+  patch, the second slot builds on the first) and can be overridden by name in its drawer,
+  along with a deploy date; those two labels live in `~/.claude/session-console/releases.json`,
+  everything else is the tracker. Plan an item into a slot by dragging its card onto the slot
+  (from the board or the calendar) or with the release select in its drawer; it writes
+  `- release: next` or `- release: next+1` under the bullet. Shipped versions show added /
+  fixed / PR counts; click any card for the PR list (linked, feat / fix by title prefix), the
+  GitHub compare link per repo, the changelog bullets, and the planned items. At ship time the
+  ship workflow should rewrite `release: next+1` to `next` (manual today). PRs are assigned to
+  a version by tag date from the last 400 merged PRs per repo, so old versions undercount.
+- **Roadmap groups.** `###` headings under Priority are groups on the board (a review batch,
+  a theme). "+ group" adds one; an empty group shows × to delete it. They are not releases.
+- **Audit parents.** In an item's drawer, pick an audit parent (or create one) before
+  spawning; the task session's record points at the parent. When a supervised task finishes
+  (its background session reaches done), the console runs the `auditor` agent on it in a new
+  background session, once a minute sweep or "audit now". The auditor writes
+  `~/.claude/console-sessions/audits/<session>.md` with `verdict: pass|fail|mixed` on the
+  first line; the rail shows the verdict under the parent, "findings" opens them, and accept /
+  reject records your decision on the task's record. The auditor never edits or commits.
 - **Created.** An item's `created` field, else the first date in its source text, shows on
   the card and in the drawer. Items with neither show the date their entry was last changed
   (from `git blame`, one call per file, cached by mtime), labelled as such.

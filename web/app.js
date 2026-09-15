@@ -202,15 +202,17 @@ const dueState = (due, checked) => {
   const days = Math.round((new Date(due) - new Date(today())) / 86400000);
   return days < 0 ? "overdue" : days <= 7 ? "soon" : "later";
 };
-/** Rewrite or insert the `  - due:` line right under the bullet, leaving everything else alone. */
-const withDue = (body, due) => {
+/** Rewrite, insert, or remove one `  - key:` line right under the bullet, leaving everything else alone. */
+const withField = (body, key, value) => {
   const lines = body.split("\n");
-  const i = lines.findIndex((l, n) => n > 0 && /^\s{2,}- due:/.test(l));
-  if (!due) return i > 0 ? [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n") : body;
-  if (i > 0) lines[i] = `  - due: ${due}`;
-  else lines.splice(1, 0, `  - due: ${due}`);
+  const re = new RegExp(`^\\s{2,}- ${key}:`);
+  const i = lines.findIndex((l, n) => n > 0 && re.test(l));
+  if (!value) return i > 0 ? [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n") : body;
+  if (i > 0) lines[i] = `  - ${key}: ${value}`;
+  else lines.splice(1, 0, `  - ${key}: ${value}`);
   return lines.join("\n");
 };
+const withDue = (body, due) => withField(body, "due", due);
 const editItemBody = async (trackerIndex, item, newBody, label) => {
   setStatus(label);
   const { commit } = await post("/api/edit", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, body: newBody });
@@ -296,7 +298,7 @@ const addReleaseButton = (trackerIndex, section, lane) =>
       type: "button",
       class: "ghost add-release",
       onclick: async () => {
-        const name = prompt("Name the release (it becomes a ### heading under Priority):", "");
+        const name = prompt("Name the roadmap group (a ### heading under Priority):", "");
         if (!name) return;
         try {
           const { commit } = await post("/api/groups", { project: projectId, tracker: trackerIndex, heading: section.heading, name });
@@ -308,7 +310,7 @@ const addReleaseButton = (trackerIndex, section, lane) =>
         }
       },
     },
-    "+ release",
+    "+ group",
   );
 
 /** Checked items from every non-done section, shown read-only in the Done lane. */
@@ -357,7 +359,17 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
     for (const group of section.groups) {
       const block = el("div", { class: releases && group.name ? "release" : "group" });
       if (group.name) {
-        block.append(el("div", { class: releases ? "release-name" : "group-name" }, stripDeploy(group.name), releases && group.due ? el("span", { class: `due ${dueState(group.due, false)}` }, `deploy ${group.due.slice(5)}`) : null));
+        const removable = releases && group.items.length === 0;
+        block.append(el("div", { class: releases ? "release-name" : "group-name" }, stripDeploy(group.name), removable ? btn("×", async () => {
+          if (!confirm(`Delete the empty group "${cleanGroupName(group.name)}"?`)) return;
+          try {
+            const { commit } = await api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) });
+            setStatus(`committed ${commit}`);
+          } catch (err) {
+            setStatus(err.message, true);
+          }
+          await loadBoard();
+        }, "ghost") : null));
       }
       else if (releases && section.groups.length > 1) block.append(el("div", { class: "release-name unfiled" }, "unassigned"));
       block.append(itemsList(tracker.index, section, group, laneId, releases));
@@ -457,6 +469,13 @@ const openDrawer = (trackerIndex, item) => {
       else if (/^(https?:\/\/|plans\/|deliverables\/|\.\.\/)/.test(v)) addField(k, el("code", {}, v));
       else addField(k, v);
     }
+    const slotsNow = planningSlots(lastTrackers);
+    const releaseSelect = el("select", { class: "supervisor" },
+      el("option", { value: "" }, "no release"),
+      el("option", { value: "next", ...(item.fields.release === "next" ? { selected: "" } : {}) }, `${slotsNow.next.label} (next)`),
+      el("option", { value: "next+1", ...(item.fields.release === "next+1" ? { selected: "" } : {}) }, `${slotsNow.nextNext.label} (the one after)`));
+    releaseSelect.addEventListener("change", () => saveBody(withField(item.body, "release", releaseSelect.value), "planning release"));
+    const releaseRow = el("div", { class: "due-row" }, el("span", { class: "k" }, "release"), releaseSelect);
     const dueInput = el("input", { type: "date", value: item.fields.due ?? "" });
     const dueRow = el(
       "div",
@@ -468,7 +487,7 @@ const openDrawer = (trackerIndex, item) => {
     );
     const prose = el("div", { class: "drawer-text" });
     prose.innerHTML = renderInline(item.description || "(no description)");
-    body.replaceChildren(grid.childElementCount ? grid : null, dueRow, prose);
+    body.replaceChildren(grid.childElementCount ? grid : null, releaseRow, dueRow, prose);
     const parents = (lastSessions ?? []).filter((r) => r.role === "audit" && r.status === "open");
     const supervisor = el("select", { class: "supervisor", title: "audit parent: the finished session is audited under it" },
       el("option", { value: "" }, "no audit parent"),
@@ -551,11 +570,12 @@ if (new URLSearchParams(location.search).get("view") === "calendar") view = "cal
 
 const eventsFor = (trackers) => {
   const events = [];
+  const slots = planningSlots(trackers);
+  for (const slot of [slots.next, slots.nextNext]) if (slot.deploy) events.push({ date: slot.deploy, kind: "release", title: slot.label, slot });
   for (const tracker of trackers) {
     for (const section of tracker.sections) {
       if (!section.column) continue;
       for (const group of section.groups) {
-        if (group.due && section.column === "priority") events.push({ date: group.due, kind: "release", title: stripDeploy(group.name), tracker, section, group });
         for (const item of group.items) {
           if (!item.fields.due) continue;
           if (!showAll && !isDevItem(item)) continue;
@@ -614,6 +634,41 @@ const dropZone = (node, accepts, onDrop) => {
 };
 
 let releasesData = null;
+
+const isFeatureItem = (i) => i.fields.kind === "feature" || i.tags.some((t) => t.toLowerCase() === "feature");
+const isBugItem = (i) => i.fields.kind === "bug" || i.tags.some((t) => t.toLowerCase() === "bug");
+const bump = (version, level) => {
+  const [maj, min, pat] = version.split(".").map((n) => Number(n) || 0);
+  return level === "minor" ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`;
+};
+/** The two planning slots: what is in them, and the version each earns from its contents. */
+const planningSlots = (trackers) => {
+  const items = trackers.flatMap((t) => t.sections.filter((sec) => sec.column && sec.column !== "shipped").flatMap((sec) => sec.groups.flatMap((g) => g.items.filter((i) => !i.checked && (showAll || isDevItem(i))).map((i) => ({ tracker: t, section: sec, item: i })))));
+  const next = items.filter(({ item }) => item.fields.release === "next");
+  const nextNext = items.filter(({ item }) => item.fields.release === "next+1");
+  const base = releasesData?.shipped[0]?.version ?? "0.0.0";
+  const merged = releasesData?.next?.counts ?? { added: 0, fixed: 0, changed: 0, prs: 0, prFeatures: 0, prFixes: 0 };
+  const nextHasFeatures = merged.added > 0 || merged.prFeatures > 0 || next.some(({ item }) => isFeatureItem(item));
+  const nextHasAnything = nextHasFeatures || merged.fixed > 0 || merged.changed > 0 || merged.prs > 0 || next.length > 0;
+  const nextVersion = nextHasAnything ? bump(base, nextHasFeatures ? "minor" : "patch") : base;
+  const nnHasFeatures = nextNext.some(({ item }) => isFeatureItem(item));
+  const nextNextVersion = nextNext.length ? bump(nextVersion, nnHasFeatures ? "minor" : "patch") : bump(nextVersion, "minor");
+  const slots = releasesData?.slots ?? {};
+  return {
+    base,
+    next: { key: "next", label: slots.next?.name ?? `v${nextVersion}`, computed: `v${nextVersion}`, deploy: slots.next?.deploy, items: next, merged },
+    nextNext: { key: "next+1", label: slots["next+1"]?.name ?? `v${nextNextVersion}`, computed: `v${nextNextVersion}`, deploy: slots["next+1"]?.deploy, items: nextNext },
+  };
+};
+
+const setItemRelease = async (tracker, item, slotKey) => {
+  await editItemBody(tracker.index, item, withField(item.body, "release", slotKey), slotKey ? `planning for ${slotKey}` : "removing from release");
+};
+
+/** A slot card accepts a card dragged from the board (dragging) or from the calendar (calDrag). */
+const acceptsAnyItemDrag = () => (calDrag && calDrag.type === "item") || dragging;
+const draggedItem = () => (calDrag && calDrag.type === "item" ? { tracker: calDrag.tracker, item: calDrag.item } : dragging ? { tracker: lastTrackers[dragging.trackerIndex], item: dragging.item } : null);
+
 
 const stat = (n, label) => el("div", { class: "stat" }, el("b", {}, String(n)), el("span", {}, label));
 
@@ -678,28 +733,98 @@ const releaseCard = (release, kind) => {
   );
 };
 
-const plannedCard = (tracker, section, group) => {
-  const items = group.items.filter((i) => !i.checked && (showAll || isDevItem(i)));
-  const bugs = items.filter((i) => i.tags.some((t) => t.toLowerCase() === "bug") || i.fields.kind === "bug").length;
-  const planned = { name: stripDeploy(group.name), items, tracker, section, group };
-  return el(
+const slotCard = (slot, trackers) => {
+  const featureCount = (slot.merged?.added ?? 0) + slot.items.filter(({ item }) => isFeatureItem(item)).length;
+  const fixCount = (slot.merged?.fixed ?? 0) + slot.items.filter(({ item }) => isBugItem(item)).length;
+  const card = el(
     "div",
-    { class: "release-card planned", onclick: () => openReleaseDrawer(null, "planned", planned) },
-    el("div", {}, el("span", { class: "version" }, planned.name), el("span", { class: "state" }, group.due ? `deploy ${group.due}` : "planned, no date")),
-    el("div", { class: "stats" }, stat(items.length - bugs, "features"), stat(bugs, "fixes"), stat(items.length, "items")),
+    { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, onclick: () => { history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
+    el("div", {}, el("span", { class: "version" }, slot.label), el("span", { class: "state" }, slot.key === "next" ? `next release${slot.label !== slot.computed ? ` · computed ${slot.computed}` : ""}` : `the one after${slot.label !== slot.computed ? ` · computed ${slot.computed}` : ""}`)),
+    el("div", { class: "stats" }, stat(featureCount, "features"), stat(fixCount, "fixes"), stat(slot.key === "next" ? slot.merged.prs : slot.items.length, slot.key === "next" ? "PRs merged" : "planned")),
+    el("div", { class: "foot" }, slot.key === "next" ? `${slot.items.length} planned · ${slot.merged.prs} merged since ${slot.merged ? (releasesData?.shipped[0]?.version ?? "last tag") : ""}${slot.deploy ? ` · deploy ${slot.deploy}` : ""} · drop cards here` : `${slot.items.length} planned${slot.deploy ? ` · deploy ${slot.deploy}` : ""} · drop cards here`),
   );
+  card.addEventListener("dragover", (e) => { if (!acceptsAnyItemDrag()) return; e.preventDefault(); card.classList.add("over"); });
+  card.addEventListener("dragleave", () => card.classList.remove("over"));
+  card.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    card.classList.remove("over");
+    const d = draggedItem();
+    calDrag = null;
+    dragging = null;
+    if (!d) return;
+    try {
+      await setItemRelease(d.tracker, d.item, slot.key);
+      strike(card);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+    await loadBoard();
+  });
+  return card;
+};
+
+const openSlotDrawer = (slot, trackers) => {
+  const root = $("#drawer-root");
+  const list = el("div", { class: "release-list" });
+  const nameInput = el("input", { type: "text", value: slot.label, placeholder: slot.computed, style: "width: 120px" });
+  const dateInput = el("input", { type: "date", value: slot.deploy ?? "" });
+  const save = async () => {
+    try {
+      const name = nameInput.value.trim() === slot.computed ? "" : nameInput.value.trim();
+      await post("/api/release-slots", { project: projectId, slot: slot.key, name, deploy: dateInput.value });
+      releasesData = null;
+      closeDrawer();
+      await loadBoard();
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+  list.append(
+    el("div", { class: "due-row" }, el("span", { class: "k" }, "version"), nameInput, el("span", { class: "muted small mono" }, `computed ${slot.computed}`)),
+    el("div", { class: "due-row" }, el("span", { class: "k" }, "deploy"), dateInput, btn("save", save, "primary")),
+  );
+  if (slot.key === "next" && releasesData?.next) {
+    const r = releasesData.next;
+    if (r.compare?.length) list.append(el("div", { class: "compare-links" }, ...r.compare.map((c) => el("a", { href: c.url, target: "_blank" }, `${c.repo} on GitHub ↗`))));
+  }
+  list.append(el("h3", {}, `${slot.items.length} planned items`));
+  const planned = el("ul");
+  for (const { tracker, item } of slot.items) {
+    planned.append(el("li", {}, el("span", { class: `kind ${isBugItem(item) ? "fix" : isFeatureItem(item) ? "feature" : "other"}` }, isBugItem(item) ? "fix" : isFeatureItem(item) ? "feature" : "item"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openDrawer(tracker.index, item); } }, item.title), btn("remove", (e) => { e.stopPropagation(); setItemRelease(tracker, item, "").then(() => { closeDrawer(); loadBoard(); }); }, "ghost")));
+  }
+  if (!slot.items.length) planned.append(el("li", { class: "muted" }, "none yet: drag a card onto this release, or pick it in the card's drawer"));
+  list.append(planned);
+  if (slot.key === "next" && releasesData?.next) {
+    const r = releasesData.next;
+    if (r.prs.length) {
+      list.append(el("h3", {}, `${r.prs.length} pull requests already merged`));
+      const ul = el("ul");
+      for (const pr of r.prs) ul.append(el("li", {}, el("span", { class: `kind ${pr.kind}` }, pr.kind), el("a", { href: pr.url, target: "_blank" }, `${pr.repo}#${pr.number}`), text(` ${pr.title}`), el("span", { class: "when" }, pr.mergedAt.slice(0, 10))));
+      list.append(ul);
+    }
+    for (const kindName of ["Added", "Changed", "Fixed", "Removed"]) {
+      const bullets = r.bullets.filter((b) => b.kind === kindName);
+      if (!bullets.length) continue;
+      list.append(el("h3", {}, `${kindName} (${bullets.length}) in the changelog`));
+      const ul = el("ul");
+      for (const b of bullets) { const li = el("li"); li.innerHTML = renderInline(b.text); ul.append(li); }
+      list.append(ul);
+    }
+  }
+  root.replaceChildren(
+    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
+    el("aside", { class: "drawer", role: "dialog" },
+      el("div", { class: "drawer-head" }, el("h2", {}, `${slot.label} · ${slot.key === "next" ? "next release" : "the one after"}`), btn("×", closeDrawer, "ghost")),
+      el("div", { class: "drawer-body" }, list),
+      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, el("span", { class: "spacer" }), btn("close", closeDrawer)))),
+  );
+  document.addEventListener("keydown", onDrawerKey);
 };
 
 const renderReleases = (trackers) => {
   const strip = el("div", { class: "releases" });
-  if (releasesData?.next) strip.append(releaseCard(releasesData.next, "next"));
-  for (const tracker of trackers) {
-    for (const section of tracker.sections.filter((s) => s.column === "priority")) {
-      // Only groups named like a release are planned releases; other Priority groups (a review batch, say) stay on the board.
-      for (const group of section.groups) if (group.name && /^v?\d+\.\d+|\brelease\b|\bdeploy\b/i.test(group.name)) strip.append(plannedCard(tracker, section, group));
-      strip.append(el("div", { class: "release-card add" }, addReleaseButton(tracker.index, section, strip)));
-    }
-  }
+  const slots = planningSlots(trackers);
+  strip.append(slotCard(slots.next, trackers), slotCard(slots.nextNext, trackers));
   for (const r of releasesData?.shipped ?? []) strip.append(releaseCard(r, "shipped"));
   return strip;
 };
@@ -739,7 +864,7 @@ const renderCalendar = (trackers) => {
     for (const e of byDate.get(date) ?? []) {
       const node = el(
         "div",
-        { class: `cal-event ${e.kind} ${eventState(e)}`, title: `${e.title}${e.column ? ` · ${e.column}` : ""}`, onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); } },
+        { class: `cal-event ${e.kind} ${eventState(e)}`, title: `${e.title}${e.column ? ` · ${e.column}` : ""}`, onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); else if (e.slot) openSlotDrawer(e.slot, trackers); } },
         e.kind === "release" ? `⚡ ${e.title}` : e.title,
       );
       if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
@@ -1153,9 +1278,12 @@ const boot = async () => {
   const linkedRelease = location.hash.match(/^#release-(.+)$/);
   if (linkedRelease) {
     releasesData = releasesData ?? (await api(`/api/releases?project=${encodeURIComponent(projectId)}`));
+    await loadBoard();
     const want = decodeURIComponent(linkedRelease[1]);
-    if (want === "next" && releasesData.next) openReleaseDrawer(releasesData.next, "next");
-    else {
+    if (want === "next" || want === "next+1") {
+      const slots = planningSlots(lastTrackers);
+      openSlotDrawer(want === "next" ? slots.next : slots.nextNext, lastTrackers);
+    } else {
       const r = releasesData.shipped.find((x) => x.version === want);
       if (r) openReleaseDrawer(r, "shipped");
     }

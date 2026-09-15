@@ -17,10 +17,10 @@ import { commitFile } from "./src/git.ts";
 import { liveSignals } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
-import { releasesFor } from "./src/releases.ts";
+import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
-import { addGroup, applyEdit, applyMove, parseTracker, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
+import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
 const run = promisify(execFile);
 const webRoot = join(fileURLToPath(new URL(".", import.meta.url)), "web");
@@ -330,6 +330,23 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (method === "POST" && path === "/api/groups") return sendJson(res, 200, await createGroup(await readJson<GroupBody>(req)));
   if (method === "POST" && path === "/api/groups/rename") return sendJson(res, 200, await renameGroupIn(await readJson<RenameBody>(req)));
+  if (method === "DELETE" && path === "/api/groups") {
+    const body = await readJson<GroupBody>(req);
+    const project = await projectById(body.project);
+    const tracker = project.trackers[body.tracker];
+    if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
+    await writeFile(tracker.path, deleteGroup(await readFile(tracker.path, "utf8"), body.heading, body.name), "utf8");
+    return sendJson(res, 200, { commit: await commitFile(tracker.path, `console: delete empty group "${body.name}"`) });
+  }
+  if (method === "POST" && path === "/api/release-slots") {
+    const body = await readJson<{ project: string; slot: SlotName; name?: string; deploy?: string }>(req);
+    if (body.slot !== "next" && body.slot !== "next+1") throw new Error(`slot must be next or next+1, got "${String(body.slot)}"`);
+    // Only the keys sent are touched: undefined leaves a value alone, "" clears it.
+    const patch: ReleaseSlot = {};
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.deploy !== undefined) patch.deploy = body.deploy;
+    return sendJson(res, 200, await writeSlot((await projectById(body.project)).id, body.slot, patch));
+  }
   if (method === "POST" && path === "/api/edit") {
     try {
       return sendJson(res, 200, await editItem(await readJson<EditBody>(req)));

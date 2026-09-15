@@ -5,7 +5,7 @@
  * shipped version, per repo. Cached per project for config.liveCacheMs.
  */
 import { execFile } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { config } from "./config.ts";
@@ -47,8 +47,42 @@ export interface ReleasesView {
   changelog?: string;
   next?: Release;
   shipped: Release[];
+  /** Console-side labels for the two planning slots: a version override and a deploy date. */
+  slots: ReleaseSlots;
   fetchedAt: string;
 }
+
+export type SlotName = "next" | "next+1";
+export interface ReleaseSlot {
+  name?: string;
+  deploy?: string;
+}
+export type ReleaseSlots = Partial<Record<SlotName, ReleaseSlot>>;
+
+const slotsFile = (): string => join(config.projectsFile, "..", "releases.json");
+
+const readAllSlots = async (): Promise<Record<string, ReleaseSlots>> => {
+  try {
+    return JSON.parse(await readFile(slotsFile(), "utf8")) as Record<string, ReleaseSlots>;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw err;
+  }
+};
+
+export const readSlots = async (projectId: string): Promise<ReleaseSlots> => (await readAllSlots())[projectId] ?? {};
+
+export const writeSlot = async (projectId: string, slot: SlotName, patch: ReleaseSlot): Promise<ReleaseSlots> => {
+  const all = await readAllSlots();
+  const mine = all[projectId] ?? {};
+  const merged = { ...(mine[slot] ?? {}), ...patch };
+  for (const k of Object.keys(merged) as Array<keyof ReleaseSlot>) if (!merged[k]) delete merged[k];
+  mine[slot] = merged;
+  all[projectId] = mine;
+  await writeFile(slotsFile(), `${JSON.stringify(all, null, 2)}\n`, "utf8");
+  cache.delete(projectId);
+  return mine;
+};
 
 const CHANGELOG_CANDIDATES = ["contracts/CHANGELOG.md", "CHANGELOG.md", "docs/CHANGELOG.md"];
 
@@ -200,6 +234,7 @@ export const releasesFor = async (project: Project, force = false): Promise<Rele
       const prs = prsFor(v.version);
       return { version: v.version, date: v.date, bullets: v.bullets, counts: counts(v.bullets, prs), prs, compare: compareFor(v.version) };
     }),
+    slots: await readSlots(project.id),
     fetchedAt: new Date().toISOString(),
   };
   cache.set(project.id, { at: Date.now(), value });

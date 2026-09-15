@@ -273,6 +273,22 @@ export const addGroup = (text: string, heading: string, name: string): string =>
   return out.join("\n");
 };
 
+/** Remove an empty `### ` group heading (a group with items is never deleted from here). */
+export const deleteGroup = (text: string, heading: string, name: string): string => {
+  const lines = text.split("\n");
+  const section = parseTracker(text).sections.find((s) => s.heading === heading);
+  if (!section) throw new Error(`no section headed "${heading}"`);
+  const group = section.groups.find((g) => g.name === name);
+  if (!group) throw new Error(`no group "### ${name}" under "${heading}"`);
+  if (group.items.length) throw new Error(`"${name}" still holds ${group.items.length} item(s); move them first`);
+  const at = lines.findIndex((l, i) => i > section.start && i < section.end && l === `### ${name}`);
+  let from = at;
+  let to = at + 1;
+  while (to < lines.length && isBlank(lines[to])) to += 1;
+  while (from > 0 && isBlank(lines[from - 1]) && isBlank(lines[from - 2] ?? "x")) from -= 1;
+  return [...lines.slice(0, from), ...lines.slice(to - 1)].join("\n");
+};
+
 /** Rename a `### ` group heading in place (used to stamp a deploy date on a release). */
 export const renameGroup = (text: string, heading: string, oldName: string, newName: string): string => {
   const lines = text.split("\n");

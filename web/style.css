@@ -664,3 +664,12 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .verdict.fail { color: var(--plasma); background: var(--plasma-dim); }
 .verdict.rejected { text-decoration: line-through; opacity: 0.7; }
 .row .actions .verdict { align-self: center; }
+
+/* ---------- planning slots ---------- */
+
+.release-card.slot { cursor: pointer; }
+.release-card.next-next { box-shadow: 0 0 0 1px var(--cloud-strong); }
+.release-card.slot.over { box-shadow: 0 0 0 1px var(--bolt-hot), 0 0 28px var(--bolt-glow); }
+.release-name button.ghost { margin-left: 6px; height: 18px; padding: 0 5px; }
+.release-list li button.ghost { float: right; height: 20px; }
+.release-list li a { cursor: pointer; }
