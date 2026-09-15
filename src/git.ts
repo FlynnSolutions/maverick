@@ -16,6 +16,13 @@ export const repoRootOf = async (filePath: string): Promise<string> => {
  */
 export const commitFile = async (filePath: string, message: string): Promise<string> => {
   const root = await repoRootOf(filePath);
+  // A no-op edit (an item dropped back where it was) must not try to commit nothing.
+  try {
+    await run("git", ["-C", root, "diff", "--quiet", "--", filePath]);
+    return "no change";
+  } catch {
+    /* exit 1: the file differs, commit it */
+  }
   await run("git", ["-C", root, "add", "--", filePath]);
   await run("git", ["-C", root, "commit", "-q", "-m", message, "--", filePath]);
   const { stdout: sha } = await run("git", ["-C", root, "rev-parse", "--short", "HEAD"]);

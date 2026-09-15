@@ -214,7 +214,7 @@ const withDue = (body, due) => {
 const editItemBody = async (trackerIndex, item, newBody, label) => {
   setStatus(label);
   const { commit } = await post("/api/edit", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, body: newBody });
-  setStatus(`committed ${commit}`);
+  setStatus(commit === "no change" ? "no change" : `committed ${commit}`);
 };
 const createdOf = (item) => item.created ?? item.lineDate;
 
@@ -725,11 +725,12 @@ const renderCalendar = (trackers) => {
       if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
       cell.append(node);
     }
-    dropZone(cell, (d) => d.type === "item", (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${date}`));
+    dropZone(cell, (d) => d.type === "item" && d.item.fields.due !== date, (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${date}`));
     grid.append(cell);
   }
   const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && (showAll || isDevItem(i))).map((i) => ({ t, i, s })))));
-  const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`));
+  const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`), el("div", { class: "muted small" }, "drop a dated item here to clear its deadline"));
+  dropZone(side, (d) => d.type === "item" && Boolean(d.item.fields.due), (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, ""), "clearing deadline"));
   for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(el("div", { class: "cal-event item undated", onclick: () => openDrawer(t.index, i) }, i.title), t, i, s));
   return el(
     "section",
@@ -1050,6 +1051,19 @@ const boot = async () => {
   $("#new-session").hidden = false;
   $("#reload").addEventListener("click", () => { loadBoard(); loadRail(true); });
   $("#refresh-live").addEventListener("click", () => loadRail(true));
+  let railCollapsed = false;
+  try { railCollapsed = localStorage.getItem("console.rail") === "collapsed"; } catch {}
+  const applyRail = () => {
+    $("#project").classList.toggle("rail-collapsed", railCollapsed);
+    $("#rail-fold").textContent = railCollapsed ? "▸" : "▾";
+    $("#rail-fold").title = railCollapsed ? "show sessions" : "hide sessions";
+  };
+  $("#rail-fold").addEventListener("click", () => {
+    railCollapsed = !railCollapsed;
+    try { localStorage.setItem("console.rail", railCollapsed ? "collapsed" : "open"); } catch {}
+    applyRail();
+  });
+  applyRail();
   $("#new-session").addEventListener("click", (e) => {
     strike(e.currentTarget);
     openTerminal({ kind: "new", title: `claude · ${project.name}` });

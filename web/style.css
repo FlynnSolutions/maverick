@@ -644,3 +644,12 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .cal-head { margin-top: 14px; }
 .cal-legend { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; margin: -2px 0 6px; }
 .cal-legend .cal-event { cursor: default; font-size: 10.5px; }
+
+/* ---------- collapsible sessions rail ---------- */
+
+.project.rail-collapsed { grid-template-columns: minmax(0, 1fr) 36px; }
+.project.rail-collapsed .dispatch > :not(.lane-title) { display: none; }
+.project.rail-collapsed .dispatch .lane-title { writing-mode: vertical-rl; height: auto; padding: 8px 0; gap: 8px; justify-content: flex-start; }
+.project.rail-collapsed .dispatch .lane-title .fold { writing-mode: horizontal-tb; }
+.project.rail-collapsed .dispatch .lane-title #refresh-live { display: none; }
+.cal-undated.over { background: var(--bolt-dim); box-shadow: inset 0 0 0 1px var(--bolt-glow); border-radius: var(--radius-m); }
