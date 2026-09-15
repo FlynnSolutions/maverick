@@ -157,7 +157,7 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
     },
     el("span", { class: "num" }, number === null ? "" : String(number)),
     el("div", { class: "title" }, item.title),
-    el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), createdOf(item) ? el("span", { class: "since", title: item.created ? "created" : "entry last changed" }, createdOf(item).slice(5)) : null),
+    el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), createdOf(item) ? el("span", { class: "since", title: `${item.created ? "created" : "entry last changed"} ${fmtDate(createdOf(item))}` }, fmtDate(createdOf(item), true)) : null),
     item.checked
       ? null
       : el(
@@ -198,6 +198,15 @@ const tagChips = (item) => {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-09-18" as "Sep 18, 2026"; `short` drops the year when it is this year. */
+const fmtDate = (iso, short = false) => {
+  const m = String(iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso ?? "";
+  const [, y, mo, d] = m;
+  const day = `${MONTHS[Number(mo) - 1]} ${Number(d)}`;
+  return short && y === today().slice(0, 4) ? day : `${day}, ${y}`;
+};
 /** "overdue" | "soon" (within 7 days) | "later" | "" for no date or a checked item. */
 const dueState = (due, checked) => {
   if (!due || checked) return "";
@@ -247,7 +256,7 @@ const eventState = (e) => {
 const dueChip = (item) => {
   const due = item.fields?.due;
   if (!due) return null;
-  return el("span", { class: `due ${dueState(due, item.checked)}` }, due.slice(5));
+  return el("span", { class: `chip due ${dueState(due, item.checked)}`, title: `due ${fmtDate(due)}` }, fmtDate(due, true));
 };
 
 const dropIndexIn = (list, y) => {
@@ -455,7 +464,7 @@ const scheduleHover = (card, item) => {
     text.innerHTML = renderInline(description.length > 700 ? `${description.slice(0, 699)}…` : description);
     node.append(
       el("div", { class: "hovercard-title" }, item.title),
-      el("div", { class: "hovercard-meta" }, releaseChip(item), dueChip(item), ...tagChips(item), item.created ? el("span", { class: "muted mono" }, `created ${item.created}`) : null, sourceWithoutDate(item) ? el("span", { class: "muted" }, sourceWithoutDate(item)) : null),
+      el("div", { class: "hovercard-meta" }, releaseChip(item), dueChip(item), ...tagChips(item), item.created ? el("span", { class: "muted mono" }, `created ${fmtDate(item.created)}`) : null, sourceWithoutDate(item) ? el("span", { class: "muted" }, sourceWithoutDate(item)) : null),
       text,
       el("div", { class: "hovercard-hint muted mono" }, "click to open · drag to move"),
     );
@@ -513,8 +522,8 @@ const openDrawer = (trackerIndex, item) => {
   const view = () => {
     const grid = el("dl", { class: "fields" });
     const addField = (k, v, cls = "") => grid.append(el("dt", {}, k), el("dd", { class: cls }, v));
-    if (item.created) addField("created", item.created);
-    else if (item.lineDate) addField("created", `unknown; the entry was last changed ${item.lineDate}`);
+    if (item.created) addField("created", fmtDate(item.created));
+    else if (item.lineDate) addField("created", `unknown; the entry was last changed ${fmtDate(item.lineDate)}`);
     const sourceText = sourceWithoutDate(item);
     if (sourceText) addField("source", sourceText);
     for (const k of FIELD_ORDER) {
@@ -734,7 +743,7 @@ const openReleaseDrawer = (release, kind, planned, live = false) => {
     const c = release.counts;
     list.append(el("div", { class: "release-summary" },
       live ? el("span", { class: "badge live" }, "live in production") : el("span", { class: "badge released" }, "released"),
-      el("span", { class: "mono small muted" }, `${release.date ?? "undated"} · ${c.added} added · ${c.changed} changed · ${c.fixed} fixed${c.removed ? ` · ${c.removed} removed` : ""} · ${c.prs} PRs`)));
+      el("span", { class: "mono small muted" }, `${release.date ? fmtDate(release.date) : "undated"} · ${c.added} added · ${c.changed} changed · ${c.fixed} fixed${c.removed ? ` · ${c.removed} removed` : ""} · ${c.prs} PRs`)));
   }
   if (planned) {
     const dateInput = el("input", { type: "date", value: planned.group.due ?? "" });
@@ -764,7 +773,7 @@ const openReleaseDrawer = (release, kind, planned, live = false) => {
     if (release.prs.length) {
       list.append(el("h3", {}, `${release.prs.length} pull requests merged`));
       const ul = el("ul");
-      for (const pr of release.prs) ul.append(el("li", {}, el("span", { class: `kind ${pr.kind}` }, pr.kind), el("a", { href: pr.url, target: "_blank" }, `${pr.repo}#${pr.number}`), text(` ${pr.title}`), el("span", { class: "when" }, pr.mergedAt.slice(0, 10))));
+      for (const pr of release.prs) ul.append(el("li", {}, el("span", { class: `kind ${pr.kind}` }, pr.kind), el("a", { href: pr.url, target: "_blank" }, `${pr.repo}#${pr.number}`), text(` ${pr.title}`), el("span", { class: "when" }, fmtDate(pr.mergedAt, true))));
       list.append(ul);
     }
   }
@@ -791,8 +800,9 @@ const releaseCard = (release, kind, live = false) => {
     "div",
     { class: `release-card ${kind}${live ? " live" : ""}`, onclick: () => { history.replaceState(null, "", `#release-${release.version}`); openReleaseDrawer(release, kind, null, live); } },
     el("div", { class: "release-card-head" },
-      el("span", {}, el("span", { class: "version" }, `v${release.version}`), el("span", { class: "state" }, `released ${release.date ?? ""}`)),
+      el("span", { class: "version" }, `v${release.version}`),
       live ? el("span", { class: "badge live" }, "live in production") : el("span", { class: "badge released" }, "released")),
+    el("div", { class: "release-date" }, release.date ? `released ${fmtDate(release.date)}` : "release date unknown"),
     el("div", { class: "stats" }, stat(c.added, "features"), stat(c.fixed, "fixes"), stat(c.prs, "PRs")),
     el("div", { class: "foot" }, `${c.changed} changes · ${c.prFeatures} feat · ${c.prFixes} fix PRs · click for the changelog and PRs`),
   );
@@ -804,9 +814,10 @@ const slotCard = (slot, trackers) => {
   const card = el(
     "div",
     { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, onclick: () => { history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
-    el("div", {}, el("span", { class: "version" }, slot.label), el("span", { class: "state" }, slot.key === "next" ? `next release${slot.label !== slot.computed ? ` · computed ${slot.computed}` : ""}` : `the one after${slot.label !== slot.computed ? ` · computed ${slot.computed}` : ""}`)),
+    el("div", { class: "release-card-head" }, el("span", { class: "version" }, slot.label), el("span", { class: "badge planned" }, slot.key === "next" ? "next release" : "the one after")),
+    el("div", { class: "release-date" }, slot.deploy ? `deploy ${fmtDate(slot.deploy)}` : "no deploy date yet", slot.label !== slot.computed ? el("span", { class: "muted" }, ` · computed ${slot.computed}`) : null),
     el("div", { class: "stats" }, stat(featureCount, "features"), stat(fixCount, "fixes"), stat(slot.key === "next" ? slot.merged.prs : slot.items.length, slot.key === "next" ? "PRs merged" : "planned")),
-    el("div", { class: "foot" }, slot.key === "next" ? `${slot.items.length} planned · ${slot.merged.prs} merged since ${slot.merged ? (releasesData?.shipped[0]?.version ?? "last tag") : ""}${slot.deploy ? ` · deploy ${slot.deploy}` : ""} · drop cards here` : `${slot.items.length} planned${slot.deploy ? ` · deploy ${slot.deploy}` : ""} · drop cards here`),
+    el("div", { class: "foot" }, slot.key === "next" ? `${slot.items.length} planned · ${slot.merged.prs} merged since ${releasesData?.shipped[0]?.version ?? "last tag"} · drop cards here` : `${slot.items.length} planned · drop cards here`),
   );
   if (slot.key === "next") {
     const existing = shipFor(slot.label.replace(/^v/, ""));
@@ -869,7 +880,7 @@ const openSlotDrawer = (slot, trackers) => {
     if (r.prs.length) {
       list.append(el("h3", {}, `${r.prs.length} pull requests already merged`));
       const ul = el("ul");
-      for (const pr of r.prs) ul.append(el("li", {}, el("span", { class: `kind ${pr.kind}` }, pr.kind), el("a", { href: pr.url, target: "_blank" }, `${pr.repo}#${pr.number}`), text(` ${pr.title}`), el("span", { class: "when" }, pr.mergedAt.slice(0, 10))));
+      for (const pr of r.prs) ul.append(el("li", {}, el("span", { class: `kind ${pr.kind}` }, pr.kind), el("a", { href: pr.url, target: "_blank" }, `${pr.repo}#${pr.number}`), text(` ${pr.title}`), el("span", { class: "when" }, fmtDate(pr.mergedAt, true))));
       list.append(ul);
     }
     for (const kindName of ["Added", "Changed", "Fixed", "Removed"]) {
@@ -941,7 +952,7 @@ const renderCalendar = (trackers) => {
       if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
       cell.append(node);
     }
-    dropZone(cell, (d) => d.type === "item" && d.item.fields.due !== date, (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${date}`));
+    dropZone(cell, (d) => d.type === "item" && d.item.fields.due !== date, (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${fmtDate(date)}`));
     grid.append(cell);
   }
   const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && (showAll || isDevItem(i))).map((i) => ({ t, i, s })))));
@@ -1025,7 +1036,7 @@ const openShipWizard = async (version) => {
   const render = () => {
     const { done, total } = shipProgress(ship);
     list.replaceChildren(
-      el("div", { class: "ship-progress" }, el("div", { class: "bar" }, el("div", { class: "fill", style: `width:${(done / total) * 100}%` })), el("span", { class: "mono small muted" }, `${done} of ${total} steps${ship.finished ? ` · shipped ${ship.finished.slice(0, 10)}` : ""}`)),
+      el("div", { class: "ship-progress" }, el("div", { class: "bar" }, el("div", { class: "fill", style: `width:${(done / total) * 100}%` })), el("span", { class: "mono small muted" }, `${done} of ${total} steps${ship.finished ? ` · shipped ${fmtDate(ship.finished)}` : ""}`)),
     );
     const current = ship.steps.find((st) => st.status !== "done" && st.status !== "skipped");
     for (const step of ship.steps) {
@@ -1059,7 +1070,7 @@ const openShipWizard = async (version) => {
   root.replaceChildren(
     el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
     el("aside", { class: "drawer wide", role: "dialog" },
-      el("div", { class: "drawer-head" }, el("h2", {}, `Ship v${bare}`), el("span", { class: "muted mono small" }, `started ${ship.started.slice(0, 10)} · progress is saved; close and come back any time`), btn("×", closeDrawer, "ghost")),
+      el("div", { class: "drawer-head" }, el("h2", {}, `Ship v${bare}`), el("span", { class: "muted mono small" }, `started ${fmtDate(ship.started)} · progress is saved; close and come back any time`), btn("×", closeDrawer, "ghost")),
       el("div", { class: "drawer-body" }, list),
       el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, btn("refresh", refresh, "ghost"), el("span", { class: "spacer" }), btn("close", closeDrawer)))),
   );

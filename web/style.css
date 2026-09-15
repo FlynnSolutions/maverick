@@ -732,3 +732,28 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .hovercard-text { font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); white-space: pre-wrap; max-height: 260px; overflow: hidden; }
 .hovercard-text code { font-family: var(--mono); font-size: 11.5px; color: var(--bolt-hot); }
 .hovercard-hint { margin-top: 8px; font-size: 10.5px; }
+
+/* ---------- one metric for every chip; release dates always visible ---------- */
+
+.chip, .due, .badge, .verdict {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 3px;
+  font-family: var(--display);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  vertical-align: middle;
+}
+.chip.due { text-transform: none; letter-spacing: 0.02em; font-family: var(--mono); background: var(--sky-3); color: var(--ink-soft); }
+.chip.due.soon { background: var(--bolt-dim); color: var(--bolt-hot); }
+.chip.due.overdue { background: var(--plasma-dim); color: var(--plasma); }
+.chip.release { text-transform: none; letter-spacing: 0.02em; }
+.card .meta { align-items: center; }
+.card .since { align-self: center; }
+.release-card-head { align-items: center; margin-bottom: 4px; }
+.release-date { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); margin-bottom: 4px; }
+.badge.planned { background: var(--bolt-dim); color: var(--bolt-hot); }
