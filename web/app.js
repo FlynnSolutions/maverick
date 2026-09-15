@@ -822,10 +822,12 @@ const openSlotDrawer = (slot, trackers) => {
 };
 
 const renderReleases = (trackers) => {
+  // A timeline: oldest shipped on the left, the two planned releases on the right.
   const strip = el("div", { class: "releases" });
   const slots = planningSlots(trackers);
+  for (const r of [...(releasesData?.shipped ?? [])].reverse()) strip.append(releaseCard(r, "shipped"));
   strip.append(slotCard(slots.next, trackers), slotCard(slots.nextNext, trackers));
-  for (const r of releasesData?.shipped ?? []) strip.append(releaseCard(r, "shipped"));
+  requestAnimationFrame(() => { strip.scrollLeft = strip.scrollWidth; });
   return strip;
 };
 
