@@ -763,3 +763,37 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
   box-shadow: 0 0 0 1px var(--accent-hot), 0 0 28px var(--accent-glow), 0 0 70px var(--accent-dim);
 }
 .brand .callsign { color: var(--accent-hot); margin-left: 8px; font-weight: 500; letter-spacing: 0.04em; text-transform: none; }
+
+/* ---------- release strip on one grid: every card the same four rows, 8px rhythm ---------- */
+
+.releases { gap: 12px; padding: 2px 2px 8px; }
+.release-card, .release-card.slot { flex: 0 0 256px; display: grid; grid-template-rows: 20px 16px 64px 16px 28px; row-gap: 8px; align-content: start; padding: 12px; min-height: 0; }
+.release-card-head { margin: 0; height: 20px; }
+.release-card .version { font-size: 15px; line-height: 20px; }
+.release-date { margin: 0; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.release-card .stats { margin: 0; height: 64px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.release-card .stat { padding: 8px 8px 6px; display: flex; flex-direction: column; justify-content: flex-start; gap: 2px; min-width: 0; }
+.release-card .stat b { font-size: 20px; line-height: 24px; }
+.release-card .stat span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 12px; }
+.release-card .foot { margin: 0; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.release-card .cta-slot { height: 28px; display: flex; align-items: center; }
+.release-card .cta-slot button { height: 28px; }
+.ship-cta { display: none; }
+.board-releases { margin-bottom: 20px; }
+.board-releases .strip-title, .calendar .strip-title { margin: 0 0 8px; }
+.calendar > .releases { margin-bottom: 4px; }
+.cal-head { margin-top: 12px; }
+
+/* ---------- 8px rhythm audit (HIG layout.md: align, group, consistent margins) ---------- */
+
+.calendar { row-gap: 8px; column-gap: 16px; }
+.bar { height: 48px; }
+.dispatch { top: 64px; max-height: calc(100vh - 64px - 16px); }
+.card { padding: 8px 12px; }
+.card .title { padding-right: 56px; }
+.lanes { gap: 16px; }
+.lane-title { margin-bottom: 8px; }
+.row { padding: 8px 12px; margin-bottom: 8px; }
+.card { margin-bottom: 8px; }
+.release-card { border-radius: 8px; }
+.stat, .release-card .stat { border-radius: 4px; }

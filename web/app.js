@@ -787,7 +787,8 @@ const releaseCard = (release, kind, live = false) => {
       live ? el("span", { class: "badge live" }, "live in production") : el("span", { class: "badge released" }, "released")),
     el("div", { class: "release-date" }, release.date ? `released ${fmtDate(release.date)}` : "release date unknown"),
     el("div", { class: "stats" }, stat(c.added, "features"), stat(c.fixed, "fixes"), stat(c.prs, "PRs")),
-    el("div", { class: "foot" }, `${c.changed} changes · ${c.prFeatures} feat · ${c.prFixes} fix PRs · click for the changelog and PRs`),
+    el("div", { class: "foot" }, `${c.changed} changes · ${c.prFeatures} feat · ${c.prFixes} fix PRs`),
+    el("div", { class: "cta-slot" }, el("span", { class: "muted small" }, "click for the changelog and PRs")),
   );
 };
 
@@ -799,14 +800,13 @@ const slotCard = (slot, trackers) => {
     { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, onclick: () => { history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
     el("div", { class: "release-card-head" }, el("span", { class: "version" }, slot.label), el("span", { class: "badge planned" }, slot.key === "next" ? "next release" : "the one after")),
     el("div", { class: "release-date" }, slot.deploy ? `deploy ${fmtDate(slot.deploy)}` : "no deploy date yet", slot.label !== slot.computed ? el("span", { class: "muted" }, ` · computed ${slot.computed}`) : null),
-    el("div", { class: "stats" }, stat(featureCount, "features"), stat(fixCount, "fixes"), stat(slot.key === "next" ? slot.merged.prs : slot.items.length, slot.key === "next" ? "PRs merged" : "planned")),
-    el("div", { class: "foot" }, slot.key === "next" ? `${slot.items.length} planned · ${slot.merged.prs} merged since ${releasesData?.shipped[0]?.version ?? "last tag"} · drop cards here` : `${slot.items.length} planned · drop cards here`),
+    el("div", { class: "stats" }, stat(featureCount, "features"), stat(fixCount, "fixes"), stat(slot.key === "next" ? slot.merged.prs : slot.items.length, slot.key === "next" ? "merged" : "planned")),
+    el("div", { class: "foot" }, slot.key === "next" ? `${slot.items.length} planned · ${slot.merged.prs} merged since ${releasesData?.shipped[0]?.version ?? "last tag"}` : `${slot.items.length} planned`),
   );
-  if (slot.key === "next") {
-    const existing = shipFor(slot.label.replace(/^v/, ""));
-    const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
-    card.append(el("div", { class: "ship-cta" }, btn(label, (e) => { e.stopPropagation(); flyby(); openShipWizard(slot.label); }, "primary")));
-  }
+  const existing = slot.key === "next" ? shipFor(slot.label.replace(/^v/, "")) : null;
+  const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
+  card.append(el("div", { class: "cta-slot" },
+    slot.key === "next" ? btn(label, (e) => { e.stopPropagation(); flyby(); openShipWizard(slot.label); }, "primary") : el("span", { class: "muted small" }, "drop cards here to plan")));
   card.addEventListener("dragover", (e) => { if (!acceptsAnyItemDrag()) return; e.preventDefault(); card.classList.add("over"); });
   card.addEventListener("dragleave", () => card.classList.remove("over"));
   card.addEventListener("drop", async (e) => {
