@@ -700,3 +700,16 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .ship-artifacts a { font-family: var(--mono); font-size: 12px; color: var(--bolt-hot); text-decoration: none; }
 .ship-notes { width: 100%; margin-top: 8px; resize: vertical; font: 12px/1.45 var(--sans); color: var(--ink); background: var(--sky-1); border: 1px solid var(--cloud-soft); border-radius: var(--radius-s); padding: 6px 8px; }
 .ship-notes:focus-visible { outline: 2px solid var(--bolt-glow); outline-offset: 1px; }
+
+/* ---------- released and live ---------- */
+
+.badge { font-family: var(--display); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 7px; border-radius: 3px; white-space: nowrap; }
+.badge.released { background: var(--sky-3); color: var(--ink-faint); }
+.badge.live { background: rgba(80, 200, 120, 0.18); color: #7fe0a0; box-shadow: 0 0 12px rgba(80, 200, 120, 0.25); }
+.release-card.shipped { background: var(--sky-1); }
+.release-card.shipped .version { color: var(--ink-soft); }
+.release-card.live { box-shadow: 0 0 0 1px rgba(80, 200, 120, 0.45), 0 0 22px rgba(80, 200, 120, 0.12); }
+.release-card.live .version { color: #7fe0a0; }
+.release-summary { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.release-list h4 { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-ghost); margin: 8px 0 4px; }
+.release-list li .key { font-family: var(--mono); font-size: 10px; color: var(--ink-ghost); margin-left: 6px; }

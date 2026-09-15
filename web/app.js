@@ -673,9 +673,15 @@ const draggedItem = () => (calDrag && calDrag.type === "item" ? { tracker: calDr
 
 const stat = (n, label) => el("div", { class: "stat" }, el("b", {}, String(n)), el("span", {}, label));
 
-const openReleaseDrawer = (release, kind, planned) => {
+const openReleaseDrawer = (release, kind, planned, live = false) => {
   const root = $("#drawer-root");
   const list = el("div", { class: "release-list" });
+  if (release && !planned) {
+    const c = release.counts;
+    list.append(el("div", { class: "release-summary" },
+      live ? el("span", { class: "badge live" }, "live in production") : el("span", { class: "badge released" }, "released"),
+      el("span", { class: "mono small muted" }, `${release.date ?? "undated"} · ${c.added} added · ${c.changed} changed · ${c.fixed} fixed${c.removed ? ` · ${c.removed} removed` : ""} · ${c.prs} PRs`)));
+  }
   if (planned) {
     const dateInput = el("input", { type: "date", value: planned.group.due ?? "" });
     list.append(
@@ -687,26 +693,28 @@ const openReleaseDrawer = (release, kind, planned) => {
     for (const i of planned.items) ul.append(el("li", { onclick: () => openDrawer(planned.tracker.index, i) }, i.title));
     list.append(ul);
   } else {
+    list.append(el("h3", {}, "Changelog"));
+    for (const kindName of ["Added", "Changed", "Fixed", "Removed"]) {
+      const bullets = release.bullets.filter((b) => b.kind === kindName);
+      if (!bullets.length) continue;
+      list.append(el("h4", {}, `${kindName} (${bullets.length})`));
+      const ul = el("ul");
+      for (const b of bullets) {
+        const li = el("li");
+        li.innerHTML = renderInline(b.text) + (b.key ? ` <span class="key">${escapeHtml(b.key)}</span>` : "");
+        ul.append(li);
+      }
+      list.append(ul);
+    }
+    if (!release.bullets.length) list.append(el("div", { class: "muted small" }, "no changelog entries for this version"));
     if (release.prs.length) {
       list.append(el("h3", {}, `${release.prs.length} pull requests merged`));
       const ul = el("ul");
       for (const pr of release.prs) ul.append(el("li", {}, el("span", { class: `kind ${pr.kind}` }, pr.kind), el("a", { href: pr.url, target: "_blank" }, `${pr.repo}#${pr.number}`), text(` ${pr.title}`), el("span", { class: "when" }, pr.mergedAt.slice(0, 10))));
       list.append(ul);
     }
-    for (const kindName of ["Added", "Changed", "Fixed", "Removed"]) {
-      const bullets = release.bullets.filter((b) => b.kind === kindName);
-      if (!bullets.length) continue;
-      list.append(el("h3", {}, `${kindName} (${bullets.length})`));
-      const ul = el("ul");
-      for (const b of bullets) {
-        const li = el("li");
-        li.innerHTML = renderInline(b.text);
-        ul.append(li);
-      }
-      list.append(ul);
-    }
   }
-  const head = kind === "next" ? "Next release (unreleased)" : planned ? `${planned.name} · planned` : `${release.version} · shipped ${release.date ?? ""}`;
+  const head = kind === "next" ? "Next release (unreleased)" : planned ? `${planned.name} · planned` : `v${release.version}${live ? " · live in production" : " · released"}`;
   if (release?.compare?.length) {
     list.prepend(el("div", { class: "compare-links" }, ...release.compare.map((c) => el("a", { href: c.url, target: "_blank" }, `${c.repo} on GitHub ↗`))));
   }
@@ -723,14 +731,16 @@ const openReleaseDrawer = (release, kind, planned) => {
   document.addEventListener("keydown", onDrawerKey);
 };
 
-const releaseCard = (release, kind) => {
+const releaseCard = (release, kind, live = false) => {
   const c = release.counts;
   return el(
     "div",
-    { class: `release-card ${kind}`, onclick: () => { history.replaceState(null, "", `#release-${kind === "next" ? "next" : release.version}`); openReleaseDrawer(release, kind); } },
-    el("div", {}, el("span", { class: "version" }, kind === "next" ? "Next" : release.version), el("span", { class: "state" }, kind === "next" ? "unreleased, on develop" : `shipped ${release.date ?? ""}`)),
+    { class: `release-card ${kind}${live ? " live" : ""}`, onclick: () => { history.replaceState(null, "", `#release-${release.version}`); openReleaseDrawer(release, kind, null, live); } },
+    el("div", { class: "release-card-head" },
+      el("span", {}, el("span", { class: "version" }, `v${release.version}`), el("span", { class: "state" }, `released ${release.date ?? ""}`)),
+      live ? el("span", { class: "badge live" }, "live in production") : el("span", { class: "badge released" }, "released")),
     el("div", { class: "stats" }, stat(c.added, "features"), stat(c.fixed, "fixes"), stat(c.prs, "PRs")),
-    el("div", { class: "foot" }, `${c.prFeatures} feat · ${c.prFixes} fix PRs${kind === "next" ? ` since ${releasesData.shipped[0]?.version ?? "last tag"}` : ""} · click for the list`),
+    el("div", { class: "foot" }, `${c.changed} changes · ${c.prFeatures} feat · ${c.prFixes} fix PRs · click for the changelog and PRs`),
   );
 };
 
@@ -828,11 +838,11 @@ const openSlotDrawer = (slot, trackers) => {
 };
 
 const renderReleases = (trackers) => {
-  // Newest first: the two planned releases on the left, then shipped versions newest to oldest (Cory's preference).
+  // Future on the left, past on the right: the one after, next, then released versions newest first; the newest released one is live.
   const strip = el("div", { class: "releases" });
   const slots = planningSlots(trackers);
-  strip.append(slotCard(slots.next, trackers), slotCard(slots.nextNext, trackers));
-  for (const r of releasesData?.shipped ?? []) strip.append(releaseCard(r, "shipped"));
+  strip.append(slotCard(slots.nextNext, trackers), slotCard(slots.next, trackers));
+  (releasesData?.shipped ?? []).forEach((r, i) => strip.append(releaseCard(r, "shipped", i === 0)));
   return strip;
 };
 
@@ -1371,7 +1381,7 @@ const boot = async () => {
       openSlotDrawer(want === "next" ? slots.next : slots.nextNext, lastTrackers);
     } else {
       const r = releasesData.shipped.find((x) => x.version === want);
-      if (r) openReleaseDrawer(r, "shipped");
+      if (r) openReleaseDrawer(r, "shipped", null, releasesData.shipped[0] === r);
     }
   }
   const linkedShip = location.hash.match(/^#ship-(.+)$/);
