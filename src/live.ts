@@ -7,7 +7,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.ts";
 import { backgroundAgents, openPullRequests, reposUnder, worktrees, type BackgroundAgent, type PullRequest } from "./git.ts";
+import { processHome, type ProcessHome } from "./processes.ts";
 import type { Project } from "./projects.ts";
+import { glance, type TranscriptGlance } from "./transcript.ts";
 
 /** One entry of Claude Code's registry (`~/.claude/sessions/<pid>.json`), written by the CLI itself. */
 export interface ClaudeSession {
@@ -23,9 +25,11 @@ export interface ClaudeSession {
   updatedAt?: number;
 }
 
+export type SessionView = ClaudeSession & ProcessHome & TranscriptGlance;
+
 export interface LiveSignals {
   fetchedAt: string;
-  claudeSessions: ClaudeSession[];
+  claudeSessions: SessionView[];
   backgroundAgents: BackgroundAgent[];
   devServers: unknown[];
   repos: Array<{
@@ -97,9 +101,16 @@ export const liveSignals = async (project: Project, force = false): Promise<Live
     backgroundAgents(project.path),
     readDevServers(project.path),
   ]);
+  const mine = allSessions.filter((s) => underPath(s.cwd, project.path));
+  const enriched = await Promise.all(
+    mine.map(async (s) => {
+      const [home, seen] = await Promise.all([processHome(s.pid), glance(s.cwd, s.sessionId)]);
+      return { ...s, ...home, ...seen };
+    }),
+  );
   const value: LiveSignals = {
     fetchedAt: new Date().toISOString(),
-    claudeSessions: allSessions.filter((s) => underPath(s.cwd, project.path)),
+    claudeSessions: enriched,
     backgroundAgents: agents,
     devServers,
     repos,

@@ -18,7 +18,7 @@ import { liveSignals } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
-import { addGroup, applyMove, parseTracker, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
+import { addGroup, applyEdit, applyMove, parseTracker, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
 const run = promisify(execFile);
 const webRoot = join(fileURLToPath(new URL(".", import.meta.url)), "web");
@@ -96,6 +96,24 @@ const createGroup = async (body: GroupBody): Promise<{ commit: string }> => {
   const after = addGroup(await readFile(tracker.path, "utf8"), body.heading, name);
   await writeFile(tracker.path, after, "utf8");
   return { commit: await commitFile(tracker.path, `console: add group "${name}" under ${body.heading}`) };
+};
+
+interface EditBody {
+  project: string;
+  tracker: number;
+  itemStart: number;
+  itemFirstLine: string;
+  body: string;
+}
+
+const editItem = async (body: EditBody): Promise<{ commit: string }> => {
+  const project = await projectById(body.project);
+  const tracker = project.trackers[body.tracker];
+  if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
+  const after = applyEdit(await readFile(tracker.path, "utf8"), body.itemStart, body.itemFirstLine, body.body);
+  await writeFile(tracker.path, after, "utf8");
+  const title = body.body.split("\n")[0].match(/\*\*(.+?)\*\*/)?.[1] ?? body.body.slice(2, 60);
+  return { commit: await commitFile(tracker.path, `console: edit "${title}"`) };
 };
 
 /* ---------- sessions and terminals ---------- */
@@ -238,6 +256,22 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   if (method === "POST" && path === "/api/groups") return sendJson(res, 200, await createGroup(await readJson<GroupBody>(req)));
+  if (method === "POST" && path === "/api/edit") {
+    try {
+      return sendJson(res, 200, await editItem(await readJson<EditBody>(req)));
+    } catch (err) {
+      if (err instanceof StaleMoveError) return sendJson(res, 409, { error: err.message });
+      throw err;
+    }
+  }
+  if (method === "POST" && /^\/api\/sessions\/\d+\/close$/.test(path)) {
+    const pid = Number(path.split("/")[3]);
+    const project = await requireProject(url);
+    const live = await liveSignals(project, true);
+    if (!live.claudeSessions.some((s) => s.pid === pid)) throw new Error(`pid ${pid} is not a Claude session under ${project.name}`);
+    process.kill(pid, "SIGTERM");
+    return sendJson(res, 200, { ok: true });
+  }
 
   if (method === "GET" && path === "/api/terminals") return sendJson(res, 200, listTerminals());
   if (method === "POST" && path === "/api/terminals") return sendJson(res, 200, await openTerminalFor(await readJson<OpenTerminalBody>(req)));

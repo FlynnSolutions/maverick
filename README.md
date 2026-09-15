@@ -65,6 +65,9 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
   every checked-off item from the other sections: merged or finished, not yet in
   production. Nothing in it is draggable. At ship time the ship workflow archives it.
 - Checked items never show in the other lanes, so nothing is struck through on the board.
+- Lanes run Backlog, Roadmap, In progress, Done: pull from the left, ship to the right.
+- **Click a card** to read the whole entry; **edit** turns it into the raw markdown, and
+  save writes the block back and commits (the first line must stay a bullet).
 
 ## Working in a session from the console
 
@@ -91,8 +94,11 @@ own; change the two sets at the top of `web/app.js` to retune it.
 ## Two kinds of session data
 
 - **Running sessions** come from Claude Code's own registry, `~/.claude/sessions/<pid>.json`
-  (name, cwd, status, what it is waiting for). Read-only; the CLI owns that directory and
-  the console must never write there.
+  (name, cwd, status, what it is waiting for), explained with the process's home (the app
+  and tty it lives in, uptime, from `ps`) and a glance at its transcript
+  (`~/.claude/projects/<cwd-slug>/<sessionId>.jsonl`: the AI title, your last prompt, the
+  last reply). Read-only; the CLI owns those files and the console never writes there.
+  **close** sends the process SIGTERM; the conversation stays on disk and can be resumed.
 - **Session records** (role, loop, parent, handoff) are ours, under
   `~/.claude/console-sessions/`, written by the two helpers above. Linking the two by
   session id is a later brick.

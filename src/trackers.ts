@@ -203,6 +203,21 @@ export const applyMove = (text: string, move: MoveRequest): string => {
 };
 
 /**
+ * Replace an item's block (bullet plus continuation lines) with new text. The first line
+ * must still be a bullet so the item stays an item; everything else is the author's.
+ */
+export const applyEdit = (text: string, itemStart: number, itemFirstLine: string, body: string): string => {
+  const lines = text.split("\n");
+  if (lines[itemStart] !== itemFirstLine) {
+    throw new StaleMoveError(`line ${itemStart} is no longer "${itemFirstLine.slice(0, 60)}"; reload the board`);
+  }
+  const replacement = body.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n");
+  if (!isBullet(replacement[0])) throw new Error("the first line must stay a bullet (\"- [ ] ...\")");
+  const end = blockEnd(lines, itemStart);
+  return [...lines.slice(0, itemStart), ...replacement, ...lines.slice(end)].join("\n");
+};
+
+/**
  * Add a `### name` group at the end of a section (before its closing `---`, if any). A
  * release on the roadmap is exactly this: a group inside the Priority section, so the
  * markdown stays the source of truth and a drag between releases is a plain group move.

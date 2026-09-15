@@ -115,9 +115,9 @@ $("#add-path").addEventListener("submit", async (e) => {
 // and the order inside a release is the runway for that deployment. Done gathers every
 // checked item plus the "shipped, pending release" section: merged, waiting on a deploy.
 const LANES = [
+  ["backlog", "Backlog", ""],
   ["priority", "Roadmap", "runway"],
   ["in-progress", "In progress", ""],
-  ["backlog", "Backlog", ""],
   ["shipped", "Done · awaiting deploy", "done"],
 ];
 
@@ -147,6 +147,10 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
       ondragend: (e) => {
         e.currentTarget.classList.remove("dragging");
         dragging = null;
+      },
+      onclick: (e) => {
+        if (e.target.closest("button")) return;
+        openDrawer(trackerIndex, item);
       },
     },
     el("span", { class: "num" }, number === null ? "" : String(number)),
@@ -331,6 +335,88 @@ const loadBoard = async () => {
   }
 };
 
+
+/* ---------- item drawer ---------- */
+
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+/** Enough markdown to read a checklist entry: bold, code, links shown as their text. */
+const renderInline = (md) =>
+  escapeHtml(md)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/~~(.+?)~~/g, "<s>$1</s>");
+
+const closeDrawer = () => {
+  $("#drawer-root").replaceChildren();
+  document.removeEventListener("keydown", onDrawerKey);
+};
+const onDrawerKey = (e) => {
+  if (e.key === "Escape") closeDrawer();
+};
+
+const openDrawer = (trackerIndex, item) => {
+  let editing = false;
+  const root = $("#drawer-root");
+  const body = el("div", { class: "drawer-body" });
+  const head = el("h2", {}, item.title);
+  const actions = el("div", { class: "drawer-actions" });
+
+  const view = () => {
+    const text = el("div", { class: "drawer-text" });
+    text.innerHTML = renderInline(item.body);
+    body.replaceChildren(text);
+    actions.replaceChildren(
+      item.checked ? null : btn("spawn", () => { closeDrawer(); spawnOnItem(item, null); }, "primary"),
+      el("span", { class: "spacer" }),
+      btn("edit", () => { editing = true; edit(); }),
+      btn("close", closeDrawer),
+    );
+  };
+  const edit = () => {
+    const area = el("textarea", { spellcheck: "false" });
+    area.value = item.body;
+    body.replaceChildren(area);
+    area.focus();
+    actions.replaceChildren(
+      el("span", { class: "muted small mono" }, "first line must stay a bullet · saves and commits"),
+      el("span", { class: "spacer" }),
+      btn("cancel", () => { editing = false; view(); }),
+      btn("save", async () => {
+        setStatus("saving");
+        try {
+          const { commit } = await post("/api/edit", {
+            project: projectId,
+            tracker: trackerIndex,
+            itemStart: item.start,
+            itemFirstLine: item.firstLine,
+            body: area.value,
+          });
+          setStatus(`committed ${commit}`);
+          closeDrawer();
+          await loadBoard();
+        } catch (err) {
+          setStatus(err.message, true);
+        }
+      }, "primary"),
+    );
+  };
+
+  root.replaceChildren(
+    el("div", { class: "drawer-backdrop", onclick: () => { if (!editing) closeDrawer(); } }),
+    el(
+      "aside",
+      { class: "drawer", role: "dialog", "aria-label": item.title },
+      el("div", { class: "drawer-head" }, head, btn("×", closeDrawer, "ghost")),
+      el("div", { class: "drawer-meta" }, item.tags.length ? el("span", { class: "tag" }, item.tags.map((t) => `[${t}]`).join(" ")) : null, el("span", {}, `line ${item.start + 1}`), item.checked ? el("span", {}, "checked") : null),
+      body,
+      el("div", { class: "drawer-body", style: "flex: 0; padding-top: 0" }, actions),
+    ),
+  );
+  document.addEventListener("keydown", onDrawerKey);
+  view();
+};
+
 /* ---------- sessions ---------- */
 
 const sessionRow = (cls, name, sub, actions, lampTitle) =>
@@ -352,14 +438,37 @@ const renderSessions = (records, live) => {
   const running = el("ul");
   const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3 };
   const ordered = [...live.claudeSessions].sort((a, b) => (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const age = (ms) => {
+    if (!ms) return "";
+    const m = Math.round((Date.now() - ms) / 60000);
+    return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`;
+  };
   for (const s of ordered) {
+    const where = [s.app, s.tty, s.cwd.replace(project.path, "").replace(/^\//, "")].filter(Boolean).join(" · ");
     running.append(
-      sessionRow(
-        s.status ?? "",
-        `${s.name ?? s.pid}`,
-        [s.status ?? "?", s.waitingFor, s.cwd.replace(project.path, "").replace(/^\//, "")].filter(Boolean).join(" · "),
-        [btn("open", () => openTerminal({ kind: "resume", sessionId: s.sessionId, title: s.name ?? s.sessionId.slice(0, 8) }))],
-        `pid ${s.pid}`,
+      el(
+        "li",
+        { class: `row session-live ${s.status ?? ""}` },
+        el("span", { class: "lamp", title: `pid ${s.pid}` }),
+        el("span", { class: "name" }, s.title ?? s.name ?? String(s.pid), el("span", { class: "where" }, where)),
+        el(
+          "span",
+          { class: "actions" },
+          btn("open", () => openTerminal({ kind: "resume", sessionId: s.sessionId, title: s.title ?? s.name ?? s.sessionId.slice(0, 8) })),
+          btn("close", async () => {
+            if (!confirm(`Close "${s.title ?? s.name}"?\n\nThis ends the Claude process in ${s.app ?? "its terminal"} (${s.tty ?? "no tty"}). The conversation stays on disk and can be resumed later.`)) return;
+            try {
+              await post(`/api/sessions/${s.pid}/close?project=${encodeURIComponent(projectId)}`);
+              setStatus(`closed pid ${s.pid}`);
+            } catch (err) {
+              setStatus(err.message, true);
+            }
+            window.setTimeout(() => loadRail(true), 1500);
+          }, "danger"),
+        ),
+        el("span", { class: "doing" }, el("span", { class: "k" }, s.status ?? "?"), text(s.waitingFor ? `${s.waitingFor} · ` : ""), el("span", { class: "age" }, `${age(s.updatedAt)}${s.elapsed ? ` · up ${s.elapsed}` : ""}`)),
+        s.lastPrompt ? el("span", { class: "doing" }, el("span", { class: "k" }, "you"), text(s.lastPrompt)) : null,
+        s.lastReply ? el("span", { class: "doing" }, el("span", { class: "k" }, "claude"), text(s.lastReply)) : null,
       ),
     );
   }
@@ -369,7 +478,7 @@ const renderSessions = (records, live) => {
       sessionRow(
         a.state ?? "",
         record ? [el("span", { class: "role" }, record.role), text(record.loop)] : (a.name ?? a.id),
-        `bg · ${a.state ?? "?"} · ${a.id}`,
+        `background · ${a.state ?? "?"} · started ${age(a.startedAt)} · ${a.id}`,
         [
           btn("open", () => openTerminal({ kind: "attach", id: a.id, title: record?.loop ?? a.name ?? a.id })),
           btn("stop", async () => {
@@ -555,7 +664,7 @@ const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd }) => {
 
 const spawnOnItem = (item, card) => {
   if (!confirm(`Spawn a headless Claude session on:\n\n${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.`)) return;
-  strike(card);
+  if (card) strike(card);
   openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body });
 };
 
