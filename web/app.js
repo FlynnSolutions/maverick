@@ -828,12 +828,11 @@ const openSlotDrawer = (slot, trackers) => {
 };
 
 const renderReleases = (trackers) => {
-  // A timeline: oldest shipped on the left, the two planned releases on the right.
+  // Newest first: the two planned releases on the left, then shipped versions newest to oldest (Cory's preference).
   const strip = el("div", { class: "releases" });
   const slots = planningSlots(trackers);
-  for (const r of [...(releasesData?.shipped ?? [])].reverse()) strip.append(releaseCard(r, "shipped"));
   strip.append(slotCard(slots.next, trackers), slotCard(slots.nextNext, trackers));
-  requestAnimationFrame(() => { strip.scrollLeft = strip.scrollWidth; });
+  for (const r of releasesData?.shipped ?? []) strip.append(releaseCard(r, "shipped"));
   return strip;
 };
 
