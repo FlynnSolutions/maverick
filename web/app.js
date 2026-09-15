@@ -325,9 +325,11 @@ const renderBoard = (tracker) => {
   );
 };
 
+let lastTrackers = [];
 const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
+    lastTrackers = trackers;
     $("#boards").replaceChildren(...trackers.map(renderBoard));
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
   } catch (err) {
@@ -349,6 +351,7 @@ const renderInline = (md) =>
 
 const closeDrawer = () => {
   $("#drawer-root").replaceChildren();
+  if (location.hash.startsWith("#L")) history.replaceState(null, "", location.pathname + location.search);
   document.removeEventListener("keydown", onDrawerKey);
 };
 const onDrawerKey = (e) => {
@@ -410,11 +413,13 @@ const openDrawer = (trackerIndex, item) => {
       el("div", { class: "drawer-head" }, head, btn("×", closeDrawer, "ghost")),
       el("div", { class: "drawer-meta" }, item.tags.length ? el("span", { class: "tag" }, item.tags.map((t) => `[${t}]`).join(" ")) : null, el("span", {}, `line ${item.start + 1}`), item.checked ? el("span", {}, "checked") : null),
       body,
-      el("div", { class: "drawer-body", style: "flex: 0; padding-top: 0" }, actions),
+      el("div", { class: "drawer-foot" }, actions),
     ),
   );
   document.addEventListener("keydown", onDrawerKey);
   view();
+  history.replaceState(null, "", `#L${item.start + 1}`);
+  window.setTimeout(() => strike(head), 30);
 };
 
 /* ---------- sessions ---------- */
@@ -430,6 +435,8 @@ const sessionRow = (cls, name, sub, actions, lampTitle) =>
   );
 
 const btn = (label, onclick, cls = "") => el("button", { type: "button", class: cls, onclick }, label);
+
+const expandedSessions = new Set();
 
 const renderSessions = (records, live) => {
   const out = document.createDocumentFragment();
@@ -448,7 +455,15 @@ const renderSessions = (records, live) => {
     running.append(
       el(
         "li",
-        { class: `row session-live ${s.status ?? ""}` },
+        {
+          class: `row session-live ${s.status ?? ""}${expandedSessions.has(s.sessionId) ? " expanded" : ""}`,
+          onclick: (e) => {
+            if (e.target.closest("button")) return;
+            if (expandedSessions.has(s.sessionId)) expandedSessions.delete(s.sessionId);
+            else expandedSessions.add(s.sessionId);
+            e.currentTarget.classList.toggle("expanded");
+          },
+        },
         el("span", { class: "lamp", title: `pid ${s.pid}` }),
         el("span", { class: "name" }, s.title ?? s.name ?? String(s.pid)),
         el(
@@ -467,8 +482,8 @@ const renderSessions = (records, live) => {
           }, "danger"),
         ),
         el("span", { class: "doing" }, el("span", { class: "k" }, s.status ?? "?"), text(s.waitingFor ? `${s.waitingFor} · ` : ""), el("span", { class: "age" }, `${age(s.updatedAt)}${s.elapsed ? ` · up ${s.elapsed}` : ""}${where ? ` · ${where}` : ""}`)),
-        s.lastPrompt ? el("span", { class: "doing" }, el("span", { class: "k" }, "you"), text(s.lastPrompt)) : null,
-        s.lastReply ? el("span", { class: "doing" }, el("span", { class: "k" }, "claude"), text(s.lastReply)) : null,
+        s.lastPrompt ? el("span", { class: "doing detail" }, el("span", { class: "k" }, "you"), text(s.lastPrompt)) : null,
+        s.lastReply ? el("span", { class: "doing detail" }, el("span", { class: "k" }, "claude"), text(s.lastReply)) : null,
       ),
     );
   }
@@ -705,9 +720,20 @@ const boot = async () => {
   $("#new-session").hidden = false;
   $("#reload").addEventListener("click", () => { loadBoard(); loadRail(true); });
   $("#refresh-live").addEventListener("click", () => loadRail(true));
-  $("#new-session").addEventListener("click", () => openTerminal({ kind: "new", title: `claude · ${project.name}` }));
+  $("#new-session").addEventListener("click", (e) => {
+    strike(e.currentTarget);
+    openTerminal({ kind: "new", title: `claude · ${project.name}` });
+  });
 
   await Promise.all([loadBoard(), loadRail()]);
+  const linked = location.hash.match(/^#L(\d+)$/);
+  if (linked) {
+    const line = Number(linked[1]) - 1;
+    for (const tracker of lastTrackers) {
+      const item = tracker.sections.flatMap((sec) => sec.groups.flatMap((g) => g.items)).find((i) => i.start === line);
+      if (item) openDrawer(tracker.index, item);
+    }
+  }
   scheduleWeather();
   const existing = await api("/api/terminals");
   for (const t of existing) if (t.exitCode === null) mountTerminal(t);

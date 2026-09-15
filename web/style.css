@@ -453,9 +453,10 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 @keyframes sheet { 0% { opacity: 0.7; } 7% { opacity: 0.12; } 12% { opacity: 0.55; } 20% { opacity: 0; } 100% { opacity: 0; } }
 @keyframes sheet-strike { 0% { opacity: 1; } 5% { opacity: 0.25; } 15% { opacity: 0.9; } 24% { opacity: 0.3; } 36% { opacity: 0.5; } 50% { opacity: 0; } 100% { opacity: 0; } }
 
+/* Reduce motion quiets the ambient pulses and entrances; the strike itself is the product and stays. */
 @media (prefers-reduced-motion: reduce) {
-  .card, .lamp, .sky-flash { animation: none !important; }
-  * { transition: none !important; }
+  .card, .lamp { animation: none !important; }
+  .card, .row, button, .items { transition: none !important; }
 }
 @media (max-width: 1100px) {
   .project { grid-template-columns: 1fr; }
@@ -465,12 +466,15 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 
 /* ---------- item drawer ---------- */
 
+/* The drawer root must sit above the sticky header (5) and dock (4), and below the bolt (50). */
+#drawer-root { z-index: 40; }
 .drawer-backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(2, 4, 8, 0.55); backdrop-filter: blur(2px); }
 .drawer {
   position: fixed;
   top: 0;
   right: 0;
-  bottom: 0;
+  height: 100vh;
+  overflow: hidden;
   width: min(640px, 92vw);
   z-index: 31;
   display: flex;
@@ -487,7 +491,8 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .drawer-meta .tag { color: var(--bolt); }
 .drawer-body { flex: 1; min-height: 0; padding: 10px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
 .drawer-text {
-  flex: 1;
+  flex: 0 1 auto;
+  max-height: 100%;
   white-space: pre-wrap;
   overflow: auto;
   font: 13px/1.55 var(--sans);
@@ -511,7 +516,8 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
   border-radius: var(--radius-m);
 }
 .drawer textarea:focus-visible { outline: 2px solid var(--bolt-glow); outline-offset: 1px; }
-.drawer-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.drawer-foot { flex: none; padding: 10px 16px 14px; border-top: 1px solid var(--cloud-soft); background: var(--sky-1); }
+.drawer-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 .drawer-actions .spacer { flex: 1; }
 
 /* ---------- session rows, explained ---------- */
@@ -521,3 +527,10 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .row .doing { grid-column: 2 / span 2; font-size: 12px; color: var(--ink-soft); white-space: normal; line-height: 1.35; }
 .row .doing .k { color: var(--ink-ghost); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
 .row .age { font-family: var(--mono); font-size: 10px; color: var(--ink-ghost); }
+
+/* Session cards: compact by default, the conversation glance opens on click. */
+.row.session-live { cursor: pointer; }
+.row.session-live .doing.detail { display: none; }
+.row.session-live.expanded .doing.detail { display: block; }
+.row.session-live .name::after { content: "▸"; color: var(--ink-ghost); font-size: 10px; margin-left: 6px; }
+.row.session-live.expanded .name::after { content: "▾"; }

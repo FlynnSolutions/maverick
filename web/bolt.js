@@ -61,8 +61,10 @@ const layer = (d, cls, width, extra = {}) => {
  * Strike an element. The bolt comes from above the viewport (or `from`), finds a point on
  * the element's top edge, and the element glows while the channel is live.
  */
+// Strikes are the product, so they ignore the OS reduce-motion setting; only the ambient
+// weather respects it.
 export const strike = (target, { from } = {}) => {
-  if (!target || reduced()) return;
+  if (!target) return;
   const rect = target.getBoundingClientRect();
   const x1 = rect.left + rect.width * rand(0.25, 0.75);
   const y1 = rect.top + 1;
