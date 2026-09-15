@@ -404,6 +404,7 @@ const loadBoard = async () => {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
     lastTrackers = trackers;
     if (!releasesData) releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
+    ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
     $("#boards").replaceChildren(
       ...(view === "calendar"
         ? [renderCalendar(trackers)]
@@ -743,6 +744,11 @@ const slotCard = (slot, trackers) => {
     el("div", { class: "stats" }, stat(featureCount, "features"), stat(fixCount, "fixes"), stat(slot.key === "next" ? slot.merged.prs : slot.items.length, slot.key === "next" ? "PRs merged" : "planned")),
     el("div", { class: "foot" }, slot.key === "next" ? `${slot.items.length} planned · ${slot.merged.prs} merged since ${slot.merged ? (releasesData?.shipped[0]?.version ?? "last tag") : ""}${slot.deploy ? ` · deploy ${slot.deploy}` : ""} · drop cards here` : `${slot.items.length} planned${slot.deploy ? ` · deploy ${slot.deploy}` : ""} · drop cards here`),
   );
+  if (slot.key === "next") {
+    const existing = shipFor(slot.label.replace(/^v/, ""));
+    const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
+    card.append(el("div", { class: "ship-cta" }, btn(label, (e) => { e.stopPropagation(); strike(card); openShipWizard(slot.label); }, "primary")));
+  }
   card.addEventListener("dragover", (e) => { if (!acceptsAnyItemDrag()) return; e.preventDefault(); card.classList.add("over"); });
   card.addEventListener("dragleave", () => card.classList.remove("over"));
   card.addEventListener("drop", async (e) => {
@@ -918,6 +924,85 @@ const openFindingsDrawer = (child, v) => {
     ),
   );
   document.addEventListener("keydown", onDrawerKey);
+};
+
+
+/* ---------- ship wizard ---------- */
+
+let ships = [];
+
+const shipFor = (version) => ships.find((sh) => sh.version === version);
+const shipProgress = (ship) => {
+  const done = ship.steps.filter((st) => st.status === "done" || st.status === "skipped").length;
+  return { done, total: ship.steps.length };
+};
+
+const openShipWizard = async (version) => {
+  const bare = version.replace(/^v/, "");
+  let ship = await api(`/api/ships/${encodeURIComponent(bare)}?project=${encodeURIComponent(projectId)}`);
+  if (!ship) ship = await post("/api/ships", { project: projectId, version: bare });
+  history.replaceState(null, "", `#ship-${bare}`);
+  const root = $("#drawer-root");
+  const list = el("div", { class: "ship-steps" });
+
+  const refresh = async () => {
+    ship = await api(`/api/ships/${encodeURIComponent(bare)}?project=${encodeURIComponent(projectId)}`);
+    render();
+    ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
+  };
+  const stepCall = async (step, action, body) => {
+    try {
+      await post(`/api/ships/${encodeURIComponent(bare)}/steps/${encodeURIComponent(step.id)}${action ? `/${action}` : ""}?project=${encodeURIComponent(projectId)}`, body);
+      await refresh();
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+
+  const render = () => {
+    const { done, total } = shipProgress(ship);
+    list.replaceChildren(
+      el("div", { class: "ship-progress" }, el("div", { class: "bar" }, el("div", { class: "fill", style: `width:${(done / total) * 100}%` })), el("span", { class: "mono small muted" }, `${done} of ${total} steps${ship.finished ? ` · shipped ${ship.finished.slice(0, 10)}` : ""}`)),
+    );
+    const current = ship.steps.find((st) => st.status !== "done" && st.status !== "skipped");
+    for (const step of ship.steps) {
+      const notes = el("textarea", { class: "ship-notes", placeholder: "notes for this step (saved as you leave the field)", rows: "2" });
+      notes.value = step.notes ?? "";
+      notes.addEventListener("change", () => stepCall(step, "", { notes: notes.value }));
+      const row = el(
+        "div",
+        { class: `ship-step ${step.status}${step === current ? " current" : ""}` },
+        el("div", { class: "ship-step-head" },
+          el("span", { class: `lamp ${step.status === "running" ? "busy" : ""}` }),
+          el("span", { class: "ship-step-title" }, step.title),
+          el("span", { class: `verdict ${step.status}` }, step.status),
+          el("span", { class: "spacer" }),
+          el("span", { class: "actions" },
+            step.status === "pending" || step.status === "failed" ? btn(step.id === "audits" ? "run audits" : "run", () => stepCall(step, "run"), "primary") : null,
+            step.claudeId ? btn("open", () => openTerminal({ kind: "attach", id: step.claudeId, title: `ship ${bare}: ${step.title}` })) : null,
+            step.status !== "done" && step.status !== "skipped" && step.status !== "pending" ? btn("mark done", () => stepCall(step, "", { status: "done" })) : null,
+            step.status === "pending" ? btn("skip", () => stepCall(step, "", { status: "skipped" }), "ghost") : null,
+            step.status === "done" || step.status === "skipped" ? btn("reopen", () => stepCall(step, "", { status: "pending" }), "ghost") : null,
+          ),
+        ),
+        step.report ? el("div", { class: "ship-report" }, step.report) : null,
+        step.artifacts?.length ? el("div", { class: "ship-artifacts" }, ...step.artifacts.map((a) => el("a", { href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(a)}`, target: "_blank" }, `${a} ↗`))) : null,
+        notes,
+      );
+      list.append(row);
+    }
+  };
+
+  root.replaceChildren(
+    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
+    el("aside", { class: "drawer wide", role: "dialog" },
+      el("div", { class: "drawer-head" }, el("h2", {}, `Ship v${bare}`), el("span", { class: "muted mono small" }, `started ${ship.started.slice(0, 10)} · progress is saved; close and come back any time`), btn("×", closeDrawer, "ghost")),
+      el("div", { class: "drawer-body" }, list),
+      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, btn("refresh", refresh, "ghost"), el("span", { class: "spacer" }), btn("close", closeDrawer)))),
+  );
+  document.addEventListener("keydown", onDrawerKey);
+  render();
+  ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
 };
 
 /* ---------- sessions ---------- */
@@ -1290,6 +1375,8 @@ const boot = async () => {
       if (r) openReleaseDrawer(r, "shipped");
     }
   }
+  const linkedShip = location.hash.match(/^#ship-(.+)$/);
+  if (linkedShip) openShipWizard(decodeURIComponent(linkedShip[1]));
   const linked = location.hash.match(/^#L(\d+)$/);
   if (linked) {
     const line = Number(linked[1]) - 1;

@@ -18,6 +18,7 @@ import { liveSignals } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
+import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
 import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
@@ -338,6 +339,38 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     await writeFile(tracker.path, deleteGroup(await readFile(tracker.path, "utf8"), body.heading, body.name), "utf8");
     return sendJson(res, 200, { commit: await commitFile(tracker.path, `console: delete empty group "${body.name}"`) });
   }
+  if (method === "GET" && path === "/api/ships") return sendJson(res, 200, await listShips((await requireProject(url)).id));
+  if (method === "POST" && path === "/api/ships") {
+    const body = await readJson<{ project: string; version: string }>(req);
+    if (!/^\d+\.\d+\.\d+$/.test(body.version)) throw new Error(`version must look like 1.9.0, got "${body.version}"`);
+    return sendJson(res, 200, await createShip(await projectById(body.project), body.version));
+  }
+  const shipStep = path.match(/^\/api\/ships\/([^/]+)\/steps\/([^/]+)(?:\/(run))?$/);
+  if (shipStep) {
+    const project = await requireProject(url);
+    const [, version, stepId, action] = shipStep;
+    if (method === "POST" && action === "run") return sendJson(res, 200, await runStep(project, version, stepId));
+    if (method === "POST" && !action) return sendJson(res, 200, await updateStep(project, version, stepId, await readJson<{ status?: StepStatus; notes?: string }>(req)));
+  }
+  if (method === "GET" && path.startsWith("/api/ships/")) {
+    const project = await requireProject(url);
+    await sweepShips(project);
+    return sendJson(res, 200, await readShip(project.id, decodeURIComponent(path.slice("/api/ships/".length))));
+  }
+  // Review documents the ship produced, served read-only from inside the project.
+  if (method === "GET" && path === "/files") {
+    const project = await requireProject(url);
+    const rel = url.searchParams.get("path") ?? "";
+    const full = normalize(join(project.path, rel));
+    if (!full.startsWith(`${project.path}/`) || !/\.(html|md|txt)$/.test(full)) {
+      res.writeHead(403).end("only .html, .md and .txt inside the project");
+      return;
+    }
+    const data = await readFile(full);
+    res.writeHead(200, { "content-type": full.endsWith(".html") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" });
+    res.end(data);
+    return;
+  }
   if (method === "POST" && path === "/api/release-slots") {
     const body = await readJson<{ project: string; slot: SlotName; name?: string; deploy?: string }>(req);
     if (body.slot !== "next" && body.slot !== "next+1") throw new Error(`slot must be next or next+1, got "${String(body.slot)}"`);
@@ -399,6 +432,7 @@ const sweepAll = async (): Promise<void> => {
     try {
       const started = await sweep(project);
       for (const id of started) console.log(`auto-audit started for ${id} (${project.name})`);
+      await sweepShips(project);
     } catch (err) {
       console.error(`sweep failed for ${project.name}:`, (err as Error).message);
     }

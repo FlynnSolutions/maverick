@@ -673,3 +673,30 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .release-name button.ghost { margin-left: 6px; height: 18px; padding: 0 5px; }
 .release-list li button.ghost { float: right; height: 20px; }
 .release-list li a { cursor: pointer; }
+
+/* ---------- ship wizard ---------- */
+
+.drawer.wide { width: min(880px, 96vw); }
+.ship-cta { margin-top: 10px; }
+.ship-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.ship-progress .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--sky-3); overflow: hidden; }
+.ship-progress .fill { height: 100%; background: linear-gradient(90deg, var(--bolt), var(--bolt-hot)); box-shadow: 0 0 10px var(--bolt-glow); transition: width 300ms var(--ease-out); }
+.ship-step { padding: 10px 12px; margin-bottom: 8px; border-radius: var(--radius-m); background: var(--sky-0); box-shadow: 0 0 0 1px var(--cloud-soft); }
+.ship-step.current { box-shadow: 0 0 0 1px var(--bolt-glow), 0 0 18px var(--bolt-dim); }
+.ship-step.done, .ship-step.skipped { opacity: 0.7; }
+.ship-step-head { display: flex; align-items: center; gap: 10px; }
+.ship-step-title { font-weight: 500; }
+.ship-step-head .spacer { flex: 1; }
+.ship-step-head .actions { display: flex; gap: 4px; }
+.ship-step-head .actions button { height: 22px; padding: 0 8px; font-size: 11px; }
+.ship-step .lamp.busy { background: var(--bolt-hot); box-shadow: 0 0 6px var(--bolt), 0 0 14px var(--bolt-glow); animation: arc 1.4s ease-in-out infinite; }
+.verdict.running { color: var(--bolt-hot); background: var(--bolt-dim); }
+.verdict.finished { color: #f2d25b; background: rgba(242, 210, 91, 0.16); }
+.verdict.done { color: #7fe0a0; background: rgba(80, 200, 120, 0.16); }
+.verdict.skipped { color: var(--ink-faint); }
+.verdict.failed { color: var(--plasma); background: var(--plasma-dim); }
+.ship-report { margin-top: 8px; white-space: pre-wrap; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); }
+.ship-artifacts { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 10px; }
+.ship-artifacts a { font-family: var(--mono); font-size: 12px; color: var(--bolt-hot); text-decoration: none; }
+.ship-notes { width: 100%; margin-top: 8px; resize: vertical; font: 12px/1.45 var(--sans); color: var(--ink); background: var(--sky-1); border: 1px solid var(--cloud-soft); border-radius: var(--radius-s); padding: 6px 8px; }
+.ship-notes:focus-visible { outline: 2px solid var(--bolt-glow); outline-offset: 1px; }

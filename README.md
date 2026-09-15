@@ -91,6 +91,19 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
   a version by tag date from the last 400 merged PRs per repo, so old versions undercount.
 - **Roadmap groups.** `###` headings under Priority are groups on the board (a review batch,
   a theme). "+ group" adds one; an empty group shows × to delete it. They are not releases.
+- **Ship wizard.** "Ship v1.9.0" on the next-release card opens a saved run of steps: audit
+  every task session in the release, build the staging test walkthrough
+  (`/ship-test-walkthrough`), build the architecture doc (`/ship-architecture-doc`), then every
+  phase of the project's own `claude/SHIP_WORKFLOW.md` (parsed live), each phase driving the
+  `/ship` skill for that phase only. Each step runs as a background Claude session you can
+  open in the dock (the ship skill pauses for your confirmation inside it); when the session
+  finishes, the step becomes done if it wrote its summary, otherwise "finished" for you to
+  mark; documents written under `deliverables/testing` and `deliverables/architecture` while
+  the step ran are linked and served read-only by the console. Notes per step, skip, reopen.
+  Progress lives in `~/.claude/console-sessions/ships/<project>/<version>.json`, so you can
+  close the wizard and come back; `#ship-1.9.0` deep-links it and the card shows "continue
+  shipping · 3/12". The wizard never merges or deploys on its own: those are confirmations
+  inside the ship session.
 - **Audit parents.** In an item's drawer, pick an audit parent (or create one) before
   spawning; the task session's record points at the parent. When a supervised task finishes
   (its background session reaches done), the console runs the `auditor` agent on it in a new
