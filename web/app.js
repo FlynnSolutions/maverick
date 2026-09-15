@@ -155,7 +155,7 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
     },
     el("span", { class: "num" }, number === null ? "" : String(number)),
     el("div", { class: "title" }, item.title),
-    el("div", { class: "meta" }, dueChip(item), item.tags.length ? el("span", { class: "tag" }, item.tags.map((t) => `[${t}]`).join(" ")) : null, el("span", {}, `L${item.start + 1}`)),
+    el("div", { class: "meta" }, dueChip(item), ...tagChips(item)),
     item.checked
       ? null
       : el(
@@ -174,6 +174,26 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
   );
 
 /** Index the dragged card would take among a list's visible cards, from the pointer's y position. */
+
+/** The checklist's tags mixed three things. Show them as readable chips; engineering is the default and says nothing, so it is not shown. */
+const CATEGORY_WORDS = { DEBT: "tech debt", GS: "Greensource", OPS: "ops", DOCS: "docs", INFRA: "infra", BIZ: "business", STRATEGY: "strategy", NOTE: "note", IDEA: "idea", DECISION: "decision", TEST: "tests", UI: "ui" };
+const SIZE_WORDS = { S: "small", M: "medium", L: "large" };
+const tagChips = (item) => {
+  const out = [];
+  const seen = new Set();
+  for (const raw of item.tags) {
+    const t = raw.toUpperCase();
+    if (t === "ENG" || seen.has(t)) continue;
+    seen.add(t);
+    if (SIZE_WORDS[t]) out.push(el("span", { class: "chip size", title: "size" }, SIZE_WORDS[t]));
+    else if (CATEGORY_WORDS[t]) out.push(el("span", { class: "chip category", title: "category" }, CATEGORY_WORDS[t]));
+    else out.push(el("span", { class: "chip kind", title: "kind" }, raw.toLowerCase()));
+  }
+  if (item.fields?.kind && !seen.has(item.fields.kind.toUpperCase())) out.push(el("span", { class: "chip kind", title: "kind" }, item.fields.kind));
+  if (item.fields?.size && !seen.has(item.fields.size.toUpperCase())) out.push(el("span", { class: "chip size", title: "size" }, SIZE_WORDS[item.fields.size.toUpperCase()] ?? item.fields.size));
+  return out;
+};
+
 const today = () => new Date().toISOString().slice(0, 10);
 /** "overdue" | "soon" (within 7 days) | "later" | "" for no date or a checked item. */
 const dueState = (due, checked) => {
@@ -467,7 +487,7 @@ const openDrawer = (trackerIndex, item) => {
       "aside",
       { class: "drawer", role: "dialog", "aria-label": item.title },
       el("div", { class: "drawer-head" }, head, btn("×", closeDrawer, "ghost")),
-      el("div", { class: "drawer-meta" }, item.tags.length ? el("span", { class: "tag" }, item.tags.map((t) => `[${t}]`).join(" ")) : null, el("span", {}, `line ${item.start + 1}`), item.checked ? el("span", {}, "checked") : null),
+      el("div", { class: "drawer-meta" }, ...tagChips(item), dueChip(item), el("span", { class: "spacer" }), el("span", { class: "muted mono" }, `line ${item.start + 1}${item.checked ? " · checked" : ""}`)),
       body,
       el("div", { class: "drawer-foot" }, actions),
     ),
