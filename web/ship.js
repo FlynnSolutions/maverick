@@ -319,12 +319,13 @@ const renderStep = (step) => {
     blocks.push(el("section", { class: "panel live-panel" }, el("h2", {}, "Live", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "the session's screen, refreshed as it runs")), live));
     tailInto(live, step.claudeId, `ship ${version}: ${step.title}`).catch((err) => { live.textContent = err.message; });
   }
+  // The walkthrough document is the step; it comes before the session's report about building it.
+  const wt = walkthroughPanel(step);
+  if (wt) blocks.push(wt);
   if (step.report) {
     const checkCount = Object.values(step.checks ?? {}).filter((c) => c?.done).length;
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "Report", el("span", { class: "spacer" }), checkCount ? el("span", { class: "muted small" }, `${checkCount} human item${checkCount === 1 ? "" : "s"} checked`) : null), renderMarkdown(step.report, { project: projectId, ...humanCheckboxes(step) })));
   }
-  const wt = walkthroughPanel(step);
-  if (wt) blocks.push(wt);
   if (step.artifacts?.length) {
     const row = el("div", { class: "artifact-row" });
     const frameHost = el("div");
