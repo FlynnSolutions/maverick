@@ -16,6 +16,7 @@ import { config } from "./src/config.ts";
 import { commitFile } from "./src/git.ts";
 import { liveSignals } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
+import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor } from "./src/releases.ts";
 import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
@@ -177,6 +178,8 @@ interface OpenTerminalBody {
   prompt?: string;
   /** Working directory for a fresh session; must sit inside the project (a worktree, say). */
   cwd?: string;
+  /** An audit parent's record id; a supervised task session is audited when it finishes. */
+  parent?: string;
   cols?: number;
   rows?: number;
 }
@@ -234,6 +237,7 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
         started: new Date().toISOString(),
         project: project.id,
         claudeId: id,
+        ...(body.parent ? { parent: body.parent } : {}),
       });
       return { ...openTerminal(body.title, ["claude", "attach", id], project.path, size.cols, size.rows), agentId: id };
     }
@@ -296,7 +300,24 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
   if (method === "GET" && path === "/api/sessions") {
     const project = await requireProject(url);
-    return sendJson(res, 200, await sessionsForProject(config.sessionsDir, project.id, project.name));
+    const records = await sessionsForProject(config.sessionsDir, project.id, project.name);
+    const live = await liveSignals(project);
+    const states = new Map(live.backgroundAgents.map((a) => [a.id, a.state ?? ""]));
+    return sendJson(res, 200, await Promise.all(records.map(async (r) => ({ ...r, auditView: await auditView(r, states) }))));
+  }
+  if (method === "POST" && path === "/api/audit-parents") {
+    const body = await readJson<{ project: string; name: string }>(req);
+    return sendJson(res, 200, await createParent(await projectById(body.project), body.name));
+  }
+  const sessionAction = path.match(/^\/api\/sessions\/([^/]+)\/(parent|audit|decision)$/);
+  if (method === "POST" && sessionAction) {
+    const [, id, action] = sessionAction;
+    if (action === "parent") return sendJson(res, 200, await assignParent(id, (await readJson<{ parent: string | null }>(req)).parent));
+    if (action === "audit") return sendJson(res, 200, await runAudit(await requireProject(url), id));
+    if (action === "decision") {
+      await recordDecision(id, (await readJson<{ decision: "accepted" | "rejected" }>(req)).decision);
+      return sendJson(res, 200, { ok: true });
+    }
   }
   if (method === "POST" && path === "/api/move") {
     try {
@@ -354,6 +375,19 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (method === "GET") return serveStatic(path, res);
   res.writeHead(405).end();
 };
+
+// Supervised task sessions that finish get audited on their own; one pass a minute.
+const sweepAll = async (): Promise<void> => {
+  for (const project of await readProjects()) {
+    try {
+      const started = await sweep(project);
+      for (const id of started) console.log(`auto-audit started for ${id} (${project.name})`);
+    } catch (err) {
+      console.error(`sweep failed for ${project.name}:`, (err as Error).message);
+    }
+  }
+};
+setInterval(() => { sweepAll().catch((err: Error) => console.error("sweep:", err.message)); }, 60_000).unref();
 
 createServer((req, res) => {
   handle(req, res).catch((err: Error) => {

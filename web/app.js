@@ -469,8 +469,28 @@ const openDrawer = (trackerIndex, item) => {
     const prose = el("div", { class: "drawer-text" });
     prose.innerHTML = renderInline(item.description || "(no description)");
     body.replaceChildren(grid.childElementCount ? grid : null, dueRow, prose);
+    const parents = (lastSessions ?? []).filter((r) => r.role === "audit" && r.status === "open");
+    const supervisor = el("select", { class: "supervisor", title: "audit parent: the finished session is audited under it" },
+      el("option", { value: "" }, "no audit parent"),
+      ...parents.map((p) => el("option", { value: p.id }, `audit under: ${p.loop}`)),
+      el("option", { value: "__new" }, "new audit parent…"));
+    supervisor.addEventListener("change", async () => {
+      if (supervisor.value !== "__new") return;
+      const name = prompt("Name the audit parent (a group of task sessions it oversees):", "");
+      supervisor.value = "";
+      if (!name) return;
+      try {
+        const created = await post("/api/audit-parents", { project: projectId, name });
+        supervisor.insertBefore(el("option", { value: created.id, selected: "" }, `audit under: ${created.loop}`), supervisor.lastElementChild);
+        supervisor.value = created.id;
+        loadRail();
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    });
     actions.replaceChildren(
-      item.checked ? null : btn("spawn", () => { closeDrawer(); spawnOnItem(item, null); }, "primary"),
+      item.checked ? null : btn("spawn", () => { const parent = supervisor.value || undefined; closeDrawer(); spawnOnItem(item, null, parent); }, "primary"),
+      item.checked ? null : supervisor,
       el("span", { class: "spacer" }),
       btn("edit markdown", () => { editing = true; edit(); }),
       btn("close", closeDrawer),
@@ -744,6 +764,35 @@ const renderCalendar = (trackers) => {
   );
 };
 
+
+const openFindingsDrawer = (child, v) => {
+  const root = $("#drawer-root");
+  const body = el("div", { class: "drawer-text" });
+  body.innerHTML = renderInline(v.findings ?? "");
+  const decide = async (decision) => {
+    try {
+      await post(`/api/sessions/${child.id}/decision`, { decision });
+      setStatus(`findings ${decision}`);
+      closeDrawer();
+      loadRail(true);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+  root.replaceChildren(
+    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
+    el(
+      "aside",
+      { class: "drawer", role: "dialog" },
+      el("div", { class: "drawer-head" }, el("h2", {}, `Audit: ${child.loop}`), btn("×", closeDrawer, "ghost")),
+      el("div", { class: "drawer-meta" }, el("span", { class: `verdict ${v.verdict}` }, v.verdict), v.decision ? el("span", { class: "muted mono" }, v.decision) : null, el("span", { class: "spacer" }), el("span", { class: "muted mono" }, child.audit?.file ?? "")),
+      el("div", { class: "drawer-body" }, body),
+      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, btn("accept findings", () => decide("accepted"), "primary"), btn("reject findings", () => decide("rejected"), "danger"), el("span", { class: "spacer" }), btn("close", closeDrawer))),
+    ),
+  );
+  document.addEventListener("keydown", onDrawerKey);
+};
+
 /* ---------- sessions ---------- */
 
 const sessionRow = (cls, name, sub, actions, lampTitle) =>
@@ -759,6 +808,7 @@ const sessionRow = (cls, name, sub, actions, lampTitle) =>
 const btn = (label, onclick, cls = "") => el("button", { type: "button", class: cls, onclick }, label);
 
 const expandedSessions = new Set();
+let lastSessions = null;
 
 const renderSessions = (records, live) => {
   const out = document.createDocumentFragment();
@@ -830,7 +880,36 @@ const renderSessions = (records, live) => {
   if (!running.childElementCount) running.append(el("li", { class: "empty" }, "nothing running under this project"));
   out.append(el("h3", {}, "Running"), running);
 
-  const recorded = records.filter((r) => !r.claudeId || !live.backgroundAgents.some((a) => a.id === r.claudeId));
+  const parents = records.filter((r) => r.role === "audit");
+  if (parents.length) {
+    const wrap = el("div");
+    for (const parent of parents) {
+      const children = records.filter((r) => r.parent === parent.id);
+      const ul = el("ul");
+      for (const c of children) {
+        const v = c.auditView ?? { verdict: "none" };
+        const agent = live.backgroundAgents.find((a) => a.id === c.claudeId);
+        const chip = el("span", { class: `verdict ${v.verdict}${v.decision ? ` ${v.decision}` : ""}` }, v.verdict === "none" ? "not audited" : v.verdict === "pending" ? `auditing (${v.agentState ?? "…"})` : `${v.verdict}${v.decision ? ` · ${v.decision}` : ""}`);
+        ul.append(
+          sessionRow(
+            agent?.state ?? c.status,
+            [el("span", { class: "role" }, c.role), text(c.loop)],
+            [agent ? `task ${agent.state}` : c.status, c.claudeId ? `claude attach ${c.claudeId}` : null].filter(Boolean).join(" · "),
+            [
+              chip,
+              v.verdict === "none" && c.claudeId ? btn("audit now", async () => { try { await post(`/api/sessions/${c.id}/audit?project=${encodeURIComponent(projectId)}`); setStatus("audit started"); } catch (err) { setStatus(err.message, true); } loadRail(true); }) : null,
+              v.findings ? btn("findings", () => openFindingsDrawer(c, v)) : null,
+              c.claudeId && agent ? btn("open", () => openTerminal({ kind: "attach", id: c.claudeId, title: c.loop })) : null,
+            ].filter(Boolean),
+          ),
+        );
+      }
+      if (!children.length) ul.append(el("li", { class: "empty" }, "no task sessions yet: pick this parent when you spawn from a card"));
+      wrap.append(el("h3", {}, el("span", { class: "role" }, "audit parent"), text(parent.loop)), ul);
+    }
+    out.append(wrap);
+  }
+  const recorded = records.filter((r) => r.role !== "audit" && !r.parent && (!r.claudeId || !live.backgroundAgents.some((a) => a.id === r.claudeId)));
   if (recorded.length) {
     const byParent = new Map();
     for (const r of recorded) {
@@ -886,6 +965,7 @@ const loadRail = async (refresh = false) => {
   try {
     const q = `project=${encodeURIComponent(projectId)}${refresh ? "&refresh" : ""}`;
     const [sessions, live] = await Promise.all([api(`/api/sessions?project=${encodeURIComponent(projectId)}`), api(`/api/live?${q}`)]);
+    lastSessions = sessions;
     $("#sessions").replaceChildren(renderSessions(sessions, live));
     $("#live").replaceChildren(renderLive(live));
   } catch (err) {
@@ -986,10 +1066,10 @@ const mountTerminal = (info) => {
   activate(info.id);
 };
 
-const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd }) => {
+const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent }) => {
   setStatus(`opening ${title ?? kind}`);
   try {
-    const info = await post("/api/terminals", { project: projectId, kind, id, sessionId, title, prompt, cwd, ...termSize() });
+    const info = await post("/api/terminals", { project: projectId, kind, id, sessionId, title, prompt, cwd, parent, ...termSize() });
     mountTerminal(info);
     setStatus(`terminal ${info.id}: ${info.command.join(" ")}`);
     if (kind === "spawn") loadRail(true);
@@ -998,10 +1078,10 @@ const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd }) => {
   }
 };
 
-const spawnOnItem = (item, card) => {
-  if (!confirm(`Spawn a headless Claude session on:\n\n${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.`)) return;
+const spawnOnItem = (item, card, parent) => {
+  if (!confirm(`Spawn a headless Claude session on:\n\n${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.${parent ? "\nWhen it finishes, the auditor reviews it." : ""}`)) return;
   if (card) strike(card);
-  openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body });
+  openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body, parent });
 };
 
 window.addEventListener("resize", () => {

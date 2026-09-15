@@ -24,6 +24,10 @@ export interface SessionRecord {
   pr?: string;
   /** The `claude --bg` id when the console spawned this session; links the record to the live agent. */
   claudeId?: string;
+  /** Set by the console when this task session has been (or is being) audited. */
+  audit?: { claudeId: string; started: string; file: string };
+  /** Cory's call on the audit findings. */
+  decision?: "accepted" | "rejected";
 }
 
 export const readSessions = async (dir: string): Promise<SessionRecord[]> => {
