@@ -812,7 +812,7 @@ const slotCard = (slot, trackers) => {
   const existing = slot.key === "next" ? shipFor(slot.label.replace(/^v/, "")) : null;
   const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
   card.append(el("div", { class: "cta-slot" },
-    slot.key === "next" ? btn(label, (e) => { e.stopPropagation(); flyby(); openShipWizard(slot.label); }, "primary") : el("span", { class: "muted small" }, "drop cards here to plan")));
+    slot.key === "next" ? btn(label, (e) => { e.stopPropagation(); flyby(); window.setTimeout(() => { location.href = `/ship.html?project=${encodeURIComponent(projectId)}&version=${encodeURIComponent(slot.label.replace(/^v/, ""))}`; }, 350); }, "primary") : el("span", { class: "muted small" }, "drop cards here to plan")));
   card.addEventListener("dragover", (e) => { if (!acceptsAnyItemDrag()) return; e.preventDefault(); card.classList.add("over"); });
   card.addEventListener("dragleave", () => card.classList.remove("over"));
   card.addEventListener("drop", async (e) => {
@@ -1615,7 +1615,7 @@ const boot = async () => {
     }
   }
   const linkedShip = location.hash.match(/^#ship-(.+)$/);
-  if (linkedShip) openShipWizard(decodeURIComponent(linkedShip[1]));
+  if (linkedShip) location.href = `/ship.html?project=${encodeURIComponent(projectId)}&version=${encodeURIComponent(decodeURIComponent(linkedShip[1]).replace(/^v/, ""))}`;
   const linked = location.hash.match(/^#L(\d+)$/);
   if (linked) {
     const line = Number(linked[1]) - 1;

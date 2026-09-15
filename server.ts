@@ -419,7 +419,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const project = await requireProject(url);
     const [, version, stepId, action] = shipStep;
     if (method === "POST" && action === "run") return sendJson(res, 200, await runStep(project, version, stepId));
-    if (method === "POST" && !action) return sendJson(res, 200, await updateStep(project, version, stepId, await readJson<{ status?: StepStatus; notes?: string }>(req)));
+    if (method === "POST" && !action) return sendJson(res, 200, await updateStep(project, version, stepId, await readJson<{ status?: StepStatus; notes?: string; checks?: Record<string, { done: boolean; label?: string; at?: string }> }>(req)));
   }
   if (method === "GET" && path.startsWith("/api/ships/")) {
     const project = await requireProject(url);

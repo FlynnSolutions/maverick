@@ -35,6 +35,8 @@ export interface ShipStep {
   /** Documents produced while the step ran, relative to the project, served by /files. */
   artifacts: string[];
   notes?: string;
+  /** The human's items from the report, as checkboxes: key -> {done, label, at}. */
+  checks?: Record<string, { done: boolean; label?: string; at?: string }>;
 }
 
 export interface ShipRun {
@@ -159,7 +161,7 @@ export const runStep = async (project: Project, version: string, stepId: string)
   return step;
 };
 
-export const updateStep = async (project: Project, version: string, stepId: string, patch: { status?: StepStatus; notes?: string }): Promise<ShipStep> => {
+export const updateStep = async (project: Project, version: string, stepId: string, patch: { status?: StepStatus; notes?: string; checks?: ShipStep["checks"] }): Promise<ShipStep> => {
   const ship = await readShip(project.id, version);
   if (!ship) throw new Error(`no ship run for ${version}`);
   const step = stepOf(ship, stepId);
@@ -172,6 +174,7 @@ export const updateStep = async (project: Project, version: string, stepId: stri
     }
   }
   if (patch.notes !== undefined) step.notes = patch.notes;
+  if (patch.checks !== undefined) step.checks = patch.checks;
   if (ship.steps.every((s) => s.status === "done" || s.status === "skipped")) ship.finished = ship.finished ?? new Date().toISOString();
   else delete ship.finished;
   await writeShip(ship);

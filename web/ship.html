@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ship · Maverick</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="ship.css" />
+</head>
+<body>
+  <header class="bar">
+    <a id="back" href="/" class="brand">Maverick</a>
+    <span class="crumb" id="crumb"></span>
+    <span id="status" class="status" role="status"></span>
+    <a id="board-link" class="button-link" href="/">Board</a>
+  </header>
+  <main class="ship-page" id="page">
+    <section class="ship-top" id="top"></section>
+    <nav class="ship-nav" id="nav" aria-label="Ship steps"></nav>
+    <section class="ship-detail" id="detail"></section>
+  </main>
+  <section id="dock" class="dock" hidden>
+    <div class="dock-tabs" id="dock-tabs"></div>
+    <div class="dock-body" id="dock-body"></div>
+  </section>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script type="module" src="ship.js"></script>
+</body>
+</html>
