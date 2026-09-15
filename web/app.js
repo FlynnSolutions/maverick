@@ -382,8 +382,12 @@ const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
     lastTrackers = trackers;
-    if (view === "calendar" && !releasesData) releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
-    $("#boards").replaceChildren(...(view === "calendar" ? [renderCalendar(trackers)] : trackers.map(renderBoard)));
+    if (!releasesData) releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
+    $("#boards").replaceChildren(
+      ...(view === "calendar"
+        ? [renderCalendar(trackers)]
+        : [el("section", { class: "board-releases" }, el("h3", { class: "strip-title" }, "Releases"), renderReleases(trackers)), ...trackers.map(renderBoard)]),
+    );
     for (const b of document.querySelectorAll("#view-toggle button")) b.classList.toggle("active", b.dataset.view === view);
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
   } catch (err) {
