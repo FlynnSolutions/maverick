@@ -477,6 +477,7 @@ const renderInline = (md) =>
     .replace(/~~(.+?)~~/g, "<s>$1</s>");
 
 const closeDrawer = () => {
+  stopTails();
   $("#drawer-root").replaceChildren();
   if (location.hash.startsWith("#L")) history.replaceState(null, "", location.pathname + location.search);
   document.removeEventListener("keydown", onDrawerKey);
@@ -989,9 +990,68 @@ const openFindingsDrawer = (child, v) => {
 };
 
 
+
+/* ---------- live view of a background session, rendered inside the wizard ---------- */
+
+const tails = new Map();
+
+const stopTails = () => {
+  for (const t of tails.values()) {
+    t.source.close();
+    t.term.dispose();
+    t.host.remove();
+    window.clearInterval(t.timer);
+  }
+  tails.clear();
+};
+
+/** Find the console terminal attached to a background session, or attach one quietly (not in the dock). */
+const terminalFor = async (claudeId, title) => {
+  const open = await api("/api/terminals");
+  const existing = open.find((t) => t.exitCode === null && t.command.join(" ") === `claude attach ${claudeId}`);
+  if (existing) return existing;
+  return post("/api/terminals", { project: projectId, kind: "attach", id: claudeId, title, cols: 110, rows: 32 });
+};
+
+const tailInto = async (node, claudeId, title) => {
+  if (tails.has(claudeId)) return;
+  if (new URLSearchParams(location.search).has("nodock")) {
+    node.textContent = "(live view off in capture mode)";
+    return;
+  }
+  const info = await terminalFor(claudeId, title);
+  const host = el("div", { class: "tail-host", "aria-hidden": "true" });
+  document.body.append(host);
+  const term = new window.Terminal({ cols: 110, rows: 32, allowProposedApi: true });
+  term.open(host);
+  const source = new EventSource(`/api/terminals/${info.id}/stream`);
+  source.onmessage = (e) => term.write(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)));
+  const paint = () => {
+    const buffer = term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buffer.length; i += 1) {
+      const line = buffer.getLine(i)?.translateToString(true) ?? "";
+      if (line.trim()) lines.push(line.replace(/\s+$/, ""));
+    }
+    node.textContent = lines.slice(-16).join("\n") || "(no output yet)";
+  };
+  const timer = window.setInterval(paint, 1200);
+  tails.set(claudeId, { source, term, host, timer, info });
+  paint();
+};
+
 /* ---------- ship wizard ---------- */
 
 let ships = [];
+const jetGlyph = () => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 40 16");
+  svg.setAttribute("class", "jet-glyph");
+  const body = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  body.setAttribute("d", "M0 9 L14 7 L22 3 L26 3 L24 7 L34 6 L40 8 L34 10 L24 9 L26 13 L22 13 L14 9 Z");
+  svg.append(body);
+  return svg;
+};
 
 const shipFor = (version) => ships.find((sh) => sh.version === version);
 const shipProgress = (ship) => {
@@ -1008,9 +1068,15 @@ const openShipWizard = async (version) => {
   const list = el("div", { class: "ship-steps" });
 
   const refresh = async () => {
+    const before = ship.steps.map((st) => st.status).join();
     ship = await api(`/api/ships/${encodeURIComponent(bare)}?project=${encodeURIComponent(projectId)}`);
     render();
     ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
+    if (before !== ship.steps.map((st) => st.status).join()) {
+      const runwayNode = list.querySelector(".runway");
+      if (runwayNode) flares(runwayNode);
+      loadBoard();
+    }
   };
   const stepCall = async (step, action, body) => {
     if (action === "run") flyby();
@@ -1022,38 +1088,70 @@ const openShipWizard = async (version) => {
     }
   };
 
+  let agentStates = new Map();
+  const pollStates = async () => {
+    try {
+      const live = await api(`/api/live?project=${encodeURIComponent(projectId)}&refresh`);
+      agentStates = new Map(live.backgroundAgents.map((a) => [a.id, a.state ?? ""]));
+      for (const [id, state] of agentStates) {
+        const flag = list.querySelector(`[data-agent="${id}"] .agent-state`);
+        if (flag) {
+          flag.textContent = state === "blocked" ? "waiting for your input: open the session" : state === "working" ? "working" : state;
+          flag.className = `agent-state ${state}`;
+        }
+      }
+    } catch {
+      /* the rail poll is best effort */
+    }
+  };
+
   const render = () => {
     const { done, total } = shipProgress(ship);
-    list.replaceChildren(
-      el("div", { class: "ship-progress" }, el("div", { class: "bar" }, el("div", { class: "fill", style: `width:${(done / total) * 100}%` })), el("span", { class: "mono small muted" }, `${done} of ${total} steps${ship.finished ? ` · shipped ${fmtDate(ship.finished)}` : ""}`)),
-    );
+    const pct = (done / total) * 100;
+    const runway = el("div", { class: "ship-progress" },
+      el("div", { class: "runway" }, el("div", { class: "fill", style: `width:${pct}%` }), el("div", { class: "jet-marker", style: `left:${pct}%` }, jetGlyph())),
+      el("span", { class: "mono small muted" }, `${done} of ${total} steps${ship.finished ? ` · shipped ${fmtDate(ship.finished)}` : ""}`));
+    list.replaceChildren(runway);
     const current = ship.steps.find((st) => st.status !== "done" && st.status !== "skipped");
     for (const step of ship.steps) {
       const notes = el("textarea", { class: "ship-notes", placeholder: "notes for this step (saved as you leave the field)", rows: "2" });
       notes.value = step.notes ?? "";
       notes.addEventListener("change", () => stepCall(step, "", { notes: notes.value }));
+      const live = step.status === "running" && step.claudeId ? el("pre", { class: "ship-live" }, "connecting to the session…") : null;
       const row = el(
         "div",
-        { class: `ship-step ${step.status}${step === current ? " current" : ""}` },
+        { class: `ship-step ${step.status}${step === current ? " current" : ""}`, "data-agent": step.claudeId ?? "" },
         el("div", { class: "ship-step-head" },
           el("span", { class: `lamp ${step.status === "running" ? "busy" : ""}` }),
           el("span", { class: "ship-step-title" }, step.title),
-          el("span", { class: `verdict ${step.status}` }, step.status),
+          el("span", { class: `verdict ${step.status}` }, step.status === "done" && step.id === "audits" && /No un-audited/.test(step.report ?? "") ? "done · nothing to audit" : step.status),
+          step.status === "running" ? el("span", { class: `agent-state ${agentStates.get(step.claudeId) ?? ""}` }, agentStates.get(step.claudeId) ?? "starting") : null,
           el("span", { class: "spacer" }),
           el("span", { class: "actions" },
             step.status === "pending" || step.status === "failed" ? btn(step.id === "audits" ? "run audits" : "run", () => stepCall(step, "run"), "primary") : null,
-            step.claudeId ? btn("open", () => openTerminal({ kind: "attach", id: step.claudeId, title: `ship ${bare}: ${step.title}` })) : null,
+            step.claudeId ? btn("open in dock", async () => {
+              const t = tails.get(step.claudeId);
+              const info = t?.info ?? (await terminalFor(step.claudeId, `ship ${bare}: ${step.title}`));
+              stopTails();
+              closeDrawer();
+              mountTerminal(info);
+              setStatus(`ship ${bare}: session in the dock. Reopen the wizard from the v${bare} card.`);
+            }) : null,
             step.status !== "done" && step.status !== "skipped" && step.status !== "pending" ? btn("mark done", () => stepCall(step, "", { status: "done" })) : null,
             step.status === "pending" ? btn("skip", () => stepCall(step, "", { status: "skipped" }), "ghost") : null,
             step.status === "done" || step.status === "skipped" ? btn("reopen", () => stepCall(step, "", { status: "pending" }), "ghost") : null,
           ),
         ),
-        step.report ? el("div", { class: "ship-report" }, step.report) : null,
+        step.ended ? el("div", { class: "ship-when muted small mono" }, `${step.status} ${new Date(step.ended).toLocaleTimeString()}${step.started ? ` · started ${new Date(step.started).toLocaleTimeString()}` : ""}`) : step.started ? el("div", { class: "ship-when muted small mono" }, `started ${new Date(step.started).toLocaleTimeString()}`) : null,
+        step.report ? el("div", { class: "ship-report" }, el("span", { class: "k" }, "result"), text(step.report)) : null,
+        live,
         step.artifacts?.length ? el("div", { class: "ship-artifacts" }, ...step.artifacts.map((a) => el("a", { href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(a)}`, target: "_blank" }, `${a} ↗`))) : null,
         notes,
       );
       list.append(row);
+      if (live) tailInto(live, step.claudeId, `ship ${bare}: ${step.title}`).catch((err) => { live.textContent = err.message; });
     }
+    pollStates();
   };
 
   root.replaceChildren(
@@ -1066,6 +1164,9 @@ const openShipWizard = async (version) => {
   document.addEventListener("keydown", onDrawerKey);
   render();
   ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
+  const poll = window.setInterval(() => { if (!document.contains(list)) { window.clearInterval(poll); stopTails(); return; } if (ship.steps.some((st) => st.status === "running")) refresh(); }, 8000);
+  // the jet flies in and becomes the progress runway
+  flyby({ y: 60, duration: 900 });
 };
 
 
