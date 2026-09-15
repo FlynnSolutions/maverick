@@ -1,7 +1,7 @@
 // The console UI. Plain DOM and fetch; the same file runs in a browser or an Electron
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
 // selects it, no parameter shows the picker.
-import { strike, scheduleWeather, charge, discharge, dischargeAll } from "./bolt.js";
+import { strike, scheduleWeather } from "./bolt.js";
 
 
 /** Tags that mark engineering work. Items carrying any of these (or no tag at all) are development items. */
@@ -186,6 +186,7 @@ const tagChips = (item) => {
     if (t === "ENG" || seen.has(t)) continue;
     seen.add(t);
     if (SIZE_WORDS[t]) out.push(el("span", { class: "chip size", title: "size" }, SIZE_WORDS[t]));
+    else if (t === "GS") out.push(el("span", { class: "chip greensource", title: "client" }, "Greensource"));
     else if (CATEGORY_WORDS[t]) out.push(el("span", { class: "chip category", title: "category" }, CATEGORY_WORDS[t]));
     else out.push(el("span", { class: "chip kind", title: "kind" }, raw.toLowerCase()));
   }
@@ -381,6 +382,7 @@ const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
     lastTrackers = trackers;
+    if (view === "calendar" && !releasesData) releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
     $("#boards").replaceChildren(...(view === "calendar" ? [renderCalendar(trackers)] : trackers.map(renderBoard)));
     for (const b of document.querySelectorAll("#view-toggle button")) b.classList.toggle("active", b.dataset.view === view);
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
@@ -504,7 +506,6 @@ const openDrawer = (trackerIndex, item) => {
   document.addEventListener("keydown", onDrawerKey);
   view();
   history.replaceState(null, "", `#L${item.start + 1}`);
-  window.setTimeout(() => strike(head), 30);
 };
 
 
@@ -544,15 +545,6 @@ const setDeployDate = async (tracker, section, group, date) => {
   setStatus(`committed ${commit}`);
 };
 
-const moveItemToGroup = async (tracker, item, section, group) => {
-  setStatus(`planning "${item.title.slice(0, 40)}"`);
-  const { commit } = await post("/api/move", {
-    project: projectId, tracker: tracker.index, itemStart: item.start, itemFirstLine: item.firstLine,
-    targetHeading: section.heading, targetGroup: group.name, targetIndex: 9999,
-  });
-  setStatus(`committed ${commit}`);
-};
-
 const draggableItem = (node, tracker, item, section) => {
   node.draggable = true;
   node.addEventListener("dragstart", (e) => {
@@ -588,31 +580,91 @@ const dropZone = (node, accepts, onDrop) => {
   return node;
 };
 
+let releasesData = null;
+
+const stat = (n, label) => el("div", { class: "stat" }, el("b", {}, String(n)), el("span", {}, label));
+
+const openReleaseDrawer = (release, kind, planned) => {
+  const root = $("#drawer-root");
+  const list = el("div", { class: "release-list" });
+  if (planned) {
+    const dateInput = el("input", { type: "date", value: planned.group.due ?? "" });
+    list.append(
+      el("div", { class: "due-row" }, el("span", { class: "k" }, "deploy date"), dateInput,
+        btn("set", async () => { try { await setDeployDate(planned.tracker, planned.section, planned.group, dateInput.value); closeDrawer(); releasesData = null; await loadBoard(); } catch (err) { setStatus(err.message, true); } }, "primary")),
+      el("h3", {}, `${planned.items.length} planned items (drag more in from the Roadmap on the board)`),
+    );
+    const ul = el("ul");
+    for (const i of planned.items) ul.append(el("li", { onclick: () => openDrawer(planned.tracker.index, i) }, i.title));
+    list.append(ul);
+  } else {
+    if (release.prs.length) {
+      list.append(el("h3", {}, `${release.prs.length} pull requests merged`));
+      const ul = el("ul");
+      for (const pr of release.prs) ul.append(el("li", {}, el("span", { class: `kind ${pr.kind}` }, pr.kind), el("a", { href: pr.url, target: "_blank" }, `${pr.repo}#${pr.number}`), text(` ${pr.title}`), el("span", { class: "when" }, pr.mergedAt.slice(0, 10))));
+      list.append(ul);
+    }
+    for (const kindName of ["Added", "Changed", "Fixed", "Removed"]) {
+      const bullets = release.bullets.filter((b) => b.kind === kindName);
+      if (!bullets.length) continue;
+      list.append(el("h3", {}, `${kindName} (${bullets.length})`));
+      const ul = el("ul");
+      for (const b of bullets) {
+        const li = el("li");
+        li.innerHTML = renderInline(b.text);
+        ul.append(li);
+      }
+      list.append(ul);
+    }
+  }
+  const head = kind === "next" ? "Next release (unreleased)" : planned ? `${planned.name} · planned` : `${release.version} · shipped ${release.date ?? ""}`;
+  root.replaceChildren(
+    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
+    el(
+      "aside",
+      { class: "drawer", role: "dialog" },
+      el("div", { class: "drawer-head" }, el("h2", {}, head), btn("×", closeDrawer, "ghost")),
+      el("div", { class: "drawer-body" }, list),
+      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, el("span", { class: "spacer" }), btn("close", closeDrawer))),
+    ),
+  );
+  document.addEventListener("keydown", onDrawerKey);
+};
+
+const releaseCard = (release, kind) => {
+  const c = release.counts;
+  return el(
+    "div",
+    { class: `release-card ${kind}`, onclick: () => openReleaseDrawer(release, kind) },
+    el("div", {}, el("span", { class: "version" }, kind === "next" ? "Next" : release.version), el("span", { class: "state" }, kind === "next" ? "unreleased, on develop" : `shipped ${release.date ?? ""}`)),
+    el("div", { class: "stats" }, stat(c.added, "features"), stat(c.fixed, "fixes"), stat(kind === "next" ? c.prs : c.changed, kind === "next" ? "PRs merged" : "changes")),
+    kind === "next" ? el("div", { class: "foot" }, `${c.prFeatures} feat · ${c.prFixes} fix PRs since ${releasesData.shipped[0]?.version ?? "last tag"}`) : null,
+  );
+};
+
+const plannedCard = (tracker, section, group) => {
+  const items = group.items.filter((i) => !i.checked && (showAll || isDevItem(i)));
+  const bugs = items.filter((i) => i.tags.some((t) => t.toLowerCase() === "bug") || i.fields.kind === "bug").length;
+  const planned = { name: stripDeploy(group.name), items, tracker, section, group };
+  return el(
+    "div",
+    { class: "release-card planned", onclick: () => openReleaseDrawer(null, "planned", planned) },
+    el("div", {}, el("span", { class: "version" }, planned.name), el("span", { class: "state" }, group.due ? `deploy ${group.due}` : "planned, no date")),
+    el("div", { class: "stats" }, stat(items.length - bugs, "features"), stat(bugs, "fixes"), stat(items.length, "items")),
+  );
+};
+
 const renderReleases = (trackers) => {
   const strip = el("div", { class: "releases" });
+  if (releasesData?.next) strip.append(releaseCard(releasesData.next, "next"));
   for (const tracker of trackers) {
     for (const section of tracker.sections.filter((s) => s.column === "priority")) {
-      for (const group of section.groups) {
-        if (!group.name) continue;
-        const items = group.items.filter((i) => !i.checked && (showAll || isDevItem(i)));
-        const card = el(
-          "div",
-          { class: "release-card", draggable: "true" },
-          el("div", { class: "release-card-head" }, el("span", { class: "release-name" }, stripDeploy(group.name)), group.due ? el("span", { class: `due ${dueState(group.due, false)}` }, `deploy ${group.due.slice(5)}`) : el("span", { class: "muted small" }, "drag onto a day to schedule")),
-          el("div", { class: "release-items" }, ...items.map((i) => draggableItem(el("div", { class: "cal-event item", onclick: () => openDrawer(tracker.index, i) }, i.title), tracker, i, section)), items.length ? null : el("div", { class: "muted small" }, "drop items here")),
-        );
-        card.addEventListener("dragstart", (e) => {
-          if (e.target !== card) return;
-          calDrag = { type: "release", tracker, section, group };
-          e.dataTransfer.effectAllowed = "move";
-        });
-        card.addEventListener("dragend", () => { calDrag = null; });
-        dropZone(card, (d) => d.type === "item" && d.tracker.index === tracker.index, (d) => moveItemToGroup(tracker, d.item, section, group));
-        strip.append(card);
-      }
+      // Only groups named like a release are planned releases; other Priority groups (a review batch, say) stay on the board.
+      for (const group of section.groups) if (group.name && /^v?\d+\.\d+|\brelease\b|\bdeploy\b/i.test(group.name)) strip.append(plannedCard(tracker, section, group));
       strip.append(el("div", { class: "release-card add" }, addReleaseButton(tracker.index, section, strip)));
     }
   }
+  for (const r of releasesData?.shipped ?? []) strip.append(releaseCard(r, "shipped"));
   return strip;
 };
 
@@ -640,7 +692,7 @@ const renderCalendar = (trackers) => {
     btn("›", () => shift(1), "ghost"),
     btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"),
     el("span", { class: "spacer" }),
-    el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, onto a release to plan it; drag a release onto a day to schedule the deploy"),
+    el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline"),
   );
   const grid = el("div", { class: "cal-grid" });
   for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) grid.append(el("div", { class: "cal-dow" }, d));
@@ -655,17 +707,9 @@ const renderCalendar = (trackers) => {
         e.kind === "release" ? `⚡ ${e.title}` : e.title,
       );
       if (e.item) draggableItem(node, e.tracker, e.item, e.section);
-      else {
-        node.draggable = true;
-        node.addEventListener("dragstart", (ev) => { calDrag = { type: "release", tracker: e.tracker, section: e.section, group: e.group }; ev.dataTransfer.effectAllowed = "move"; });
-        node.addEventListener("dragend", () => { calDrag = null; });
-      }
       cell.append(node);
     }
-    dropZone(cell, () => true, async (d) => {
-      if (d.type === "item") await editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${date}`);
-      else await setDeployDate(d.tracker, d.section, d.group, date);
-    });
+    dropZone(cell, (d) => d.type === "item", (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${date}`));
     grid.append(cell);
   }
   const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && (showAll || isDevItem(i))).map((i) => ({ t, i, s })))));
@@ -914,7 +958,6 @@ const mountTerminal = (info) => {
 
   dockTerminals.set(info.id, { term, fit, tab, container, source });
   activate(info.id);
-  strike(tab, { from: { x: tab.getBoundingClientRect().left + 20, y: window.innerHeight * 0.35 } });
 };
 
 const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd }) => {
@@ -939,24 +982,6 @@ window.addEventListener("resize", () => {
   if (activeTerminal) dockTerminals.get(activeTerminal)?.fit.fit();
 });
 
-
-/* ---------- charge on press, discharge on release ---------- */
-
-const CHARGEABLE = "button, .card, .row, .cal-event, .dock-tab, .project-list li, .switcher";
-document.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0) return;
-  const target = e.target.closest(CHARGEABLE);
-  if (!target || target.closest(".term")) return;
-  charge(target);
-});
-document.addEventListener("pointerup", (e) => {
-  const target = e.target.closest(CHARGEABLE);
-  if (target) discharge(target, { strike: target.matches("button.primary, .cal-event.release") });
-  dischargeAll();
-});
-document.addEventListener("pointercancel", dischargeAll);
-window.addEventListener("blur", dischargeAll);
-document.addEventListener("dragstart", dischargeAll);
 
 /* ---------- boot ---------- */
 

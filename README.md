@@ -72,11 +72,18 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
   a week, red overdue); the deadline picker in the drawer writes or clears the `due` line and
   commits. Older one-line items still parse: the italic after the title is read as the
   source. The `/save-followup` skill writes new items in the fielded shape.
-- **Calendar** (top bar toggle): a releases strip (each `###` release under Priority with its
-  items and deploy date), a month grid of items with a `due` date and releases with a deploy
-  date, and the roadmap items that have no deadline yet. Planning is drag and drop: an item
-  onto a day sets its `due`; an item onto a release moves it into that group; a release onto
-  a day stamps `(deploy YYYY-MM-DD)` on its heading. Every drop is one commit.
+- **Calendar** (top bar toggle): the releases strip, a month grid of items with a `due` date
+  and releases with a deploy date, and the roadmap items that have no deadline yet. Drag an
+  item onto a day to set its `due` (one commit per drop).
+- **Releases are real.** The strip reads the project's changelog (`contracts/CHANGELOG.md`
+  or `CHANGELOG.md`, Keep-a-Changelog shape): **Next** is the `[Unreleased]` block with its
+  added / fixed counts and every PR merged since the last version tag in the repos that carry
+  that tag; shipped versions show their added / fixed / changed counts. Click a card for the
+  PR list (linked, feat / fix by title prefix) and the changelog bullets. A **planned**
+  release is a `###` group under Priority named like one (`v1.10`, or containing "release" or
+  "deploy"); its card counts its items, and its drawer sets the deploy date, which is
+  written into the heading as `(deploy YYYY-MM-DD)`. Put an item into a planned release by
+  dragging it into that group on the board.
 - **Created.** An item's `created` field, else the first date in its source text, shows on
   the card and in the drawer. Items with neither show the date their entry was last changed
   (from `git blame`, one call per file, cached by mtime), labelled as such.

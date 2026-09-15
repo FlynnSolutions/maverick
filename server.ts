@@ -16,6 +16,7 @@ import { config } from "./src/config.ts";
 import { commitFile } from "./src/git.ts";
 import { liveSignals } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
+import { releasesFor } from "./src/releases.ts";
 import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
 import { addGroup, applyEdit, applyMove, parseTracker, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
@@ -289,6 +290,9 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (method === "GET" && path === "/api/board") return sendJson(res, 200, await board(await requireProject(url)));
   if (method === "GET" && path === "/api/live") {
     return sendJson(res, 200, await liveSignals(await requireProject(url), url.searchParams.has("refresh")));
+  }
+  if (method === "GET" && path === "/api/releases") {
+    return sendJson(res, 200, await releasesFor(await requireProject(url), url.searchParams.has("refresh")));
   }
   if (method === "GET" && path === "/api/sessions") {
     const project = await requireProject(url);
