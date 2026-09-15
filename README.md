@@ -170,15 +170,18 @@ own; change the two sets at the top of `web/app.js` to retune it.
 ## The workspace is the command center
 
 The Workspace view shows every Claude session on the machine as a panel: interactive ones
-from the registry, background ones from `claude agents`, grouped by project and, where a
-session record names a parent, bracketed under the session watching it (an audit parent
-and its task sessions sit together, with the audit verdict on each). A panel carries the
-status lamp, where the session lives, and the last exchange. Click it and the session
-opens full screen as a conversation read from its transcript (`/api/transcript`, polled
-incrementally): your prompts as bubbles, Claude's replies as rendered markdown, runs of
-tool calls folded into one line of chips, harness injections (task notifications,
-reminders) folded as system events. **Open in dock** / **Take the stick** mounts the real
-terminal for typing; **close** / **stop** end the process as on the board.
+from the registry, background ones from `claude agents`, grouped by project and ordered by
+what needs the pilot: a **Needs you** band first (sessions waiting on input), then the
+formations (a lead session and the task sessions it watches, hung off a hairline, with the
+audit verdict on each), then Working, Idle and Finished, with closed formations folded to
+one line. A panel carries the status lamp, where the session lives, and the last exchange;
+`dock` is its one action. Click it and the session opens full screen as a conversation
+read from its transcript (`/api/transcript`, polled incrementally): your prompts as
+panels, Claude's replies as rendered markdown, runs of tool calls folded into one line of
+chips, harness injections (task notifications, reminders) folded as system events.
+**Open in dock** / **Take the stick** mounts the real terminal for typing; **close** /
+**stop** end the process from the full-screen head. Design decisions for this surface are
+recorded in `.ui-design/system.md`.
 
 **Usage is a provider widget.** `web/providers/claude.js` owns everything Claude-specific
 about limits, so another provider can sit beside it with the same `mount(root, ctx)`

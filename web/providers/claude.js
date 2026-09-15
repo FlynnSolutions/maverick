@@ -26,7 +26,8 @@ export const familyOf = (model) => {
 };
 export const FAMILIES = ["fable", "opus", "sonnet", "haiku", "other"];
 const FAMILY_LABEL = { fable: "Fable", opus: "Opus", sonnet: "Sonnet", haiku: "Haiku", other: "Other", all: "All models" };
-const FAMILY_COLOUR = { fable: "var(--accent-hot)", opus: "var(--accent)", sonnet: "#c8b6ff", haiku: "#8dffb0", other: "var(--ink-faint)", all: "var(--ink)" };
+/** The instrument palette for model families (declared in style.css); the project accent keeps meaning "this project". */
+const FAMILY_COLOUR = { fable: "var(--model-fable)", opus: "var(--model-opus)", sonnet: "var(--model-sonnet)", haiku: "var(--model-haiku)", other: "var(--model-other)", all: "var(--ink)" };
 
 /**
  * What a window "costs". Anthropic meters a mix of input and output; cache reads are far
@@ -216,9 +217,15 @@ export const mount = (root, ctx) => {
     const week = baselineFor(limits, peak, "week", "all");
     const fable = baselineFor(limits, peak, "five", "fable");
     const set = (win, f) => Boolean(limitFor(limits, peak, win, f));
+    const readout = `5-hour ${pctText(cur.five.all, five, set("five", "all"))}, Fable ${pctText(cur.five.fable, fable, set("five", "fable"))}, week ${pctText(cur.week.all, week, set("week", "all"))}`;
     return el(
       "button",
-      { type: "button", class: `cu-baby${open ? " open" : ""}`, title: set("five", "all") ? "Claude usage against your limits. Click for the hourly and weekly picture." : "Claude usage against your highest windows so far (no limits set yet). Click for the hourly and weekly picture.", onclick: () => { open = !open; paint(); } },
+      {
+        type: "button", class: `cu-baby${open ? " open" : ""}`, "aria-expanded": open ? "true" : "false",
+        "aria-label": `Claude usage: ${readout}${set("five", "all") ? "" : " (no limits set)"}`,
+        title: set("five", "all") ? "Claude usage against your limits. Click for the hourly and weekly picture." : "Claude usage against your highest windows so far (no limits set yet). Click for the hourly and weekly picture.",
+        onclick: () => { open = !open; paint(); },
+      },
       el("span", { class: "brand" }, "Claude"),
       el("span", { class: "cell" }, el("span", { class: "k" }, "5h"), meter(cur.five.all, five, FAMILY_COLOUR.all, set("five", "all")), el("span", { class: "v" }, pctText(cur.five.all, five, set("five", "all")))),
       el("span", { class: "cell" }, el("span", { class: "k" }, "Fable"), meter(cur.five.fable, fable, FAMILY_COLOUR.fable, set("five", "fable")), el("span", { class: "v" }, pctText(cur.five.fable, fable, set("five", "fable")))),
@@ -275,7 +282,7 @@ export const mount = (root, ctx) => {
     paint();
   };
   paint();
-  load_().catch((err) => root.replaceChildren(el("span", { class: "cu-baby error", title: err.message }, "Claude usage unavailable")));
+  load_().catch((err) => root.replaceChildren(el("span", { class: "cu-baby error" }, `Claude usage unavailable: ${err.message}. `, el("button", { type: "button", class: "ghost", onclick: () => load_().catch(() => {}) }, "retry"))));
   const timer = window.setInterval(() => load_().catch(() => {}), 60_000);
   return { refresh: load_, stop: () => window.clearInterval(timer) };
 };

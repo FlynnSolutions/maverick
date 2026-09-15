@@ -5,6 +5,7 @@
 // typing into a session. Nothing here knows about tokens; usage is the provider widget's job.
 
 import { render as renderMd } from "./markdown.js";
+import { jetSvg } from "./jet.js";
 
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5 };
@@ -25,8 +26,9 @@ const plain = (md) =>
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/(^|\s)#{1,6}\s+/g, "$1")
     .replace(/\*\*([^*]+)(\*\*|$)/g, "$1")
-    .replace(/(^|\s)[_*]([^_*\n]+)[_*](?=\s|$)/g, "$1$2")
-    .replace(/`([^`]+)`/g, "$1")
+    .replace(/[_*]([^_*\n]+)([_*]|$)/g, "$1")
+    .replace(/[_*]+/g, "")
+    .replace(/`([^`]*)(`|$)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/^\s*[-*+]\s+/gm, "");
 const timeOf = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
@@ -124,96 +126,122 @@ export const mountCommandCenter = (root, ctx) => {
           window.setTimeout(load, 1500);
         } }, "close");
 
-  const panel = (s, record) => {
-    const card = el(
+  const dockButton = (s) => el("button", { type: "button", class: "ghost dock", title: "open the terminal in the dock", onclick: (e) => { e.stopPropagation(); openTerminal(dockFor(s)); } }, "dock");
+
+  const panel = (s, record, compact = false) =>
+    el(
       "article",
-      { class: `cc-panel ${s.status}${finished(s.status) ? " finished" : ""}`, tabindex: "0", role: "button", onclick: () => openFull(s), onkeydown: (e) => { if (e.key === "Enter") openFull(s); } },
-      el("header", {}, lamp(s.status), el("h4", { title: s.title }, s.title), roleChip(record), auditChip(record)),
-      el("div", { class: "meta" }, el("span", { class: "k" }, s.status), s.waitingFor ? el("span", {}, s.waitingFor) : null, el("span", {}, age(s.at)), s.elapsed ? el("span", {}, `up ${s.elapsed}`) : null, el("span", { class: "where" }, whereText(s))),
-      el("div", { class: "exchange" },
-        s.lastPrompt ? el("p", { class: "you" }, el("span", { class: "who" }, "you"), text(clip(plain(s.lastPrompt), 160))) : null,
-        s.lastReply ? el("p", { class: "claude" }, el("span", { class: "who" }, "claude"), text(clip(plain(s.lastReply), 320))) : el("p", { class: "claude empty" }, "nothing said yet"),
-      ),
-      el("footer", { onclick: (e) => e.stopPropagation() },
-        el("button", { type: "button", class: "primary", onclick: () => openFull(s) }, "Full screen"),
-        el("button", { type: "button", onclick: () => openTerminal(dockFor(s)) }, "Dock"),
-        el("span", { class: "spacer" }),
-        endButton(s),
-      ),
+      { class: `cc-panel ${s.status}${finished(s.status) ? " finished" : ""}${compact ? " compact" : ""}`, tabindex: "0", title: s.title, onclick: () => openFull(s), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFull(s); } } },
+      el("header", {}, lamp(s.status), el("h4", {}, s.title), roleChip(record), auditChip(record), dockButton(s)),
+      el("div", { class: "meta" }, el("span", { class: "k" }, s.status), s.waitingFor ? el("span", { class: "k soft" }, s.waitingFor) : null, el("span", {}, age(s.at)), s.elapsed ? el("span", {}, `up ${s.elapsed}`) : null, el("span", { class: "where" }, whereText(s))),
+      compact
+        ? null
+        : el("div", { class: "exchange" },
+            s.lastPrompt ? el("p", { class: "you" }, el("span", { class: "who" }, "you"), text(clip(plain(s.lastPrompt), 160))) : null,
+            s.lastReply ? el("p", { class: "claude" }, el("span", { class: "who" }, "claude"), text(clip(plain(s.lastReply), 300))) : el("p", { class: "claude empty" }, "nothing said yet"),
+          ),
     );
-    return card;
-  };
 
   const ghost = (record) =>
     el(
       "article",
-      { class: `cc-panel ghost ${record.status}`, title: record.handoff ?? "" },
-      el("header", {}, el("span", { class: "lamp" }), el("h4", { title: record.loop }, record.loop), roleChip(record), auditChip(record)),
+      { class: `cc-panel ghost ${record.status}`, title: record.loop },
+      el("header", {}, el("span", { class: "lamp" }), el("h4", {}, record.loop), roleChip(record), auditChip(record)),
       el("div", { class: "meta" }, el("span", { class: "k" }, record.status), record.pr ? el("span", {}, record.pr) : null, record.ended ? el("span", {}, `ended ${age(Date.parse(record.ended))}`) : null),
       record.handoff ? el("div", { class: "exchange" }, el("p", { class: "claude" }, el("span", { class: "who" }, "handoff"), text(clip(record.handoff, 240)))) : null,
     );
 
   const sessionForRecord = (r) => (r.claudeId ? model.sessions.find((s) => s.claudeId === r.claudeId) : model.sessions.find((s) => s.sessionId === r.id)) ?? null;
 
-  /** A parent and the sessions it watches, in one bracket. Returns the keys it consumed. */
-  const bracket = (parentRecord, used) => {
+  /** A lead and the sessions it watches, drawn as a formation: the lead across the top, wings hung off a hairline. */
+  const formation = (parentRecord, used) => {
     const children = model.parents.get(parentRecord.id) ?? [];
     const parentSession = sessionForRecord(parentRecord);
     if (parentSession) used.add(parentSession.key);
-    const head = el("div", { class: "cc-bracket-head" },
+    const lead = el("div", { class: "cc-lead" },
+      jetSvg("jet-glyph lead"),
       el("span", { class: "role" }, parentRecord.role === "audit" ? "audit parent" : parentRecord.role),
       el("b", {}, parentRecord.loop),
-      el("span", { class: "muted" }, `${parentRecord.status} · watching ${children.length} session${children.length === 1 ? "" : "s"}`),
-      parentSession ? el("span", { class: "spacer" }) : null,
-      parentSession ? el("button", { type: "button", onclick: () => openFull(parentSession) }, "Open parent") : null,
+      el("span", { class: "sub" }, `${parentSession ? parentSession.status : parentRecord.status} · watching ${children.length} session${children.length === 1 ? "" : "s"}`),
+      parentSession ? el("button", { type: "button", class: "ghost", onclick: () => openFull(parentSession) }, "open lead") : null,
     );
-    const grid = el("div", { class: "cc-grid" });
+    const wings = el("div", { class: "cc-grid cc-wings" });
     for (const c of children) {
       const s = sessionForRecord(c);
       if (s) {
         used.add(s.key);
-        grid.append(panel(s, c));
-      } else grid.append(ghost(c));
+        wings.append(panel(s, c));
+      } else wings.append(ghost(c));
     }
-    if (!children.length) grid.append(el("p", { class: "muted small cc-empty" }, "no task sessions under this parent yet: pick it when you spawn from a card"));
-    return el("section", { class: "cc-bracket" }, head, grid);
+    if (!children.length) wings.append(el("p", { class: "muted small cc-empty" }, "no task sessions under this lead yet: pick it when you spawn from a card"));
+    return el("section", { class: "cc-formation" }, lead, wings);
   };
+
+  /** A formation with nothing alive in it, folded to one line. */
+  const closedFormation = (parentRecord) => {
+    const children = model.parents.get(parentRecord.id) ?? [];
+    return el("li", { class: "cc-closed-row", title: parentRecord.handoff ?? "" },
+      el("span", { class: "lamp" }),
+      el("span", { class: "role" }, parentRecord.role),
+      el("span", { class: "name" }, parentRecord.loop),
+      el("span", { class: "sub" }, `${parentRecord.status} · ${children.length} session${children.length === 1 ? "" : "s"}${parentRecord.handoff ? ` · ${clip(parentRecord.handoff, 90)}` : ""}`),
+    );
+  };
+
+  const band = (name, sessions, cls = "", compact = false) =>
+    sessions.length
+      ? el("section", { class: `cc-band ${cls}` },
+          el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(sessions.length))),
+          el("div", { class: "cc-grid" }, ...sessions.map((s) => panel(s, s.record ?? model.byClaudeId.get(s.claudeId), compact))))
+      : null;
 
   const projectSection = (proj, sessions) => {
     const used = new Set();
-    const brackets = [];
+    const formations = [];
+    const closed = [];
     const inProject = (r) => (proj ? r.project === proj.id || r.project === proj.name : !r.project || !all.projects.some((p) => p.id === r.project || p.name === r.project));
     for (const parentId of model.parents.keys()) {
       const parentRecord = model.records.find((r) => r.id === parentId);
       if (!parentRecord || !inProject(parentRecord)) continue;
-      // Only brackets with something alive or a recent handoff earn space.
       const children = model.parents.get(parentId) ?? [];
       const alive = sessionForRecord(parentRecord) || children.some((c) => sessionForRecord(c));
-      if (!alive && parentRecord.status === "closed" && children.every((c) => c.status === "closed")) continue;
-      brackets.push(bracket(parentRecord, used));
+      if (alive) formations.push(formation(parentRecord, used));
+      else closed.push(closedFormation(parentRecord));
     }
     const loose = sessions.filter((s) => !used.has(s.key)).sort((a, b) => (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || (b.at ?? 0) - (a.at ?? 0));
-    const grid = el("div", { class: "cc-grid" }, ...loose.map((s) => panel(s, s.record ?? model.byClaudeId.get(s.claudeId))));
-    const busy = sessions.filter((s) => s.status === "busy" || s.status === "running").length;
-    const waiting = sessions.filter((s) => s.status === "waiting" || s.status === "blocked").length;
+    const is = (...st) => (s) => st.includes(s.status);
+    const needs = loose.filter(is("waiting", "blocked"));
+    const working = loose.filter(is("busy", "running"));
+    const done = loose.filter((s) => finished(s.status));
+    const idle = loose.filter((s) => !needs.includes(s) && !working.includes(s) && !done.includes(s));
+    const busy = sessions.filter(is("busy", "running")).length;
+    const waiting = sessions.filter(is("waiting", "blocked")).length;
     return el(
       "section",
       { class: "cc-project" },
       el("h3", {}, el("span", { class: "pname" }, proj ? proj.name : "Elsewhere"), el("span", { class: "counts" }, `${sessions.length} session${sessions.length === 1 ? "" : "s"}${busy ? ` · ${busy} working` : ""}${waiting ? ` · ${waiting} waiting on you` : ""}`)),
-      ...brackets,
-      loose.length ? grid : brackets.length ? null : el("p", { class: "muted small cc-empty" }, "nothing running here"),
+      band("Needs you", needs, "needs"),
+      ...formations,
+      band("Working", working, "working"),
+      band("Idle", idle, "idle", true),
+      band("Finished", done, "done", true),
+      closed.length ? el("ul", { class: "cc-closed" }, ...closed) : null,
+      !sessions.length && !formations.length ? el("p", { class: "muted small cc-empty" }, "nothing running here") : null,
     );
   };
 
   const paint = () => {
     if (!all) return;
     model = assemble(all);
+    const populated = all.projects.filter((p) => model.sessions.some((s) => s.project === p.id));
+    const elsewhere = model.sessions.filter((s) => !s.project).length;
     const filterBar = el("div", { class: "cc-filter" },
-      el("button", { type: "button", class: projectFilter === "all" ? "on" : "", onclick: () => { projectFilter = "all"; paint(); } }, `All · ${model.sessions.length}`),
-      ...all.projects.map((p) => {
-        const n = model.sessions.filter((s) => s.project === p.id).length;
-        return el("button", { type: "button", class: projectFilter === p.id ? "on" : "", onclick: () => { projectFilter = p.id; paint(); } }, `${p.name} · ${n}`);
-      }),
+      ...(populated.length + (elsewhere ? 1 : 0) > 1
+        ? [
+            el("button", { type: "button", class: projectFilter === "all" ? "on" : "", onclick: () => { projectFilter = "all"; paint(); } }, `All · ${model.sessions.length}`),
+            ...populated.map((p) => el("button", { type: "button", class: projectFilter === p.id ? "on" : "", onclick: () => { projectFilter = p.id; paint(); } }, `${p.name} · ${model.sessions.filter((s) => s.project === p.id).length}`)),
+          ]
+        : []),
       el("span", { class: "spacer" }),
       el("button", { type: "button", class: "ghost", onclick: () => load(true) }, "refresh"),
     );
@@ -281,15 +309,21 @@ export const mountCommandCenter = (root, ctx) => {
       el("h2", { title: live.title }, full.title ?? live.title),
       el("span", { class: "meta" }, el("span", { class: "k" }, live.status), live.waitingFor ? el("span", {}, live.waitingFor) : null, el("span", {}, whereText(live)), el("span", { class: "mono" }, live.sessionId.slice(0, 8))),
       el("span", { class: "spacer" }),
-      el("button", { type: "button", class: "primary", onclick: () => openTerminal(dockFor(live)) }, live.kind === "background" ? "Take the stick (attach)" : "Open in dock"),
+      el("button", { type: "button", class: "primary", onclick: () => openTerminal(dockFor(live)) }, live.kind === "background" ? "Take the stick" : "Open in dock"),
       endButton(live),
     );
   };
 
   const pullTranscript = async () => {
-    if (!full) return;
+    if (!full || full.busy) return; // one read in flight at a time, or the first (widening) read is appended twice
     const f = full;
-    const page = await api(`/api/transcript?cwd=${encodeURIComponent(f.session.cwd)}&session=${encodeURIComponent(f.session.sessionId)}&from=${f.offset}`);
+    f.busy = true;
+    let page;
+    try {
+      page = await api(`/api/transcript?cwd=${encodeURIComponent(f.session.cwd)}&session=${encodeURIComponent(f.session.sessionId)}&from=${f.offset}`);
+    } finally {
+      f.busy = false;
+    }
     if (full !== f) return;
     if (page.title && !f.title) {
       f.title = page.title;

@@ -1177,7 +1177,7 @@ const renderWorkspace = async () => {
   const ws = await api("/api/workspace");
   wrap.append(
     el("div", { class: "ws-head" },
-      el("div", {}, el("h2", { class: "ws-title" }, "Command center"), el("p", { class: "muted" }, "Every Claude session on this machine. Click a panel to read it full screen.")),
+      el("h2", { class: "ws-title" }, "Command center"),
       el("div", { class: "ws-tools" },
         usageRoot,
         ...(ws.lanUrl ? [el("button", { type: "button", class: "ghost", title: ws.lanUrl, onclick: () => { navigator.clipboard?.writeText(ws.lanUrl); setStatus("phone link copied"); } }, "phone link")] : []),
