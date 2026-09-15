@@ -19,9 +19,12 @@ import { addProject, chooseFolder, projectById, readProjects, removeProject, typ
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
+import { usage } from "./src/usage.ts";
+import { randomBytes } from "node:crypto";
+import { networkInterfaces } from "node:os";
 import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
-import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
+import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
 const run = promisify(execFile);
 const webRoot = join(fileURLToPath(new URL(".", import.meta.url)), "web");
@@ -32,6 +35,38 @@ const MIME: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
+};
+
+/* ---------- access from the LAN ---------- */
+
+let accessKey = "";
+const loadKey = async (): Promise<string> => {
+  try {
+    accessKey = (await readFile(config.keyFile, "utf8")).trim();
+  } catch {
+    accessKey = randomBytes(18).toString("base64url");
+    await mkdir(join(config.keyFile, ".."), { recursive: true });
+    await writeFile(config.keyFile, `${accessKey}\n`, { mode: 0o600 });
+  }
+  return accessKey;
+};
+const lanAddress = (): string | undefined => {
+  for (const list of Object.values(networkInterfaces())) {
+    for (const net of list ?? []) if (net.family === "IPv4" && !net.internal) return net.address;
+  }
+  return undefined;
+};
+const isLoopback = (addr: string | undefined): boolean => !addr || addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+/** Non-loopback clients must present the key once (`?key=`), which sets a cookie for the rest. */
+const authorised = (req: IncomingMessage, url: URL, res: ServerResponse): boolean => {
+  if (isLoopback(req.socket.remoteAddress)) return true;
+  const cookie = (req.headers.cookie ?? "").split(";").map((c) => c.trim()).find((c) => c.startsWith("console_key="))?.slice("console_key=".length);
+  if (cookie === accessKey) return true;
+  if (url.searchParams.get("key") === accessKey) {
+    res.setHeader("set-cookie", `console_key=${accessKey}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
+    return true;
+  }
+  return false;
 };
 
 const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
@@ -276,6 +311,35 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   const url = new URL(req.url ?? "/", "http://localhost");
   const { method } = req;
   const path = url.pathname;
+  if (!authorised(req, url, res)) {
+    res.writeHead(401, { "content-type": "text/plain; charset=utf-8" }).end("this console needs its access key: open the link from the Workspace view on the desktop");
+    return;
+  }
+  if (method === "GET" && path === "/api/usage") return sendJson(res, 200, await usage(url.searchParams.has("refresh")));
+  if (method === "GET" && path === "/api/workspace") {
+    const lan = lanAddress();
+    return sendJson(res, 200, {
+      host: config.host,
+      lanUrl: config.host === "127.0.0.1" || !lan ? null : `http://${lan}:${config.port}/review.html?key=${accessKey}`,
+      lanHint: config.host === "127.0.0.1" ? "start with SESSION_CONSOLE_HOST=0.0.0.0 to reach the console from your phone" : null,
+    });
+  }
+  if (method === "POST" && path === "/api/remove") {
+    const body = await readJson<{ project: string; tracker: number; itemStart: number; itemFirstLine: string; reason: string }>(req);
+    const project = await projectById(body.project);
+    const tracker = project.trackers[body.tracker];
+    if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
+    if (!body.reason?.trim()) throw new Error("a reason is required");
+    try {
+      const after = removeItem(await readFile(tracker.path, "utf8"), body.itemStart, body.itemFirstLine, body.reason);
+      await writeFile(tracker.path, after, "utf8");
+      const title = body.itemFirstLine.match(/\*\*(.+?)\*\*/)?.[1] ?? body.itemFirstLine.slice(2, 60);
+      return sendJson(res, 200, { commit: await commitFile(tracker.path, `console: remove "${title}" (${body.reason.slice(0, 60)})`) });
+    } catch (err) {
+      if (err instanceof StaleMoveError) return sendJson(res, 409, { error: err.message });
+      throw err;
+    }
+  }
   const termMatch = path.match(/^\/api\/terminals\/([^/]+)(?:\/(stream|input|resize))?$/);
 
   if (method === "GET" && path === "/api/projects") return sendJson(res, 200, await readProjects());
@@ -452,7 +516,11 @@ createServer((req, res) => {
     if (!res.headersSent) sendJson(res, 500, { error: err.message });
     else res.end();
   });
-}).listen(config.port, "127.0.0.1", () => {
+}).listen(config.port, config.host, async () => {
+  await loadKey();
   console.log(`session console: http://localhost:${config.port}`);
   console.log(`  projects: ${config.projectsFile}`);
+  const lan = lanAddress();
+  if (config.host !== "127.0.0.1" && lan) console.log(`  phone: http://${lan}:${config.port}/review.html?key=${accessKey}`);
+  usage().catch((err: Error) => console.error("usage scan:", err.message));
 });

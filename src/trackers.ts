@@ -61,6 +61,8 @@ const COLUMN_BY_EMOJI: Array<[string, ColumnId]> = [
   ["🧹", "backlog"],
   ["✅", "shipped"],
 ];
+/** Sections that exist but are never shown as a lane. */
+const HIDDEN_SECTION = "🗑️ Removed";
 
 const isSectionHeading = (line: string): boolean => line.startsWith("## ");
 const isGroupHeading = (line: string): boolean => line.startsWith("### ");
@@ -271,6 +273,34 @@ export const addGroup = (text: string, heading: string, name: string): string =>
   const out = [...lines];
   out.splice(at, 0, "", `### ${name}`, "");
   return out.join("\n");
+};
+
+/**
+ * Move an item to the tracker's `## 🗑️ Removed` section (created at the end when absent) with
+ * a `removed:` field carrying the date and the reason. Nothing is deleted; the Removed
+ * section is simply not a lane.
+ */
+export const removeItem = (text: string, itemStart: number, itemFirstLine: string, reason: string): string => {
+  const lines = text.split("\n");
+  if (lines[itemStart] !== itemFirstLine) {
+    throw new StaleMoveError(`line ${itemStart} is no longer "${itemFirstLine.slice(0, 60)}"; reload`);
+  }
+  const end = blockEnd(lines, itemStart);
+  const block = lines.slice(itemStart, end);
+  const stamped = [block[0], `  - removed: ${new Date().toISOString().slice(0, 10)}, ${reason.replace(/\s+/g, " ").trim()}`, ...block.slice(1)];
+  const remaining = [...lines.slice(0, itemStart), ...lines.slice(end)];
+  const heading = `## ${HIDDEN_SECTION}`;
+  let at = remaining.findIndex((l) => l === heading);
+  if (at < 0) {
+    while (remaining.length && isBlank(remaining[remaining.length - 1])) remaining.pop();
+    remaining.push("", "---", "", heading, "", "_Swiped away in the phone review. Each carries the date and the reason. Move an item back up to restore it._", "");
+    at = remaining.indexOf(heading);
+  }
+  let insertAt = at + 1;
+  while (insertAt < remaining.length && !remaining[insertAt].startsWith("## ")) insertAt += 1;
+  while (insertAt > at + 1 && isBlank(remaining[insertAt - 1])) insertAt -= 1;
+  remaining.splice(insertAt, 0, "", ...stamped);
+  return remaining.join("\n");
 };
 
 /** Remove an empty `### ` group heading (a group with items is never deleted from here). */

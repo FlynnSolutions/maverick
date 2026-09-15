@@ -406,10 +406,13 @@ const loadBoard = async () => {
     lastTrackers = trackers;
     if (!releasesData) releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
     ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
+    $("#project").classList.toggle("workspace-view", view === "workspace");
     $("#boards").replaceChildren(
       ...(view === "calendar"
         ? [renderCalendar(trackers)]
-        : [el("section", { class: "board-releases" }, el("h3", { class: "strip-title" }, "Releases"), renderReleases(trackers)), ...trackers.map(renderBoard)]),
+        : view === "workspace"
+          ? [await renderWorkspace()]
+          : [el("section", { class: "board-releases" }, el("h3", { class: "strip-title" }, "Releases"), renderReleases(trackers)), ...trackers.map(renderBoard)]),
     );
     for (const b of document.querySelectorAll("#view-toggle button")) b.classList.toggle("active", b.dataset.view === view);
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
@@ -606,8 +609,9 @@ const openDrawer = (trackerIndex, item) => {
 
 let calendarMonth = today().slice(0, 7);
 let view = "board";
-try { view = localStorage.getItem("console.view") === "calendar" ? "calendar" : "board"; } catch {}
-if (new URLSearchParams(location.search).get("view") === "calendar") view = "calendar";
+try { view = ["calendar", "workspace"].includes(localStorage.getItem("console.view")) ? localStorage.getItem("console.view") : "board"; } catch {}
+const viewParam = new URLSearchParams(location.search).get("view");
+if (viewParam === "calendar" || viewParam === "workspace") view = viewParam;
 
 const eventsFor = (trackers) => {
   const events = [];
@@ -1054,6 +1058,57 @@ const openShipWizard = async (version) => {
   document.addEventListener("keydown", onDrawerKey);
   render();
   ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
+};
+
+
+/* ---------- workspace: usage tracker, phone review ---------- */
+
+const fmtTokens = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : String(n));
+
+const renderWorkspace = async () => {
+  const wrap = el("section", { class: "workspace" });
+  wrap.append(el("h2", { class: "ws-title" }, "Workspace"), el("p", { class: "muted" }, "Across every project on this machine."));
+  const [u, ws] = await Promise.all([api("/api/usage"), api("/api/workspace")]);
+
+  const tile = (label, value, sub) => el("div", { class: "ws-tile" }, el("span", { class: "k" }, label), el("b", {}, value), sub ? el("span", { class: "sub" }, sub) : null);
+  const t = u.totals;
+  wrap.append(el("h3", {}, "Claude usage"),
+    el("div", { class: "ws-tiles" },
+      tile("today", fmtTokens(t.today.output), `${fmtTokens(t.today.input + t.today.cacheRead + t.today.cacheWrite)} in · ${t.today.messages} replies`),
+      tile("7 days", fmtTokens(t.week.output), `${fmtTokens(t.week.input + t.week.cacheRead + t.week.cacheWrite)} in · ${t.week.messages} replies`),
+      tile("30 days", fmtTokens(t.month.output), `${fmtTokens(t.month.input + t.month.cacheRead + t.month.cacheWrite)} in · ${t.month.messages} replies`),
+      tile("sessions", String(u.sessionsThisMonth), "with activity in 30 days")),
+    el("p", { class: "muted small" }, "Output tokens lead; \"in\" is prompt + cache read + cache write. Read from the transcripts Claude Code keeps, so this is what was consumed, not what your plan has left (the subscription's quota is not stored locally)."));
+
+  // 30-day bars
+  const max = Math.max(1, ...u.days.map((d) => d.output));
+  const chart = el("div", { class: "ws-chart" });
+  const byDate = new Map(u.days.map((d) => [d.date, d]));
+  for (let i = 29; i >= 0; i -= 1) {
+    const date = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const d = byDate.get(date);
+    const h = d ? Math.max(2, Math.round((d.output / max) * 100)) : 0;
+    chart.append(el("div", { class: `ws-bar${date === today() ? " today" : ""}`, title: `${fmtDate(date, true)}: ${d ? `${fmtTokens(d.output)} out · ${fmtTokens(d.input + d.cacheRead + d.cacheWrite)} in · ${d.messages} replies` : "nothing"}` }, el("i", { style: `height:${h}%` }), el("span", {}, i % 5 === 0 ? date.slice(5) : "")));
+  }
+  wrap.append(el("h3", {}, "Output tokens per day, last 30"), chart);
+
+  const table = (rows, keyName, keyLabel) => {
+    const tbl = el("table", { class: "ws-table" }, el("thead", {}, el("tr", {}, el("th", {}, keyLabel), el("th", {}, "out"), el("th", {}, "in"), el("th", {}, "cache read"), el("th", {}, "replies"))));
+    const body = el("tbody");
+    for (const r of rows.slice(0, 12)) body.append(el("tr", {}, el("td", {}, r[keyName]), el("td", {}, fmtTokens(r.output)), el("td", {}, fmtTokens(r.input + r.cacheWrite)), el("td", {}, fmtTokens(r.cacheRead)), el("td", {}, String(r.messages))));
+    tbl.append(body);
+    return tbl;
+  };
+  wrap.append(el("div", { class: "ws-cols" },
+    el("div", {}, el("h3", {}, "By project, 30 days"), table(u.projects, "project", "project")),
+    el("div", {}, el("h3", {}, "By model, 30 days"), table(u.models, "model", "model"))));
+
+  wrap.append(el("h3", {}, "Review on your phone"),
+    ws.lanUrl
+      ? el("div", { class: "ws-phone" }, el("p", {}, "Open this on your phone (same Wi-Fi). The link carries the access key once; after that the phone is remembered for 30 days."), el("code", { class: "ws-link" }, ws.lanUrl), el("p", { class: "muted small" }, "Swipe right to keep, left to remove. A removal asks why and moves the item to a Removed section in the tracker with the date and your reason, one commit each."))
+      : el("div", { class: "ws-phone" }, el("p", {}, ws.lanHint), el("code", { class: "ws-link" }, "SESSION_CONSOLE_HOST=0.0.0.0 node server.ts")),
+    el("p", { class: "muted small mono" }, `usage scanned ${new Date(u.scannedAt).toLocaleTimeString()} · ${u.filesScanned} files read this pass`));
+  return wrap;
 };
 
 /* ---------- sessions ---------- */

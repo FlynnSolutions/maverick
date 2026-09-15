@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Review · Session Console</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="review.css" />
+</head>
+<body class="review-body">
+  <header class="bar review-bar">
+    <a href="/" class="brand">Review</a>
+    <select id="project" class="switcher" aria-label="Project"></select>
+    <span id="count" class="status"></span>
+  </header>
+  <main class="deck" id="deck">
+    <p class="muted center" id="empty" hidden>Nothing left to review here. Pick another project or come back later.</p>
+  </main>
+  <div class="hands">
+    <button id="nope" type="button" class="hand nope" aria-label="remove">✕</button>
+    <button id="undo" type="button" class="ghost" aria-label="undo">undo</button>
+    <button id="keep" type="button" class="hand keep" aria-label="keep">♥</button>
+  </div>
+  <div id="match" class="match" hidden>
+    <div class="match-inner">
+      <h1>It's a match!</h1>
+      <p id="match-title"></p>
+      <textarea id="reason" rows="3" placeholder="why should this go?"></textarea>
+      <div class="match-actions">
+        <button id="match-cancel" type="button" class="ghost">keep it after all</button>
+        <button id="match-send" type="button" class="primary">send it off</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="review.js"></script>
+</body>
+</html>

@@ -757,3 +757,30 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .release-card-head { align-items: center; margin-bottom: 4px; }
 .release-date { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); margin-bottom: 4px; }
 .badge.planned { background: var(--bolt-dim); color: var(--bolt-hot); }
+
+/* ---------- workspace ---------- */
+
+.project.workspace-view { grid-template-columns: minmax(0, 1fr); }
+.project.workspace-view .dispatch { display: none; }
+.workspace { max-width: 1100px; }
+.ws-title { font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: 0.04em; }
+.workspace h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 22px 0 8px; }
+.ws-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.ws-tile { padding: 12px 14px; border-radius: var(--radius-m); background: var(--sky-2); box-shadow: 0 0 0 1px var(--cloud-soft); display: flex; flex-direction: column; gap: 4px; }
+.ws-tile .k { font-family: var(--display); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.ws-tile b { font-family: var(--display); font-size: 28px; font-weight: 600; line-height: 1.1; color: var(--bolt-hot); font-variant-numeric: tabular-nums; }
+.ws-tile .sub { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.ws-chart { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 4px; height: 140px; align-items: end; padding: 8px 8px 18px; border-radius: var(--radius-m); background: var(--sky-1); box-shadow: 0 0 0 1px var(--cloud-soft); position: relative; }
+.ws-bar { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+.ws-bar i { display: block; border-radius: 2px 2px 0 0; background: linear-gradient(180deg, var(--bolt-hot), var(--bolt)); opacity: 0.85; min-height: 0; }
+.ws-bar.today i { box-shadow: 0 0 12px var(--bolt-glow); opacity: 1; }
+.ws-bar span { position: absolute; bottom: -16px; left: 0; font-family: var(--mono); font-size: 9px; color: var(--ink-ghost); }
+.ws-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ws-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ws-table th { text-align: left; font-family: var(--display); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-ghost); padding: 4px 8px; border-bottom: 1px solid var(--cloud-soft); }
+.ws-table td { padding: 6px 8px; border-bottom: 1px solid var(--cloud-soft); font-variant-numeric: tabular-nums; }
+.ws-table td:not(:first-child) { font-family: var(--mono); font-size: 12px; text-align: right; }
+.ws-table th:not(:first-child) { text-align: right; }
+.ws-phone { padding: 12px 14px; border-radius: var(--radius-m); background: var(--sky-2); box-shadow: 0 0 0 1px var(--cloud-soft); }
+.ws-link { display: block; margin: 8px 0; padding: 8px 10px; border-radius: var(--radius-s); background: var(--sky-0); font-family: var(--mono); font-size: 13px; color: var(--bolt-hot); overflow-wrap: anywhere; user-select: all; }
+@media (max-width: 900px) { .ws-tiles { grid-template-columns: 1fr 1fr; } .ws-cols { grid-template-columns: 1fr; } }
