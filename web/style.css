@@ -587,7 +587,7 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 
 /* ---------- release planning on the calendar ---------- */
 
-.calendar .strip-title { grid-column: 1 / -1; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 8px 0 0; }
+.strip-title { grid-column: 1 / -1; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 8px 0 0; }
 .releases { grid-column: 1 / -1; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
 .release-card {
   flex: 0 0 260px;
