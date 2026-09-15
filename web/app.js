@@ -1048,7 +1048,7 @@ const jetGlyph = () => {
   svg.setAttribute("viewBox", "0 0 40 16");
   svg.setAttribute("class", "jet-glyph");
   const body = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  body.setAttribute("d", "M0 9 L14 7 L22 3 L26 3 L24 7 L34 6 L40 8 L34 10 L24 9 L26 13 L22 13 L14 9 Z");
+  body.setAttribute("d", "M40 8 L30 6 L24 5 L20 5 L8 1 L6 1 L14 5 L6 5 L2 3 L1 3 L3 6.5 L3 9.5 L1 13 L2 13 L6 11 L14 11 L6 15 L8 15 L20 11 L24 11 L30 10 Z");
   svg.append(body);
   return svg;
 };

@@ -18,7 +18,7 @@
   <rect width="64" height="64" rx="14" fill="url(#sky)"/>
   <path d="M6 34 L26 34" stroke="url(#burn)" stroke-width="5" stroke-linecap="round" filter="url(#glow)"/>
   <g transform="translate(20 22) scale(1.05)">
-    <path d="M0 11 L14 9 L22 4 L27 4 L25 9 L36 8 L42 10 L36 12 L25 11 L27 16 L22 16 L14 11 Z" fill="#e8ecf1"/>
-    <path d="M14 9 L22 4 L27 4 L25 9 Z" fill="#c7ceda"/>
+    <path d="M42 8 L31 6 L25 5 L21 5 L8 1 L6 1 L14.5 5 L6 5 L2 3 L1 3 L3 6.5 L3 9.5 L1 13 L2 13 L6 11 L14.5 11 L6 15 L8 15 L21 11 L25 11 L31 10 Z" fill="#e8ecf1"/>
+    <path d="M21 5 L8 1 L6 1 L14.5 5 Z" fill="#c7ceda"/>
   </g>
 </svg>

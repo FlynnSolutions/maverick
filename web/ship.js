@@ -163,13 +163,95 @@ const stepCall = async (step, action, body) => {
   }
 };
 
+
+/* ---------- a hosted walkthrough: the document inside the step, its verdicts read live ---------- */
+
+const WALKTHROUGH_DOC = /deliverables\/testing\/.*walkthrough.*\.html$/;
+let walkthroughTimer = null;
+
+const walkthroughPanel = (step) => {
+  const doc = (step.artifacts ?? []).find((a) => WALKTHROUGH_DOC.test(a));
+  if (!doc) return null;
+  const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(doc)}`;
+  const bar = el("div", { class: "runway small" }, el("div", { class: "fill", style: "width:0%" }));
+  const count = el("span", { class: "mono small muted" }, "reading the document…");
+  const pillars = el("div", { class: "pillars" });
+  const frame = el("iframe", { class: "doc-frame tall", src: url, title: doc });
+  let cases = [];
+  let key = null;
+
+  const readState = () => {
+    if (!key) return {};
+    try { return JSON.parse(localStorage.getItem(key) || "null") ?? {}; } catch { return {}; }
+  };
+  const paint = () => {
+    const state = readState();
+    const answered = cases.filter((c) => state[c.id]?.v);
+    const pct = cases.length ? (answered.length / cases.length) * 100 : 0;
+    bar.firstChild.style.width = `${pct}%`;
+    count.textContent = cases.length ? `${answered.length} of ${cases.length} cases answered` : "no cases found in the document";
+    const byPillar = new Map();
+    for (const c of cases) {
+      const p = byPillar.get(c.pillar) ?? { total: 0, done: 0, verdicts: {} };
+      p.total += 1;
+      const v = state[c.id]?.v;
+      if (v) { p.done += 1; p.verdicts[v] = (p.verdicts[v] ?? 0) + 1; }
+      byPillar.set(c.pillar, p);
+    }
+    pillars.replaceChildren(...[...byPillar.entries()].map(([name, p]) => el("div", { class: `pillar${p.done === p.total ? " complete" : ""}` }, el("span", { class: "pname" }, name), el("span", { class: "pcount mono" }, `${p.done}/${p.total}`), el("span", { class: "pverdicts mono small muted" }, Object.entries(p.verdicts).map(([v, n]) => `${v} ${n}`).join(" · ")))));
+    return { answered: answered.length, verdicts: Object.fromEntries(answered.map((c) => [c.id, state[c.id].v])) };
+  };
+  let lastSaved = "";
+  const save = async () => {
+    const { answered, verdicts } = paint();
+    if (!key || !cases.length) return;
+    const summary = { doc, key, total: cases.length, answered, verdicts, updatedAt: new Date().toISOString() };
+    const fingerprint = JSON.stringify(verdicts);
+    if (fingerprint === lastSaved) return;
+    lastSaved = fingerprint;
+    step.walkthrough = summary;
+    try {
+      await post(stepUrl(step, ""), { walkthrough: summary });
+    } catch (err) {
+      setStatus(`${err.message} (walkthrough progress will save after the server restarts)`, true);
+    }
+  };
+  frame.addEventListener("load", () => {
+    try {
+      const d = frame.contentDocument;
+      const text = d.documentElement.innerHTML;
+      key = text.match(/KEY\s*=\s*"([^"]+)"/)?.[1] ?? null;
+      cases = [];
+      let pillar = "";
+      for (const node of d.querySelectorAll("h2, .tc[data-id]")) {
+        if (node.tagName === "H2") pillar = node.textContent.trim();
+        else cases.push({ id: node.dataset.id, pillar });
+      }
+      save();
+    } catch (err) {
+      count.textContent = `could not read the document: ${err.message}`;
+    }
+  });
+  window.addEventListener("storage", save);
+  window.clearInterval(walkthroughTimer);
+  walkthroughTimer = window.setInterval(save, 4000);
+
+  const saved = step.walkthrough;
+  return el("section", { class: "panel walkthrough-panel" },
+    el("h2", {}, "Walkthrough", el("span", { class: "spacer" }), count, el("a", { href: url, target: "_blank", class: "mono small" }, "open in its own tab ↗")),
+    el("div", { class: "wt-progress" }, bar),
+    saved ? el("div", { class: "muted small mono" }, `last saved ${fmtTime(saved.updatedAt)} · ${saved.answered} of ${saved.total}`) : null,
+    pillars,
+    frame);
+};
+
 /* ---------- render ---------- */
 const jetGlyph = () => {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 40 16");
   svg.setAttribute("class", "jet-glyph");
   const body = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  body.setAttribute("d", "M0 9 L14 7 L22 3 L26 3 L24 7 L34 6 L40 8 L34 10 L24 9 L26 13 L22 13 L14 9 Z");
+  body.setAttribute("d", "M40 8 L30 6 L24 5 L20 5 L8 1 L6 1 L14 5 L6 5 L2 3 L1 3 L3 6.5 L3 9.5 L1 13 L2 13 L6 11 L14 11 L6 15 L8 15 L20 11 L24 11 L30 10 Z");
   svg.append(body);
   return svg;
 };
@@ -241,10 +323,13 @@ const renderStep = (step) => {
     const checkCount = Object.values(step.checks ?? {}).filter((c) => c?.done).length;
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "Report", el("span", { class: "spacer" }), checkCount ? el("span", { class: "muted small" }, `${checkCount} human item${checkCount === 1 ? "" : "s"} checked`) : null), renderMarkdown(step.report, { project: projectId, ...humanCheckboxes(step) })));
   }
+  const wt = walkthroughPanel(step);
+  if (wt) blocks.push(wt);
   if (step.artifacts?.length) {
     const row = el("div", { class: "artifact-row" });
     const frameHost = el("div");
     for (const a of step.artifacts) {
+      if (wt && WALKTHROUGH_DOC.test(a)) continue;
       const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(a)}`;
       row.append(el("a", { href: url, target: "_blank" }, `${a} ↗`));
       if (a.endsWith(".html")) row.append(btn("view here", () => { frameHost.replaceChildren(el("iframe", { class: "doc-frame", src: url, title: a })); }, "ghost"));
@@ -282,6 +367,7 @@ const renderReviews = () => {
 
 const renderAll = () => {
   stopTails();
+  window.clearInterval(walkthroughTimer);
   renderTop();
   renderNav();
   if (selected === "__reviews") renderReviews();

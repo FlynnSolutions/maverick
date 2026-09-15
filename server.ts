@@ -8,8 +8,8 @@
  */
 import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, extname, join, normalize } from "node:path";
+import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
@@ -419,12 +419,30 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const project = await requireProject(url);
     const [, version, stepId, action] = shipStep;
     if (method === "POST" && action === "run") return sendJson(res, 200, await runStep(project, version, stepId));
-    if (method === "POST" && !action) return sendJson(res, 200, await updateStep(project, version, stepId, await readJson<{ status?: StepStatus; notes?: string; checks?: Record<string, { done: boolean; label?: string; at?: string }> }>(req)));
+    if (method === "POST" && !action) return sendJson(res, 200, await updateStep(project, version, stepId, await readJson<{ status?: StepStatus; notes?: string; checks?: Record<string, { done: boolean; label?: string; at?: string }>; walkthrough?: { doc: string; key: string; total: number; answered: number; verdicts: Record<string, string>; updatedAt: string } }>(req)));
   }
   if (method === "GET" && path.startsWith("/api/ships/")) {
     const project = await requireProject(url);
     await sweepShips(project);
     return sendJson(res, 200, await readShip(project.id, decodeURIComponent(path.slice("/api/ships/".length))));
+  }
+  // The walkthrough document's own "send to Claude" button posts here (relative /feedback), exactly as the
+  // skill's helper server accepted it: one JSON line appended beside the doc, in feedback/<vNNN>-feedback.jsonl.
+  if (method === "POST" && path === "/feedback") {
+    const referer = new URL(req.headers.referer ?? "", "http://localhost");
+    const projectId = referer.searchParams.get("project");
+    const docPath = referer.searchParams.get("path");
+    if (!projectId || !docPath) throw new Error("feedback needs to come from a document served at /files?project=&path=");
+    const project = await projectById(projectId);
+    const doc = normalize(join(project.path, docPath));
+    if (!doc.startsWith(`${project.path}/`)) throw new Error("document outside the project");
+    const tag = `v${(docPath.match(/v(\d+(?:\.\d+)*)/)?.[1] ?? "").replace(/\./g, "")}`;
+    const payload = await readJson<Record<string, unknown>>(req);
+    const line = { ts: new Date().toISOString().replace(/\.\d{3}Z$/, "+00:00"), caseId: payload.caseId ?? "", caseVersion: payload.caseVersion ?? 1, verdict: payload.verdict ?? "", note: payload.note ?? "" };
+    const file = join(dirname(doc), "feedback", `${tag}-feedback.jsonl`);
+    await mkdir(dirname(file), { recursive: true });
+    await appendFile(file, `${JSON.stringify(line)}\n`, "utf8");
+    return sendJson(res, 200, { ok: true, file: relative(project.path, file) });
   }
   // Review documents the ship produced, served read-only from inside the project.
   if (method === "GET" && path === "/files") {

@@ -37,6 +37,8 @@ export interface ShipStep {
   notes?: string;
   /** The human's items from the report, as checkboxes: key -> {done, label, at}. */
   checks?: Record<string, { done: boolean; label?: string; at?: string }>;
+  /** Progress through a hosted walkthrough document: verdict per case id, read from the doc as it is worked. */
+  walkthrough?: { doc: string; key: string; total: number; answered: number; verdicts: Record<string, string>; updatedAt: string };
 }
 
 export interface ShipRun {
@@ -161,7 +163,7 @@ export const runStep = async (project: Project, version: string, stepId: string)
   return step;
 };
 
-export const updateStep = async (project: Project, version: string, stepId: string, patch: { status?: StepStatus; notes?: string; checks?: ShipStep["checks"] }): Promise<ShipStep> => {
+export const updateStep = async (project: Project, version: string, stepId: string, patch: { status?: StepStatus; notes?: string; checks?: ShipStep["checks"]; walkthrough?: ShipStep["walkthrough"] }): Promise<ShipStep> => {
   const ship = await readShip(project.id, version);
   if (!ship) throw new Error(`no ship run for ${version}`);
   const step = stepOf(ship, stepId);
@@ -175,6 +177,7 @@ export const updateStep = async (project: Project, version: string, stepId: stri
   }
   if (patch.notes !== undefined) step.notes = patch.notes;
   if (patch.checks !== undefined) step.checks = patch.checks;
+  if (patch.walkthrough !== undefined) step.walkthrough = patch.walkthrough;
   if (ship.steps.every((s) => s.status === "done" || s.status === "skipped")) ship.finished = ship.finished ?? new Date().toISOString();
   else delete ship.finished;
   await writeShip(ship);
