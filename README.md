@@ -79,7 +79,10 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
   or `CHANGELOG.md`, Keep-a-Changelog shape): **Next** is the `[Unreleased]` block with its
   added / fixed counts and every PR merged since the last version tag in the repos that carry
   that tag; shipped versions show their added / fixed / changed counts. Click a card for the
-  PR list (linked, feat / fix by title prefix) and the changelog bullets. A **planned**
+  PR list (linked, feat / fix by title prefix), the GitHub compare link per repo, and the
+  changelog bullets; `#release-1.8.1` or `#release-next` deep-links a card's drawer. PRs are
+  assigned to a version by tag date (merged at or before the tag, after the previous one), from
+  the last 400 merged PRs per repo, so versions older than that window undercount. A **planned**
   release is a `###` group under Priority named like one (`v1.10`, or containing "release" or
   "deploy"); its card counts its items, and its drawer sets the deploy date, which is
   written into the heading as `(deploy YYYY-MM-DD)`. Put an item into a planned release by

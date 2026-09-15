@@ -39,6 +39,8 @@ export interface Release {
   bullets: ChangeBullet[];
   counts: { added: number; changed: number; fixed: number; removed: number; prs: number; prFeatures: number; prFixes: number };
   prs: MergedPr[];
+  /** GitHub compare links per repo: previous tag to this tag (or latest tag to develop for the next release). */
+  compare: Array<{ repo: string; url: string }>;
 }
 
 export interface ReleasesView {
@@ -95,23 +97,21 @@ const prKind = (title: string): MergedPr["kind"] => {
   return "other";
 };
 
-const mergedSince = async (repoLabel: string, repoPath: string, sinceIso: string): Promise<MergedPr[]> => {
+const mergedPrs = async (repoLabel: string, repoPath: string): Promise<MergedPr[]> => {
   try {
     const { stdout } = await run(
       "gh",
-      ["pr", "list", "--state", "merged", "--limit", "200", "--json", "number,title,url,mergedAt"],
+      ["pr", "list", "--state", "merged", "--limit", "400", "--json", "number,title,url,mergedAt"],
       { cwd: repoPath },
     );
     const rows = JSON.parse(stdout) as Array<{ number: number; title: string; url: string; mergedAt: string }>;
-    return rows
-      .filter((r) => r.mergedAt > sinceIso)
-      .map((r) => ({ repo: repoLabel, number: r.number, title: r.title, url: r.url, mergedAt: r.mergedAt, kind: prKind(r.title) }));
+    return rows.map((r) => ({ repo: repoLabel, number: r.number, title: r.title, url: r.url, mergedAt: r.mergedAt, kind: prKind(r.title) }));
   } catch {
     return [];
   }
 };
 
-/** When the tag for a version was cut in a repo, so "merged since" is exact rather than date-of-changelog. */
+/** When the tag for a version was cut in a repo. Undefined when the repo does not carry it. */
 const tagDate = async (repoPath: string, version: string): Promise<string | undefined> => {
   for (const tag of [`v${version}`, version]) {
     try {
@@ -122,6 +122,16 @@ const tagDate = async (repoPath: string, version: string): Promise<string | unde
     }
   }
   return undefined;
+};
+
+const githubUrl = async (repoPath: string): Promise<string | undefined> => {
+  try {
+    const { stdout } = await run("git", ["-C", repoPath, "remote", "get-url", "origin"]);
+    const m = stdout.trim().match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?$/);
+    return m ? `https://github.com/${m[1]}/${m[2]}` : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 const counts = (bullets: ChangeBullet[], prs: MergedPr[]): Release["counts"] => ({
@@ -146,23 +156,50 @@ export const releasesFor = async (project: Project, force = false): Promise<Rele
   const shipped = versions.filter((v) => v.version.toLowerCase() !== "unreleased");
   const last = shipped[0];
 
-  let prs: MergedPr[] = [];
-  if (last) {
-    const repos = (await reposUnder(project.path)).filter((r) => r.label !== "root" && r.label !== "contracts");
-    const perRepo = await Promise.all(
-      repos.map(async (repo) => {
-        // Only repos that carry the version tag ship with the release; a docs or marketing repo without it is not counted.
-        const since = await tagDate(repo.path, last.version);
-        return since ? mergedSince(repo.label, repo.path, since) : [];
-      }),
-    );
-    prs = perRepo.flat().sort((a, b) => a.mergedAt.localeCompare(b.mergedAt));
-  }
+  // Per repo: every merged PR, the tag date of each shipped version, and the GitHub base URL.
+  // A PR belongs to the first version whose tag was cut at or after its merge; after the latest tag, it is unreleased.
+  const repos = (await reposUnder(project.path)).filter((r) => r.label !== "root" && r.label !== "contracts");
+  const perRepo = await Promise.all(
+    repos.map(async (repo) => {
+      const tags = new Map<string, string>();
+      for (const v of shipped.slice(0, 7)) {
+        const at = await tagDate(repo.path, v.version);
+        if (at) tags.set(v.version, at);
+      }
+      if (!tags.size) return null; // a docs or marketing repo without version tags does not ship
+      return { repo, tags, prs: await mergedPrs(repo.label, repo.path), url: await githubUrl(repo.path) };
+    }),
+  );
+  const shipping = perRepo.filter((r): r is NonNullable<typeof r> => r !== null);
 
+  const prsFor = (version: string | null): MergedPr[] =>
+    shipping.flatMap(({ tags, prs }) => {
+      const ordered = shipped.map((v) => v.version).filter((v) => tags.has(v)); // newest first
+      return prs.filter((pr) => {
+        const owner = [...ordered].reverse().find((v) => pr.mergedAt <= (tags.get(v) as string)) ?? null;
+        return owner === version;
+      });
+    }).sort((a, b) => a.mergedAt.localeCompare(b.mergedAt));
+
+  const compareFor = (version: string | null): Release["compare"] =>
+    shipping.flatMap(({ repo, tags, url }) => {
+      if (!url) return [];
+      const ordered = shipped.map((v) => v.version).filter((v) => tags.has(v));
+      if (version === null) return ordered[0] ? [{ repo: repo.label, url: `${url}/compare/v${ordered[0]}...develop` }] : [];
+      const i = ordered.indexOf(version);
+      if (i < 0) return [];
+      const prev = ordered[i + 1];
+      return [{ repo: repo.label, url: prev ? `${url}/compare/v${prev}...v${version}` : `${url}/releases/tag/v${version}` }];
+    });
+
+  const nextPrs = prsFor(null);
   const value: ReleasesView = {
     changelog,
-    next: unreleased ? { version: "Unreleased", bullets: unreleased.bullets, counts: counts(unreleased.bullets, prs), prs } : undefined,
-    shipped: shipped.slice(0, 6).map((v) => ({ version: v.version, date: v.date, bullets: v.bullets, counts: counts(v.bullets, []), prs: [] })),
+    next: unreleased ? { version: "Unreleased", bullets: unreleased.bullets, counts: counts(unreleased.bullets, nextPrs), prs: nextPrs, compare: compareFor(null) } : undefined,
+    shipped: shipped.slice(0, 6).map((v) => {
+      const prs = prsFor(v.version);
+      return { version: v.version, date: v.date, bullets: v.bullets, counts: counts(v.bullets, prs), prs, compare: compareFor(v.version) };
+    }),
     fetchedAt: new Date().toISOString(),
   };
   cache.set(project.id, { at: Date.now(), value });

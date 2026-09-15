@@ -618,6 +618,9 @@ const openReleaseDrawer = (release, kind, planned) => {
     }
   }
   const head = kind === "next" ? "Next release (unreleased)" : planned ? `${planned.name} · planned` : `${release.version} · shipped ${release.date ?? ""}`;
+  if (release?.compare?.length) {
+    list.prepend(el("div", { class: "compare-links" }, ...release.compare.map((c) => el("a", { href: c.url, target: "_blank" }, `${c.repo} on GitHub ↗`))));
+  }
   root.replaceChildren(
     el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
     el(
@@ -635,10 +638,10 @@ const releaseCard = (release, kind) => {
   const c = release.counts;
   return el(
     "div",
-    { class: `release-card ${kind}`, onclick: () => openReleaseDrawer(release, kind) },
+    { class: `release-card ${kind}`, onclick: () => { history.replaceState(null, "", `#release-${kind === "next" ? "next" : release.version}`); openReleaseDrawer(release, kind); } },
     el("div", {}, el("span", { class: "version" }, kind === "next" ? "Next" : release.version), el("span", { class: "state" }, kind === "next" ? "unreleased, on develop" : `shipped ${release.date ?? ""}`)),
-    el("div", { class: "stats" }, stat(c.added, "features"), stat(c.fixed, "fixes"), stat(kind === "next" ? c.prs : c.changed, kind === "next" ? "PRs merged" : "changes")),
-    kind === "next" ? el("div", { class: "foot" }, `${c.prFeatures} feat · ${c.prFixes} fix PRs since ${releasesData.shipped[0]?.version ?? "last tag"}`) : null,
+    el("div", { class: "stats" }, stat(c.added, "features"), stat(c.fixed, "fixes"), stat(c.prs, "PRs")),
+    el("div", { class: "foot" }, `${c.prFeatures} feat · ${c.prFixes} fix PRs${kind === "next" ? ` since ${releasesData.shipped[0]?.version ?? "last tag"}` : ""} · click for the list`),
   );
 };
 
@@ -1031,6 +1034,16 @@ const boot = async () => {
   });
 
   await Promise.all([loadBoard(), loadRail()]);
+  const linkedRelease = location.hash.match(/^#release-(.+)$/);
+  if (linkedRelease) {
+    releasesData = releasesData ?? (await api(`/api/releases?project=${encodeURIComponent(projectId)}`));
+    const want = decodeURIComponent(linkedRelease[1]);
+    if (want === "next" && releasesData.next) openReleaseDrawer(releasesData.next, "next");
+    else {
+      const r = releasesData.shipped.find((x) => x.version === want);
+      if (r) openReleaseDrawer(r, "shipped");
+    }
+  }
   const linked = location.hash.match(/^#L(\d+)$/);
   if (linked) {
     const line = Number(linked[1]) - 1;
