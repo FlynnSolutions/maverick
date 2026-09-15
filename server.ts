@@ -8,8 +8,8 @@
  */
 import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
@@ -18,7 +18,7 @@ import { liveSignals } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
-import { addGroup, applyEdit, applyMove, parseTracker, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
+import { addGroup, applyEdit, applyMove, parseTracker, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
 const run = promisify(execFile);
 const webRoot = join(fileURLToPath(new URL(".", import.meta.url)), "web");
@@ -54,13 +54,61 @@ const requireProject = async (url: URL): Promise<Project> => {
 
 /* ---------- board ---------- */
 
+/** One `git blame` per tracker file gives the commit date of every line: when an item's bullet last changed. Cached by mtime. */
+const blameCache = new Map<string, { mtimeMs: number; dates: Map<number, string> }>();
+const lineDates = async (filePath: string): Promise<Map<number, string>> => {
+  const { mtimeMs } = await stat(filePath);
+  const hit = blameCache.get(filePath);
+  if (hit && hit.mtimeMs === mtimeMs) return hit.dates;
+  const dates = new Map<number, string>();
+  try {
+    const { stdout } = await run("git", ["blame", "--porcelain", "--", filePath], { cwd: dirname(filePath), maxBuffer: 64 * 1024 * 1024 });
+    let line = 0;
+    let time = "";
+    for (const row of stdout.split("\n")) {
+      const head = row.match(/^[0-9a-f]{40} \d+ (\d+)/);
+      if (head) line = Number(head[1]);
+      else if (row.startsWith("author-time ")) time = new Date(Number(row.slice(12)) * 1000).toISOString().slice(0, 10);
+      else if (row.startsWith("\t")) dates.set(line, time);
+    }
+  } catch (err) {
+    console.error(`blame failed for ${filePath}:`, (err as Error).message);
+  }
+  blameCache.set(filePath, { mtimeMs, dates });
+  return dates;
+};
+
 const board = async (project: Project) =>
   Promise.all(
     project.trackers.map(async (tracker, index) => {
       const text = await readFile(tracker.path, "utf8");
-      return { index, label: tracker.label, path: tracker.path, ...parseTracker(text) };
+      const parsed = parseTracker(text);
+      const dates = await lineDates(tracker.path);
+      for (const section of parsed.sections) for (const group of section.groups) for (const item of group.items) {
+        (item as { lineDate?: string }).lineDate = dates.get(item.start + 1);
+      }
+      return { index, label: tracker.label, path: tracker.path, ...parsed };
     }),
   );
+
+interface RenameBody {
+  project: string;
+  tracker: number;
+  heading: string;
+  oldName: string;
+  newName: string;
+}
+
+const renameGroupIn = async (body: RenameBody): Promise<{ commit: string }> => {
+  const project = await projectById(body.project);
+  const tracker = project.trackers[body.tracker];
+  if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
+  const newName = body.newName.trim();
+  if (!newName || newName.includes("\n")) throw new Error("a group name is one non-empty line");
+  const after = renameGroup(await readFile(tracker.path, "utf8"), body.heading, body.oldName, newName);
+  await writeFile(tracker.path, after, "utf8");
+  return { commit: await commitFile(tracker.path, `console: rename group "${body.oldName}" to "${newName}"`) };
+};
 
 interface MoveBody extends MoveRequest {
   project: string;
@@ -256,6 +304,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   if (method === "POST" && path === "/api/groups") return sendJson(res, 200, await createGroup(await readJson<GroupBody>(req)));
+  if (method === "POST" && path === "/api/groups/rename") return sendJson(res, 200, await renameGroupIn(await readJson<RenameBody>(req)));
   if (method === "POST" && path === "/api/edit") {
     try {
       return sendJson(res, 200, await editItem(await readJson<EditBody>(req)));

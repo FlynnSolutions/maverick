@@ -9,7 +9,7 @@
 export type ColumnId = "priority" | "in-progress" | "backlog" | "shipped";
 
 /** Structured lines an item may carry, as `  - key: value` under its bullet. */
-export const FIELD_KEYS = ["source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by"] as const;
+export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by"] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
 export interface Item {
@@ -27,6 +27,8 @@ export interface Item {
   fields: Partial<Record<FieldKey, string>>;
   /** The italic `_source, date._` right after the title on legacy items, else the `source` field. */
   source?: string;
+  /** The `created` field, else the first ISO date found in the source text. */
+  created?: string;
   /** Everything that is not title, source, or a field line: the prose. */
   description: string;
 }
@@ -123,6 +125,7 @@ const parseItem = (lines: string[], start: number): Item => {
     .replace(/^[\s\u2014:-]+/, ""); // legacy items join title and source with an em dash
   const italic = afterTitle.match(/^_(.+?)_\s*/);
   const source = fields.source ?? italic?.[1];
+  const created = fields.created ?? source?.match(/\b(\d{4}-\d{2}-\d{2})\b/)?.[1];
   const lead = italic ? afterTitle.slice(italic[0].length) : afterTitle;
   return {
     start,
@@ -134,6 +137,7 @@ const parseItem = (lines: string[], start: number): Item => {
     body: lines.slice(start, end).join("\n"),
     fields,
     source,
+    ...(created ? { created } : {}),
     description: [lead, ...prose].join("\n").trim(),
   };
 };
@@ -267,6 +271,18 @@ export const addGroup = (text: string, heading: string, name: string): string =>
   const out = [...lines];
   out.splice(at, 0, "", `### ${name}`, "");
   return out.join("\n");
+};
+
+/** Rename a `### ` group heading in place (used to stamp a deploy date on a release). */
+export const renameGroup = (text: string, heading: string, oldName: string, newName: string): string => {
+  const lines = text.split("\n");
+  const section = parseTracker(text).sections.find((s) => s.heading === heading);
+  if (!section) throw new Error(`no section headed "${heading}"`);
+  const at = lines.findIndex((l, i) => i > section.start && i < section.end && l === `### ${oldName}`);
+  if (at < 0) throw new Error(`no group "### ${oldName}" under "${heading}"`);
+  if (newName !== oldName && section.groups.some((g) => g.name === newName)) throw new Error(`"${heading}" already has a group "${newName}"`);
+  lines[at] = `### ${newName}`;
+  return lines.join("\n");
 };
 
 /** First line after the section/group heading and its italic note lines, where a first item goes. */

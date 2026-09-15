@@ -72,9 +72,14 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
   a week, red overdue); the deadline picker in the drawer writes or clears the `due` line and
   commits. Older one-line items still parse: the italic after the title is read as the
   source. The `/save-followup` skill writes new items in the fielded shape.
-- **Calendar** (top bar toggle): a month grid of items with a `due` date and releases whose
-  heading says `deploy YYYY-MM-DD`, plus the roadmap items that have no deadline yet. Click
-  an event to open its drawer.
+- **Calendar** (top bar toggle): a releases strip (each `###` release under Priority with its
+  items and deploy date), a month grid of items with a `due` date and releases with a deploy
+  date, and the roadmap items that have no deadline yet. Planning is drag and drop: an item
+  onto a day sets its `due`; an item onto a release moves it into that group; a release onto
+  a day stamps `(deploy YYYY-MM-DD)` on its heading. Every drop is one commit.
+- **Created.** An item's `created` field, else the first date in its source text, shows on
+  the card and in the drawer. Items with neither show the date their entry was last changed
+  (from `git blame`, one call per file, cached by mtime), labelled as such.
 - **Click a card** to read the whole entry; **edit** turns it into the raw markdown, and
   save writes the block back and commits (the first line must stay a bullet).
 

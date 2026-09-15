@@ -155,7 +155,7 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
     },
     el("span", { class: "num" }, number === null ? "" : String(number)),
     el("div", { class: "title" }, item.title),
-    el("div", { class: "meta" }, dueChip(item), ...tagChips(item)),
+    el("div", { class: "meta" }, dueChip(item), ...tagChips(item), createdOf(item) ? el("span", { class: "since", title: item.created ? "created" : "entry last changed" }, createdOf(item).slice(5)) : null),
     item.checked
       ? null
       : el(
@@ -201,6 +201,22 @@ const dueState = (due, checked) => {
   const days = Math.round((new Date(due) - new Date(today())) / 86400000);
   return days < 0 ? "overdue" : days <= 7 ? "soon" : "later";
 };
+/** Rewrite or insert the `  - due:` line right under the bullet, leaving everything else alone. */
+const withDue = (body, due) => {
+  const lines = body.split("\n");
+  const i = lines.findIndex((l, n) => n > 0 && /^\s{2,}- due:/.test(l));
+  if (!due) return i > 0 ? [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n") : body;
+  if (i > 0) lines[i] = `  - due: ${due}`;
+  else lines.splice(1, 0, `  - due: ${due}`);
+  return lines.join("\n");
+};
+const editItemBody = async (trackerIndex, item, newBody, label) => {
+  setStatus(label);
+  const { commit } = await post("/api/edit", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, body: newBody });
+  setStatus(`committed ${commit}`);
+};
+const createdOf = (item) => item.created ?? item.lineDate;
+
 const dueChip = (item) => {
   const due = item.fields?.due;
   if (!due) return null;
@@ -331,7 +347,7 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
     for (const group of section.groups) {
       const block = el("div", { class: releases && group.name ? "release" : "group" });
       if (group.name) {
-        block.append(el("div", { class: releases ? "release-name" : "group-name" }, cleanGroupName(group.name).replace(/\s*\(?deploy \d{4}-\d{2}-\d{2}\)?/, ""), releases && group.due ? el("span", { class: `due ${dueState(group.due, false)}` }, `deploy ${group.due.slice(5)}`) : null));
+        block.append(el("div", { class: releases ? "release-name" : "group-name" }, stripDeploy(group.name), releases && group.due ? el("span", { class: `due ${dueState(group.due, false)}` }, `deploy ${group.due.slice(5)}`) : null));
       }
       else if (releases && section.groups.length > 1) block.append(el("div", { class: "release-name unfiled" }, "unassigned"));
       block.append(itemsList(tracker.index, section, group, laneId, releases));
@@ -402,15 +418,6 @@ const openDrawer = (trackerIndex, item) => {
   const actions = el("div", { class: "drawer-actions" });
 
   const FIELD_ORDER = ["due", "release", "size", "kind", "status", "owner", "plan", "pr", "blocked-by", "links"];
-  const withDue = (body, due) => {
-    // Rewrite or insert the `  - due:` line right under the bullet, leaving everything else alone.
-    const lines = body.split("\n");
-    const i = lines.findIndex((l, n) => n > 0 && /^\s{2,}- due:/.test(l));
-    if (!due) return i > 0 ? [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n") : body;
-    if (i > 0) lines[i] = `  - due: ${due}`;
-    else lines.splice(1, 0, `  - due: ${due}`);
-    return lines.join("\n");
-  };
   const saveBody = async (newBody, label) => {
     setStatus(label);
     try {
@@ -425,6 +432,8 @@ const openDrawer = (trackerIndex, item) => {
   const view = () => {
     const grid = el("dl", { class: "fields" });
     const addField = (k, v, cls = "") => grid.append(el("dt", {}, k), el("dd", { class: cls }, v));
+    if (item.created) addField("created", item.created);
+    else if (item.lineDate) addField("created", `unknown; the entry was last changed ${item.lineDate}`);
     if (item.source) addField("source", item.source);
     for (const k of FIELD_ORDER) {
       if (!item.fields[k]) continue;
@@ -512,16 +521,99 @@ const eventsFor = (trackers) => {
     for (const section of tracker.sections) {
       if (!section.column || section.column === "shipped") continue;
       for (const group of section.groups) {
-        if (group.due && section.column === "priority") events.push({ date: group.due, kind: "release", title: cleanGroupName(group.name).replace(/\s*\(?deploy \d{4}-\d{2}-\d{2}\)?/, ""), tracker, group });
+        if (group.due && section.column === "priority") events.push({ date: group.due, kind: "release", title: stripDeploy(group.name), tracker, section, group });
         for (const item of group.items) {
           if (item.checked || !item.fields.due) continue;
           if (!showAll && !isDevItem(item)) continue;
-          events.push({ date: item.fields.due, kind: "item", title: item.title, tracker, item });
+          events.push({ date: item.fields.due, kind: "item", title: item.title, tracker, section, item });
         }
       }
     }
   }
   return events;
+};
+
+let calDrag = null;
+
+const stripDeploy = (name) => cleanGroupName(name).replace(/\s*\(?\s*(?:deploy|ship)\s+\d{4}-\d{2}-\d{2}\s*\)?/i, "").trim();
+
+const setDeployDate = async (tracker, section, group, date) => {
+  const newName = date ? `${stripDeploy(group.name)} (deploy ${date})` : stripDeploy(group.name);
+  setStatus(`scheduling ${stripDeploy(group.name)}`);
+  const { commit } = await post("/api/groups/rename", { project: projectId, tracker: tracker.index, heading: section.heading, oldName: group.name, newName });
+  setStatus(`committed ${commit}`);
+};
+
+const moveItemToGroup = async (tracker, item, section, group) => {
+  setStatus(`planning "${item.title.slice(0, 40)}"`);
+  const { commit } = await post("/api/move", {
+    project: projectId, tracker: tracker.index, itemStart: item.start, itemFirstLine: item.firstLine,
+    targetHeading: section.heading, targetGroup: group.name, targetIndex: 9999,
+  });
+  setStatus(`committed ${commit}`);
+};
+
+const draggableItem = (node, tracker, item, section) => {
+  node.draggable = true;
+  node.addEventListener("dragstart", (e) => {
+    calDrag = { type: "item", tracker, item, section };
+    node.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+  });
+  node.addEventListener("dragend", () => { node.classList.remove("dragging"); calDrag = null; });
+  return node;
+};
+
+const dropZone = (node, accepts, onDrop) => {
+  node.addEventListener("dragover", (e) => {
+    if (!calDrag || !accepts(calDrag)) return;
+    e.preventDefault();
+    node.classList.add("over");
+  });
+  node.addEventListener("dragleave", () => node.classList.remove("over"));
+  node.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    node.classList.remove("over");
+    if (!calDrag || !accepts(calDrag)) return;
+    const drag = calDrag;
+    calDrag = null;
+    try {
+      await onDrop(drag);
+      strike(node);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+    await loadBoard();
+  });
+  return node;
+};
+
+const renderReleases = (trackers) => {
+  const strip = el("div", { class: "releases" });
+  for (const tracker of trackers) {
+    for (const section of tracker.sections.filter((s) => s.column === "priority")) {
+      for (const group of section.groups) {
+        if (!group.name) continue;
+        const items = group.items.filter((i) => !i.checked && (showAll || isDevItem(i)));
+        const card = el(
+          "div",
+          { class: "release-card", draggable: "true" },
+          el("div", { class: "release-card-head" }, el("span", { class: "release-name" }, stripDeploy(group.name)), group.due ? el("span", { class: `due ${dueState(group.due, false)}` }, `deploy ${group.due.slice(5)}`) : el("span", { class: "muted small" }, "drag onto a day to schedule")),
+          el("div", { class: "release-items" }, ...items.map((i) => draggableItem(el("div", { class: "cal-event item", onclick: () => openDrawer(tracker.index, i) }, i.title), tracker, i, section)), items.length ? null : el("div", { class: "muted small" }, "drop items here")),
+        );
+        card.addEventListener("dragstart", (e) => {
+          if (e.target !== card) return;
+          calDrag = { type: "release", tracker, section, group };
+          e.dataTransfer.effectAllowed = "move";
+        });
+        card.addEventListener("dragend", () => { calDrag = null; });
+        dropZone(card, (d) => d.type === "item" && d.tracker.index === tracker.index, (d) => moveItemToGroup(tracker, d.item, section, group));
+        strip.append(card);
+      }
+      strip.append(el("div", { class: "release-card add" }, addReleaseButton(tracker.index, section, strip)));
+    }
+  }
+  return strip;
 };
 
 const renderCalendar = (trackers) => {
@@ -548,7 +640,7 @@ const renderCalendar = (trackers) => {
     btn("›", () => shift(1), "ghost"),
     btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"),
     el("span", { class: "spacer" }),
-    el("span", { class: "muted small mono" }, `${events.length} dated · items carry a due field, releases a deploy date`),
+    el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, onto a release to plan it; drag a release onto a day to schedule the deploy"),
   );
   const grid = el("div", { class: "cal-grid" });
   for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) grid.append(el("div", { class: "cal-dow" }, d));
@@ -557,24 +649,29 @@ const renderCalendar = (trackers) => {
     const date = `${calendarMonth}-${String(day).padStart(2, "0")}`;
     const cell = el("div", { class: `cal-cell${date === today() ? " today" : ""}` }, el("div", { class: "cal-day" }, String(day)));
     for (const e of byDate.get(date) ?? []) {
-      cell.append(
-        el(
-          "div",
-          {
-            class: `cal-event ${e.kind} ${dueState(e.date, false)}`,
-            title: e.title,
-            onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); },
-          },
-          e.kind === "release" ? `⚡ ${e.title}` : e.title,
-        ),
+      const node = el(
+        "div",
+        { class: `cal-event ${e.kind} ${dueState(e.date, false)}`, title: e.title, onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); } },
+        e.kind === "release" ? `⚡ ${e.title}` : e.title,
       );
+      if (e.item) draggableItem(node, e.tracker, e.item, e.section);
+      else {
+        node.draggable = true;
+        node.addEventListener("dragstart", (ev) => { calDrag = { type: "release", tracker: e.tracker, section: e.section, group: e.group }; ev.dataTransfer.effectAllowed = "move"; });
+        node.addEventListener("dragend", () => { calDrag = null; });
+      }
+      cell.append(node);
     }
+    dropZone(cell, () => true, async (d) => {
+      if (d.type === "item") await editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${date}`);
+      else await setDeployDate(d.tracker, d.section, d.group, date);
+    });
     grid.append(cell);
   }
-  const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && (showAll || isDevItem(i))).map((i) => ({ t, i })))));
+  const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && (showAll || isDevItem(i))).map((i) => ({ t, i, s })))));
   const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`));
-  for (const { t, i } of undated.slice(0, 40)) side.append(el("div", { class: "cal-event item undated", onclick: () => openDrawer(t.index, i) }, i.title));
-  return el("section", { class: "calendar" }, head, grid, side);
+  for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(el("div", { class: "cal-event item undated", onclick: () => openDrawer(t.index, i) }, i.title), t, i, s));
+  return el("section", { class: "calendar" }, head, el("h3", { class: "strip-title" }, "Releases"), renderReleases(trackers), grid, side);
 };
 
 /* ---------- sessions ---------- */
