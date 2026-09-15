@@ -4,12 +4,12 @@
 // committed). Ambient: a distant contrail now and then. Reduce-motion silences the ambient
 // only; the actions are the product.
 
+import { jetPaths } from "./jet.js";
+
 const NS = "http://www.w3.org/2000/svg";
 const rand = (a, b) => a + Math.random() * (b - a);
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/** A small jet silhouette, nose to the right, drawn in a 40x16 box. */
-const JET = "M40 8 L30 6 L24 5 L20 5 L8 1 L6 1 L14 5 L6 5 L2 3 L1 3 L3 6.5 L3 9.5 L1 13 L2 13 L6 11 L14 11 L6 15 L8 15 L20 11 L24 11 L30 10 Z";
 
 const svgLayer = (cls) => {
   const svg = document.createElementNS(NS, "svg");
@@ -32,15 +32,13 @@ export const flyby = ({ y = rand(40, 120), duration = 1400 } = {}) => {
   trail.style.setProperty("--dur", `${duration}ms`);
   const jet = document.createElementNS(NS, "g");
   jet.setAttribute("class", "jet");
-  const body = document.createElementNS(NS, "path");
-  body.setAttribute("d", JET);
   const burner = document.createElementNS(NS, "ellipse");
   burner.setAttribute("class", "burner");
-  burner.setAttribute("cx", "-6");
-  burner.setAttribute("cy", "8");
-  burner.setAttribute("rx", "9");
-  burner.setAttribute("ry", "2.5");
-  jet.append(burner, body);
+  burner.setAttribute("cx", "-7");
+  burner.setAttribute("cy", "10");
+  burner.setAttribute("rx", "10");
+  burner.setAttribute("ry", "2.6");
+  jet.append(burner, ...jetPaths());
   jet.style.setProperty("--y", `${y}px`);
   jet.style.setProperty("--dur", `${duration}ms`);
   svg.append(trail, jet);

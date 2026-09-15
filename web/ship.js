@@ -2,6 +2,7 @@
 // report rendered as prose with the human's items as checkboxes, the live session view, the
 // documents inline, notes, and the release's session reviews and audit verdicts.
 
+import { jetSvg } from "./jet.js";
 import { render as renderMarkdown } from "./markdown.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -246,15 +247,7 @@ const walkthroughPanel = (step) => {
 };
 
 /* ---------- render ---------- */
-const jetGlyph = () => {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 40 16");
-  svg.setAttribute("class", "jet-glyph");
-  const body = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  body.setAttribute("d", "M40 8 L30 6 L24 5 L20 5 L8 1 L6 1 L14 5 L6 5 L2 3 L1 3 L3 6.5 L3 9.5 L1 13 L2 13 L6 11 L14 11 L6 15 L8 15 L20 11 L24 11 L30 10 Z");
-  svg.append(body);
-  return svg;
-};
+const jetGlyph = () => jetSvg("jet-glyph");
 
 const renderTop = () => {
   const done = ship.steps.filter((s) => s.status === "done" || s.status === "skipped").length;

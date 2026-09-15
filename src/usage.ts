@@ -24,17 +24,26 @@ interface FileCache {
   offset: number;
   /** date -> model -> tokens */
   days: Record<string, Record<string, Tokens>>;
+  /** hour (YYYY-MM-DDTHH) -> model -> tokens, kept for the last few days only */
+  hours?: Record<string, Record<string, Tokens>>;
   sessionId: string;
   project: string;
 }
 
 interface UsageCache {
+  /** Bumped when the per-file shape changes; an older cache is rescanned from zero. */
+  version?: number;
   files: Record<string, FileCache>;
 }
+const CACHE_VERSION = 2;
 
 export interface UsageView {
   scannedAt: string;
   filesScanned: number;
+  /** hour -> model -> tokens for the last 7 days; the provider widget builds windows from it. */
+  hourly: Record<string, Record<string, Tokens>>;
+  /** ISO week start (YYYY-MM-DD) -> model -> tokens for the last 8 weeks. */
+  weekly: Record<string, Record<string, Tokens>>;
   days: Array<{ date: string } & Tokens>;
   projects: Array<{ project: string } & Tokens>;
   models: Array<{ model: string } & Tokens>;
@@ -57,14 +66,15 @@ const DAYS_KEPT = 45;
 
 const readCache = async (): Promise<UsageCache> => {
   try {
-    return JSON.parse(await readFile(cachePath(), "utf8")) as UsageCache;
+    const cache = JSON.parse(await readFile(cachePath(), "utf8")) as UsageCache;
+    return cache.version === CACHE_VERSION ? cache : { version: CACHE_VERSION, files: {} };
   } catch {
-    return { files: {} };
+    return { version: CACHE_VERSION, files: {} };
   }
 };
 
 /** Read a file from `offset`, counting complete lines only; returns the new offset. */
-const scanFrom = async (path: string, offset: number, into: Record<string, Record<string, Tokens>>): Promise<number> => {
+const scanFrom = async (path: string, offset: number, into: Record<string, Record<string, Tokens>>, hours: Record<string, Record<string, Tokens>>): Promise<number> => {
   const handle = await open(path, "r");
   try {
     const { size } = await handle.stat();
@@ -84,17 +94,18 @@ const scanFrom = async (path: string, offset: number, into: Record<string, Recor
       }
       if (entry.type !== "assistant" || !entry.message?.usage || !entry.timestamp) continue;
       const day = entry.timestamp.slice(0, 10);
+      const hour = entry.timestamp.slice(0, 13);
       const model = entry.message.model ?? "unknown";
       const u = entry.message.usage;
-      const perDay = (into[day] ??= {});
-      const t = (perDay[model] ??= zero());
-      add(t, {
+      const delta = {
         input: u.input_tokens ?? 0,
         output: u.output_tokens ?? 0,
         cacheRead: u.cache_read_input_tokens ?? 0,
         cacheWrite: u.cache_creation_input_tokens ?? 0,
         messages: 1,
-      });
+      };
+      add(((into[day] ??= {})[model] ??= zero()), delta);
+      add(((hours[hour] ??= {})[model] ??= zero()), delta);
     }
     return offset + Buffer.byteLength(text.slice(0, lastNewline + 1), "utf8");
   } finally {
@@ -144,7 +155,11 @@ const scan = async (): Promise<UsageView> => {
         entry.offset = 0;
         entry.days = {};
       }
-      entry.offset = await scanFrom(path, entry.offset, entry.days);
+      entry.hours ??= {};
+      entry.offset = await scanFrom(path, entry.offset, entry.days, entry.hours);
+      // Hours older than eight days are not needed by any view; keep the cache small.
+      const hourCutoff = new Date(Date.now() - 8 * 86400000).toISOString().slice(0, 13);
+      for (const h of Object.keys(entry.hours)) if (h < hourCutoff) delete entry.hours[h];
       entry.size = info.size;
       entry.mtimeMs = info.mtimeMs;
       cache.files[path] = entry;
@@ -162,8 +177,23 @@ const scan = async (): Promise<UsageView> => {
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const totals = { today: zero(), week: zero(), month: zero() };
   const sessionsThisMonth = new Set<string>();
+  const hourly: Record<string, Record<string, Tokens>> = {};
+  const weekly: Record<string, Record<string, Tokens>> = {};
+  const hourFloor = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 13);
+  const weekStart = (day: string): string => {
+    const d = new Date(`${day}T00:00:00Z`);
+    const dow = (d.getUTCDay() + 6) % 7;
+    d.setUTCDate(d.getUTCDate() - dow);
+    return d.toISOString().slice(0, 10);
+  };
+  const eightWeeksAgo = new Date(Date.now() - 56 * 86400000).toISOString().slice(0, 10);
   for (const entry of Object.values(cache.files)) {
+    for (const [hour, models] of Object.entries(entry.hours ?? {})) {
+      if (hour < hourFloor) continue;
+      for (const [model, t] of Object.entries(models)) add(((hourly[hour] ??= {})[model] ??= zero()), t);
+    }
     for (const [day, models] of Object.entries(entry.days)) {
+      if (day >= eightWeeksAgo) for (const [model, t] of Object.entries(models)) add(((weekly[weekStart(day)] ??= {})[model] ??= zero()), t);
       if (day < monthAgo) continue;
       for (const [model, t] of Object.entries(models)) {
         add(byDay.get(day) ?? byDay.set(day, zero()).get(day)!, t);
@@ -179,6 +209,8 @@ const scan = async (): Promise<UsageView> => {
   const view: UsageView = {
     scannedAt: new Date().toISOString(),
     filesScanned,
+    hourly,
+    weekly,
     days: [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, t]) => ({ date, ...t })),
     projects: [...byProject.entries()].map(([project, t]) => ({ project, ...t })).sort((a, b) => b.output - a.output),
     models: [...byModel.entries()].map(([model, t]) => ({ model, ...t })).sort((a, b) => b.output - a.output),

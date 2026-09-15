@@ -1,0 +1,352 @@
+// The command center: every Claude session on the machine as a panel, grouped by project and
+// by the session watching it (an audit parent and its task sessions sit in one bracket).
+// A panel opens full screen as a conversation: prompts and replies rendered from the
+// transcript, tool calls folded into chips, live. The dock terminal stays one click away for
+// typing into a session. Nothing here knows about tokens; usage is the provider widget's job.
+
+import { render as renderMd } from "./markdown.js";
+
+const NEAR_BOTTOM = 80;
+const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5 };
+const finished = (s) => /^(done|exited|stopped|blocked)$/.test(s ?? "");
+
+const age = (ms) => {
+  if (!ms) return "";
+  const m = Math.round((Date.now() - ms) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`;
+};
+const clip = (s, n) => {
+  const flat = (s ?? "").replace(/\s+/g, " ").trim();
+  return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
+};
+/** Markdown flattened to prose for a one-line excerpt: no fences, headings, emphasis, or link syntax. */
+const plain = (md) =>
+  (md ?? "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")
+    .replace(/\*\*([^*]+)(\*\*|$)/g, "$1")
+    .replace(/(^|\s)[_*]([^_*\n]+)[_*](?=\s|$)/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "");
+const timeOf = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+
+/** One flat list of sessions from the three sources the server returns. */
+const assemble = (all) => {
+  const byClaudeId = new Map(all.records.filter((r) => r.claudeId).map((r) => [r.claudeId, r]));
+  const bySessionId = new Map();
+  const sessions = [];
+  for (const s of all.interactive) {
+    sessions.push({
+      key: `pid:${s.pid}`, kind: "interactive", pid: s.pid, sessionId: s.sessionId, cwd: s.cwd, project: s.project,
+      title: s.title ?? s.name ?? `pid ${s.pid}`, status: s.status ?? "idle", waitingFor: s.waitingFor, app: s.app, tty: s.tty,
+      elapsed: s.elapsed, at: s.updatedAt ?? s.startedAt, lastPrompt: s.lastPrompt, lastReply: s.lastReply,
+    });
+  }
+  for (const s of sessions) bySessionId.set(s.sessionId, s);
+  for (const a of all.background) {
+    const record = byClaudeId.get(a.id);
+    // A background agent's process is also in the registry; one panel, with the agent's id for attach and stop.
+    const twin = bySessionId.get(a.sessionId);
+    const merged = {
+      ...(twin ?? {}),
+      key: `bg:${a.id}`, kind: "background", claudeId: a.id, sessionId: a.sessionId, cwd: a.cwd, project: a.project ?? twin?.project ?? record?.project,
+      title: record?.loop ?? twin?.title ?? a.name ?? a.id, status: finished(a.state) ? a.state : twin?.status ?? a.state ?? "running", at: twin?.at ?? a.startedAt, record,
+      lastPrompt: a.lastPrompt ?? twin?.lastPrompt, lastReply: a.lastReply ?? twin?.lastReply,
+    };
+    if (twin) sessions.splice(sessions.indexOf(twin), 1, merged);
+    else sessions.push(merged);
+    bySessionId.set(a.sessionId, merged);
+  }
+  // Records that are parents of others (audit parents, drivers) or children of a parent.
+  const parents = new Map();
+  for (const r of all.records) {
+    if (r.parent) {
+      if (!parents.has(r.parent)) parents.set(r.parent, []);
+      parents.get(r.parent).push(r);
+    }
+  }
+  for (const r of all.records) if (r.role === "audit" && !parents.has(r.id)) parents.set(r.id, []);
+  return { sessions, parents, records: all.records, byClaudeId };
+};
+
+export const mountCommandCenter = (root, ctx) => {
+  const { el, text, api, post, openTerminal, setStatus } = ctx;
+  let all = null;
+  let model = null;
+  let projectFilter = "all";
+  let full = null; // { session, offset, events, timer, scroller, list }
+  let timer = null;
+
+  /* ---------- panels ---------- */
+
+  const lamp = (status) => el("span", { class: `lamp ${status ?? ""}`, title: status ?? "" });
+
+  const roleChip = (record) => (record ? el("span", { class: "role" }, record.role) : null);
+
+  const auditChip = (record) => {
+    const v = record?.auditView;
+    if (!v || v.verdict === "none") return null;
+    return el("span", { class: `verdict ${v.verdict}${v.decision ? ` ${v.decision}` : ""}` }, v.verdict === "pending" ? `auditing (${v.agentState ?? "…"})` : `${v.verdict}${v.decision ? ` · ${v.decision}` : ""}`);
+  };
+
+  const whereText = (s) => {
+    const proj = all.projects.find((p) => p.id === s.project);
+    const rel = proj ? s.cwd.replace(proj.path, "").replace(/^\//, "") : s.cwd.replace(/^\/Users\/[^/]+\//, "~/");
+    return [s.kind === "background" ? "background" : s.app ?? "terminal", s.tty, proj ? `${proj.name}${rel ? `/${rel}` : ""}` : rel].filter(Boolean).join(" · ");
+  };
+
+  const dockFor = (s) => (s.kind === "background" ? { kind: "attach", id: s.claudeId, title: s.title } : { kind: "resume", sessionId: s.sessionId, title: s.title });
+
+  const endButton = (s) =>
+    s.kind === "background"
+      ? el("button", { type: "button", class: "danger", onclick: async (e) => {
+          e.stopPropagation();
+          const done = finished(s.status);
+          if (!confirm(done ? `Remove background session ${s.claudeId} from the list? Its transcript stays on disk.` : `Stop background session ${s.claudeId}? Its conversation is kept.`)) return;
+          try {
+            const r = await post(`/api/agents/${s.claudeId}/${done ? "remove" : "stop"}`);
+            setStatus(r.output || (done ? `removed ${s.claudeId}` : `stopped ${s.claudeId}`), Boolean(r.failed));
+          } catch (err) {
+            setStatus(err.message, true);
+          }
+          window.setTimeout(load, 1200);
+        } }, finished(s.status) ? "remove" : "stop")
+      : el("button", { type: "button", class: "danger", onclick: async (e) => {
+          e.stopPropagation();
+          if (!confirm(`Close "${s.title}"?\n\nThis ends the Claude process in ${s.app ?? "its terminal"} (${s.tty ?? "no tty"}). The conversation stays on disk and can be resumed later.`)) return;
+          try {
+            await post(`/api/sessions/${s.pid}/close?project=${encodeURIComponent(s.project ?? ctx.projectId ?? "")}`);
+            setStatus(`closed pid ${s.pid}`);
+          } catch (err) {
+            setStatus(err.message, true);
+          }
+          window.setTimeout(load, 1500);
+        } }, "close");
+
+  const panel = (s, record) => {
+    const card = el(
+      "article",
+      { class: `cc-panel ${s.status}${finished(s.status) ? " finished" : ""}`, tabindex: "0", role: "button", onclick: () => openFull(s), onkeydown: (e) => { if (e.key === "Enter") openFull(s); } },
+      el("header", {}, lamp(s.status), el("h4", { title: s.title }, s.title), roleChip(record), auditChip(record)),
+      el("div", { class: "meta" }, el("span", { class: "k" }, s.status), s.waitingFor ? el("span", {}, s.waitingFor) : null, el("span", {}, age(s.at)), s.elapsed ? el("span", {}, `up ${s.elapsed}`) : null, el("span", { class: "where" }, whereText(s))),
+      el("div", { class: "exchange" },
+        s.lastPrompt ? el("p", { class: "you" }, el("span", { class: "who" }, "you"), text(clip(plain(s.lastPrompt), 160))) : null,
+        s.lastReply ? el("p", { class: "claude" }, el("span", { class: "who" }, "claude"), text(clip(plain(s.lastReply), 320))) : el("p", { class: "claude empty" }, "nothing said yet"),
+      ),
+      el("footer", { onclick: (e) => e.stopPropagation() },
+        el("button", { type: "button", class: "primary", onclick: () => openFull(s) }, "Full screen"),
+        el("button", { type: "button", onclick: () => openTerminal(dockFor(s)) }, "Dock"),
+        el("span", { class: "spacer" }),
+        endButton(s),
+      ),
+    );
+    return card;
+  };
+
+  const ghost = (record) =>
+    el(
+      "article",
+      { class: `cc-panel ghost ${record.status}`, title: record.handoff ?? "" },
+      el("header", {}, el("span", { class: "lamp" }), el("h4", { title: record.loop }, record.loop), roleChip(record), auditChip(record)),
+      el("div", { class: "meta" }, el("span", { class: "k" }, record.status), record.pr ? el("span", {}, record.pr) : null, record.ended ? el("span", {}, `ended ${age(Date.parse(record.ended))}`) : null),
+      record.handoff ? el("div", { class: "exchange" }, el("p", { class: "claude" }, el("span", { class: "who" }, "handoff"), text(clip(record.handoff, 240)))) : null,
+    );
+
+  const sessionForRecord = (r) => (r.claudeId ? model.sessions.find((s) => s.claudeId === r.claudeId) : model.sessions.find((s) => s.sessionId === r.id)) ?? null;
+
+  /** A parent and the sessions it watches, in one bracket. Returns the keys it consumed. */
+  const bracket = (parentRecord, used) => {
+    const children = model.parents.get(parentRecord.id) ?? [];
+    const parentSession = sessionForRecord(parentRecord);
+    if (parentSession) used.add(parentSession.key);
+    const head = el("div", { class: "cc-bracket-head" },
+      el("span", { class: "role" }, parentRecord.role === "audit" ? "audit parent" : parentRecord.role),
+      el("b", {}, parentRecord.loop),
+      el("span", { class: "muted" }, `${parentRecord.status} · watching ${children.length} session${children.length === 1 ? "" : "s"}`),
+      parentSession ? el("span", { class: "spacer" }) : null,
+      parentSession ? el("button", { type: "button", onclick: () => openFull(parentSession) }, "Open parent") : null,
+    );
+    const grid = el("div", { class: "cc-grid" });
+    for (const c of children) {
+      const s = sessionForRecord(c);
+      if (s) {
+        used.add(s.key);
+        grid.append(panel(s, c));
+      } else grid.append(ghost(c));
+    }
+    if (!children.length) grid.append(el("p", { class: "muted small cc-empty" }, "no task sessions under this parent yet: pick it when you spawn from a card"));
+    return el("section", { class: "cc-bracket" }, head, grid);
+  };
+
+  const projectSection = (proj, sessions) => {
+    const used = new Set();
+    const brackets = [];
+    const inProject = (r) => (proj ? r.project === proj.id || r.project === proj.name : !r.project || !all.projects.some((p) => p.id === r.project || p.name === r.project));
+    for (const parentId of model.parents.keys()) {
+      const parentRecord = model.records.find((r) => r.id === parentId);
+      if (!parentRecord || !inProject(parentRecord)) continue;
+      // Only brackets with something alive or a recent handoff earn space.
+      const children = model.parents.get(parentId) ?? [];
+      const alive = sessionForRecord(parentRecord) || children.some((c) => sessionForRecord(c));
+      if (!alive && parentRecord.status === "closed" && children.every((c) => c.status === "closed")) continue;
+      brackets.push(bracket(parentRecord, used));
+    }
+    const loose = sessions.filter((s) => !used.has(s.key)).sort((a, b) => (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || (b.at ?? 0) - (a.at ?? 0));
+    const grid = el("div", { class: "cc-grid" }, ...loose.map((s) => panel(s, s.record ?? model.byClaudeId.get(s.claudeId))));
+    const busy = sessions.filter((s) => s.status === "busy" || s.status === "running").length;
+    const waiting = sessions.filter((s) => s.status === "waiting" || s.status === "blocked").length;
+    return el(
+      "section",
+      { class: "cc-project" },
+      el("h3", {}, el("span", { class: "pname" }, proj ? proj.name : "Elsewhere"), el("span", { class: "counts" }, `${sessions.length} session${sessions.length === 1 ? "" : "s"}${busy ? ` · ${busy} working` : ""}${waiting ? ` · ${waiting} waiting on you` : ""}`)),
+      ...brackets,
+      loose.length ? grid : brackets.length ? null : el("p", { class: "muted small cc-empty" }, "nothing running here"),
+    );
+  };
+
+  const paint = () => {
+    if (!all) return;
+    model = assemble(all);
+    const filterBar = el("div", { class: "cc-filter" },
+      el("button", { type: "button", class: projectFilter === "all" ? "on" : "", onclick: () => { projectFilter = "all"; paint(); } }, `All · ${model.sessions.length}`),
+      ...all.projects.map((p) => {
+        const n = model.sessions.filter((s) => s.project === p.id).length;
+        return el("button", { type: "button", class: projectFilter === p.id ? "on" : "", onclick: () => { projectFilter = p.id; paint(); } }, `${p.name} · ${n}`);
+      }),
+      el("span", { class: "spacer" }),
+      el("button", { type: "button", class: "ghost", onclick: () => load(true) }, "refresh"),
+    );
+    const sections = [];
+    const groups = projectFilter === "all" ? [...all.projects, null] : all.projects.filter((p) => p.id === projectFilter);
+    for (const proj of groups) {
+      const sessions = model.sessions.filter((s) => (proj ? s.project === proj.id : !s.project));
+      if (!sessions.length && proj === null) continue;
+      sections.push(projectSection(proj, sessions));
+    }
+    root.replaceChildren(filterBar, ...sections);
+    if (full) paintFullHead();
+  };
+
+  /* ---------- full screen conversation ---------- */
+
+  const chip = (t) => el("span", { class: "tool-chip", title: t.gloss }, el("b", {}, t.name), t.gloss ? text(` ${clip(t.gloss, 64)}`) : null);
+
+  /** Fold a run of tool-only turns into one collapsible block. */
+  const turnNodes = (events) => {
+    const nodes = [];
+    let work = null;
+    const flushWork = () => {
+      if (!work) return;
+      const n = work.tools.length;
+      const details = el("details", { class: "turn work" }, el("summary", {}, `${n} tool call${n === 1 ? "" : "s"}`, el("span", { class: "t" }, timeOf(work.t))), el("div", { class: "chips" }, ...work.tools.map(chip)));
+      nodes.push(details);
+      work = null;
+    };
+    for (const e of events) {
+      if (e.role === "assistant" && !e.text && e.tools?.length) {
+        work ??= { t: e.t, tools: [] };
+        work.tools.push(...e.tools);
+        continue;
+      }
+      if (e.role === "user" && !e.text && e.results && !e.interrupted) continue; // tool results feed the same fold
+      flushWork();
+      if (e.role === "system") {
+        nodes.push(el("details", { class: "turn system" }, el("summary", {}, e.label, el("span", { class: "t" }, timeOf(e.t))), el("pre", {}, e.text ?? "")));
+        continue;
+      }
+      if (e.interrupted) {
+        nodes.push(el("div", { class: "turn interrupted" }, "interrupted", el("span", { class: "t" }, timeOf(e.t))));
+        continue;
+      }
+      if (e.role === "user") {
+        nodes.push(el("div", { class: "turn user" }, el("span", { class: "who" }, "you", el("span", { class: "t" }, timeOf(e.t))), renderMd(e.text ?? "", { project: ctx.projectId })));
+      } else {
+        const body = renderMd(e.text ?? "", { project: ctx.projectId });
+        const tools = e.tools?.length ? el("div", { class: "chips" }, ...e.tools.map(chip)) : null;
+        nodes.push(el("div", { class: "turn claude" }, el("span", { class: "who" }, "claude", el("span", { class: "t" }, timeOf(e.t))), body, tools));
+      }
+    }
+    flushWork();
+    return nodes;
+  };
+
+  const paintFullHead = () => {
+    if (!full) return;
+    const live = model.sessions.find((s) => s.key === full.session.key) ?? full.session;
+    full.session = live;
+    full.head.replaceChildren(
+      el("button", { type: "button", class: "ghost back", onclick: closeFull }, "← all sessions"),
+      lamp(live.status),
+      el("h2", { title: live.title }, full.title ?? live.title),
+      el("span", { class: "meta" }, el("span", { class: "k" }, live.status), live.waitingFor ? el("span", {}, live.waitingFor) : null, el("span", {}, whereText(live)), el("span", { class: "mono" }, live.sessionId.slice(0, 8))),
+      el("span", { class: "spacer" }),
+      el("button", { type: "button", class: "primary", onclick: () => openTerminal(dockFor(live)) }, live.kind === "background" ? "Take the stick (attach)" : "Open in dock"),
+      endButton(live),
+    );
+  };
+
+  const pullTranscript = async () => {
+    if (!full) return;
+    const f = full;
+    const page = await api(`/api/transcript?cwd=${encodeURIComponent(f.session.cwd)}&session=${encodeURIComponent(f.session.sessionId)}&from=${f.offset}`);
+    if (full !== f) return;
+    if (page.title && !f.title) {
+      f.title = page.title;
+      paintFullHead();
+    }
+    if (!page.events.length) {
+      f.offset = page.offset;
+      return;
+    }
+    const nearBottom = f.scroller.scrollHeight - f.scroller.scrollTop - f.scroller.clientHeight < NEAR_BOTTOM;
+    // Re-render from the last unfinished fold so consecutive tool turns keep merging.
+    f.events.push(...page.events);
+    f.offset = page.offset;
+    f.list.replaceChildren(...turnNodes(f.events));
+    if (f.list.childElementCount === 0) f.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
+    if (nearBottom || f.first) f.scroller.scrollTop = f.scroller.scrollHeight;
+    f.first = false;
+  };
+
+  const openFull = (session) => {
+    closeFull();
+    const head = el("header", { class: "cc-full-head" });
+    const list = el("div", { class: "cc-conv" });
+    const scroller = el("div", { class: "cc-full-body" }, list);
+    const overlay = el("section", { class: "cc-full", role: "dialog", "aria-label": session.title }, head, scroller);
+    full = { session, offset: 0, events: [], head, list, scroller, overlay, first: true };
+    document.body.append(overlay);
+    document.body.classList.add("cc-full-open");
+    paintFullHead();
+    list.append(el("p", { class: "muted cc-empty" }, "reading the transcript…"));
+    pullTranscript().catch((err) => list.replaceChildren(el("p", { class: "muted cc-empty" }, err.message)));
+    full.timer = window.setInterval(() => pullTranscript().catch(() => {}), 2500);
+    history.pushState({ ccFull: session.key }, "", location.href);
+  };
+
+  const closeFull = () => {
+    if (!full) return;
+    window.clearInterval(full.timer);
+    full.overlay.remove();
+    document.body.classList.remove("cc-full-open");
+    full = null;
+  };
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && full) { closeFull(); history.back(); } });
+  window.addEventListener("popstate", () => closeFull());
+
+  /* ---------- data ---------- */
+
+  const load = async () => {
+    try {
+      all = await api("/api/sessions/all");
+      paint();
+    } catch (err) {
+      root.replaceChildren(el("p", { class: "muted cc-empty" }, `sessions unavailable: ${err.message}`));
+    }
+  };
+  root.replaceChildren(el("p", { class: "muted cc-empty" }, "reading sessions…"));
+  load();
+  timer = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 10_000);
+  return { refresh: load, stop: () => { window.clearInterval(timer); closeFull(); } };
+};

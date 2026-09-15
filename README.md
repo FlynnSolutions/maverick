@@ -146,8 +146,8 @@ ends it (`claude stop`, conversation kept).
 The terminal is a real pty: `bin/ptybridge.py` (Python standard library, no native
 module) wraps the `claude` process; the server streams its bytes to the page over
 Server-Sent Events and posts keystrokes and resizes back. The page renders it with
-xterm.js loaded from jsdelivr (pinned 5.5.0 + fit addon 0.10.0), the one runtime
-dependency, fetched by the browser, not installed. Fonts (Chakra Petch for display, IBM Plex Sans, JetBrains Mono)
+xterm.js (5.5.0 + fit addon 0.10.0) vendored under `web/vendor/`, so the app boots with
+no network; it is the one runtime dependency. Fonts (Chakra Petch for display, IBM Plex Sans, JetBrains Mono)
 come from Google Fonts with local fallbacks.
 
 **Development focus.** The board hides items tagged administrative (`[BIZ]`,
@@ -166,6 +166,28 @@ own; change the two sets at the top of `web/app.js` to retune it.
 - **Session records** (role, loop, parent, handoff) are ours, under
   `~/.claude/console-sessions/`, written by the two helpers above. Linking the two by
   session id is a later brick.
+
+## The workspace is the command center
+
+The Workspace view shows every Claude session on the machine as a panel: interactive ones
+from the registry, background ones from `claude agents`, grouped by project and, where a
+session record names a parent, bracketed under the session watching it (an audit parent
+and its task sessions sit together, with the audit verdict on each). A panel carries the
+status lamp, where the session lives, and the last exchange. Click it and the session
+opens full screen as a conversation read from its transcript (`/api/transcript`, polled
+incrementally): your prompts as bubbles, Claude's replies as rendered markdown, runs of
+tool calls folded into one line of chips, harness injections (task notifications,
+reminders) folded as system events. **Open in dock** / **Take the stick** mounts the real
+terminal for typing; **close** / **stop** end the process as on the board.
+
+**Usage is a provider widget.** `web/providers/claude.js` owns everything Claude-specific
+about limits, so another provider can sit beside it with the same `mount(root, ctx)`
+shape. The baby pill shows the rolling 5-hour window (all models and Fable) and the
+rolling week; open it for per-family meters (Fable, Opus, Sonnet, Haiku), load per hour
+for the last 24 and per week for the last 8, and a Limits tab. Claude Code does not store
+the plan's quota, so the meters read against your highest window so far until you enter
+a limit (saved to `usage-limits.json`); the unit is a load proxy, output × 4 + input +
+cache writes + cache reads ÷ 10, and the ratio is what matters.
 
 ## How a tracker is read
 

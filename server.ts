@@ -14,16 +14,20 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
 import { commitFile } from "./src/git.ts";
-import { liveCache, liveSignals } from "./src/live.ts";
+import { liveCache, liveSignals, readRegistrySessions } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
+import { readTranscript } from "./src/transcript-view.ts";
+import { backgroundAgents } from "./src/git.ts";
+import { processHome } from "./src/processes.ts";
+import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
-import { sessionsForProject, type SessionRecord } from "./src/sessions.ts";
+import { readSessions, sessionsForProject, type SessionRecord } from "./src/sessions.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
 import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
@@ -317,6 +321,45 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     return;
   }
   if (method === "GET" && path === "/api/usage") return sendJson(res, 200, await usage(url.searchParams.has("refresh")));
+  // Plan limits are not stored anywhere by Claude Code; the widget keeps what Cory enters.
+  if (path === "/api/usage/limits") {
+    const file = join(config.projectsFile, "..", "usage-limits.json");
+    if (method === "POST") {
+      await writeFile(file, `${JSON.stringify(await readJson<Record<string, unknown>>(req), null, 2)}\n`, "utf8");
+    }
+    let limits: Record<string, unknown> = {};
+    try {
+      limits = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
+    } catch {
+      /* none saved yet */
+    }
+    return sendJson(res, 200, limits);
+  }
+  // Every Claude session on the machine, for the command center: interactive (registry), background (claude agents), our records.
+  if (method === "GET" && path === "/api/sessions/all") {
+    const projects = await readProjects();
+    const registry = await readRegistrySessions();
+    const enriched = await Promise.all(registry.map(async (s) => ({ ...s, ...(await processHome(s.pid)), ...(await glance(s.cwd, s.sessionId)) })));
+    const bg = (await Promise.all(projects.map((p) => backgroundAgents(p.path).catch(() => [])))).flat();
+    const seen = new Set<string>();
+    const agents = bg.filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));
+    const records = await readSessions(config.sessionsDir);
+    const states = new Map(agents.map((a) => [a.id, a.state ?? ""]));
+    const projectOf = (cwd: string) => projects.find((p) => cwd === p.path || cwd.startsWith(`${p.path}/`))?.id ?? null;
+    const background = await Promise.all(agents.map(async (a) => ({ ...a, ...(await glance(a.cwd, a.sessionId)), project: projectOf(a.cwd) })));
+    return sendJson(res, 200, {
+      projects: projects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
+      interactive: enriched.map((s) => ({ ...s, project: projectOf(s.cwd) })),
+      background,
+      records: await Promise.all(records.map(async (r) => ({ ...r, auditView: await auditView(r, states) }))),
+    });
+  }
+  if (method === "GET" && path === "/api/transcript") {
+    const cwd = url.searchParams.get("cwd");
+    const sessionId = url.searchParams.get("session");
+    if (!cwd || !sessionId) throw new Error("transcript needs cwd and session");
+    return sendJson(res, 200, await readTranscript(cwd, sessionId, Number(url.searchParams.get("from") ?? 0)));
+  }
   if (method === "GET" && path === "/api/workspace") {
     const lan = lanAddress();
     return sendJson(res, 200, {

@@ -54,7 +54,7 @@ const isAlive = (pid: number): boolean => {
   }
 };
 
-const readClaudeSessions = async (): Promise<ClaudeSession[]> => {
+export const readRegistrySessions = async (): Promise<ClaudeSession[]> => {
   let names: string[];
   try {
     names = await readdir(config.claudeSessionsDir);
@@ -98,7 +98,7 @@ export const liveSignals = async (project: Project, force = false): Promise<Live
     }),
   );
   const [allSessions, agents, devServers] = await Promise.all([
-    readClaudeSessions(),
+    readRegistrySessions(),
     backgroundAgents(project.path),
     readDevServers(project.path),
   ]);

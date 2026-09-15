@@ -1,7 +1,10 @@
 // The console UI. Plain DOM and fetch; the same file runs in a browser or an Electron
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
 // selects it, no parameter shows the picker.
+import { jetSvg } from "./jet.js";
 import { strike, scheduleWeather, missile, flares, flyby } from "./afterburner.js";
+import { mountCommandCenter } from "./command.js";
+import * as claudeUsage from "./providers/claude.js";
 
 
 /** Tags that mark engineering work. Items carrying any of these (or no tag at all) are development items. */
@@ -409,7 +412,8 @@ const loadBoard = async () => {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
     lastTrackers = trackers;
     if ($("#status").textContent === "loading") { $("#status").textContent = ""; $("#status").classList.remove("loading"); }
-    if (!releasesData) releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
+    // The workspace does not need releases (a GitHub round trip); the board and calendar do.
+    if (!releasesData && view !== "workspace") releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
     ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
     $("#project").classList.toggle("workspace-view", view === "workspace");
     $("#boards").replaceChildren(
@@ -1043,15 +1047,7 @@ const tailInto = async (node, claudeId, title) => {
 /* ---------- ship wizard ---------- */
 
 let ships = [];
-const jetGlyph = () => {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 40 16");
-  svg.setAttribute("class", "jet-glyph");
-  const body = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  body.setAttribute("d", "M40 8 L30 6 L24 5 L20 5 L8 1 L6 1 L14 5 L6 5 L2 3 L1 3 L3 6.5 L3 9.5 L1 13 L2 13 L6 11 L14 11 L6 15 L8 15 L20 11 L24 11 L30 10 Z");
-  svg.append(body);
-  return svg;
-};
+const jetGlyph = () => jetSvg("jet-glyph");
 
 const shipFor = (version) => ships.find((sh) => sh.version === version);
 const shipProgress = (ship) => {
@@ -1170,53 +1166,28 @@ const openShipWizard = async (version) => {
 };
 
 
-/* ---------- workspace: usage tracker, phone review ---------- */
+/* ---------- workspace: the command center, with the usage widget in its corner ---------- */
 
-const fmtTokens = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : String(n));
+let commandCenter = null;
 
 const renderWorkspace = async () => {
+  commandCenter?.stop();
   const wrap = el("section", { class: "workspace" });
-  wrap.append(el("h2", { class: "ws-title" }, "Workspace"), el("p", { class: "muted" }, "Across every project on this machine."));
-  const [u, ws] = await Promise.all([api("/api/usage"), api("/api/workspace")]);
-
-  const tile = (label, value, sub) => el("div", { class: "ws-tile" }, el("span", { class: "k" }, label), el("b", {}, value), sub ? el("span", { class: "sub" }, sub) : null);
-  const t = u.totals;
-  wrap.append(el("h3", {}, "Claude usage"),
-    el("div", { class: "ws-tiles" },
-      tile("today", fmtTokens(t.today.output), `${fmtTokens(t.today.input + t.today.cacheRead + t.today.cacheWrite)} in · ${t.today.messages} replies`),
-      tile("7 days", fmtTokens(t.week.output), `${fmtTokens(t.week.input + t.week.cacheRead + t.week.cacheWrite)} in · ${t.week.messages} replies`),
-      tile("30 days", fmtTokens(t.month.output), `${fmtTokens(t.month.input + t.month.cacheRead + t.month.cacheWrite)} in · ${t.month.messages} replies`),
-      tile("sessions", String(u.sessionsThisMonth), "with activity in 30 days")),
-    el("p", { class: "muted small" }, "Output tokens lead; \"in\" is prompt + cache read + cache write. Read from the transcripts Claude Code keeps, so this is what was consumed, not what your plan has left (the subscription's quota is not stored locally)."));
-
-  // 30-day bars
-  const max = Math.max(1, ...u.days.map((d) => d.output));
-  const chart = el("div", { class: "ws-chart" });
-  const byDate = new Map(u.days.map((d) => [d.date, d]));
-  for (let i = 29; i >= 0; i -= 1) {
-    const date = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    const d = byDate.get(date);
-    const h = d ? Math.max(2, Math.round((d.output / max) * 100)) : 0;
-    chart.append(el("div", { class: `ws-bar${date === today() ? " today" : ""}`, title: `${fmtDate(date, true)}: ${d ? `${fmtTokens(d.output)} out · ${fmtTokens(d.input + d.cacheRead + d.cacheWrite)} in · ${d.messages} replies` : "nothing"}` }, el("i", { style: `height:${h}%` }), el("span", {}, i % 5 === 0 ? date.slice(5) : "")));
-  }
-  wrap.append(el("h3", {}, "Output tokens per day, last 30"), chart);
-
-  const table = (rows, keyName, keyLabel) => {
-    const tbl = el("table", { class: "ws-table" }, el("thead", {}, el("tr", {}, el("th", {}, keyLabel), el("th", {}, "out"), el("th", {}, "in"), el("th", {}, "cache read"), el("th", {}, "replies"))));
-    const body = el("tbody");
-    for (const r of rows.slice(0, 12)) body.append(el("tr", {}, el("td", {}, r[keyName]), el("td", {}, fmtTokens(r.output)), el("td", {}, fmtTokens(r.input + r.cacheWrite)), el("td", {}, fmtTokens(r.cacheRead)), el("td", {}, String(r.messages))));
-    tbl.append(body);
-    return tbl;
-  };
-  wrap.append(el("div", { class: "ws-cols" },
-    el("div", {}, el("h3", {}, "By project, 30 days"), table(u.projects, "project", "project")),
-    el("div", {}, el("h3", {}, "By model, 30 days"), table(u.models, "model", "model"))));
-
-  wrap.append(el("h3", {}, "Review on your phone"),
-    ws.lanUrl
-      ? el("div", { class: "ws-phone" }, el("p", {}, "Open this on your phone (same Wi-Fi). The link carries the access key once; after that the phone is remembered for 30 days."), el("code", { class: "ws-link" }, ws.lanUrl), el("p", { class: "muted small" }, "Swipe right to keep, left to remove. A removal asks why and moves the item to a Removed section in the tracker with the date and your reason, one commit each."))
-      : el("div", { class: "ws-phone" }, el("p", {}, ws.lanHint), el("code", { class: "ws-link" }, "SESSION_CONSOLE_HOST=0.0.0.0 node server.ts")),
-    el("p", { class: "muted small mono" }, `usage scanned ${new Date(u.scannedAt).toLocaleTimeString()} · ${u.filesScanned} files read this pass`));
+  const usageRoot = el("div", { class: "cu-root" });
+  const ws = await api("/api/workspace");
+  wrap.append(
+    el("div", { class: "ws-head" },
+      el("div", {}, el("h2", { class: "ws-title" }, "Command center"), el("p", { class: "muted" }, "Every Claude session on this machine. Click a panel to read it full screen.")),
+      el("div", { class: "ws-tools" },
+        usageRoot,
+        ...(ws.lanUrl ? [el("button", { type: "button", class: "ghost", title: ws.lanUrl, onclick: () => { navigator.clipboard?.writeText(ws.lanUrl); setStatus("phone link copied"); } }, "phone link")] : []),
+      ),
+    ),
+  );
+  const center = el("div", { class: "cc" });
+  wrap.append(center);
+  claudeUsage.mount(usageRoot, { api, post });
+  commandCenter = mountCommandCenter(center, { el, text, api, post, openTerminal, setStatus, projectId, project });
   return wrap;
 };
 
