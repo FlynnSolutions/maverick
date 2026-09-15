@@ -635,3 +635,12 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .compare-links a:hover { text-decoration: underline; }
 .board-releases { margin-bottom: 16px; }
 .board-releases .strip-title { margin: 0 0 6px; }
+
+/* ---------- calendar status colours ---------- */
+
+.cal-event.item.done { background: rgba(80, 200, 120, 0.16); color: #7fe0a0; }
+.cal-event.item.warn { background: rgba(242, 210, 91, 0.16); color: #f2d25b; }
+.cal-event.item.late { background: var(--plasma-dim); color: var(--plasma); }
+.cal-head { margin-top: 14px; }
+.cal-legend { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; margin: -2px 0 6px; }
+.cal-legend .cal-event { cursor: default; font-size: 10.5px; }

@@ -218,6 +218,15 @@ const editItemBody = async (trackerIndex, item, newBody, label) => {
 };
 const createdOf = (item) => item.created ?? item.lineDate;
 
+/** Calendar colour: done is green; within a week (or overdue) is yellow when in progress, red when not. */
+const eventState = (e) => {
+  if (e.kind !== "item") return "";
+  if (e.item.checked || e.column === "shipped") return "done";
+  const days = Math.round((new Date(e.date) - new Date(today())) / 86400000);
+  if (days > 7) return "";
+  return e.column === "in-progress" ? "warn" : "late";
+};
+
 const dueChip = (item) => {
   const due = item.fields?.due;
   if (!due) return null;
@@ -524,13 +533,13 @@ const eventsFor = (trackers) => {
   const events = [];
   for (const tracker of trackers) {
     for (const section of tracker.sections) {
-      if (!section.column || section.column === "shipped") continue;
+      if (!section.column) continue;
       for (const group of section.groups) {
         if (group.due && section.column === "priority") events.push({ date: group.due, kind: "release", title: stripDeploy(group.name), tracker, section, group });
         for (const item of group.items) {
-          if (item.checked || !item.fields.due) continue;
+          if (!item.fields.due) continue;
           if (!showAll && !isDevItem(item)) continue;
-          events.push({ date: item.fields.due, kind: "item", title: item.title, tracker, section, item });
+          events.push({ date: item.fields.due, kind: "item", title: item.title, tracker, section, item, column: section.column });
         }
       }
     }
@@ -710,10 +719,10 @@ const renderCalendar = (trackers) => {
     for (const e of byDate.get(date) ?? []) {
       const node = el(
         "div",
-        { class: `cal-event ${e.kind} ${dueState(e.date, false)}`, title: e.title, onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); } },
+        { class: `cal-event ${e.kind} ${eventState(e)}`, title: `${e.title}${e.column ? ` · ${e.column}` : ""}`, onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); } },
         e.kind === "release" ? `⚡ ${e.title}` : e.title,
       );
-      if (e.item) draggableItem(node, e.tracker, e.item, e.section);
+      if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
       cell.append(node);
     }
     dropZone(cell, (d) => d.type === "item", (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${date}`));
@@ -722,7 +731,16 @@ const renderCalendar = (trackers) => {
   const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && (showAll || isDevItem(i))).map((i) => ({ t, i, s })))));
   const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`));
   for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(el("div", { class: "cal-event item undated", onclick: () => openDrawer(t.index, i) }, i.title), t, i, s));
-  return el("section", { class: "calendar" }, head, el("h3", { class: "strip-title" }, "Releases"), renderReleases(trackers), grid, side);
+  return el(
+    "section",
+    { class: "calendar" },
+    el("h3", { class: "strip-title" }, "Releases"),
+    renderReleases(trackers),
+    head,
+    el("div", { class: "cal-legend" }, el("span", { class: "cal-event item done" }, "complete"), el("span", { class: "cal-event item warn" }, "in progress, due within a week"), el("span", { class: "cal-event item late" }, "not started, due within a week"), el("span", { class: "cal-event item" }, "later")),
+    grid,
+    side,
+  );
 };
 
 /* ---------- sessions ---------- */
