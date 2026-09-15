@@ -137,6 +137,10 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
     {
       class: `card${item.checked ? " checked" : ""}`,
       draggable: draggable ? "true" : "false",
+      tabindex: "0",
+      role: "button",
+      "aria-label": item.title,
+      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); hideHover(); openDrawer(trackerIndex, item); } },
       onmouseenter: (e) => scheduleHover(e.currentTarget, item),
       onmouseleave: hideHover,
       ondragstart: (e) => {
@@ -256,7 +260,7 @@ const eventState = (e) => {
 const dueChip = (item) => {
   const due = item.fields?.due;
   if (!due) return null;
-  return el("span", { class: `chip due ${dueState(due, item.checked)}`, title: `due ${fmtDate(due)}` }, fmtDate(due, true));
+  return el("span", { class: `chip due ${dueState(due, item.checked)}`, title: `due ${fmtDate(due)}` }, `due ${fmtDate(due, true)}`);
 };
 
 const dropIndexIn = (list, y) => {
@@ -404,6 +408,7 @@ const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
     lastTrackers = trackers;
+    if ($("#status").textContent === "loading") { $("#status").textContent = ""; $("#status").classList.remove("loading"); }
     if (!releasesData) releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
     ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
     $("#project").classList.toggle("workspace-view", view === "workspace");
@@ -781,7 +786,7 @@ const releaseCard = (release, kind, live = false) => {
   const c = release.counts;
   return el(
     "div",
-    { class: `release-card ${kind}${live ? " live" : ""}`, onclick: () => { history.replaceState(null, "", `#release-${release.version}`); openReleaseDrawer(release, kind, null, live); } },
+    { class: `release-card ${kind}${live ? " live" : ""}`, tabindex: "0", role: "button", onkeydown: (ev) => { if (ev.key === "Enter") ev.currentTarget.click(); }, onclick: () => { history.replaceState(null, "", `#release-${release.version}`); openReleaseDrawer(release, kind, null, live); } },
     el("div", { class: "release-card-head" },
       el("span", { class: "version" }, `v${release.version}`),
       live ? el("span", { class: "badge live" }, "live in production") : el("span", { class: "badge released" }, "released")),
@@ -797,7 +802,7 @@ const slotCard = (slot, trackers) => {
   const fixCount = (slot.merged?.fixed ?? 0) + slot.items.filter(({ item }) => isBugItem(item)).length;
   const card = el(
     "div",
-    { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, onclick: () => { history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
+    { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, tabindex: "0", role: "button", onkeydown: (ev) => { if (ev.key === "Enter" && ev.target === ev.currentTarget) ev.currentTarget.click(); }, onclick: () => { history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
     el("div", { class: "release-card-head" }, el("span", { class: "version" }, slot.label), el("span", { class: "badge planned" }, slot.key === "next" ? "next release" : "the one after")),
     el("div", { class: "release-date" }, slot.deploy ? `deploy ${fmtDate(slot.deploy)}` : "no deploy date yet", slot.label !== slot.computed ? el("span", { class: "muted" }, ` · computed ${slot.computed}`) : null),
     el("div", { class: "stats" }, stat(featureCount, "features"), stat(fixCount, "fixes"), stat(slot.key === "next" ? slot.merged.prs : slot.items.length, slot.key === "next" ? "merged" : "planned")),
@@ -929,7 +934,7 @@ const renderCalendar = (trackers) => {
     for (const e of byDate.get(date) ?? []) {
       const node = el(
         "div",
-        { class: `cal-event ${e.kind} ${eventState(e)}`, title: `${e.title}${e.column ? ` · ${e.column}` : ""}`, onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); else if (e.slot) openSlotDrawer(e.slot, trackers); } },
+        { class: `cal-event ${e.kind} ${eventState(e)}`, tabindex: "0", role: "button", title: `${e.title}${e.column ? ` · ${e.column}` : ""}`, onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); else if (e.slot) openSlotDrawer(e.slot, trackers); }, onkeydown: (ev) => { if (ev.key === "Enter") ev.currentTarget.click(); } },
         e.kind === "release" ? `⚡ ${e.title}` : e.title,
       );
       if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
@@ -1121,7 +1126,7 @@ const sessionRow = (cls, name, sub, actions, lampTitle) =>
     "li",
     { class: `row ${cls}` },
     el("span", { class: "lamp", title: lampTitle ?? "" }),
-    el("span", { class: "name" }, ...[].concat(name)),
+    el("span", { class: "name", title: [].concat(name).map((n) => (typeof n === "string" ? n : n.textContent ?? "")).join("") }, ...[].concat(name)),
     el("span", { class: "actions" }, ...actions),
     sub ? el("span", { class: "sub" }, sub) : null,
   );
@@ -1158,7 +1163,7 @@ const renderSessions = (records, live) => {
           },
         },
         el("span", { class: "lamp", title: `pid ${s.pid}` }),
-        el("span", { class: "name" }, s.title ?? s.name ?? String(s.pid)),
+        el("span", { class: "name", title: s.title ?? s.name ?? String(s.pid) }, s.title ?? s.name ?? String(s.pid)),
         el(
           "span",
           { class: "actions" },
@@ -1435,6 +1440,8 @@ const applyTheme = (theme) => {
 
 const boot = async () => {
   if (!projectId) return renderPicker();
+  setStatus("loading");
+  $("#status").classList.add("loading");
   const projects = await api("/api/projects");
   project = projects.find((p) => p.id === projectId);
   if (!project) {
@@ -1517,8 +1524,11 @@ const boot = async () => {
     }
   }
   scheduleWeather();
-  const existing = await api("/api/terminals");
-  for (const t of existing) if (t.exitCode === null) mountTerminal(t);
+  // `?nodock=1` leaves open terminals unmounted: a live event stream keeps a headless screenshot from ever settling.
+  if (!new URLSearchParams(location.search).has("nodock")) {
+    const existing = await api("/api/terminals");
+    for (const t of existing) if (t.exitCode === null) mountTerminal(t);
+  }
 };
 
 boot().catch((err) => setStatus(err.message, true));

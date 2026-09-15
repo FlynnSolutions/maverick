@@ -797,3 +797,49 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .card { margin-bottom: 8px; }
 .release-card { border-radius: 8px; }
 .stat, .release-card .stat { border-radius: 4px; }
+
+/* ---------- HIG pass (apple-design skill, 2026-09-15): legibility floor, contrast, targets ---------- */
+
+/* typography.md: readable minimum sizes; nothing a person reads sits below 11px, meta lines 11.5px. */
+:root { --ink-faint: #8290a6; --ink-ghost: #5f6b82; }
+.chip, .due, .badge, .verdict { font-size: 11px; height: 22px; padding: 0 8px; }
+.card .meta, .row .sub, .row .doing .k, .drawer-meta, .fields dt, .due-row .k, .ws-tile .k, .ws-table th, .cal-dow, .cal-day, .release-card .stat span, .release-date, .release-card .foot, .status, .card .since, .hovercard-hint, .muted.small, .small { font-size: 11.5px; }
+.lane-title, .dispatch h3, .workspace h3, .strip-title, .group-name, .release-name, .role, .ship-step-head .verdict { font-size: 11.5px; }
+.card .title { font-size: 14px; }
+.row .doing { font-size: 12.5px; }
+.cal-event { font-size: 12px; padding: 4px 8px; }
+.release-card .stat { padding: 8px 8px 6px; }
+.release-card .stat span { line-height: 14px; }
+
+/* accessibility.md: controls sized and spaced; small row buttons come up to 24px with 8px padding. */
+.row .actions button, .ship-step-head .actions button, .card .spawn, button.ghost, .lane-title .fold, .release-name button.ghost, .release-list li button.ghost { height: 24px; padding: 0 8px; font-size: 11.5px; }
+.lane-title .fold { width: 24px; padding: 0; }
+.row .actions { gap: 6px; }
+.dock-tab { height: 30px; }
+
+/* accessibility.md: keyboard reach. Cards are focusable and open on Enter; focus is visible. */
+.card:focus-visible, .row:focus-visible, .cal-event:focus-visible, .release-card:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 2px; }
+
+/* color.md: more than colour alone. Calendar events carry a glyph; due chips say "due". */
+.cal-event.item::before { content: "•"; margin-right: 6px; opacity: 0.8; }
+.cal-event.item.done::before { content: "✓"; }
+.cal-event.item.warn::before { content: "▶"; }
+.cal-event.item.late::before { content: "!"; font-weight: 700; }
+.cal-event.release::before { content: ""; margin: 0; }
+
+/* lists-and-tables.md: alternating rows in multicolumn tables; headings stay. */
+.ws-table tbody tr:nth-child(even) td { background: rgba(170, 190, 215, 0.03); }
+
+/* layout.md: essential information gets space; the runway title is the biggest thing in a lane. */
+.lane.runway .lane-title { font-size: 12.5px; }
+.runway .card .num { font-size: 12.5px; }
+
+/* loading.md: say when something is on its way. */
+.status:empty::before { content: ""; }
+.status.loading { color: var(--ink-soft); }
+/* accessibility.md: 4.5:1 for text people read. Ghost (3.2:1) is decoration only; readable meta moves to faint (5.3:1). */
+.card .since, .cal-day, .group-name, .release-list li .key, .ws-bar span, .hovercard-hint, .dispatch li.empty, .board-title code, .lane-title .count, .release-card .foot, .release-card .stat span, .row .age, .status { color: var(--ink-faint); }
+/* Stat labels must fit at the legibility floor: wider cards, tighter tile padding, full words. */
+.release-card, .release-card.slot { flex-basis: 284px; }
+.release-card .stat { padding: 8px 6px 6px; }
+.release-card .stat span { font-size: 11px; letter-spacing: 0.04em; }
