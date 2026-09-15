@@ -155,7 +155,7 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
     },
     el("span", { class: "num" }, number === null ? "" : String(number)),
     el("div", { class: "title" }, item.title),
-    el("div", { class: "meta" }, item.tags.length ? el("span", { class: "tag" }, item.tags.map((t) => `[${t}]`).join(" ")) : null, el("span", {}, `L${item.start + 1}`)),
+    el("div", { class: "meta" }, dueChip(item), item.tags.length ? el("span", { class: "tag" }, item.tags.map((t) => `[${t}]`).join(" ")) : null, el("span", {}, `L${item.start + 1}`)),
     item.checked
       ? null
       : el(
@@ -174,6 +174,19 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
   );
 
 /** Index the dragged card would take among a list's visible cards, from the pointer's y position. */
+const today = () => new Date().toISOString().slice(0, 10);
+/** "overdue" | "soon" (within 7 days) | "later" | "" for no date or a checked item. */
+const dueState = (due, checked) => {
+  if (!due || checked) return "";
+  const days = Math.round((new Date(due) - new Date(today())) / 86400000);
+  return days < 0 ? "overdue" : days <= 7 ? "soon" : "later";
+};
+const dueChip = (item) => {
+  const due = item.fields?.due;
+  if (!due) return null;
+  return el("span", { class: `due ${dueState(due, item.checked)}` }, due.slice(5));
+};
+
 const dropIndexIn = (list, y) => {
   const cards = [...list.querySelectorAll(".card:not(.dragging)")];
   const idx = cards.findIndex((c) => y < c.getBoundingClientRect().top + c.offsetHeight / 2);
@@ -297,7 +310,9 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
     const releases = laneId === "priority";
     for (const group of section.groups) {
       const block = el("div", { class: releases && group.name ? "release" : "group" });
-      if (group.name) block.append(el("div", { class: releases ? "release-name" : "group-name" }, cleanGroupName(group.name)));
+      if (group.name) {
+        block.append(el("div", { class: releases ? "release-name" : "group-name" }, cleanGroupName(group.name).replace(/\s*\(?deploy \d{4}-\d{2}-\d{2}\)?/, ""), releases && group.due ? el("span", { class: `due ${dueState(group.due, false)}` }, `deploy ${group.due.slice(5)}`) : null));
+      }
       else if (releases && section.groups.length > 1) block.append(el("div", { class: "release-name unfiled" }, "unassigned"));
       block.append(itemsList(tracker.index, section, group, laneId, releases));
       lane.append(block);
@@ -330,7 +345,8 @@ const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
     lastTrackers = trackers;
-    $("#boards").replaceChildren(...trackers.map(renderBoard));
+    $("#boards").replaceChildren(...(view === "calendar" ? [renderCalendar(trackers)] : trackers.map(renderBoard)));
+    for (const b of document.querySelectorAll("#view-toggle button")) b.classList.toggle("active", b.dataset.view === view);
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
   } catch (err) {
     setStatus(err.message, true);
@@ -365,14 +381,54 @@ const openDrawer = (trackerIndex, item) => {
   const head = el("h2", {}, item.title);
   const actions = el("div", { class: "drawer-actions" });
 
+  const FIELD_ORDER = ["due", "release", "size", "kind", "status", "owner", "plan", "pr", "blocked-by", "links"];
+  const withDue = (body, due) => {
+    // Rewrite or insert the `  - due:` line right under the bullet, leaving everything else alone.
+    const lines = body.split("\n");
+    const i = lines.findIndex((l, n) => n > 0 && /^\s{2,}- due:/.test(l));
+    if (!due) return i > 0 ? [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n") : body;
+    if (i > 0) lines[i] = `  - due: ${due}`;
+    else lines.splice(1, 0, `  - due: ${due}`);
+    return lines.join("\n");
+  };
+  const saveBody = async (newBody, label) => {
+    setStatus(label);
+    try {
+      const { commit } = await post("/api/edit", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, body: newBody });
+      setStatus(`committed ${commit}`);
+      closeDrawer();
+      await loadBoard();
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
   const view = () => {
-    const text = el("div", { class: "drawer-text" });
-    text.innerHTML = renderInline(item.body);
-    body.replaceChildren(text);
+    const grid = el("dl", { class: "fields" });
+    const addField = (k, v, cls = "") => grid.append(el("dt", {}, k), el("dd", { class: cls }, v));
+    if (item.source) addField("source", item.source);
+    for (const k of FIELD_ORDER) {
+      if (!item.fields[k]) continue;
+      const v = item.fields[k];
+      if (k === "due") addField("due", `${v}${dueState(v, item.checked) === "overdue" ? " · overdue" : ""}`, dueState(v, item.checked));
+      else if (/^(https?:\/\/|plans\/|deliverables\/|\.\.\/)/.test(v)) addField(k, el("code", {}, v));
+      else addField(k, v);
+    }
+    const dueInput = el("input", { type: "date", value: item.fields.due ?? "" });
+    const dueRow = el(
+      "div",
+      { class: "due-row" },
+      el("span", { class: "k" }, "deadline"),
+      dueInput,
+      btn("set", () => saveBody(withDue(item.body, dueInput.value), "setting deadline"), "primary"),
+      item.fields.due ? btn("clear", () => saveBody(withDue(item.body, ""), "clearing deadline"), "ghost") : null,
+    );
+    const prose = el("div", { class: "drawer-text" });
+    prose.innerHTML = renderInline(item.description || "(no description)");
+    body.replaceChildren(grid.childElementCount ? grid : null, dueRow, prose);
     actions.replaceChildren(
       item.checked ? null : btn("spawn", () => { closeDrawer(); spawnOnItem(item, null); }, "primary"),
       el("span", { class: "spacer" }),
-      btn("edit", () => { editing = true; edit(); }),
+      btn("edit markdown", () => { editing = true; edit(); }),
       btn("close", closeDrawer),
     );
   };
@@ -420,6 +476,85 @@ const openDrawer = (trackerIndex, item) => {
   view();
   history.replaceState(null, "", `#L${item.start + 1}`);
   window.setTimeout(() => strike(head), 30);
+};
+
+
+/* ---------- calendar ---------- */
+
+let calendarMonth = today().slice(0, 7);
+let view = "board";
+try { view = localStorage.getItem("console.view") === "calendar" ? "calendar" : "board"; } catch {}
+if (new URLSearchParams(location.search).get("view") === "calendar") view = "calendar";
+
+const eventsFor = (trackers) => {
+  const events = [];
+  for (const tracker of trackers) {
+    for (const section of tracker.sections) {
+      if (!section.column || section.column === "shipped") continue;
+      for (const group of section.groups) {
+        if (group.due && section.column === "priority") events.push({ date: group.due, kind: "release", title: cleanGroupName(group.name).replace(/\s*\(?deploy \d{4}-\d{2}-\d{2}\)?/, ""), tracker, group });
+        for (const item of group.items) {
+          if (item.checked || !item.fields.due) continue;
+          if (!showAll && !isDevItem(item)) continue;
+          events.push({ date: item.fields.due, kind: "item", title: item.title, tracker, item });
+        }
+      }
+    }
+  }
+  return events;
+};
+
+const renderCalendar = (trackers) => {
+  const [y, m] = calendarMonth.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lead = (first.getUTCDay() + 6) % 7; // Monday first
+  const events = eventsFor(trackers);
+  const byDate = new Map();
+  for (const e of events) {
+    if (!byDate.has(e.date)) byDate.set(e.date, []);
+    byDate.get(e.date).push(e);
+  }
+  const shift = (delta) => {
+    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+    calendarMonth = d.toISOString().slice(0, 7);
+    loadBoard();
+  };
+  const head = el(
+    "div",
+    { class: "cal-head" },
+    btn("‹", () => shift(-1), "ghost"),
+    el("h2", {}, first.toLocaleString(undefined, { month: "long", year: "numeric", timeZone: "UTC" })),
+    btn("›", () => shift(1), "ghost"),
+    btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"),
+    el("span", { class: "spacer" }),
+    el("span", { class: "muted small mono" }, `${events.length} dated · items carry a due field, releases a deploy date`),
+  );
+  const grid = el("div", { class: "cal-grid" });
+  for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) grid.append(el("div", { class: "cal-dow" }, d));
+  for (let i = 0; i < lead; i += 1) grid.append(el("div", { class: "cal-cell pad" }));
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const date = `${calendarMonth}-${String(day).padStart(2, "0")}`;
+    const cell = el("div", { class: `cal-cell${date === today() ? " today" : ""}` }, el("div", { class: "cal-day" }, String(day)));
+    for (const e of byDate.get(date) ?? []) {
+      cell.append(
+        el(
+          "div",
+          {
+            class: `cal-event ${e.kind} ${dueState(e.date, false)}`,
+            title: e.title,
+            onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); },
+          },
+          e.kind === "release" ? `⚡ ${e.title}` : e.title,
+        ),
+      );
+    }
+    grid.append(cell);
+  }
+  const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && (showAll || isDevItem(i))).map((i) => ({ t, i })))));
+  const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`));
+  for (const { t, i } of undated.slice(0, 40)) side.append(el("div", { class: "cal-event item undated", onclick: () => openDrawer(t.index, i) }, i.title));
+  return el("section", { class: "calendar" }, head, grid, side);
 };
 
 /* ---------- sessions ---------- */
@@ -705,6 +840,15 @@ const boot = async () => {
   switcher.addEventListener("change", () => {
     location.href = switcher.value ? `/?project=${encodeURIComponent(switcher.value)}` : "/";
   });
+
+  $("#view-toggle").hidden = false;
+  for (const b of document.querySelectorAll("#view-toggle button")) {
+    b.addEventListener("click", () => {
+      view = b.dataset.view;
+      try { localStorage.setItem("console.view", view); } catch {}
+      loadBoard();
+    });
+  }
 
   const toggle = $("#show-all");
   toggle.checked = showAll;

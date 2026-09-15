@@ -8,6 +8,10 @@
 
 export type ColumnId = "priority" | "in-progress" | "backlog" | "shipped";
 
+/** Structured lines an item may carry, as `  - key: value` under its bullet. */
+export const FIELD_KEYS = ["source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by"] as const;
+export type FieldKey = (typeof FIELD_KEYS)[number];
+
 export interface Item {
   /** Stable within one read of the file: `<startLine>` (0-based line of the bullet). */
   start: number;
@@ -19,11 +23,19 @@ export interface Item {
   /** The bullet line as written, used to detect a stale move. */
   firstLine: string;
   body: string;
+  /** `key: value` lines under the bullet (see FIELD_KEYS). Empty for legacy prose items. */
+  fields: Partial<Record<FieldKey, string>>;
+  /** The italic `_source, date._` right after the title on legacy items, else the `source` field. */
+  source?: string;
+  /** Everything that is not title, source, or a field line: the prose. */
+  description: string;
 }
 
 export interface Group {
   /** `### ` heading inside the section, or "" for items directly under the section. */
   name: string;
+  /** `deploy <ISO date>` in a release heading (`### v1.10 (deploy 2026-09-28)`) is its deploy date; a bare date in a heading is not. */
+  due?: string;
   items: Item[];
 }
 
@@ -91,9 +103,27 @@ const titleOf = (firstLine: string): string => {
 const tagsOf = (firstLine: string): string[] =>
   [...firstLine.matchAll(/`\[([A-Za-z]+)\]`/g)].map((m) => m[1]);
 
+const FIELD_LINE = /^\s{2,}- ([a-z][a-z-]*):\s*(.*)$/;
+
 const parseItem = (lines: string[], start: number): Item => {
   const end = blockEnd(lines, start);
   const firstLine = lines[start];
+  const fields: Partial<Record<FieldKey, string>> = {};
+  const prose: string[] = [];
+  for (const line of lines.slice(start + 1, end)) {
+    const m = line.match(FIELD_LINE);
+    if (m && (FIELD_KEYS as readonly string[]).includes(m[1])) fields[m[1] as FieldKey] = m[2].trim();
+    else prose.push(line.replace(/^\s{2}/, ""));
+  }
+  // Legacy shape: `**Title** (em dash) _source, date._ prose...` all on the bullet line.
+  const afterTitle = firstLine
+    .replace(/^- \[[ x]\]\s*/i, "")
+    .replace(/^.*?\*\*.+?\*\*\s*/, "") // drop everything through the bold title, emoji and tags included
+    .replace(/`\[[A-Za-z]+\]`\s*/g, "")
+    .replace(/^[\s\u2014:-]+/, ""); // legacy items join title and source with an em dash
+  const italic = afterTitle.match(/^_(.+?)_\s*/);
+  const source = fields.source ?? italic?.[1];
+  const lead = italic ? afterTitle.slice(italic[0].length) : afterTitle;
   return {
     start,
     end,
@@ -102,6 +132,9 @@ const parseItem = (lines: string[], start: number): Item => {
     tags: tagsOf(firstLine),
     firstLine,
     body: lines.slice(start, end).join("\n"),
+    fields,
+    source,
+    description: [lead, ...prose].join("\n").trim(),
   };
 };
 
@@ -123,7 +156,9 @@ export const parseTracker = (text: string): Tracker => {
       continue;
     }
     if (section && group && isGroupHeading(line)) {
-      group = { name: line.slice(4).trim(), items: [] };
+      const name = line.slice(4).trim();
+      const due = name.match(/\b(?:deploy|ship)\s+(\d{4}-\d{2}-\d{2})\b/i)?.[1];
+      group = { name, ...(due ? { due } : {}), items: [] };
       section.groups.push(group);
       i += 1;
       continue;

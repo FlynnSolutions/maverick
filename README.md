@@ -66,6 +66,15 @@ bin/session-close --id <id> --status handed-off --handoff "deliverables/plans/di
   production. Nothing in it is draggable. At ship time the ship workflow archives it.
 - Checked items never show in the other lanes, so nothing is struck through on the board.
 - Lanes run Backlog, Roadmap, In progress, Done: pull from the left, ship to the right.
+- **Fields.** An item may carry `  - key: value` lines under its bullet (`source`, `due`,
+  `release`, `size`, `kind`, `status`, `owner`, `plan`, `pr`, `links`, `blocked-by`). The
+  drawer shows them as a grid above the prose; a card shows its `due` as a chip (blue within
+  a week, red overdue); the deadline picker in the drawer writes or clears the `due` line and
+  commits. Older one-line items still parse: the italic after the title is read as the
+  source. The `/save-followup` skill writes new items in the fielded shape.
+- **Calendar** (top bar toggle): a month grid of items with a `due` date and releases whose
+  heading says `deploy YYYY-MM-DD`, plus the roadmap items that have no deadline yet. Click
+  an event to open its drawer.
 - **Click a card** to read the whole entry; **edit** turns it into the raw markdown, and
   save writes the block back and commits (the first line must stay a bullet).
 
