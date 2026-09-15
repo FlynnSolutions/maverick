@@ -19,6 +19,7 @@ import { addProject, chooseFolder, projectById, readProjects, removeProject, typ
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
+import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
@@ -342,7 +343,10 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
   const termMatch = path.match(/^\/api\/terminals\/([^/]+)(?:\/(stream|input|resize))?$/);
 
-  if (method === "GET" && path === "/api/projects") return sendJson(res, 200, await readProjects());
+  if (method === "GET" && path === "/api/projects") {
+    const projects = await readProjects();
+    return sendJson(res, 200, await Promise.all(projects.map(async (p) => ({ ...p, theme: await themeFor(p.path) }))));
+  }
   if (method === "POST" && path === "/api/projects/import") {
     const folder = await chooseFolder();
     if (!folder) return sendJson(res, 200, { cancelled: true });
@@ -518,7 +522,7 @@ createServer((req, res) => {
   });
 }).listen(config.port, config.host, async () => {
   await loadKey();
-  console.log(`session console: http://localhost:${config.port}`);
+  console.log(`maverick: http://localhost:${config.port}`);
   console.log(`  projects: ${config.projectsFile}`);
   const lan = lanAddress();
   if (config.host !== "127.0.0.1" && lan) console.log(`  phone: http://${lan}:${config.port}/review.html?key=${accessKey}`);

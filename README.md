@@ -1,6 +1,9 @@
-# Session console
+# Maverick
 
-The one screen Cory manages work from, one project at a time: the roadmap columns
+The pilot. Maverick flies the work: it sits in the seat over every project, the sessions,
+the releases, and the ship, and the name is the point, this application is the pilot.
+
+Maverick is the one screen Cory manages work from, one project at a time: the roadmap columns
 (Priority, In progress, Backlog, Shipped) read straight from that project's markdown
 trackers, drag to sequence or move items, the Claude sessions running under the project
 (interactive and background), our session records (driver / develop / audit / plan), and
@@ -16,10 +19,22 @@ drag back as one line move, committed immediately in the tracker's repo so every
 session sees it. It keeps no store of its own; if the console and the file disagree, the
 file wins.
 
+## Theme
+
+Maverick wears the project it is flying. A `maverick.json` at the project root sets
+`accent`, `accentHot`, `font` (a Google Fonts family for display text) and `callsign`
+(shown next to the name in the top bar). Realtime's is its brand blue and Outfit. Projects
+without one get Maverick's own colours: afterburner orange over carbon. Effects are jets,
+not weather: a flyby with a contrail on big actions (a new session, a ship step, opening the
+ship wizard), a missile from the card to the dock when a session is spawned, flares off a
+card when a drop commits. The ambient contrail respects reduce-motion; the action effects do
+not, they are the product.
+
 ## Run
 
 ```
-node server.ts          # http://localhost:8766
+node server.ts                               # http://localhost:8766
+SESSION_CONSOLE_HOST=0.0.0.0 node server.ts  # also reachable from your phone, behind the access key
 ```
 
 Node 22.18+ runs the TypeScript directly. No build step, no dependencies.
@@ -29,7 +44,8 @@ Environment overrides (see `src/config.ts`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `SESSION_CONSOLE_PORT` | `8766` | listen port |
-| `SESSION_CONSOLE_HOME` | `~/.claude/session-console` | holds `projects.json` |
+| `SESSION_CONSOLE_HOST` | `127.0.0.1` | `0.0.0.0` opens it to the LAN; non-loopback clients need the key in `~/.claude/session-console/access-key` once (`?key=`), then a cookie |
+| `SESSION_CONSOLE_HOME` | `~/.claude/session-console` | holds `projects.json`, `releases.json`, the access key, the usage cache |
 | `SESSION_CONSOLE_SESSIONS` | `~/.claude/console-sessions` | session record directory |
 
 ## Layout
@@ -160,4 +176,4 @@ that follows it. A move relocates that whole block and touches nothing else.
 
 ## Not built yet
 
-Checkbox flips from the UI, the archive-on-ship button, per-release deploy dates, audit parents and the manager agent, and the Electron shell (the server is already shaped as its main process).
+Checkbox flips from the UI, the archive-on-ship button, the manager agent, rewriting `release: next+1` to `next` at ship time, and the Electron shell (the server is already shaped as its main process). The data directories still carry the old name (`~/.claude/session-console`, `~/.claude/console-sessions`) so nothing recorded so far is lost.

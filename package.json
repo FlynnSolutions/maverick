@@ -1,5 +1,5 @@
 {
-  "name": "session-console",
+  "name": "maverick",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.18" },

@@ -1,7 +1,7 @@
 // The console UI. Plain DOM and fetch; the same file runs in a browser or an Electron
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
 // selects it, no parameter shows the picker.
-import { strike, scheduleWeather } from "./bolt.js";
+import { strike, scheduleWeather, missile, flares, flyby } from "./afterburner.js";
 
 
 /** Tags that mark engineering work. Items carrying any of these (or no tag at all) are development items. */
@@ -304,7 +304,7 @@ const itemsList = (trackerIndex, section, group, laneId, numbered) => {
         targetIndex,
       });
       setStatus(`committed ${commit}`);
-      strike(list);
+      flares(list);
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -669,7 +669,7 @@ const dropZone = (node, accepts, onDrop) => {
     calDrag = null;
     try {
       await onDrop(drag);
-      strike(node);
+      flares(node);
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -803,7 +803,7 @@ const slotCard = (slot, trackers) => {
   if (slot.key === "next") {
     const existing = shipFor(slot.label.replace(/^v/, ""));
     const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
-    card.append(el("div", { class: "ship-cta" }, btn(label, (e) => { e.stopPropagation(); strike(card); openShipWizard(slot.label); }, "primary")));
+    card.append(el("div", { class: "ship-cta" }, btn(label, (e) => { e.stopPropagation(); flyby(); openShipWizard(slot.label); }, "primary")));
   }
   card.addEventListener("dragover", (e) => { if (!acceptsAnyItemDrag()) return; e.preventDefault(); card.classList.add("over"); });
   card.addEventListener("dragleave", () => card.classList.remove("over"));
@@ -816,7 +816,7 @@ const slotCard = (slot, trackers) => {
     if (!d) return;
     try {
       await setItemRelease(d.tracker, d.item, slot.key);
-      strike(card);
+      flares(card);
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -1006,6 +1006,7 @@ const openShipWizard = async (version) => {
     ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
   };
   const stepCall = async (step, action, body) => {
+    if (action === "run") flyby();
     try {
       await post(`/api/ships/${encodeURIComponent(bare)}/steps/${encodeURIComponent(step.id)}${action ? `/${action}` : ""}?project=${encodeURIComponent(projectId)}`, body);
       await refresh();
@@ -1351,12 +1352,12 @@ const mountTerminal = (info) => {
     cursorBlink: true,
     scrollback: 5000,
     theme: {
-      background: "#121315",
-      foreground: "#ececea",
-      cursor: "#f2a93b",
-      selectionBackground: "rgba(242, 169, 59, 0.28)",
-      black: "#17181a", brightBlack: "#55554f",
-      red: "#e5654f", green: "#7fd58a", yellow: "#f2a93b", blue: "#7aa7e0", magenta: "#c79bd8", cyan: "#7ccfd0", white: "#b9b9b4",
+      background: "#0a0c0f",
+      foreground: "#e8ecf1",
+      cursor: getComputedStyle(document.documentElement).getPropertyValue("--accent-hot").trim() || "#ffb36b",
+      selectionBackground: "rgba(255, 179, 107, 0.25)",
+      black: "#10141a", brightBlack: "#4a5468",
+      red: "#ff4d5e", green: "#8dffb0", yellow: "#ffd166", blue: "#7cc4ff", magenta: "#c79bd8", cyan: "#7ccfd0", white: "#aeb8c6",
     },
   });
   const fit = new window.FitAddon.FitAddon();
@@ -1404,7 +1405,7 @@ const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent })
 
 const spawnOnItem = (item, card, parent) => {
   if (!confirm(`Spawn a headless Claude session on:\n\n${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.${parent ? "\nWhen it finishes, the auditor reviews it." : ""}`)) return;
-  if (card) strike(card);
+  if (card) missile(card);
   openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body, parent });
 };
 
@@ -1412,6 +1413,21 @@ window.addEventListener("resize", () => {
   if (activeTerminal) dockTerminals.get(activeTerminal)?.fit.fit();
 });
 
+
+/* ---------- theme: the project's colours and display font ---------- */
+
+const applyTheme = (theme) => {
+  if (!theme) return;
+  const root = document.documentElement.style;
+  root.setProperty("--accent", theme.accent);
+  root.setProperty("--accent-hot", theme.accentHot);
+  root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
+  if (theme.font !== "Chakra Petch" && !document.querySelector(`link[data-font="${theme.font}"]`)) {
+    document.head.append(el("link", { rel: "stylesheet", "data-font": theme.font, href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
+  }
+  const brand = $(".brand");
+  brand.replaceChildren(text("Maverick"), theme.callsign ? el("span", { class: "callsign" }, theme.callsign) : null);
+};
 
 /* ---------- boot ---------- */
 
@@ -1423,7 +1439,8 @@ const boot = async () => {
     setStatus(`no project "${projectId}"`, true);
     return renderPicker();
   }
-  document.title = `${project.name} · Session Console`;
+  document.title = `${project.name} · Maverick`;
+  applyTheme(project.theme);
 
   const switcher = $("#switcher");
   switcher.replaceChildren(...projects.map((p) => el("option", { value: p.id, ...(p.id === projectId ? { selected: "" } : {}) }, p.name)), el("option", { value: "" }, "pick another…"));
@@ -1469,7 +1486,7 @@ const boot = async () => {
   });
   applyRail();
   $("#new-session").addEventListener("click", (e) => {
-    strike(e.currentTarget);
+    flyby();
     openTerminal({ kind: "new", title: `claude · ${project.name}` });
   });
 

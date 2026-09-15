@@ -1,26 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <radialGradient id="sky" cx="35%" cy="25%" r="80%">
-      <stop offset="0" stop-color="#1a2b47"/>
-      <stop offset="0.6" stop-color="#080d18"/>
-      <stop offset="1" stop-color="#04060c"/>
+    <radialGradient id="sky" cx="40%" cy="30%" r="80%">
+      <stop offset="0" stop-color="#232a33"/>
+      <stop offset="0.7" stop-color="#0f1319"/>
+      <stop offset="1" stop-color="#0a0c0f"/>
     </radialGradient>
-    <linearGradient id="core" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="0.55" stop-color="#bfe3ff"/>
-      <stop offset="1" stop-color="#5eb1ff"/>
+    <linearGradient id="burn" x1="1" y1="0" x2="0" y2="0">
+      <stop offset="0" stop-color="#fff2d6"/>
+      <stop offset="0.4" stop-color="#ffb36b"/>
+      <stop offset="1" stop-color="#ff7a1a" stop-opacity="0"/>
     </linearGradient>
-    <filter id="glow" x="-60%" y="-40%" width="220%" height="180%">
-      <feGaussianBlur stdDeviation="3.2" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="haze" x="-80%" y="-60%" width="260%" height="220%">
-      <feGaussianBlur stdDeviation="7"/>
+    <filter id="glow" x="-40%" y="-60%" width="200%" height="240%">
+      <feGaussianBlur stdDeviation="2.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
   <rect width="64" height="64" rx="14" fill="url(#sky)"/>
-  <path d="M36 6 L18 36 L30 36 L26 58 L46 26 L34 26 Z" fill="#4f9cff" opacity="0.55" filter="url(#haze)"/>
-  <path d="M36 6 L18 36 L30 36 L26 58 L46 26 L34 26 Z" fill="url(#core)" filter="url(#glow)"/>
-  <path d="M30 20 L22 31" stroke="#e9f3ff" stroke-width="1.2" stroke-linecap="round" opacity="0.8"/>
-  <path d="M37 40 L43 46" stroke="#e9f3ff" stroke-width="1" stroke-linecap="round" opacity="0.7"/>
+  <path d="M6 34 L26 34" stroke="url(#burn)" stroke-width="5" stroke-linecap="round" filter="url(#glow)"/>
+  <g transform="translate(20 22) scale(1.05)">
+    <path d="M0 11 L14 9 L22 4 L27 4 L25 9 L36 8 L42 10 L36 12 L25 11 L27 16 L22 16 L14 11 Z" fill="#e8ecf1"/>
+    <path d="M14 9 L22 4 L27 4 L25 9 Z" fill="#c7ceda"/>
+  </g>
 </svg>
