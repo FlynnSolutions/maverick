@@ -450,7 +450,7 @@ const renderSessions = (records, live) => {
         "li",
         { class: `row session-live ${s.status ?? ""}` },
         el("span", { class: "lamp", title: `pid ${s.pid}` }),
-        el("span", { class: "name" }, s.title ?? s.name ?? String(s.pid), el("span", { class: "where" }, where)),
+        el("span", { class: "name" }, s.title ?? s.name ?? String(s.pid)),
         el(
           "span",
           { class: "actions" },
@@ -466,7 +466,7 @@ const renderSessions = (records, live) => {
             window.setTimeout(() => loadRail(true), 1500);
           }, "danger"),
         ),
-        el("span", { class: "doing" }, el("span", { class: "k" }, s.status ?? "?"), text(s.waitingFor ? `${s.waitingFor} · ` : ""), el("span", { class: "age" }, `${age(s.updatedAt)}${s.elapsed ? ` · up ${s.elapsed}` : ""}`)),
+        el("span", { class: "doing" }, el("span", { class: "k" }, s.status ?? "?"), text(s.waitingFor ? `${s.waitingFor} · ` : ""), el("span", { class: "age" }, `${age(s.updatedAt)}${s.elapsed ? ` · up ${s.elapsed}` : ""}${where ? ` · ${where}` : ""}`)),
         s.lastPrompt ? el("span", { class: "doing" }, el("span", { class: "k" }, "you"), text(s.lastPrompt)) : null,
         s.lastReply ? el("span", { class: "doing" }, el("span", { class: "k" }, "claude"), text(s.lastReply)) : null,
       ),
