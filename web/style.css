@@ -441,12 +441,12 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 2;
+  z-index: 0; /* behind every card and panel, above the grain; the bolt itself stays on top */
   background: radial-gradient(900px 520px at var(--flash-x) var(--flash-y), rgba(191, 227, 255, 0.28), rgba(94, 177, 255, 0.08) 45%, transparent 72%);
   animation: sheet 900ms steps(1, end) forwards;
 }
 .sky-flash.strike-flash {
-  z-index: 49;
+  z-index: 0;
   background: radial-gradient(700px 420px at var(--flash-x) var(--flash-y), rgba(220, 238, 255, 0.5), rgba(94, 177, 255, 0.12) 40%, transparent 70%);
   animation: sheet-strike 640ms steps(1, end) forwards;
 }

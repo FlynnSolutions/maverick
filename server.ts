@@ -31,6 +31,7 @@ const MIME: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
 };
 
 const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
