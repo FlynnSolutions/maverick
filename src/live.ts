@@ -41,7 +41,8 @@ export interface LiveSignals {
   }>;
 }
 
-const cache = new Map<string, { at: number; value: LiveSignals }>();
+export const liveCache = new Map<string, { at: number; value: LiveSignals }>();
+const cache = liveCache;
 
 const isAlive = (pid: number): boolean => {
   try {

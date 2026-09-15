@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
 import { commitFile } from "./src/git.ts";
-import { liveSignals } from "./src/live.ts";
+import { liveCache, liveSignals } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
@@ -417,10 +417,15 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, { ok: true });
     }
   }
-  if (method === "POST" && path.startsWith("/api/agents/") && path.endsWith("/stop")) {
-    const id = path.slice("/api/agents/".length, -"/stop".length);
-    const { stdout } = await run("claude", ["stop", id]);
-    return sendJson(res, 200, { ok: true, output: stdout.trim() });
+  const agentAction = path.match(/^\/api\/agents\/([0-9a-f]+)\/(stop|remove)$/);
+  if (method === "POST" && agentAction) {
+    // The CLI reports a refusal as a message on stdout with exit 0, so pass its words through and flag them.
+    const [, id, action] = agentAction;
+    const { stdout, stderr } = await run("claude", [action === "stop" ? "stop" : "rm", id]).catch((err: { stdout?: string; stderr?: string }) => ({ stdout: err.stdout ?? "", stderr: err.stderr ?? "" }));
+    const output = `${stdout}${stderr}`.trim();
+    const failed = /couldn't|could not|failed|error/i.test(output);
+    if (!failed) liveCache.clear();
+    return sendJson(res, 200, { ok: !failed, failed, output });
   }
 
   if (method === "GET") return serveStatic(path, res);

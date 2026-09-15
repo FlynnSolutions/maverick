@@ -315,28 +315,6 @@ const itemsList = (trackerIndex, section, group, laneId, numbered) => {
 
 const cleanGroupName = (name) => name.replace(/\[(.*?)\]\(.*?\)/g, "$1").trim();
 
-const addReleaseButton = (trackerIndex, section, lane) =>
-  el(
-    "button",
-    {
-      type: "button",
-      class: "ghost add-release",
-      onclick: async () => {
-        const name = prompt("Name the roadmap group (a ### heading under Priority):", "");
-        if (!name) return;
-        try {
-          const { commit } = await post("/api/groups", { project: projectId, tracker: trackerIndex, heading: section.heading, name });
-          setStatus(`committed ${commit}`);
-          strike(lane);
-          await loadBoard();
-        } catch (err) {
-          setStatus(err.message, true);
-        }
-      },
-    },
-    "+ group",
-  );
-
 /** Checked items from every non-done section, shown read-only in the Done lane. */
 const doneElsewhere = (tracker) =>
   tracker.sections
@@ -381,10 +359,11 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
     if (sections.length > 1) lane.append(el("div", { class: "group-name" }, section.heading));
     const releases = laneId === "priority";
     for (const group of section.groups) {
-      const block = el("div", { class: releases && group.name ? "release" : "group" });
+      // Groups are labels, never boxes: the lane stays one runway. An empty group can be deleted.
+      const block = el("div", { class: "group" });
       if (group.name) {
-        const removable = releases && group.items.length === 0;
-        block.append(el("div", { class: releases ? "release-name" : "group-name" }, stripDeploy(group.name), removable ? btn("×", async () => {
+        const removable = group.items.length === 0;
+        block.append(el("div", { class: "group-name" }, cleanGroupName(group.name), removable ? btn("×", async () => {
           if (!confirm(`Delete the empty group "${cleanGroupName(group.name)}"?`)) return;
           try {
             const { commit } = await api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) });
@@ -395,11 +374,9 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
           await loadBoard();
         }, "ghost") : null));
       }
-      else if (releases && section.groups.length > 1) block.append(el("div", { class: "release-name unfiled" }, "unassigned"));
       block.append(itemsList(tracker.index, section, group, laneId, releases));
       lane.append(block);
     }
-    if (releases) lane.append(addReleaseButton(tracker.index, section, lane));
   }
   if (extras.length) {
     lane.append(el("div", { class: "group-name" }, "checked off elsewhere"));
@@ -1154,9 +1131,15 @@ const renderSessions = (records, live) => {
         `background · ${a.state ?? "?"} · started ${age(a.startedAt)} · ${a.id}`,
         [
           btn("open", () => openTerminal({ kind: "attach", id: a.id, title: record?.loop ?? a.name ?? a.id })),
-          btn("stop", async () => {
-            if (!confirm(`Stop background session ${a.id}? Its conversation is kept.`)) return;
-            await post(`/api/agents/${a.id}/stop`);
+          btn(/^(done|exited|stopped|blocked)$/.test(a.state ?? "") ? "remove" : "stop", async () => {
+            const finished = /^(done|exited|stopped|blocked)$/.test(a.state ?? "");
+            if (!confirm(finished ? `Remove background session ${a.id} from the list? Its transcript stays on disk.` : `Stop background session ${a.id}? Its conversation is kept.`)) return;
+            try {
+              const r = await post(`/api/agents/${a.id}/${finished ? "remove" : "stop"}`);
+              setStatus(r.output || (finished ? `removed ${a.id}` : `stopped ${a.id}`), Boolean(r.failed));
+            } catch (err) {
+              setStatus(err.message, true);
+            }
             loadRail(true);
           }, "danger"),
         ],
