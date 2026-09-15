@@ -695,7 +695,9 @@ const planningSlots = (trackers) => {
   const merged = releasesData?.next?.counts ?? { added: 0, fixed: 0, changed: 0, prs: 0, prFeatures: 0, prFixes: 0 };
   const nextHasFeatures = merged.added > 0 || merged.prFeatures > 0 || next.some(({ item }) => isFeatureItem(item));
   const nextHasAnything = nextHasFeatures || merged.fixed > 0 || merged.changed > 0 || merged.prs > 0 || next.length > 0;
-  const nextVersion = nextHasAnything ? bump(base, nextHasFeatures ? "minor" : "patch") : base;
+  // A project with no shipped version yet starts at 0.1.0 rather than shipping "0.0.0".
+  const unversioned = !(releasesData?.shipped?.length);
+  const nextVersion = nextHasAnything || unversioned ? bump(base, nextHasFeatures || unversioned ? "minor" : "patch") : base;
   const nnHasFeatures = nextNext.some(({ item }) => isFeatureItem(item));
   const nextNextVersion = nextNext.length ? bump(nextVersion, nnHasFeatures ? "minor" : "patch") : bump(nextVersion, "minor");
   const slots = releasesData?.slots ?? {};
@@ -1426,7 +1428,7 @@ const applyTheme = (theme) => {
     document.head.append(el("link", { rel: "stylesheet", "data-font": theme.font, href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
   }
   const brand = $(".brand");
-  brand.replaceChildren(text("Maverick"), theme.callsign ? el("span", { class: "callsign" }, theme.callsign) : null);
+  brand.replaceChildren(...[text("Maverick"), theme.callsign ? el("span", { class: "callsign" }, theme.callsign) : null].filter(Boolean));
 };
 
 /* ---------- boot ---------- */
