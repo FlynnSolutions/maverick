@@ -105,6 +105,14 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Idle decays in three steps, and the first step is yours.** Under an hour between turns is a
   conversation you are in the middle of (`Needs action`, carries the exchange); under a day is
   `Idle`; beyond that is `Stale`. Distinct from `Needs you`, which is blocked on a prompt.
+- **The dock has three layouts and a way out.** Tabs shows one pane; Split sits them side by
+  side; Grid fits as many as will go and lets one be the *lead*, spanning a full column, so three
+  sessions run under one overseer. Every pane carries a caption (lamp, title, promote, close) so
+  a grid of terminals says which is which. Closing the dock hides it and leaves every terminal
+  running, with a pill bottom-right to bring it back: putting it away is not the same as ending
+  what is in it, and there was previously no way to do the first without doing the second.
+- **xterm measures its own box**, so every visible pane must be refit and its pty resized on any
+  layout change, inside a `requestAnimationFrame` so the new geometry has actually landed.
 - **The bar** (52px): the traced jet at 27px in the accent, then the wordmark, then the project
   as a pill carrying its own accent as a dot (a project is identity, not a form field, so it is
   never a native `select`), then the views as a segmented well with a drawn icon beside each

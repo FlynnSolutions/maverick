@@ -1494,6 +1494,59 @@ const loadRail = async (refresh = false) => {
 
 const dockTerminals = new Map();
 let activeTerminal = null;
+/** tabs: one at a time. split: side by side. grid: as many as fit, one of them the lead. */
+let dockLayout = (() => { try { return localStorage.getItem("mv.dockLayout") ?? "tabs"; } catch { return "tabs"; } })();
+let leadTerminal = null;
+
+/** Hide the dock without ending anything; a pill brings it back. */
+const hideDock = () => {
+  $("#dock").hidden = true;
+  document.body.classList.remove("docked");
+  paintRestore();
+};
+const showDock = () => {
+  $("#dock").hidden = false;
+  document.body.classList.add("docked");
+  paintRestore();
+  applyDockLayout();
+};
+const paintRestore = () => {
+  document.querySelector(".dock-restore")?.remove();
+  if (!dockTerminals.size || !$("#dock").hidden) return;
+  document.body.append(el("button", { type: "button", class: "dock-restore", onclick: showDock },
+    icon("workspace"), el("b", {}, `${dockTerminals.size} terminal${dockTerminals.size === 1 ? "" : "s"}`)));
+};
+
+const applyDockLayout = () => {
+  const dock = $("#dock");
+  for (const m of ["tabs", "split", "grid"]) dock.classList.toggle(`layout-${m}`, dockLayout === m);
+  for (const [tid, t] of dockTerminals) {
+    t.cell.hidden = dockLayout === "tabs" && tid !== activeTerminal;
+    t.cell.classList.toggle("lead", dockLayout === "grid" && tid === leadTerminal);
+    t.cell.classList.toggle("on", tid === activeTerminal);
+  }
+  // xterm measures its own box, so every visible pane has to be told the box changed.
+  window.requestAnimationFrame(() => {
+    for (const [tid, t] of dockTerminals) {
+      if (t.cell.hidden) continue;
+      t.fit.fit();
+      post(`/api/terminals/${tid}/resize`, { cols: t.term.cols, rows: t.term.rows }).catch(() => {});
+    }
+  });
+  paintDockCtl();
+};
+
+const paintDockCtl = () => {
+  const modes = [["tabs", "Tabs"], ["split", "Split"], ["grid", "Grid"]];
+  $("#dock-ctl").replaceChildren(
+    el("span", { class: "seg" }, ...modes.map(([m, label]) =>
+      el("button", { type: "button", class: dockLayout === m ? "on" : "", title: `${label} layout`, onclick: () => {
+        dockLayout = m;
+        try { localStorage.setItem("mv.dockLayout", m); } catch {}
+        applyDockLayout();
+      } }, label))),
+    el("button", { type: "button", class: "ghost icon-btn", "aria-label": "hide the dock; the terminals keep running", title: "hide the dock; the terminals keep running", onclick: hideDock }, icon("close")));
+};
 
 const termSize = () => {
   const body = $("#dock-body");
@@ -1504,15 +1557,10 @@ const termSize = () => {
 
 const activate = (id) => {
   activeTerminal = id;
-  for (const [tid, t] of dockTerminals) {
-    t.tab.classList.toggle("active", tid === id);
-    t.container.hidden = tid !== id;
-    if (tid === id) {
-      t.fit.fit();
-      t.term.focus();
-      post(`/api/terminals/${id}/resize`, { cols: t.term.cols, rows: t.term.rows }).catch(() => {});
-    }
-  }
+  for (const [tid, t] of dockTerminals) t.tab.classList.toggle("active", tid === id);
+  applyDockLayout();
+  const t = dockTerminals.get(id);
+  if (t && !t.cell.hidden) t.term.focus();
 };
 
 /** A pty onto a background agent only detaches when closed; any other pty hangs up the claude living in it. */
@@ -1530,21 +1578,19 @@ const closeDockTerminal = async (id) => {
   t.source.close();
   t.term.dispose();
   t.tab.remove();
-  t.container.remove();
+  t.cell.remove();
   dockTerminals.delete(id);
+  if (leadTerminal === id) leadTerminal = null;
+  paintRestore();
   if (activeTerminal === id) {
     const next = [...dockTerminals.keys()].pop();
     if (next) activate(next);
-    else {
-      $("#dock").hidden = true;
-      document.body.classList.remove("docked");
-    }
+    else hideDock();
   }
 };
 
 const mountTerminal = (info) => {
-  $("#dock").hidden = false;
-  document.body.classList.add("docked");
+  showDock();
   const term = new window.Terminal({
     fontFamily: "JetBrains Mono, Menlo, monospace",
     fontSize: 13,
@@ -1562,8 +1608,18 @@ const mountTerminal = (info) => {
   });
   const fit = new window.FitAddon.FitAddon();
   term.loadAddon(fit);
+  // Each terminal is a titled pane, so a grid of them says which is which.
   const container = el("div", { class: "term" });
-  $("#dock-body").append(container);
+  const cell = el("div", { class: "term-cell" },
+    el("div", { class: "term-cap" },
+      el("span", { class: "lamp" }),
+      el("span", { class: "t", title: info.title }, info.title),
+      el("button", { type: "button", class: "ghost cap-btn", title: "make this the oversight pane", "aria-label": `make ${info.title} the oversight pane`,
+        onclick: () => { leadTerminal = leadTerminal === info.id ? null : info.id; applyDockLayout(); } }, icon("board")),
+      el("button", { type: "button", class: "ghost cap-btn x", title: "close this pane", "aria-label": `close ${info.title}`,
+        onclick: () => closeDockTerminal(info.id) }, icon("close"))),
+    container);
+  $("#dock-body").append(cell);
   term.open(container);
   acceptDrops(container, (paths) => sendInput(info.id, `${paths.join(" ")} `));
 
@@ -1587,7 +1643,8 @@ const mountTerminal = (info) => {
   term.onData((data) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: data, keepalive: true }).catch(() => {}));
   term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
 
-  dockTerminals.set(info.id, { term, fit, tab, container, source, info });
+  dockTerminals.set(info.id, { term, fit, tab, container, cell, source, info });
+  paintDockCtl();
   activate(info.id);
 };
 
@@ -1765,6 +1822,8 @@ const boot = async () => {
 
   $("#project").hidden = false;
   $("#reload").hidden = false;
+  // The dock's controls exist before anything mounts, so an empty dock is still operable.
+  paintDockCtl();
   const ns = $("#new-session");
   ns.replaceChildren(icon("plus"), el("span", {}, "New session"));
   ns.hidden = false;
