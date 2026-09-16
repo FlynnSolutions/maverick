@@ -1,3 +1,6 @@
 node_modules/
 .DS_Store
 web/blasters.html
+web/pen.html
+web/reference.png
+web/mark-config.json
