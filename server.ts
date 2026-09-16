@@ -30,6 +30,7 @@ import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
 import { readSessions, sessionsForProject, type SessionRecord } from "./src/sessions.ts";
+import { readNames, setName } from "./src/names.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
 import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
@@ -359,6 +360,8 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const background = await Promise.all(agents.map(async (a) => ({ ...a, ...(await glance(a.cwd, a.sessionId)), project: projectOf(a.cwd) })));
     return sendJson(res, 200, {
       projects: projects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
+      // The names Cory gave sessions here. Applied by the page, so one place decides precedence.
+      names: await readNames(),
       interactive: enriched.map((s) => ({ ...s, project: projectOf(s.cwd) })),
       background,
       records: await Promise.all(records.map(async (r) => ({ ...r, auditView: await auditView(r, states) }))),
@@ -542,6 +545,12 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (!app) throw new Error(`pid ${pid} is not a Claude session in a known terminal app`);
     await focusApp(app);
     return sendJson(res, 200, { ok: true, app });
+  }
+  // Rename a session: Maverick's own name for it, kept beside the CLI's read-only registry.
+  if (method === "POST" && path === "/api/sessions/name") {
+    const { sessionId, name } = await readJson<{ sessionId: string; name: string }>(req);
+    if (!sessionId) throw new Error("rename needs a sessionId");
+    return sendJson(res, 200, await setName(sessionId, name ?? ""));
   }
   // The workspace lists every session on the machine, so the guard is the registry, not the project.
   if (method === "POST" && /^\/api\/sessions\/\d+\/close$/.test(path)) {

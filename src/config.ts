@@ -17,6 +17,8 @@ export const config = {
   keyFile: join(consoleHome, "access-key"),
   /** The project registry (see src/projects.ts). */
   projectsFile: join(consoleHome, "projects.json"),
+  /** The names Cory gives sessions here (see src/names.ts). */
+  namesFile: join(consoleHome, "session-names.json"),
   /** Our per-session records (role, loop, parent, handoff). */
   sessionsDir: process.env.SESSION_CONSOLE_SESSIONS ?? join(home, ".claude", "console-sessions"),
   /** Claude Code's own live-session registry. Read-only; the CLI owns it. */

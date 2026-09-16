@@ -36,27 +36,46 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 
 ## Patterns
 
-- **Session panel** (`.cc-panel`): lamp · title (display 15/600) · role chip · verdict · two
-  quiet ghost actions (30px, 44px wide, `--ink-soft`): `dock`, then `close` / `stop` / `remove`,
-  which reddens on hover and always asks first. Enter or Space on the panel opens it; on one of
-  its buttons it is that button's. Meta line mono 11.5. Last exchange as `YOU` / `CLAUDE` rows.
-  The whole panel is the click target (Enter and Space too). Compact variant drops the exchange.
-- **Dialog** (`.ask`): every question the browser would draw (confirm, prompt) is Maverick's
-  own: a 440px gunmetal card (a form) on the drawer's backdrop, title display 15/600, body 13px
-  soft ink, actions right-aligned as `cancel` ghost then the verb. A dangerous verb is threat-dim
-  filled and focus starts on cancel. The page behind goes inert and stops scrolling; Escape and
-  the backdrop cancel; Enter in a field submits; focus returns where it was.
-- **Dock tab** (`.dock-tab`): two real buttons side by side, the name (lamp + ellipsised title)
-  and a 28px `×` that reddens on hover; closing a live claude's terminal asks first, detaching
-  a background attach does not.
-- **Bands**: Needs you (caution, jet glyph) → formations → Working → Idle (compact) → Finished
-  (compact) → closed formations as one-line rows. The focal element of the deck is whatever
-  waits on the pilot.
-- **Formation** (`.cc-formation`): lead row (accent jet glyph, role, loop, status) across the
-  top; wings hung off a 1px hairline with 13px ticks. Never a coloured left border wash.
-- **Usage pill** (`.cu-baby`): 34px capsule, brand + three labelled micro-meters + readouts;
-  opens a 640px panel below it (fixed sheet under 600px). Meters are neutral (`.peak`, opacity
-  0.75) until a limit is set, then caution at 70% and threat at 90%.
+- **Four densities, and the loudest is the one that answers the page's question.** Needs-you
+  (`.rack.needs`): 56px line, 17px name, lifted `--panel-lifted`, a caution ring at 45% alpha
+  you can actually see, secondary text raised to `--ink-soft` to stay readable on the brighter
+  surface. Working (`.strip.full`): 46px, 15px name, the exchange. Idle/stale/done: a 40px line
+  at 13.5px/500. Three lifted strips is not a hierarchy; one is.
+- **The type scale has to agree with the ordering.** The racks sort by urgency, so the project
+  heading is a quiet 15px tracked divider and `Needs you` is the 19px caution heading. When the
+  project head was 22px and the rack head 15px, the structure sorted by urgency and the type
+  sorted by project.
+- **Never let `1fr` pool the slack on the column that does not need it.** The name column took
+  every spare pixel (577px of void on the strip that mattered) while state, timing and path all
+  truncated beside it. The name shares: `minmax(230px, 0.5fr)` on the path, fixed on the rest.
+  Any cell that can ellipsise carries a `title`, or its text is unrecoverable.
+- **A state colour belongs to one state.** `@keyframes arc` hardcoded `--hud`, so a *working*
+  session pulsed in the colour a *finished* one is painted. A keyframe that sets colour is a
+  second place a state is defined; keep the colour on the class and the motion in the keyframe.
+- **Session strip** (`.strip`) — the signature. Air traffic control keeps one paper progress
+  strip per flight in a rack, ordered by urgency and annotated by hand; a session is a flight.
+  The line is a grid of fixed columns (`8px · name 1fr · 180px state · 148px timing · 230px
+  where · 152px actions`, 14px gaps, 40px min height), so the lamp, the state and the three
+  verbs share one x down the entire page however long a title runs. Right-aligning the action
+  group is not enough: `close`, `stop` and `remove` differ in width, so each verb gets its own
+  column (66 / 52 / 64px, 8px apart). Verbs are 28px tall with a `::after` extending the hit
+  area to the full 40px row rather than inflating the row to 44; extend on both axes, and keep
+  a real gap, or adjacent targets touch.
+- **Three densities carry the hierarchy.** `full` (needs you, working) lifts the strip, sets the
+  name 15px/600 and carries the last exchange beneath the line; `line` is the bare strip at
+  13.5px/500. A rack of 40px lines under one lifted strip is the whole hierarchy: no second
+  colour, no border, no size ramp needed.
+- **Racks are ordered by who needs you, projects included.** A project holding a waiting session
+  is drawn before one that is merely busy, and an empty project draws nothing. The page's focal
+  element is whatever waits on the pilot, wherever it lives.
+- **Rename in place** (`.strip-rename`): the name becomes an input in its own seat, accent ring,
+  nothing around it moving. Enter or blur commits, Escape restores, empty hands the session back
+  Claude Code's own title. The new name paints immediately; rebuilding every session record
+  takes over a second and a rename that appears to do nothing reads as one that failed.
+- **Never name a class with a bare generic word.** `.dock` styled the terminal dock *and* every
+  card's `dock` button, silently making those buttons sticky, column-flex and blurred, which is
+  what knocked their labels out of line with `close`. Style a one-off region by id (`#dock`) and
+  keep component classes prefixed (`.strip-*`, `.rack`, `.cc-*`).
 - **Conversation** (`.cc-conv`): 680px measure (~73ch). User turns are flat panels with a 2px
   accent right rule; Claude turns a 2px seam left rule; runs of tool calls fold into one mono
   pill; harness injections fold as system events.

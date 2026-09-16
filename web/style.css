@@ -13,8 +13,8 @@
   --seam-strong: rgba(170, 190, 215, 0.2);
   --ink: #e8ecf1;
   --ink-soft: #aeb8c6;
-  --ink-faint: #74819a;
-  --ink-ghost: #4a5468;
+  --ink-faint: #8290a6;
+  --ink-ghost: #5f6b82;
   --accent: #ff7a1a;
   --accent-hot: #ffb36b;
   --accent-core: #ffffff;
@@ -41,7 +41,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
-html { -webkit-font-smoothing: antialiased; }
+html { -webkit-font-smoothing: antialiased; scrollbar-width: thin; scrollbar-color: var(--cold) transparent; }
 body {
   margin: 0;
   min-height: 100vh;
@@ -358,9 +358,11 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .row.idle .lamp { background: var(--cold); box-shadow: inset 0 0 0 1px var(--seam-strong); }
 .row.shell .lamp { background: var(--ink-faint); }
 .row.closed .lamp, .row.handed-off .lamp, .dock-tab.exited .lamp { background: var(--ink-ghost); box-shadow: none; animation: none; }
+/* Working, so it pulses in the project's accent. It used to pulse in --hud, which is the
+   colour a *finished* session is painted: a running session wore the done lamp's glow. */
 @keyframes arc {
-  0%, 100% { box-shadow: 0 0 6px var(--hud), 0 0 14px var(--hud-dim); transform: scale(1); }
-  50% { box-shadow: 0 0 10px var(--hud), 0 0 26px var(--hud-dim); transform: scale(1.15); }
+  0%, 100% { box-shadow: 0 0 6px var(--accent), 0 0 14px var(--accent-glow); transform: scale(1); }
+  50% { box-shadow: 0 0 10px var(--accent), 0 0 26px var(--accent-glow); transform: scale(1.15); }
 }
 @keyframes flicker {
   0%, 100% { opacity: 1; } 6% { opacity: 0.35; } 9% { opacity: 1; } 14% { opacity: 0.6; } 17% { opacity: 1; }
@@ -368,8 +370,8 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 }
 
 /* ---------- terminal dock ---------- */
-
-.dock {
+/* Selected by id: a bare `.dock` also matched the cards' dock buttons and made them sticky. */
+#dock {
   position: sticky;
   bottom: 0;
   z-index: 4;
@@ -404,7 +406,7 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .dock-tab .lamp { width: 6px; height: 6px; flex: 0 0 auto; }
 .dock-tab .close { width: 28px; flex: 0 0 auto; color: var(--ink-faint); font-size: 16px; line-height: 1; border-left: 1px solid var(--seam-soft); border-radius: 0 var(--radius-s) 0 0; }
 .dock-tab.active .close { color: var(--ink-soft); }
-.dock-tab .close:hover, .cc-panel header .end:hover { color: var(--threat); background: var(--panel); }
+.dock-tab .close:hover { color: var(--threat); background: var(--panel); }
 .dock-body { flex: 1; min-height: 0; padding: 6px 8px 8px; }
 .term { height: 100%; width: 100%; }
 .term .xterm { height: 100%; }
@@ -811,7 +813,6 @@ body.ask-open { overflow: hidden; }
 /* ---------- HIG pass (apple-design skill, 2026-09-15): legibility floor, contrast, targets ---------- */
 
 /* typography.md: readable minimum sizes; nothing a person reads sits below 11px, meta lines 11.5px. */
-:root { --ink-faint: #8290a6; --ink-ghost: #5f6b82; }
 .chip, .due, .badge, .verdict { font-size: 11px; height: 22px; padding: 0 8px; }
 .card .meta, .row .sub, .row .doing .k, .drawer-meta, .fields dt, .due-row .k, .ws-tile .k, .ws-table th, .cal-dow, .cal-day, .release-card .stat span, .release-date, .release-card .foot, .status, .card .since, .hovercard-hint, .muted.small, .small { font-size: 11.5px; }
 .lane-title, .dispatch h3, .workspace h3, .strip-title, .group-name, .release-name, .role, .ship-step-head .verdict { font-size: 11.5px; }
@@ -985,21 +986,10 @@ body.ask-open { overflow: hidden; }
 .cc-filter button.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam); }
 .cc-filter .spacer { flex: 1; }
 .cc-project { display: flex; flex-direction: column; gap: 18px; }
-.cc-project > h3 { display: flex; align-items: baseline; gap: 12px; margin: 0; font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+/* The project is the grouping, not the point: a quiet divider, so the racks can outrank it. */
+.cc-project > h3 { display: flex; align-items: baseline; gap: 12px; margin: 0; font-family: var(--display); font-size: 15px; font-weight: 600; letter-spacing: 0.08em; }
 .cc-project > h3 .counts { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); letter-spacing: 0; font-weight: 400; }
-.cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
-.cc-grid > * { min-width: 0; }
 .cc-empty { margin: 0; }
-
-/* bands: what needs you first, then the formations, then working, idle, finished */
-.cc-band { display: flex; flex-direction: column; gap: 10px; }
-.cc-band > h4 { display: flex; align-items: center; gap: 8px; margin: 0; font-family: var(--display); font-size: 15px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink-soft); }
-.cc-band > h4 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
-.cc-band.needs > h4 { color: var(--caution); }
-.cc-band .jet-glyph.band { width: 26px; height: 11px; }
-.cc-band .jet-glyph.band .body { fill: var(--caution); }
-.cc-band .jet-glyph.band .detail { fill: var(--carbon); }
-.cc-band.needs .cc-panel { background: var(--panel); box-shadow: 0 0 0 1px var(--caution-dim), 0 8px 30px rgba(0, 0, 0, 0.35); }
 
 /* a formation: the lead across the top, wings hung off a hairline */
 .cc-formation { position: relative; display: flex; flex-direction: column; gap: 12px; padding-left: 22px; }
@@ -1011,45 +1001,115 @@ body.ask-open { overflow: hidden; }
 .cc-lead .role { margin: 0; }
 .cc-lead b { font-family: var(--display); font-size: 15px; font-weight: 600; }
 .cc-lead .sub { font-family: var(--mono); font-size: 11.5px; color: color-mix(in srgb, var(--accent-hot) 55%, var(--ink-faint)); }
-.cc-wings .cc-panel { position: relative; }
-.cc-wings .cc-panel::before { content: ""; position: absolute; left: -13px; top: 22px; width: 13px; border-top: 1px solid var(--seam-strong); }
+.cc-wings .strip { position: relative; }
+.cc-wings .strip::before { content: ""; position: absolute; left: -13px; top: 20px; width: 13px; border-top: 1px solid var(--seam-strong); }
 .cc-closed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .cc-closed-row { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: 12.5px; color: var(--ink-soft); }
 .cc-closed-row .role { margin: 0; color: var(--ink-faint); }
 .cc-closed-row .sub { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-closed-row .lamp { background: var(--ink-ghost); flex: 0 0 auto; }
 
-/* a session panel: one click opens it full screen; the dock is the one quiet action */
-.cc-panel {
-  display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
-  border-radius: var(--radius-m); background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft);
-  cursor: pointer; transition: box-shadow 160ms var(--ease-out), transform 160ms var(--ease-out);
+/* ---------- the rack: one session per flight progress strip ----------
+   Fixed columns are the point: the lamp, state, timing and the three verbs share an x down
+   the whole page, so nothing depends on how long a title happens to be. Three densities
+   carry the hierarchy: what needs you is lifted and speaks, what is dead is one quiet line. */
+
+.rack { display: flex; flex-direction: column; gap: 8px; }
+.rack > h4 { display: flex; align-items: center; gap: 8px; margin: 0; font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink-soft); }
+.rack > h4 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
+.rack.needs > h4 { font-size: 19px; color: var(--caution); }
+.rack.stale > h4, .rack.done > h4 { color: var(--ink-faint); }
+.rack .jet-glyph.band { width: 26px; height: 11px; }
+.rack .jet-glyph.band .body { fill: var(--caution); }
+.rack .jet-glyph.band .detail { fill: var(--carbon); }
+.rack-strips { display: flex; flex-direction: column; gap: 3px; }
+
+.strip {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-s);
+  background: var(--steel);
+  box-shadow: 0 0 0 1px var(--seam-soft);
+  cursor: pointer;
+  transition: background 140ms var(--ease-out), box-shadow 140ms var(--ease-out);
 }
-.cc-panel:hover { box-shadow: 0 0 0 1px var(--seam-strong), 0 8px 30px rgba(0, 0, 0, 0.35); transform: translateY(-1px); }
-.cc-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.cc-panel.ghost { cursor: default; background: transparent; }
-.cc-panel.finished h4, .cc-panel.ghost h4, .cc-panel.compact h4 { color: var(--ink-soft); font-weight: 500; }
-.cc-panel header { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 30px; }
-.cc-panel header h4 { flex: 1; min-width: 0; margin: 0; font: 600 15px/1.3 var(--display); letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cc-panel header .role { margin: 0; }
-.cc-panel header .verdict { height: 18px; display: inline-flex; align-items: center; }
-.cc-panel header .dock, .cc-panel header .end { height: 30px; min-width: 44px; padding: 0 8px; flex: 0 0 auto; color: var(--ink-soft); }
-.cc-panel .meta { display: flex; gap: 10px; flex-wrap: wrap; min-width: 0; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
-.cc-panel .meta .k { color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--display); font-size: 11px; }
-.cc-panel .meta .k.soft { color: var(--caution); text-transform: none; letter-spacing: 0; font-family: var(--mono); font-size: 11.5px; }
-.cc-panel .meta .where { color: var(--ink-faint); }
-.cc-panel .exchange { display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.45; }
-.cc-panel .exchange p { margin: 0; display: flex; gap: 8px; align-items: baseline; }
-.cc-panel .exchange .who { flex: 0 0 auto; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); width: 48px; }
-.cc-panel .exchange .you { color: var(--ink-soft); }
-.cc-panel .exchange .claude { color: var(--ink); }
-.cc-panel .exchange .empty { color: var(--ink-faint); font-style: italic; }
-.cc-panel .lamp { flex: 0 0 auto; }
-.cc-band.needs .lamp { width: 10px; height: 10px; }
-.cc-panel .lamp.busy, .cc-panel .lamp.running, .cc-full-head .lamp.busy, .cc-full-head .lamp.running { background: var(--accent-hot); box-shadow: 0 0 6px var(--accent), 0 0 14px var(--accent-glow); animation: arc 1.4s ease-in-out infinite; }
-.cc-panel .lamp.waiting, .cc-panel .lamp.blocked, .cc-full-head .lamp.waiting, .cc-full-head .lamp.blocked { background: var(--caution); box-shadow: 0 0 8px var(--caution), 0 0 18px var(--caution-dim); animation: flicker 2.8s steps(1, end) infinite; }
-.cc-panel .lamp.idle, .cc-full-head .lamp.idle { background: var(--cold); box-shadow: inset 0 0 0 1px var(--seam-strong); }
-.cc-panel .lamp.done, .cc-full-head .lamp.done { background: var(--hud); }
+.strip:hover { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
+.strip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.strip.ghost { cursor: default; background: transparent; }
+.strip.ghost:hover { background: transparent; box-shadow: 0 0 0 1px var(--seam-soft); }
+
+/* The one grid every strip shares. Columns hold their width; only the name flexes. */
+.strip-line {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 180px 175px minmax(230px, 0.5fr) 198px;
+  align-items: center;
+  gap: 14px;
+  min-height: 40px;
+  padding: 0 14px;
+}
+.strip-id { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.strip-name, .strip-rename { font: 500 13.5px/1.35 var(--sans); }
+.strip-name { margin: 0; min-width: 0; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strip-id .role { margin: 0; flex: 0 0 auto; }
+.strip-state { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.strip-state b { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+.strip-state i { font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--caution); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strip-when, .strip-where { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strip-when i { font-style: normal; color: var(--ink-faint); }
+.strip-when i::before { content: " · "; }
+
+/* Actions: one column per verb, so close, stop and remove all share an x down the page
+   however wide the word is. Right-aligning the group as a whole would not; the words differ.
+   These are `button.ghost` at the rack's size, so only what differs is declared here. */
+.strip-acts { display: grid; grid-template-columns: 66px 52px 64px; gap: 8px; }
+.strip-acts .act { position: relative; height: 28px; padding: 0 4px; }
+/* The visible verb is 28px; its hit area reaches the full 40px strip (craft.md: extend, don't inflate). */
+.strip-acts .act::after { content: ""; position: absolute; inset: -6px 0; }
+.strip-acts .act:hover { background: var(--panel-lifted); color: var(--ink); }
+.strip-acts .act.end:hover { color: var(--threat); }
+
+/* Rename in place: the page's own text input, wearing the name's type so the swap does not
+   move the line, and the accent border so it reads as live. */
+.strip-rename { width: 100%; min-width: 0; height: 26px; border-color: var(--accent); }
+.strip-rename:focus-visible { box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* What the session last said, under the line, aligned to the name column. */
+.strip-say { display: flex; flex-direction: column; gap: 5px; padding: 0 14px 11px 36px; }
+.strip-say p { margin: 0; max-width: 78ch; display: flex; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.5; }
+.strip-say .who { flex: 0 0 auto; width: 46px; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.strip-say .you { color: var(--ink-soft); }
+.strip-say .claude { color: var(--ink); }
+.strip-say .empty { color: var(--ink-faint); font-style: italic; }
+
+/* Density: what needs you is lifted and louder; what is finished recedes. */
+.strip.full .strip-line { min-height: 46px; }
+.strip.full .strip-name { font-size: 15px; font-weight: 600; color: var(--ink); }
+/* The one rack that answers the page's question outranks the one that is merely busy. */
+.rack.needs .strip { background: var(--panel-lifted); box-shadow: 0 0 0 1px color-mix(in srgb, var(--caution) 45%, transparent); }
+.rack.needs .strip:hover { box-shadow: 0 0 0 1px var(--caution), 0 8px 30px rgba(0, 0, 0, 0.35); }
+.rack.needs .strip-line { min-height: 56px; }
+.rack.needs .strip-name { font-size: 17px; }
+.rack.needs .strip-say { padding-bottom: 14px; }
+.rack.needs .strip-say p { font-size: 13.5px; }
+/* The lifted surface is brighter, so its secondary text rises with it: still the readable
+   floor, and the row that matters reads louder than the ones that do not. */
+.rack.needs .strip-state b, .rack.needs .strip-when, .rack.needs .strip-when i, .rack.needs .strip-where, .rack.needs .strip-acts .act, .rack.needs .strip-say .who { color: var(--ink-soft); }
+.strip.finished .strip-name, .strip.ghost .strip-name { color: var(--ink-faint); font-weight: 400; }
+
+.strip .lamp.busy, .strip .lamp.running, .cc-full-head .lamp.busy, .cc-full-head .lamp.running { background: var(--accent-hot); box-shadow: 0 0 6px var(--accent), 0 0 14px var(--accent-glow); animation: arc 1.4s ease-in-out infinite; }
+.strip .lamp.waiting, .strip .lamp.blocked, .cc-full-head .lamp.waiting, .cc-full-head .lamp.blocked { background: var(--caution); box-shadow: 0 0 8px var(--caution), 0 0 18px var(--caution-dim); animation: flicker 2.8s steps(1, end) infinite; }
+.strip .lamp.idle, .cc-full-head .lamp.idle { background: var(--cold); box-shadow: inset 0 0 0 1px var(--seam-strong); }
+.strip .lamp.done, .cc-full-head .lamp.done { background: var(--hud); }
+
+/* The rack narrows by dropping columns, not by wrapping them. */
+@media (max-width: 1240px) {
+  .strip-line { grid-template-columns: 8px minmax(0, 1fr) 180px 175px 198px; }
+  .strip-where { display: none; }
+}
+@media (max-width: 960px) {
+  .strip-line { grid-template-columns: 8px minmax(0, 1fr) 160px 198px; }
+  .strip-state { display: none; }
+}
 
 /* full screen conversation */
 .cc-full { position: fixed; left: 0; right: 0; top: 48px; bottom: 0; z-index: 6; display: flex; flex-direction: column; background: var(--carbon); animation: cc-in 200ms var(--ease-out); }
@@ -1095,7 +1155,7 @@ body:has(#dock:not([hidden])) .cc-full { bottom: var(--dock-h); }
 input, textarea { caret-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .cu-panel, .cc-full, .ask { animation: none !important; }
-  .cc-panel, .cu-meter i { transition: none !important; }
+  .strip, .cu-meter i { transition: none !important; }
 }
 @media (max-width: 600px) {
   .bar { flex-wrap: wrap; height: auto; min-height: 46px; padding-block: 6px; row-gap: 6px; }
@@ -1107,12 +1167,23 @@ input, textarea { caret-color: var(--accent); }
   .cu-panel { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; max-height: 80vh; overflow: auto; }
   .cu-row { grid-template-columns: 72px minmax(0, 1fr) auto; }
   .cu-row .nums { display: none; }
-  .cc-filter button, .cu-tabs button, .cc-panel header .dock, .cc-panel header .end, .cc-full-head button, .cc-lead button, .ask-actions button { min-height: 44px; }
+  .cc-filter button, .cu-tabs button, .strip-acts .act, .cc-full-head button, .cc-lead button, .ask-actions button { min-height: 44px; }
   .dock-tab { height: 44px; }
   .dock-tab .close { width: 44px; }
   .ask input[type="text"] { height: 44px; }
   .cc-full-head h2 { max-width: 100%; white-space: normal; }
-  .cc-grid { grid-template-columns: minmax(0, 1fr); }
+  /* Phone keeps what the rack is sorted by (state, recency) and puts the verbs beside the
+     state on their own row: name, then when, then state and verbs sharing the last line. */
+  .strip-line { grid-template-columns: 8px minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 12px; }
+  .strip-id, .strip-when { grid-column: 2 / span 2; }
+  .strip-when { display: block; }
+  .strip-state { display: flex; grid-column: 2; grid-row: 3; align-self: center; }
+  .strip-acts { grid-column: 3; grid-row: 3; }
+  .strip-say { padding-left: 30px; }
+  .cu-baby { white-space: nowrap; overflow: hidden; }
+  /* The closed-formation line wrapped its loop text into a 170px column beside a clipped tail. */
+  .cc-closed-row { flex-wrap: wrap; }
+  .cc-closed-row .name { min-width: 0; }
 }
 
 /* ---------- full-screen session: scroll lock, composer, stale band, calibrate ---------- */
@@ -1127,7 +1198,7 @@ body.cc-full-open { overflow: hidden; }
 .cc-composer.dropping textarea { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .cc-composer .notice { max-width: 680px; width: 100%; margin: 0 auto; font-size: 13px; color: var(--ink-soft); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-height: 44px; }
 .term.dropping { outline: 2px solid var(--accent); outline-offset: -2px; }
-.cc-band.stale > h4 { color: var(--ink-faint); }
+
 .cu-cal { display: flex; flex-direction: column; gap: 10px; }
 .cu-cal .row { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-size: 12.5px; }
 .cu-cal .row .cur { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
