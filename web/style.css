@@ -24,9 +24,12 @@
   --accent-glow: color-mix(in srgb, var(--accent) 45%, transparent);
   --hud: #7fd8a0;
   --hud-dim: rgba(127, 216, 160, 0.16);
-  /* What wants the pilot is insignia red now, and it is a reticle rather than a lamp. */
-  --caution: #ec666a;
-  --caution-dim: rgba(236, 102, 106, 0.18);
+  /* Caution is amber and threat is red, because they are not the same state. What wants the
+     pilot is a session stopped at a prompt; what is red has failed. They held the same value in
+     both themes, which made "needs you" and "this broke" indistinguishable, and that red reached
+     only 3.49:1 on the lifted surface it was most often drawn on. */
+  --caution: #efb254;
+  --caution-dim: rgba(239, 178, 84, 0.18);
   --threat: #ec666a;
   --threat-dim: rgba(236, 102, 106, 0.18);
   --cold: #545c62;
@@ -79,8 +82,8 @@
   --accent: #1e3a6e;
   --accent-hot: #2b5296;
   --hud: #2f7d51;
-  --caution: #b0272c;
-  --caution-dim: rgba(176, 39, 44, 0.14);
+  --caution: #8a5a00;
+  --caution-dim: rgba(138, 90, 0, 0.14);
   --threat: #b0272c;
   --threat-dim: rgba(176, 39, 44, 0.14);
   --cold: #9ba2a8;
@@ -120,8 +123,8 @@
     --accent: #1e3a6e;
     --accent-hot: #2b5296;
     --hud: #2f7d51;
-    --caution: #b0272c;
-    --caution-dim: rgba(176, 39, 44, 0.14);
+    --caution: #8a5a00;
+    --caution-dim: rgba(138, 90, 0, 0.14);
     --threat: #b0272c;
     --threat-dim: rgba(176, 39, 44, 0.14);
     --cold: #9ba2a8;

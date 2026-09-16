@@ -212,10 +212,16 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   one. Saturated colour goes by hue and picks the bright slot above ~0.32 luminance so contrast
   inside a hue survives; grey goes by how far it stands off *this pane's* ground, which makes a
   dim grey recede in both themes rather than only in the one it was designed against.
-- **`--caution` and `--threat` are the same red** (`#b0272c` light, `#ec666a` dark), which
-  contradicts "a state colour belongs to one state" two bullets up. Anything needing a warm
-  warning has to reach for `--warn` or `--gold` instead; the terminal's yellow slot does. Left as
-  found, because separating them restyles every needs-you rack and that is a decision, not a fix.
+- **Caution is amber; threat is red.** They held the same value in both themes, which is the same
+  defect as a keyframe owning a colour: two states, one paint. A session stopped at a prompt
+  wants you, and a thing that failed is a different fact, so they cannot look alike. `--caution`
+  is now `#8a5a00` light and `#efb254` dark, chosen by measuring against the surfaces it is
+  actually drawn on rather than by eye: 5.93:1 and 5.84:1 on the lifted strip, where the red it
+  replaced managed only **3.49:1 in dark mode** and was already failing the floor for 11px text.
+  The usage meter is the cheapest proof the split was real: 77% of a limit now reads amber while
+  100% reads red, and before this they were the same colour, so "getting close" and "you are out"
+  were indistinguishable. The terminal's own yellow slot stays on `--warn`, because a terminal's
+  yellow is not this interface's needs-you state and should not move when that state does.
 - **A shell is a strip like everything else.** Every pty Maverick opened used to exec `claude`,
   so there was nowhere to run `git status` without a Claude in front of it. A shell has no
   registry session behind it, so it is keyed by its pty (`term:<id>`) rather than a session id,
