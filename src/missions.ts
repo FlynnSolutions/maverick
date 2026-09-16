@@ -26,6 +26,7 @@ import { backgroundAgents, commitFile, commitsAhead, ensureBranch, ensureWorktre
 import type { Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, updateFormation } from "./formations.ts";
+import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
@@ -440,6 +441,27 @@ const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: Mi
 const reviewFile = (mission: Mission, task: MissionTask, attempt: number): string =>
   join(missionsDir(mission.project), `${mission.id}-${task.id}-review${attempt}.md`);
 
+/**
+ * A Wingman gets the same session record any other spawned task session gets, so it appears in
+ * the rack and in the ship's release review instead of in a parallel universe. Its `audit` is
+ * set to the mission's own reviewer, which is also what stops the ship auditing it a second
+ * time: `ships.ts` skips a develop record that already has one.
+ */
+const recordWingman = async (mission: Mission, task: MissionTask): Promise<void> => {
+  const record: SessionRecord = {
+    id: `bg-${task.claudeId}`,
+    role: "develop",
+    loop: `${mission.name}: ${task.title}`,
+    exit: task.intent.split("\n")[0].slice(0, 200),
+    status: "open",
+    started: task.started ?? new Date().toISOString(),
+    project: mission.project,
+    claudeId: task.claudeId,
+    ...(task.worktree ? { worktree: task.worktree } : {}),
+  };
+  await writeSession(config.sessionsDir, record);
+};
+
 /** Send every task in a milestone out at once: parallelism is narrow, inside a milestone only. */
 const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
   for (const task of m.tasks) {
@@ -455,6 +477,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
       task.status = "flying";
       task.started = new Date().toISOString();
       task.attempts = 1;
+      await recordWingman(mission, task);
     } catch (err) {
       task.status = "handed-back";
       task.note = `could not launch: ${(err as Error).message}`;
@@ -466,6 +489,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
 
 /** Put a task back out with the reviewer's findings, in the worktree it already has. */
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
+  const previous = task.claudeId;
   task.claudeId = await spawnBackground(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanPrompt(project, mission, m, task, findings));
   task.sessionId = undefined;
   task.status = "flying";
@@ -474,6 +498,8 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
   task.ended = undefined;
   task.verdict = undefined;
   task.review = undefined;
+  if (previous) await patchSession(config.sessionsDir, `bg-${previous}`, { status: "handed-off", ended: new Date().toISOString(), handoff: findings.split("\n")[0] });
+  await recordWingman(mission, task);
 };
 
 const FINISHED = /^(done|exited|stopped)$/;
@@ -523,6 +549,7 @@ export const sweepMissions = async (project: Project): Promise<void> => {
             const claudeId = await spawnBackground(project.path, `review · ${task.title}`, reviewPrompt(project, mission, m, task, file), "auditor");
             task.review = { claudeId, file, started: new Date().toISOString() };
             task.status = "reviewing";
+            await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { audit: task.review });
           } catch (err) {
             task.status = "handed-back";
             task.note = `could not start the reviewer: ${(err as Error).message}`;
@@ -542,6 +569,7 @@ export const sweepMissions = async (project: Project): Promise<void> => {
             continue;
           }
           task.verdict = verdict;
+          await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { status: "closed", ended: new Date().toISOString() });
           if (verdict === "pass") {
             task.status = "passed";
           } else if (task.attempts < MAX_ATTEMPTS) {
@@ -637,6 +665,7 @@ export const acceptTask = async (project: Project, id: string, taskId: string, n
   if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
   task.status = "passed";
   task.note = `accepted by Cory over the reviewer: ${note}`.trim();
+  if (task.claudeId) await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { decision: "accepted" });
   mission.status = "flying";
   mission.trouble = undefined;
   return writeMission(mission);
