@@ -105,6 +105,14 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Idle decays in three steps, and the first step is yours.** Under an hour between turns is a
   conversation you are in the middle of (`Needs action`, carries the exchange); under a day is
   `Idle`; beyond that is `Stale`. Distinct from `Needs you`, which is blocked on a prompt.
+- **The rail is an edge, not a box.** A background plus a ring plus a shadow made it a card
+  floating in a column, which reads worst when it is collapsed to a strip. It carries one thing:
+  an inset shadow on the deck side, so the separation fades out instead of stopping dead.
+- **The rail speaks in the workspace's shapes.** Its rows carry the same engines and reticles,
+  and a tally at the top counts what is waiting, working and parked in those same shapes. The
+  tally is the one thing besides the heading that survives the rail collapsing to 36px.
+- **A drawn lamp is an `svg`; a plain dot is a `span`.** Records, dock tabs and closed
+  formations carry state rather than an engine, so they stay dots and are styled separately.
 - **A rail is a surface, not a line.** The sessions rail is sticky and one viewport tall; the
   board beside it runs to 30,000px, so any border on it stops a screen down and reads as broken.
   It is a floating panel instead: its own background, a 1px ring and a soft shadow on the deck

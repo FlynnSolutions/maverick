@@ -5,6 +5,7 @@ import { jetSvg } from "./jet.js";
 import { strike, loading, missile, flares, flyby } from "./afterburner.js";
 import { mountCommandCenter } from "./command.js";
 import { icon } from "./icons.js";
+import { lamp } from "./lamp.js";
 import * as claudeUsage from "./providers/claude.js";
 
 
@@ -1290,7 +1291,7 @@ const sessionRow = (cls, name, sub, actions, lampTitle) =>
   el(
     "li",
     { class: `row ${cls}` },
-    el("span", { class: "lamp", title: lampTitle ?? "" }),
+    lamp(cls, /^(idle|shell)$/.test(cls) ? "" : undefined),
     el("span", { class: "name", title: [].concat(name).map((n) => (typeof n === "string" ? n : n.textContent ?? "")).join("") }, ...[].concat(name)),
     el("span", { class: "actions" }, ...actions),
     sub ? el("span", { class: "sub" }, sub) : null,
@@ -1300,6 +1301,24 @@ const btn = (label, onclick, cls = "") => el("button", { type: "button", class: 
 
 const expandedSessions = new Set();
 let lastSessions = null;
+
+/**
+ * What the rail says at a glance, in the shapes the workspace already uses: how many want you,
+ * how many are running, how many are parked. Survives the rail being collapsed to a strip.
+ */
+const railTally = (live) => {
+  const all = live.claudeSessions ?? [];
+  const count = (test) => all.filter((s) => test(s.status ?? "")).length;
+  const groups = [
+    ["waiting", count((st) => /^(waiting|blocked)$/.test(st)), "waiting on you"],
+    ["busy", count((st) => /^(busy|running)$/.test(st)), "working"],
+    ["idle", count((st) => /^(idle|shell)$/.test(st)), "parked"],
+  ].filter(([, n]) => n > 0);
+  if (!groups.length) return el("div", { class: "rail-tally empty" }, el("span", { class: "muted small" }, "nothing running"));
+  return el("div", { class: "rail-tally" },
+    ...groups.map(([status, n, what]) =>
+      el("span", { class: "t", title: `${n} ${what}` }, lamp(status), el("b", {}, String(n)))));
+};
 
 const renderSessions = (records, live) => {
   const out = document.createDocumentFragment();
@@ -1327,7 +1346,7 @@ const renderSessions = (records, live) => {
             e.currentTarget.classList.toggle("expanded");
           },
         },
-        el("span", { class: "lamp", title: `pid ${s.pid}` }),
+        lamp(s.status ?? "idle"),
         el("span", { class: "name", title: s.title ?? s.name ?? String(s.pid) }, s.title ?? s.name ?? String(s.pid)),
         el(
           "span",
@@ -1463,6 +1482,7 @@ const loadRail = async (refresh = false) => {
     const q = `project=${encodeURIComponent(projectId)}${refresh ? "&refresh" : ""}`;
     const [sessions, live] = await Promise.all([api(`/api/sessions?project=${encodeURIComponent(projectId)}`), api(`/api/live?${q}`)]);
     lastSessions = sessions;
+    $("#tally").replaceChildren(railTally(live));
     $("#sessions").replaceChildren(renderSessions(sessions, live));
     $("#live").replaceChildren(renderLive(live));
   } catch (err) {

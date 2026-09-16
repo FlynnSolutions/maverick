@@ -414,10 +414,8 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 /* ---------- dispatch (sessions) ---------- */
 
 .dispatch {
-  padding: 10px 6px 10px 12px;
-  border-radius: var(--radius-m);
-  background: var(--gunmetal);
-  box-shadow: 0 0 0 1px var(--seam), -8px 0 24px var(--shade-soft);
+  padding: 0 0 0 20px;
+  box-shadow: inset 20px 0 22px -22px var(--shade);
   position: sticky;
   top: 62px;
   max-height: calc(100vh - 62px - 16px);
@@ -427,7 +425,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
   scrollbar-color: var(--ink-ghost) transparent;
 }
 body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
-.project.rail-collapsed .dispatch { padding: 10px 4px; }
+.project.rail-collapsed .dispatch { padding: 0 0 0 10px; }
 .dispatch h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; margin: 14px 0 6px; }
 .dispatch .lane-title { margin: 0; }
 .dispatch ul { list-style: none; margin: 0; padding: 0; }
@@ -468,7 +466,12 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .rack .jet-glyph.band { --jet-skin: var(--caution); }
 .ship-progress .runway .jet-glyph, .wt-progress .runway .jet-glyph { --jet-skin: #e9ecee; }
 
-.lamp { width: 14px; height: 14px; display: block; flex: 0 0 auto; overflow: visible; }
+svg.lamp { width: 14px; height: 14px; display: block; flex: 0 0 auto; overflow: visible; }
+/* A plain dot, for rows that carry a record's state rather than an engine's: session records,
+   dock tabs, closed formations. The drawn lamp is an svg; these are spans. */
+span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold); flex: 0 0 auto; }
+.row.record.open span.lamp { background: var(--hud); }
+.row.record.closed span.lamp, .row.record.handed-off span.lamp { background: var(--ink-ghost); }
 .lamp .case  { fill: var(--metal); stroke: var(--metal-edge); stroke-width: 0.7; }
 .lamp .lip   { fill: none; stroke: var(--metal-lip); stroke-width: 0.8; }
 .lamp .tooth { fill: var(--rim); }
@@ -770,7 +773,7 @@ body.ask-open { overflow: hidden; }
 /* ---------- collapsible sessions rail ---------- */
 
 .project.rail-collapsed { grid-template-columns: minmax(0, 1fr) 36px; }
-.project.rail-collapsed .dispatch > :not(.lane-title) { display: none; }
+.project.rail-collapsed .dispatch > :not(.lane-title):not(#tally) { display: none; }
 .project.rail-collapsed .dispatch .lane-title { writing-mode: vertical-rl; height: auto; min-height: 120px; padding: 10px 0; gap: 10px; justify-content: flex-start; white-space: nowrap; }
 .project.rail-collapsed .dispatch .lane-title .fold { writing-mode: horizontal-tb; }
 .project.rail-collapsed .dispatch .lane-title #refresh-live { display: none; }
@@ -1254,6 +1257,19 @@ body.ask-open { overflow: hidden; }
   .strip-line { grid-template-columns: 14px minmax(0, 1fr) 160px 198px; }
   .strip-state { display: none; }
 }
+
+/* The rail's tally: the workspace's own shapes with a count beside each, so the rail says
+   what it is holding whether it is open or a 36px strip. */
+.rail-tally { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; flex-wrap: wrap; }
+.rail-tally .t { display: inline-flex; align-items: center; gap: 5px; }
+.rail-tally .t b { font: 600 12.5px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.rail-tally.empty { margin-bottom: 8px; }
+.project.rail-collapsed .rail-tally { flex-direction: column; gap: 8px; margin: 8px 0 0; }
+.project.rail-collapsed .rail-tally .t { flex-direction: column; gap: 2px; }
+.project.rail-collapsed .rail-tally .t b { font-size: 11px; }
+.project.rail-collapsed .rail-tally.empty { display: none; }
+/* The rail's rows carry the real lamp now, so the old dot sizing goes. */
+.row svg.lamp { width: 13px; height: 13px; }
 
 /* The settings menu: one control in the bar instead of three. */
 .menu {
