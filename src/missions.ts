@@ -25,7 +25,7 @@ import { config } from "./config.ts";
 import { backgroundAgents, commitFile, commitsAhead, ensureBranch, ensureWorktree, mergeInto, reposUnder } from "./git.ts";
 import type { Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
-import { createFormation, updateFormation } from "./formations.ts";
+import { createFormation, listFormations, updateFormation } from "./formations.ts";
 import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
@@ -482,6 +482,8 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
       task.status = "handed-back";
       task.note = `could not launch: ${(err as Error).message}`;
     }
+    // Saved per task, not once at the end: a spawn that is not on disk is an agent nobody owns.
+    await writeMission(mission);
   }
   m.dispatched = new Date().toISOString();
   return writeMission(mission);
@@ -512,10 +514,23 @@ const isOver = (state: Map<string, string>, claudeId: string, since?: string): b
 };
 
 /**
- * One pass over every flying mission. Called on the server's timer, so it must be safe to run
- * often and must never throw: what it cannot do it records on the mission as trouble.
+ * One pass over every flying mission. Called on the server's timer and on every read of the
+ * mission page, which polls: two passes overlapping would each see the same finished Wingman
+ * and each spawn a reviewer for it, so a project sweeps one at a time.
  */
+const sweeping = new Set<string>();
+
 export const sweepMissions = async (project: Project): Promise<void> => {
+  if (sweeping.has(project.id)) return;
+  sweeping.add(project.id);
+  try {
+    await sweepOnce(project);
+  } finally {
+    sweeping.delete(project.id);
+  }
+};
+
+const sweepOnce = async (project: Project): Promise<void> => {
   const missions = (await listMissions(project.id)).filter((m) => m.status === "flying");
   if (!missions.length) return;
   const agents = await backgroundAgents(project.path);
@@ -524,6 +539,9 @@ export const sweepMissions = async (project: Project): Promise<void> => {
   for (const mission of missions) {
     let changed = false;
     const waiting: string[] = [];
+    // The RIO only appears in Claude Code's session registry once its session has done
+    // something, which can be after the formation was made; keep offering it the lead seat.
+    await seatTheRio(mission).catch(() => undefined);
     mission.trouble = undefined;
     for (const m of mission.milestones) {
       if (!m.dispatched || m.merged) continue;
@@ -630,6 +648,7 @@ const memberIds = (mission: Mission): string[] =>
  */
 const seatTheRio = async (mission: Mission): Promise<void> => {
   if (!mission.formation || !mission.interview) return;
+  if ((await listFormations(mission.project)).find((f) => f.id === mission.formation)?.lead) return;
   const pty = listTerminals().find((t) => t.id === mission.interview!.terminalId);
   if (!pty?.pid || pty.exitCode !== null) return;
   for (const session of await readRegistrySessions()) {
