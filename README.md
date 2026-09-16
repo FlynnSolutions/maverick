@@ -183,8 +183,12 @@ A session started from Maverick's own dock (**New session**, a spawn, a worktree
 live here: the command center matches the registry entry to its pty through the process
 tree, the composer types straight into it (Enter sends; drop a file to attach its path)
 and **take the stick** jumps to its dock tab. A background session gets the same composer
-over a headless attach. A session that lives in another terminal says so, since Maverick cannot type into it yet (Claude
-Code's per-session socket would allow it and needs a permission decision). **close** /
+over a headless attach. A session that lives in another terminal (Warp, say) is reached over Claude Code's own
+per-session messaging socket (`src/peer.ts`: the registry names the socket, the owner-only
+key file beside it holds the peer token, one auth line then one newline-delimited JSON user
+frame). The receiving Claude treats it as a peer session's request under its own
+permissions, not as its user typing, and the composer says so; **open in Warp** brings the
+app forward. **close** /
 **stop** end a process from the full-screen head, and stale idle panels (a day or more)
 carry a close button. Files dropped on any dock terminal are saved under the console's
 home (`drops/`) and their paths typed. Design decisions for this surface are recorded in

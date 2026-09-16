@@ -353,28 +353,27 @@ export const mountCommandCenter = (root, ctx) => {
     const f = full;
     if (!f) return;
     const s = f.session;
-    if (s.kind !== "background" && !s.terminalId) {
-      f.composer.replaceChildren(el("div", { class: "notice" },
-        el("span", {}, `This session is live in ${s.app ?? "a terminal"}${s.tty ? ` on ${s.tty}` : ""}. Maverick cannot type into another terminal's session yet; Claude Code's per-session socket would allow it and needs a permission that has not been granted.`),
-        s.app && s.pid ? el("button", { type: "button", class: "primary", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
-        el("button", { type: "button", class: "ghost", title: "starts a second claude process on this conversation, in the dock", onclick: () => openTerminal(dockFor(s)) }, "resume a copy in the dock")));
-      return;
-    }
+    const peer = s.kind !== "background" && !s.terminalId; // lives in another terminal: reached over its messaging socket
     if (finished(s.status)) {
       f.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
       return;
     }
-    const area = el("textarea", { rows: "2", placeholder: "Message this session. Enter sends, Shift+Enter for a new line, drop files to attach." });
+    const area = el("textarea", { rows: "2", placeholder: peer ? `Message this session in ${s.app ?? "its terminal"}. It arrives as a peer message; Enter sends.` : "Message this session. Enter sends, Shift+Enter for a new line, drop files to attach." });
     const send = async () => {
       const body = area.value.trim();
       if (!body) return;
       area.disabled = true;
       try {
-        // A session living in Maverick's dock is typed into through its own pty; a background one through a headless attach.
-        const target = s.terminalId ?? (f.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title })).id;
-        await sendInput(target, body);
-        await new Promise((r) => window.setTimeout(r, 180)); // a burst ending in Enter reads as a paste; a beat later it submits
-        await sendInput(target, "\r");
+        if (peer) {
+          // Another terminal's session: Claude Code's messaging socket, the channel sessions use for each other.
+          await post(`/api/sessions/${s.pid}/message`, { text: body });
+        } else {
+          // A session living in Maverick's dock is typed into through its own pty; a background one through a headless attach.
+          const target = s.terminalId ?? (f.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title })).id;
+          await sendInput(target, body);
+          await new Promise((r) => window.setTimeout(r, 180)); // a burst ending in Enter reads as a paste; a beat later it submits
+          await sendInput(target, "\r");
+        }
         area.value = "";
         setStatus("sent");
       } catch (err) {
@@ -391,7 +390,12 @@ export const mountCommandCenter = (root, ctx) => {
     });
     f.composer.replaceChildren(
       el("div", { class: "row" }, area, el("button", { type: "button", class: "primary", onclick: send }, "Send")),
-      el("div", { class: "hint" }, el("span", {}, `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in Maverick's dock" : ""}`), el("button", { type: "button", class: "ghost", onclick: () => (s.terminalId ? mountExisting(s.terminalId) : openTerminal(dockFor(s))) }, "take the stick")),
+      el("div", { class: "hint" },
+        el("span", {}, peer
+          ? `Lives in ${s.app ?? "a terminal"}${s.tty ? ` on ${s.tty}` : ""} · sent over its session socket, so Claude reads it as a peer's request under that session's permissions`
+          : `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in Maverick's dock" : ""}`),
+        peer && s.app && s.pid ? el("button", { type: "button", class: "ghost", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
+        peer ? null : el("button", { type: "button", class: "ghost", onclick: () => (s.terminalId ? mountExisting(s.terminalId) : openTerminal(dockFor(s))) }, "take the stick")),
     );
   };
 

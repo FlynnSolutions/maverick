@@ -25,6 +25,7 @@ import { readTranscript } from "./src/transcript-view.ts";
 import { backgroundAgents } from "./src/git.ts";
 import { focusApp, parentChain, processHome } from "./src/processes.ts";
 import { liveUsage } from "./src/claude-usage.ts";
+import { sendToSession } from "./src/peer.ts";
 import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
@@ -526,6 +527,13 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       if (err instanceof StaleMoveError) return sendJson(res, 409, { error: err.message });
       throw err;
     }
+  }
+  // Type into a live interactive session over Claude Code's messaging socket.
+  if (method === "POST" && /^\/api\/sessions\/\d+\/message$/.test(path)) {
+    const pid = Number(path.split("/")[3]);
+    const { text } = await readJson<{ text: string }>(req);
+    if (!(await readRegistrySessions()).some((s) => s.pid === pid)) throw new Error(`pid ${pid} is not a running Claude session`);
+    return sendJson(res, 200, await sendToSession(pid, text));
   }
   // Bring the terminal app a session lives in to the front (the tab itself is not scriptable).
   if (method === "POST" && /^\/api\/sessions\/\d+\/focus$/.test(path)) {
