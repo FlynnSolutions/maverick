@@ -656,7 +656,18 @@ export const mountCommandCenter = (root, ctx) => {
     const sections = section ? [section] : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
     root.replaceChildren(...sections);
     // Every open pane's head carries live state (lamp, status, timing), so they follow the model.
-    for (const p of panes.values()) paintHead(p);
+    for (const p of panes.values()) {
+      paintHead(p);
+      // A session stopped at a prompt is the one moment you certainly want its controls, so an
+      // open pane reaches for them itself rather than making you ask twice. Only where we own
+      // the pty: resuming a session that lives in someone else's terminal would start a second
+      // claude on it, which is not a thing to do behind the pilot's back.
+      const wants = WANTS_YOU.test(p.session.status ?? "");
+      if (p.inline && !p.stickPane && wants && ownPty(p.session)) takeTheStick(p);
+      // The registry knowing it is waiting is the dependable signal; the grid holds the question.
+      if (wants && p.stickTerm) catchPrompt(p);
+      if (!wants && p.promptCard) clearPrompt(p);
+    }
     // A repaint rebuilds the racks, so a pane whose strip is no longer drawn has nothing to
     // live in: the session keeps running, the pane does not. Its terminal is detached, not ended.
     for (const p of [...panes.values()]) if (p.inline && !p.node.isConnected) destroyPane(p);
@@ -713,6 +724,12 @@ export const mountCommandCenter = (root, ctx) => {
   let full = null; // the pane that is full screen, if one is
 
   const liveSession = (p) => model?.sessions.find((s) => s.key === p.key) ?? p.session;
+
+  /** The two states that want the pilot; the lamp draws them as a reticle for the same reason. */
+  const WANTS_YOU = /^(waiting|blocked)$/;
+
+  /** A session we can type into: one of our own ptys, or a background agent we can attach to. */
+  const ownPty = (s) => Boolean(s.terminalId) || s.kind === "background";
 
   const paintHead = (p) => {
     const s = (p.session = liveSession(p));
@@ -923,13 +940,120 @@ export const mountCommandCenter = (root, ctx) => {
   const reskin = (chunk, table) =>
     chunk.replace(/([34]8;2;)(\d+;\d+;\d+)/g, (whole, lead, rgb) => (table.has(rgb) ? lead + table.get(rgb) : whole));
 
+  /* ---------- answering a permission prompt without reading a terminal ----------
+     Claude Code asks for permission in its TUI, and the question is painted character by
+     character across cursor moves, so the raw stream cannot be searched for it: "Do you want"
+     never appears contiguously in the bytes. Two things make this tractable anyway. It announces
+     itself with a structured desktop notification, which *is* contiguous. And xterm has already
+     done the emulation, so the finished question and its options can be read off its buffer
+     rather than re-derived. */
+
+  /** `ESC ] 99 ; …p=body;Claude needs your permission BEL`, the notification it emits when it asks. */
+  const WANTS_PERMISSION = /\x1b\]99;[^\x07\x1b]*p=body;([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+
+  /**
+   * The tail of the buffer, by its own length. Three windows were wrong before this one. A range
+   * around the *cursor* misses everything, because a full-screen TUI parks its cursor in the
+   * input line rather than near the question. The viewport alone is not enough either. And
+   * viewport arithmetic (`viewportY + rows`) is wrong outright: in a short pane `term.rows` is
+   * smaller than the rows xterm still has rendered, so the window ended one line past the
+   * question and cut off two of its three choices. The buffer knows how long it is; ask it.
+   */
+  const RECENT = 120;
+  const screenLines = (term) => {
+    const b = term.buffer.active;
+    const lines = [];
+    for (let i = Math.max(0, b.length - RECENT); i < b.length; i += 1) lines.push(b.getLine(i)?.translateToString(true) ?? "");
+    return lines;
+  };
+
+  /**
+   * The question and its numbered choices, off the rendered grid. Read from the bottom up,
+   * because a long session has asked before and only the last one is live.
+   */
+  const readPrompt = (term) => {
+    const lines = screenLines(term);
+    const at = lines.findLastIndex((l) => /^\s*(?:[❯>]\s*)?Do you want\b.*\?\s*$/.test(l));
+    if (at < 0) return null;
+    const options = [];
+    for (let i = at + 1; i < lines.length; i += 1) {
+      const m = lines[i].match(/^\s*[❯>]?\s*(\d+)\.\s+(\S.*?)\s*$/);
+      if (m) options.push({ key: m[1], label: m[2] });
+      else if (options.length && lines[i].trim() && !/^\s*(Esc|Tab)\b/.test(lines[i])) break;
+    }
+    return options.length ? { question: lines[at].replace(/^\s*[❯>]\s*/, "").trim(), options } : null;
+  };
+
+  /**
+   * The same question, as this interface asks things. The terminal stays mounted underneath and
+   * keeps working, because the card is a shortcut for the keystroke rather than a replacement
+   * for it: anything this cannot parse is still answerable in the terminal itself.
+   */
+  const showPrompt = (p, ask) => {
+    p.promptCard?.remove();
+    const card = el("div", { class: "cc-ask", role: "group", "aria-label": "Claude needs your permission" },
+      el("p", { class: "cc-ask-q" }, ask.question),
+      el("div", { class: "cc-ask-opts" }, ...ask.options.map((o, i) =>
+        el("button", {
+          type: "button",
+          class: i === 0 ? "primary" : "ghost",
+          title: o.label,
+          onclick: async () => {
+            card.classList.add("sent");
+            try {
+              await sendInput(p.stickTerm.id, `${o.key}\r`);
+            } catch (err) {
+              setStatus(err.message, true);
+            }
+            clearPrompt(p);
+          },
+        }, clip(o.label, 58)))),
+      el("p", { class: "cc-ask-foot" }, "answered in the session's own terminal, below"));
+    p.promptCard = card;
+    p.body.insertBefore(card, p.body.firstChild);
+    refitAll();
+  };
+
+  const clearPrompt = (p) => {
+    p.promptCard?.remove();
+    p.promptCard = null;
+    p.asking = false;
+    refitAll();
+  };
+
+  /** After it announces, the box takes a beat to finish painting, so look a moment later. */
+  const catchPrompt = (p) => {
+    if (!p.stickTerm || p.promptCard) return;
+    window.clearTimeout(p.catchTimer);
+    p.catchTimer = window.setTimeout(() => {
+      if (!p.stickTerm || p.dead || p.promptCard) return;
+      const ask = readPrompt(p.stickTerm.term);
+      if (ask) showPrompt(p, ask);
+    }, 300);
+  };
+
   /**
    * The terminal, inside the pane the session already occupies. This is what the dock used to
    * be: a pane over live content was the confusing part, so it lives where the session is.
    */
+  /**
+   * A terminal needs room to be a terminal. Claude Code lays its permission box out for the size
+   * it has been given, and in a 14-row pane it simply does not draw it: the question was not
+   * merely off-screen, it was absent from the buffer. So taking the stick claims enough height
+   * for the session's own UI to exist, and gives it back on the way out.
+   */
+  const STICK_MIN = 560;
+
   const takeTheStick = async (p) => {
     if (p.stickPane) return;
     const session = p.session;
+    if (p.inline) {
+      const was = p.node.getBoundingClientRect().height;
+      if (was < STICK_MIN) {
+        p.grewFrom = was;
+        p.node.style.height = `${STICK_MIN}px`;
+      }
+    }
     const pane = el("div", { class: "cc-stick" });
     const host = el("div", { class: "term" });
     pane.append(host);
@@ -950,12 +1074,27 @@ export const mountCommandCenter = (root, ctx) => {
       // Decoded as a stream, because a multi-byte character can land across two chunks.
       const decoder = new TextDecoder();
       const table = skinTable();
-      src.onmessage = (e) => term.write(reskin(decoder.decode(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)), { stream: true }), table));
+      src.onmessage = (e) => {
+        const chunk = decoder.decode(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)), { stream: true });
+        // The notification is the fast path, scanned across a rolling tail because a sequence can
+        // land split over two frames, which is exactly how this failed the first time. It is only
+        // ever an accelerator: the registry saying the session is waiting is the real trigger.
+        const scan = (p.tail ?? "") + chunk;
+        p.tail = scan.slice(-256);
+        WANTS_PERMISSION.lastIndex = 0;
+        for (const m of scan.matchAll(WANTS_PERMISSION)) if (/permission/i.test(m[1])) p.asking = true;
+        term.write(reskin(chunk, table), () => {
+          // Read the grid only once xterm has finished applying this chunk to it.
+          if (!p.promptCard) catchPrompt(p);
+          else if (!readPrompt(term)) clearPrompt(p);
+        });
+      };
       src.addEventListener("exit", () => { term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n"); src.close(); });
       term.onData((d) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: d, keepalive: true }).catch(() => {}));
       term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
       acceptDrops(host, (paths) => sendInput(info.id, `${paths.join(" ")} `));
       p.stickTerm = { term, fit, src, id: info.id };
+      catchPrompt(p); // it may already have been asking before this pane existed
       term.focus();
     } catch (err) {
       pane.append(el("p", { class: "muted small" }, err.message));
@@ -964,6 +1103,10 @@ export const mountCommandCenter = (root, ctx) => {
 
   const dropTheStick = (p) => {
     if (!p.stickPane) return;
+    if (p.grewFrom) {
+      p.node.style.height = `${p.grewFrom}px`;
+      p.grewFrom = null;
+    }
     p.stickTerm?.src.close();
     p.stickTerm?.term.dispose();
     p.stickPane.remove();

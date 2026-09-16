@@ -1520,3 +1520,20 @@ body.cc-full-open { overflow: hidden; }
 .cc-pane-grip::before { content: ""; position: absolute; left: 50%; top: 3px; width: 34px; height: 3px; margin-left: -17px; border-radius: 2px; background: var(--seam-strong); transition: background 140ms var(--ease-out); }
 .cc-pane-grip:hover::before, .cc-pane-grip:focus-visible::before { background: var(--accent); }
 .cc-pane-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+
+/* ---------- the permission question, asked in this interface ----------
+   Claude Code asks in its TUI. The card is a shortcut for the keystroke, not a replacement:
+   the terminal stays mounted underneath and anything the parser misses is still answerable
+   there. It wears the caution ring for the same reason a needs-you strip does. */
+.cc-ask { flex: 0 0 auto; margin: 10px 12px 0; padding: 12px 14px; border-radius: var(--radius-s); background: var(--panel-lifted); box-shadow: 0 0 0 1px color-mix(in srgb, var(--caution) 45%, transparent), 0 8px 30px var(--shade-soft); }
+.cc-ask-q { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.cc-ask-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Every choice is a button, so every choice looks like one: a ghost with no edge read as prose
+   sitting next to the primary. The full wording lives in the title, because Claude Code's second
+   option is routinely a paragraph. */
+.cc-ask-opts button { height: 30px; font-size: 12.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-ask-opts button.ghost { box-shadow: inset 0 0 0 1px var(--seam-strong); background: var(--panel); }
+.cc-ask-opts button.ghost:hover { box-shadow: inset 0 0 0 1px var(--accent); color: var(--ink); }
+.cc-ask-foot { margin: 9px 0 0; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.cc-ask.sent { opacity: 0.55; pointer-events: none; }

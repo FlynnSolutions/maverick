@@ -182,6 +182,26 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   place and the three verbs, and a second header repeating them was the defect, not the design.
   Note that `replaceChildren` does not drop nulls the way `el()` does; one painted the word
   "null" into every pane head.
+- **A permission question is asked in this interface, not read out of a terminal.** When a
+  session stops at a prompt, its open pane reaches for the stick itself and draws the question
+  with a button per choice; clicking one writes the digit to the pty. It is a shortcut for the
+  keystroke, never a replacement: the terminal stays mounted underneath, so anything the parser
+  misses is still answerable there. Four things had to be learned to make it work, all of them
+  from measurement rather than reasoning. **The raw stream cannot be searched for the question**:
+  a TUI paints it character by character across cursor moves, so "Do you want" never appears
+  contiguously in the bytes. Its OSC 99 desktop notification *does*, and is a useful accelerator,
+  but only that: the registry reporting `waiting` with `waitingFor: "permission prompt"` is the
+  dependable trigger. **The finished question is read off xterm's buffer**, because the emulator
+  has already done the work. **Window that buffer by its own length**, not by the cursor (a TUI
+  parks it in the input line) and not by `viewportY + rows` (in a short pane `term.rows` is
+  smaller than what is still rendered, which cut two of three choices off). And **a terminal needs
+  room to be a terminal**: in a 14-row pane Claude Code does not draw the box at all, so the
+  question was absent from the buffer rather than merely off-screen. Taking the stick claims a
+  minimum height and hands it back on the way out.
+- **Every choice is a button, so every choice looks like one.** A ghost with no edge, sitting
+  next to the primary, read as prose rather than as something to click. The wording is clipped at
+  58 characters with the whole of it in the title, because Claude Code's second option is
+  routinely a paragraph carrying two merged choices.
 - **A terminal wears this interface, and a real emulator is not negotiable.** Claude Code drives
   the alternate screen, addresses the cursor and wants raw keys, so the arrows, Ctrl+C and its
   own permission menus only work through something that speaks the protocol; re-rendering its
