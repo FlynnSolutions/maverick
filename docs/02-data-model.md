@@ -29,7 +29,7 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | Record | Defined in | Stored at | Key fields |
 |---|---|---|---|
 | `Project` | `src/projects.ts` | `session-console/projects.json` | `id`, `name`, `path`, `trackers[]` |
-| `SessionRecord` | `src/sessions.ts` | `console-sessions/<id>.json` | `role`, `loop`, `exit`, `parent`, `status`, `handoff`, `project` |
+| `SessionRecord` | `src/sessions.ts` | `console-sessions/<id>.json` | `role`, `loop`, `exit`, `parent`, `status`, `handoff`, `project`, `mission` |
 | `Formation` | `src/formations.ts` | `session-console/` | `name` (phonetic callsign), `lead`, `members[]` |
 | `ShipRun` | `src/ships.ts` | `console-sessions/ships/<project>/<version>.json` | `version`, `steps[]` |
 | `ShipStep` | `src/ships.ts` | within the run | `prompt`, `status`, `claudeId`, `report`, `artifacts[]` |
@@ -47,6 +47,11 @@ handed-off`; `StepStatus` is `pending | running | finished | done | failed | ski
 carrying `mission` and `milestone`; the record holds the run, and the record's `milestones[]` is
 what was parsed from the approved plan document plus what each task's sessions did. If the two
 disagree the tracker wins, exactly as everywhere else ([`03-decisions.md`](./03-decisions.md) M7).
+
+**A session record's `mission` names its owner, and that is what keeps it out of the ship's
+audit step.** A mission reviews its own work, so `src/ships.ts` skips a develop record that has
+one. It is set at dispatch rather than when a verdict exists, so there is no window in which a
+Wingman looks like an unowned session.
 
 **A formation is one lead and its flight.** The lead is the session that orchestrates;
 `members` are the sessions under it, in the order they were put there.
