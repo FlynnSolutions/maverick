@@ -35,6 +35,15 @@ export interface RepoConfig {
 }
 
 export interface MissionConfig {
+  /**
+   * The Claude Code agent a Wingman runs as, by name. M5 is explicit that a level's boundary
+   * is enforced by its allowed-tools list and not by its prompt, and without this a Wingman
+   * runs with every tool and auto-approval, held only by prose. The agent belongs to the
+   * project being flown, since that is where the boundary has to be true.
+   */
+  wingmanAgent?: string;
+  /** The agent a RIO runs as. `auditor` by convention: it reads and judges, it never fixes. */
+  rioAgent: string;
   /** Where worktrees go, relative to the project root. */
   worktrees: string;
   /** Prefix for a task's branch: `<prefix><mission>-<task>`. */
@@ -46,6 +55,7 @@ export interface MissionConfig {
 }
 
 export const DEFAULT_MISSION_CONFIG: MissionConfig = {
+  rioAgent: "auditor",
   worktrees: join(".claude", "worktrees"),
   branchPrefix: "mission/",
   land: "merge",
@@ -73,6 +83,8 @@ const missionLanding = (v: unknown): Landing =>
 const BRANCH_PREFIX = /^[A-Za-z0-9][A-Za-z0-9._-]*[/-]$/;
 const branchPrefix = (v: unknown): string =>
   typeof v === "string" && BRANCH_PREFIX.test(v) && !v.includes("..") ? v : DEFAULT_MISSION_CONFIG.branchPrefix;
+
+const AGENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 /** A base is a branch name, so it is a string that git will not read as a flag or a path trick. */
 const REF = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
@@ -107,6 +119,9 @@ export const missionConfigFor = async (projectPath: string): Promise<MissionConf
     ? m.worktrees
     : DEFAULT_MISSION_CONFIG.worktrees;
   return {
+    // An agent name reaches the CLI as argv, so it is a name or it is nothing.
+    ...(typeof m.wingmanAgent === "string" && AGENT.test(m.wingmanAgent) ? { wingmanAgent: m.wingmanAgent } : {}),
+    rioAgent: typeof m.rioAgent === "string" && AGENT.test(m.rioAgent) ? m.rioAgent : DEFAULT_MISSION_CONFIG.rioAgent,
     worktrees,
     branchPrefix: branchPrefix(m.branchPrefix),
     land: missionLanding(m.land),

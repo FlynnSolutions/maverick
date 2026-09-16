@@ -68,9 +68,15 @@ safety-load-bearing and is repeated in the rulebook.
 product code. **Mission**, run by a **RIO**, plans milestones and dispatches workers. **Wingman**
 takes one item, in a worktree, and writes code.
 
-**Safety-load-bearing:** the Air Boss's boundary must be enforced by its allowed-tools list, not
-by its prompt. An agent asked politely not to change something will change it the first time the
-change looks small.
+**Safety-load-bearing:** the project level's boundary must be enforced by its allowed-tools list,
+not by its prompt. An agent asked politely not to change something will change it the first time
+the change looks small.
+
+**Where that stands for a Wingman, 2026-09-16:** a project names the agent in `maverick.json`
+(`missions.wingmanAgent`) and Maverick runs Wingmen as it. With none named a Wingman still gets
+every tool and auto-approval inside its worktree, held by prose, which is the thing this entry
+warns about. The approval gate says which of the two is about to happen rather than leaving it
+to be discovered.
 
 **Status:** the orchestrator is built; see [M7](#m7--a-missions-plan-is-tracker-items-and-membership-is-a-field--built).
 The project level is still designed only. **The names in this entry were superseded on

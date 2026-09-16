@@ -80,6 +80,8 @@ first is what the tooling was usually written to stop.
 
 | Key | Default | Means |
 |---|---|---|
+| `wingmanAgent` | none | the Claude Code agent a Wingman runs as. **Unset, a Wingman runs with every tool and auto-approval**, held inside its worktree by its prompt alone; [`03-decisions.md`](./03-decisions.md) M5 says a level's boundary belongs in its tool list, not its prose. The agent lives in the project being flown, because that is where the boundary has to be true. The approval gate says which of the two you are getting |
+| `rioAgent` | `auditor` | the agent a RIO runs as: it reads, runs and judges, and never fixes |
 | `worktrees` | `.claude/worktrees` | where task and integration worktrees go, relative to the project |
 | `branchPrefix` | `mission/` | a task's branch is `<prefix><mission>-<task>` |
 | `land` | `merge` | the default for every repo: `merge` leaves the work on that repo's mission branch, `pr` pushes and opens a pull request against its base, `push` fast-forwards the base to it |

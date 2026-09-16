@@ -419,7 +419,7 @@ export const reopenInterview = async (project: Project, id: string): Promise<Ter
 };
 
 /** Read the plan the Strike Lead wrote, without committing to it. This is what the gate shows. */
-export const previewPlan = async (project: Project, id: string): Promise<{ found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost; repos?: Array<{ label: string; base: string; land: Landing }> }> => {
+export const previewPlan = async (project: Project, id: string): Promise<{ found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost; wingmanAgent?: string; repos?: Array<{ label: string; base: string; land: Landing }> }> => {
   const mission = await missionOr404(project.id, id);
   let text: string;
   try {
@@ -438,7 +438,7 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
   }
   // Only the repos the plan names, so the gate shows what this mission will actually touch.
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
-  return { found: true, text, parsed, cost: costOf(parsed.milestones), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })) };
+  return { found: true, text, parsed, wingmanAgent: cfg.wingmanAgent, cost: costOf(parsed.milestones), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })) };
 };
 
 /* ---------- the blessing, and the tracker write ---------- */
@@ -632,7 +632,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
       task.branch = `${repo.branch}-${task.id}`;
       await ensureWorktree(repo.path, task.worktree, task.branch, repo.branch);
       task.base = bases.get(repo.label);
-      task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanPrompt(project, mission, m, task, repo));
+      task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanPrompt(project, mission, m, task, repo), cfg.wingmanAgent);
       task.status = "flying";
       task.started = new Date().toISOString();
       task.attempts = 1;
@@ -652,7 +652,8 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
 /** Put a task back out with the RIO's findings, in the worktree it already has. */
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
   const previous = task.claudeId;
-  task.claudeId = await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanPrompt(project, mission, m, task, missionRepo(mission, task), findings));
+  const cfg = await missionConfigFor(project.path);
+  task.claudeId = await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanPrompt(project, mission, m, task, missionRepo(mission, task), findings), cfg.wingmanAgent);
   task.sessionId = undefined;
   task.status = "flying";
   task.attempts += 1;
@@ -704,6 +705,7 @@ export const sweepMissions = async (project: Project): Promise<void> => {
 const sweepOnce = async (project: Project): Promise<void> => {
   const missions = (await listMissions(project.id)).filter((m) => m.status === "flying");
   if (!missions.length) return;
+  const cfg = await missionConfigFor(project.path);
   const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
   const state = new Map([...agents].map(([id, a]) => [id, a.state ?? ""]));
   for (const mission of missions) {
@@ -736,7 +738,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
           const file = reviewFile(mission, task);
           try {
             // "auditor" is Claude Code's own agent name (`~/.claude/agents/auditor.md`), not our word for the role.
-            const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, reviewPrompt(project, mission, m, task, missionRepo(mission, task), file), "auditor");
+            const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, reviewPrompt(project, mission, m, task, missionRepo(mission, task), file), cfg.rioAgent);
             task.review = { claudeId, file, started: new Date().toISOString() };
             task.status = "reviewing";
             agentCache.delete(project.path);
@@ -942,21 +944,23 @@ export const tidyWorktrees = async (project: Project, id: string): Promise<strin
 };
 
 /** Put a blocked task back in the air after Cory has had a look, with one more attempt. */
-export const retryTask = async (project: Project, id: string, taskId: string): Promise<Mission> => {
-  const mission = await missionOr404(project.id, id);
-  const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId));
-  const task = m?.tasks.find((t) => t.id === taskId);
-  if (!m || !task) throw new Error(`no task "${taskId}" on ${mission.name}`);
-  if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
-  if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
-  const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
-  task.attempts = MAX_ATTEMPTS - 1;
-  await handBack(project, mission, m, task, findings);
-  task.note = undefined;
-  mission.status = "flying";
-  mission.trouble = undefined;
-  return writeMission(mission);
-};
+export const retryTask = async (project: Project, id: string, taskId: string): Promise<Mission> =>
+  changeMission(project.id, id, async (mission) => {
+    const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId));
+    const task = m?.tasks.find((t) => t.id === taskId);
+    if (!m || !task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+    if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
+    if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
+    const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
+    task.attempts = MAX_ATTEMPTS - 1;
+    // Back in the air means what was remembered about the last attempt is no longer the truth.
+    forget(task);
+    await handBack(project, mission, m, task, findings);
+    task.note = undefined;
+    mission.status = "flying";
+    mission.trouble = undefined;
+    return mission;
+  });
 
 /** Accept a task Cory has looked at himself, so a milestone its RIO failed can still merge. */
 export const acceptTask = async (project: Project, id: string, taskId: string, note: string): Promise<Mission> =>

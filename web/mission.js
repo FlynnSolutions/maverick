@@ -257,6 +257,9 @@ const renderPlan = () => {
       gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
         costBand(doc.cost),
         reposBand(doc.repos ?? []),
+        doc.wingmanAgent
+          ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, so what it may touch is that agent's tool list rather than a paragraph asking it nicely.`)
+          : el("p", { class: "mv-warn" }, "Each Wingman runs with every tool and auto-approval, held inside its worktree by its prompt alone. Give this project a wingmanAgent in maverick.json and the boundary becomes that agent's tool list instead, which is what the decision log asks for."),
         el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
         el("div", { class: "gate-actions" },
           btn("approve and fly", async () => {
