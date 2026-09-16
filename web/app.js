@@ -1661,6 +1661,19 @@ window.addEventListener("resize", () => {
 
 /* ---------- theme: the project's colours and display font ---------- */
 
+/** Relative luminance of a #rrggbb, per WCAG. */
+const luminance = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+/** Ink or paper, whichever stands out on this colour. */
+const readableOn = (hex) => {
+  if (!/^#[0-9a-f]{6}$/i.test(hex ?? "")) return "#ffffff";
+  const l = luminance(hex);
+  return (l + 0.05) / 0.05 > 1.05 / (l + 0.05) ? "#04101f" : "#ffffff";
+};
+
 /** Whether Maverick wears the project's colours or its own. Cory's call, remembered. */
 const usingProjectTheme = () => {
   try { return localStorage.getItem("mv.projectTheme") !== "0"; } catch { return true; }
@@ -1673,17 +1686,19 @@ const usingProjectTheme = () => {
 const applyTheme = (theme) => {
   const root = document.documentElement.style;
   if (!theme || !usingProjectTheme()) {
-    for (const prop of ["--accent", "--accent-hot", "--display"]) root.removeProperty(prop);
+    for (const prop of ["--accent", "--accent-hot", "--display", "--on-accent"]) root.removeProperty(prop);
     return;
   }
   root.setProperty("--accent", theme.accent);
   root.setProperty("--accent-hot", theme.accentHot);
+  // A project picks its own accent, so what reads on top of it cannot be a fixed colour:
+  // white on Realtime's cyan is 3.2:1. Take whichever of ink or paper contrasts better.
+  root.setProperty("--on-accent", readableOn(theme.accent));
   root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
   if (theme.font !== "Chakra Petch" && !document.querySelector(`link[data-font="${theme.font}"]`)) {
     document.head.append(el("link", { rel: "stylesheet", "data-font": theme.font, href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
   }
-  const brand = $(".brand");
-  brand.replaceChildren(text("Maverick")); // the project's name is the switcher beside it
+  $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
 };
 
 /* ---------- boot ---------- */
@@ -1701,13 +1716,43 @@ const boot = async () => {
   document.title = `${project.name} · Maverick`;
   applyTheme(project.theme);
 
-  const switcher = $("#switcher");
-  switcher.replaceChildren(...projects.map((p) => el("option", { value: p.id, ...(p.id === projectId ? { selected: "" } : {}) }, p.name)), el("option", { value: "" }, "pick another…"));
-  switcher.hidden = false;
-  switcher.addEventListener("change", () => {
-    location.href = switcher.value ? `/?project=${encodeURIComponent(switcher.value)}` : "/";
-  });
+  // The project is identity, not a form field: a pill carrying its own accent, opening a list.
+  const pick = $("#project-pick");
+  let pickMenu = null;
+  const closePick = () => { pickMenu?.remove(); pickMenu = null; };
+  const pickBtn = el("button", { type: "button", class: "pick-btn", "aria-haspopup": "true",
+    onclick: (e) => {
+      // Hold the element, not the event: currentTarget is null once the handler returns, and
+      // reading it from the outside-click listener threw, so the menu never closed.
+      const anchor = e.currentTarget;
+      if (pickMenu) return closePick();
+      pickMenu = el("div", { class: "menu pick-menu", role: "dialog", "aria-label": "Projects" },
+        el("h4", {}, "Projects"),
+        ...projects.map((p) => el("a", { class: `pick-row${p.id === projectId ? " on" : ""}`, href: `/?project=${encodeURIComponent(p.id)}` },
+          el("span", { class: "dot", style: `background:${p.theme?.accent ?? "var(--accent)"}` }),
+          el("b", {}, p.name),
+          el("i", {}, p.path.replace(/^\/Users\/[^/]+\//, "~/")))),
+        el("a", { class: "pick-row all", href: "/" }, el("span", { class: "dot none" }), el("b", {}, "All projects")));
+      const r = anchor.getBoundingClientRect();
+      pickMenu.style.top = `${r.bottom + 8}px`;
+      pickMenu.style.left = `${r.left}px`;
+      document.body.append(pickMenu);
+      window.setTimeout(() => document.addEventListener("click", function once(ev) {
+        if (!pickMenu) return document.removeEventListener("click", once);
+        if (!pickMenu.contains(ev.target) && !anchor.contains(ev.target)) { closePick(); document.removeEventListener("click", once); }
+      }), 0);
+    } },
+    el("span", { class: "dot", style: `background:${project.theme?.accent ?? "var(--accent)"}` }),
+    el("b", {}, project.name),
+    icon("chevron"));
+  pick.replaceChildren(pickBtn);
+  pick.hidden = false;
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePick(); });
 
+  // Views read as instruments: a drawn icon over its name, the live one lifted.
+  const VIEWS = [["board", "Board"], ["calendar", "Calendar"], ["workspace", "Workspace"]];
+  $("#view-toggle").replaceChildren(...VIEWS.map(([id, label]) =>
+    el("button", { type: "button", "data-view": id, title: label }, icon(id), el("span", {}, label))));
   $("#view-toggle").hidden = false;
   for (const b of document.querySelectorAll("#view-toggle button")) {
     b.addEventListener("click", () => {
@@ -1720,7 +1765,9 @@ const boot = async () => {
 
   $("#project").hidden = false;
   $("#reload").hidden = false;
-  $("#new-session").hidden = false;
+  const ns = $("#new-session");
+  ns.replaceChildren(icon("plus"), el("span", {}, "New session"));
+  ns.hidden = false;
   // One menu for every preference, so the bar carries one control instead of three.
   const setMode = (m) => {
     if (m) document.documentElement.setAttribute("data-theme", m);

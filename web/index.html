@@ -13,16 +13,14 @@
 </head>
 <body>
   <header class="bar">
-    <a href="/" class="brand">Maverick</a>
-    <select id="switcher" class="switcher" hidden aria-label="Project"></select>
-    <span id="view-toggle" class="segmented" hidden>
-      <button type="button" data-view="board">Board</button>
-      <button type="button" data-view="calendar">Calendar</button>
-      <button type="button" data-view="workspace">Workspace</button>
-    </span>
+    <a href="/" class="brand" aria-label="Maverick"><span id="brand-mark" class="mark"></span><span class="wm">Maverick</span></a>
+    <span id="project-pick" class="pick" hidden></span>
+    <nav id="view-toggle" class="nav" hidden aria-label="View"></nav>
     <span id="status" class="status" role="status"></span>
-    <button id="new-session" type="button" class="primary" hidden>New session</button>
-    <button id="reload" type="button" hidden>Reload</button>
+    <span class="tools">
+      <button id="new-session" type="button" class="primary" hidden></button>
+      <button id="reload" type="button" hidden></button>
+    </span>
   </header>
 
   <main id="picker" class="picker" hidden>

@@ -182,40 +182,54 @@ a { color: var(--accent-hot); }
 .bar {
   display: flex;
   align-items: center;
-  gap: calc(var(--unit) * 4);
-  height: 46px;
+  gap: 14px;
+  height: 52px;
   padding: 0 calc(var(--unit) * 4);
   background: var(--bar);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px) saturate(1.15);
   border-bottom: 1px solid var(--seam);
   position: sticky;
   top: 0;
   z-index: 5;
 }
-.brand {
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 15px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--ink);
-}
-.switcher {
-  appearance: none;
-  font-family: var(--display);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  background: var(--gunmetal);
-  border: 1px solid var(--seam);
-  border-radius: var(--radius-s);
-  padding: 5px 28px 5px 10px;
-  color: var(--accent-hot);
-  background-image: linear-gradient(45deg, transparent 50%, var(--ink-faint) 50%), linear-gradient(135deg, var(--ink-faint) 50%, transparent 50%);
-  background-position: calc(100% - 14px) 13px, calc(100% - 10px) 13px;
-  background-size: 4px 4px;
-  background-repeat: no-repeat;
-}
+/* ---------- the bar: mark, project, views, instruments ---------- */
+
+.brand { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; color: var(--ink); flex: 0 0 auto; }
+.brand .mark { display: block; width: 27px; height: 27px; }
+.brand .mark .jet-glyph { display: block; width: 27px; height: 27px; --jet-skin: var(--accent-hot); }
+.brand .wm { font-family: var(--display); font-weight: 600; font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase; }
+
+/* Icons anywhere: one stroke weight, the button's own colour. */
+.icon { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+
+/* The project is identity, not a form field. */
+.pick { flex: 0 0 auto; }
+.pick-btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 7px 0 11px; border: 0; border-radius: 16px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam); }
+.pick-btn:hover { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
+.pick-btn .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.pick-btn b { font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: 0.04em; color: var(--ink); }
+.pick-btn .icon { width: 13px; height: 13px; color: var(--ink-faint); }
+.pick-menu { width: 306px; }
+.pick-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--radius-s); text-decoration: none; }
+.pick-row:hover { background: var(--steel); }
+.pick-row.on { background: var(--panel); box-shadow: inset 0 0 0 1px var(--seam); }
+.pick-row .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.pick-row .dot.none { background: var(--cold); }
+.pick-row b { font: 500 13px var(--sans); color: var(--ink); }
+.pick-row i { margin-left: auto; font: 11px var(--mono); font-style: normal; color: var(--ink-faint); }
+.pick-row.all { margin-top: 4px; border-top: 1px solid var(--seam-soft); border-radius: 0 0 var(--radius-s) var(--radius-s); }
+
+/* Views: a drawn instrument over its name, the live one lifted out of the well. */
+.nav { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--inset); box-shadow: inset 0 0 0 1px var(--seam-soft); flex: 0 0 auto; }
+.nav button { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--ink-faint); font: 500 12.5px var(--sans); }
+.nav button:hover { color: var(--ink-soft); background: transparent; box-shadow: none; }
+.nav button.active { background: var(--panel-lifted); color: var(--ink); box-shadow: 0 1px 2px var(--shade-soft); }
+.nav button.active .icon { stroke: var(--accent-hot); }
+
+.tools { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+button.primary#new-session { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px; border-radius: 8px; }
+#new-session .icon { stroke-width: 1.8; }
+
 .toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-faint); font-size: 12px; cursor: pointer; }
 .toggle input { accent-color: var(--accent); }
 .status { flex: 1; color: var(--ink-faint); font-size: 12px; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 200ms var(--ease-out); }
@@ -429,14 +443,14 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .dispatch {
   padding: 0 0 0 14px;
   position: sticky;
-  top: 62px;
-  max-height: calc(100vh - 62px - 16px);
+  top: 68px;
+  max-height: calc(100vh - 68px - 16px);
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-width: thin;
   scrollbar-color: var(--ink-ghost) transparent;
 }
-body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
+body.docked .dispatch { max-height: calc(100vh - 68px - 16px - var(--dock-h)); }
 .project.rail-collapsed .dispatch { padding: 0 0 0 6px; }
 .dispatch h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; margin: 14px 0 6px; }
 .dispatch .lane-title { margin: 0; }
@@ -962,8 +976,8 @@ body.ask-open { overflow: hidden; }
 /* ---------- 8px rhythm audit (HIG layout.md: align, group, consistent margins) ---------- */
 
 .calendar { row-gap: 8px; column-gap: 16px; }
-.bar { height: 48px; }
-.dispatch { top: 64px; max-height: calc(100vh - 64px - 16px); }
+.bar { height: 52px; }
+.dispatch { top: 68px; max-height: calc(100vh - 68px - 16px); }
 .card { padding: 8px 12px; }
 .card .title { padding-right: 56px; }
 .lanes { gap: 16px; }
@@ -976,7 +990,9 @@ body.ask-open { overflow: hidden; }
 /* ---------- HIG pass (apple-design skill, 2026-09-15): legibility floor, contrast, targets ---------- */
 
 /* typography.md: readable minimum sizes; nothing a person reads sits below 11px, meta lines 11.5px. */
-.chip, .due, .badge, .verdict { font-size: 11px; height: 22px; padding: 0 8px; }
+/* One shape for every token: a height only applies to an inline element once it is a box,
+   which is why the version chip and the due chip sat at different heights beside each other. */
+.chip, .due, .badge, .verdict { display: inline-flex; align-items: center; font-size: 11px; height: 22px; padding: 0 8px; line-height: 1; vertical-align: middle; }
 .card .meta, .row .sub, .row .doing .k, .drawer-meta, .fields dt, .due-row .k, .ws-tile .k, .ws-table th, .cal-dow, .cal-day, .release-card .stat span, .release-date, .release-card .foot, .status, .card .since, .hovercard-hint, .muted.small, .small { font-size: 11.5px; }
 .lane-title, .dispatch h3, .workspace h3, .strip-title, .group-name, .release-name, .role, .ship-step-head .verdict { font-size: 11.5px; }
 .card .title { font-size: 14px; }
@@ -1314,7 +1330,7 @@ button.icon-btn { position: relative; width: 30px; min-width: 30px; height: 30px
 .icon-btn .icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
 /* full screen conversation */
-.cc-full { position: fixed; left: 0; right: 0; top: 48px; bottom: 0; z-index: 6; display: flex; flex-direction: column; background: var(--carbon); animation: cc-in 200ms var(--ease-out); }
+.cc-full { position: fixed; left: 0; right: 0; top: 52px; bottom: 0; z-index: 6; display: flex; flex-direction: column; background: var(--carbon); animation: cc-in 200ms var(--ease-out); }
 body:has(#dock:not([hidden])) .cc-full { bottom: var(--dock-h); }
 @keyframes cc-in { from { opacity: 0; transform: translateY(10px); } }
 .cc-full-head { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--seam); background: var(--gunmetal); flex-wrap: wrap; }

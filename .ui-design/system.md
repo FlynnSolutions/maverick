@@ -105,6 +105,17 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Idle decays in three steps, and the first step is yours.** Under an hour between turns is a
   conversation you are in the middle of (`Needs action`, carries the exchange); under a day is
   `Idle`; beyond that is `Stale`. Distinct from `Needs you`, which is blocked on a prompt.
+- **The bar** (52px): the traced jet at 27px in the accent, then the wordmark, then the project
+  as a pill carrying its own accent as a dot (a project is identity, not a form field, so it is
+  never a native `select`), then the views as a segmented well with a drawn icon beside each
+  label and the live one lifted out on `--panel-lifted`, then status, then the instruments.
+- **Anything painted on the project's accent computes its own foreground.** A project picks the
+  accent, so a fixed `--on-accent` cannot hold: white on Realtime's cyan is 3.2:1. `readableOn()`
+  takes whichever of ink or paper contrasts better and sets the token; clearing the project
+  palette clears it too.
+- **Icons carry `.icon` and inherit `currentColor`** at one 1.5 stroke in a 16px box: board is
+  unequal kanban columns, calendar a grid with two hangers, workspace the rack's strips with a
+  lamp at each head.
 - **The edge between the board and the rail belongs to the grid, not to the rail.** The rail is
   sticky and only as tall as its own content, especially collapsed, while the board beside it
   runs for thousands of pixels; an edge drawn on the rail can never reach the bottom. It is a
