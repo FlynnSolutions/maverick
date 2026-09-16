@@ -2,6 +2,7 @@
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
 // selects it, no parameter shows the picker.
 import { jetSvg } from "./jet.js";
+import { readableOn } from "./theme.js";
 import { strike, loading, missile, flares, flyby } from "./afterburner.js";
 import { mountCommandCenter } from "./command.js";
 import { icon } from "./icons.js";
@@ -552,7 +553,7 @@ const openDrawer = (trackerIndex, item) => {
   const head = el("h2", {}, item.title);
   const actions = el("div", { class: "drawer-actions" });
 
-  const FIELD_ORDER = ["size", "kind", "status", "owner", "plan", "pr", "blocked-by", "links"];
+  const FIELD_ORDER = ["size", "kind", "status", "owner", "mission", "milestone", "plan", "pr", "blocked-by", "links"];
   const saveBody = async (newBody, label) => {
     setStatus(label);
     try {
@@ -1481,8 +1482,8 @@ const renderMissions = (missions) => {
   for (const m of missions) {
     const tasks = m.milestones.flatMap((x) => x.tasks ?? []);
     const passed = tasks.filter((t) => t.status === "passed").length;
-    const where = m.status === "interviewing" || m.status === "planned" ? "waiting on your approval" : `${passed}/${tasks.length} tasks · ${m.milestones.filter((x) => x.merged).length}/${m.milestones.length} milestones`;
-    list.append(sessionRow(MISSION_LAMP[m.status] ?? "idle", m.name, `${m.status} · ${where}`, [
+    const where = m.trouble ? m.trouble : m.status === "interviewing" || m.status === "planned" ? "waiting on your approval" : `${passed}/${tasks.length} tasks · ${m.milestones.filter((x) => x.merged).length}/${m.milestones.length} milestones`;
+    list.append(sessionRow(m.trouble ? "blocked" : MISSION_LAMP[m.status], m.name, `${m.status} · ${where}`, [
       el("a", { class: "ghost", href: `/mission.html?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(m.id)}` }, "open"),
     ]));
   }
@@ -1591,19 +1592,6 @@ const spawnOnItem = async (item, card, parent) => {
 };
 
 /* ---------- theme: the project's colours and display font ---------- */
-
-/** Relative luminance of a #rrggbb, per WCAG. */
-const luminance = (hex) => {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-};
-/** Ink or paper, whichever stands out on this colour. */
-const readableOn = (hex) => {
-  if (!/^#[0-9a-f]{6}$/i.test(hex ?? "")) return "#ffffff";
-  const l = luminance(hex);
-  return (l + 0.05) / 0.05 > 1.05 / (l + 0.05) ? "#04101f" : "#ffffff";
-};
 
 /** Whether Maverick wears the project's colours or its own. Cory's call, remembered. */
 const usingProjectTheme = () => {

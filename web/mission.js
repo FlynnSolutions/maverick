@@ -4,6 +4,7 @@
 
 import { jetSvg } from "./jet.js";
 import { lamp } from "./lamp.js";
+import { readableOn, recall } from "./theme.js";
 import { render as renderMarkdown } from "./markdown.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -45,18 +46,6 @@ const missionUrl = () => `/api/missions/${encodeURIComponent(missionId)}?project
 const actionUrl = (action) => `/api/missions/${encodeURIComponent(missionId)}/${action}?project=${encodeURIComponent(projectId)}`;
 
 /* ---------- theme, on the board's terms: its mode, its project palette, its computed ink ---------- */
-const recall = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
-const luminance = (hex) => {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-};
-/** A project picks the accent, so anything painted on it computes its own foreground. */
-const readableOn = (hex) => {
-  if (!/^#[0-9a-f]{6}$/i.test(hex ?? "")) return "#ffffff";
-  const l = luminance(hex);
-  return (l + 0.05) / 0.05 > 1.05 / (l + 0.05) ? "#04101f" : "#ffffff";
-};
 const applyTheme = (theme) => {
   const mode = recall("mv.theme", "");
   if (mode) document.documentElement.setAttribute("data-theme", mode);
@@ -89,22 +78,34 @@ const mountTerminal = (host, terminalId) => {
   term.onResize(({ cols, rows }) => post(`/api/terminals/${terminalId}/resize`, { cols, rows }).catch(() => {}));
   // xterm measures its own box, so fit after the new geometry has actually landed.
   requestAnimationFrame(() => { fit.fit(); term.focus(); });
-  attached = { term, fit, source, terminalId };
+  attached = { term, fit, source };
 };
 window.addEventListener("resize", () => { if (attached) requestAnimationFrame(() => attached.fit.fit()); });
 
 /* ---------- data ---------- */
-const load = async () => {
-  mission = await api(missionUrl());
+let lastPayload = "";
+const load = async (force = false) => {
+  const res = await fetch(missionUrl());
+  const body = await res.text();
+  if (!res.ok) throw new Error(JSON.parse(body).error ?? `${res.status} on ${missionUrl()}`);
+  // A poll that changed nothing must not rebuild the page: re-rendering collapses whatever
+  // findings you had open and drops you back to the top of the panel every eight seconds.
+  if (!force && body === lastPayload) return;
+  lastPayload = body;
+  mission = JSON.parse(body);
   const keys = [...mission.milestones.map((m) => `m${m.n}`), "plan", "review"];
-  if (!selected || !keys.includes(selected)) selected = mission.status === "interviewing" || mission.status === "planned" ? "plan" : (mission.milestones.find((m) => !m.merged) ?? mission.milestones[mission.milestones.length - 1]) ? `m${(mission.milestones.find((m) => !m.merged) ?? mission.milestones[mission.milestones.length - 1]).n}` : "plan";
+  if (!selected || !keys.includes(selected)) {
+    const open = mission.milestones.find((m) => !m.merged) ?? mission.milestones.at(-1);
+    const atTheGate = mission.status === "interviewing" || mission.status === "planned";
+    selected = !atTheGate && open ? `m${open.n}` : "plan";
+  }
   renderAll();
 };
 const act = async (action, body, said) => {
   try {
     await post(actionUrl(action), body);
     setStatus(said);
-    await load();
+    await load(true);
   } catch (err) {
     setStatus(err.message, true);
   }
@@ -112,6 +113,8 @@ const act = async (action, body, said) => {
 
 /* ---------- render ---------- */
 const tasksOf = (m) => m.tasks ?? [];
+/** Derived in one place: the nav and the detail head disagreed about a handed-back milestone. */
+const milestoneState = (m) => (m.merged ? "passed" : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending");
 const allTasks = () => mission.milestones.flatMap(tasksOf);
 
 const renderTop = () => {
@@ -138,8 +141,7 @@ const renderNav = () => {
 
   const items = [entry("plan", "P", mission.approved ? "The plan, as approved" : "The plan, and the gate", el("span", { class: `verdict ${mission.approved ? "passed" : mission.status}` }, mission.approved ? "approved" : mission.status))];
   mission.milestones.forEach((m) => {
-    const tasks = tasksOf(m);
-    const state = m.merged ? "passed" : tasks.some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending";
+    const state = milestoneState(m);
     items.push(entry(`m${m.n}`, String(m.n), m.title, el("span", { class: `verdict ${state}` }, m.merged ? "merged" : state), state));
   });
   const done = mission.status === "review" || mission.status === "closed";
@@ -221,7 +223,7 @@ const renderPlan = () => {
 };
 
 /* ---------- a milestone in flight ---------- */
-const taskRow = (m, task) => {
+const taskRow = (task) => {
   const findings = mission.findings?.[task.id];
   const diff = mission.diffstat?.[task.id];
   const live = task.status === "flying" || task.status === "reviewing";
@@ -253,7 +255,7 @@ const renderMilestone = (m) => {
   $("#detail").replaceChildren(
     el("div", { class: "detail-head" },
       el("h1", {}, `Milestone ${m.n} — ${m.title}`),
-      el("span", { class: `verdict ${m.merged ? "passed" : m.dispatched ? "flying" : "pending"}` }, m.merged ? "merged" : m.dispatched ? "flying" : "not sent yet")),
+      el("span", { class: `verdict ${milestoneState(m)}` }, m.merged ? "merged" : m.dispatched ? "flying" : "not sent yet")),
     el("div", { class: "detail-meta" },
       el("span", {}, `done when ${m.done}`),
       m.dispatched ? el("span", {}, `sent ${fmtTime(m.dispatched)}`) : null,
@@ -262,7 +264,7 @@ const renderMilestone = (m) => {
     m.conflicts?.length ? el("section", { class: "panel" }, el("h2", {}, "It will not merge"), el("p", { class: "mv-plan" }, `These paths collided merging into ${mission.branch}: ${m.conflicts.join(", ")}. The merge was aborted, so nothing is half-applied.`)) : null,
     el("section", { class: "panel" },
       el("h2", {}, "Tasks", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "one Wingman each, in its own worktree, reviewed by a session that did not write it")),
-      tasks.length ? el("div", {}, ...tasks.map((t) => taskRow(m, t))) : el("p", { class: "mv-empty" }, "No tasks in this milestone.")));
+      tasks.length ? el("div", {}, ...tasks.map(taskRow)) : el("p", { class: "mv-empty" }, "No tasks in this milestone.")));
 };
 
 /* ---------- the second gate: what the mission built ---------- */
@@ -292,7 +294,7 @@ const renderReview = () => {
       ) : null),
     ...mission.milestones.map((m) => el("section", { class: "panel" },
       el("h2", {}, `Milestone ${m.n} — ${m.title}`, el("span", { class: "spacer" }), m.mergeSha ? el("span", { class: "muted small mono" }, `merged as ${m.mergeSha}`) : null),
-      ...tasksOf(m).map((t) => taskRow(m, t)))));
+      ...tasksOf(m).map(taskRow))));
 };
 
 const renderAll = () => {
@@ -321,6 +323,8 @@ const boot = async () => {
   $("#back").href = `/?project=${encodeURIComponent(projectId)}`;
   await load();
   // Reloading rebuilds the detail, which would tear down a terminal being typed into.
-  window.setInterval(() => { if (mission && mission.status === "flying" && selected !== "plan") load(); }, 8000);
+  // A hidden tab would otherwise keep driving a full server sweep, and its git calls, forever.
+  window.setInterval(() => { if (!document.hidden && mission?.status === "flying" && selected !== "plan") load().catch((err) => setStatus(err.message, true)); }, 8000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && mission?.status === "flying") load().catch(() => {}); });
 };
 boot().catch((err) => setStatus(err.message, true));

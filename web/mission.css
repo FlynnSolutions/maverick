@@ -50,11 +50,10 @@
 .mv-task details summary { cursor: pointer; }
 .mv-task pre.diffstat { grid-column: 2 / -1; margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); background: transparent; box-shadow: none; padding: 0; white-space: pre-wrap; }
 
-.verdict.flying, .verdict.reviewing { color: var(--accent-hot); background: var(--accent-dim); }
-.verdict.built { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
-.verdict.passed { color: var(--ok); background: rgba(80, 200, 120, 0.16); }
-.verdict.handed-back, .verdict.blocked { color: var(--threat); background: var(--threat-dim); }
-.verdict.interviewing, .verdict.planned { color: var(--ink-soft); }
+/* The live states, the good one and the bad one are the badge's own, in style.css. What is
+   left here is the quiet end of the mission's vocabulary: nothing has happened to these yet,
+   and `pending` must not borrow the accent, which is the colour of something running. */
+.verdict.interviewing, .verdict.planned, .verdict.pending, .verdict.review, .verdict.closed { color: var(--ink-soft); background: var(--panel); }
 
 /* The interview is a conversation, so it gets a real terminal inside the mission's own view. */
 /* The terminal's dark is a well inside the panel, never the panel itself: a control that
