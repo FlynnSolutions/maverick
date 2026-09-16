@@ -148,6 +148,31 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **A tab's own actions live on the tab.** Right-click a formation to rename or disband it;
   closing one should not need a trip inside it first. Disbanding asks, because the grouping is
   the only thing lost and it is not recoverable.
+- **A session opens where it sits, and several can be open at once.** Full screen answers "show
+  me this one" and nothing else: it covers the formation, so the moment you type into the lead
+  you lose the flight. Inside a formation a strip expands in place instead. The strip stays in
+  its rack and gets taller, its line becoming the pane's header, the body below carrying the
+  conversation and composer, or the terminal once you take the stick. The open set lives in the
+  URL beside `formation`, so a layout survives a reload and can be pulled into its own window.
+  Past one open strip the rack becomes two columns, and a *collapsed* strip still spans the full
+  row, because it is still a line: only the open ones share. In a column the strip drops its
+  `where`, which is the one thing its own pane header repeats.
+- **The pane header says only what the strip has no column for.** Inline it is one row: take the
+  stick, and dismiss. The strip line directly above already carries the name, state, timing,
+  place and the three verbs, and a second header repeating them was the defect, not the design.
+  Note that `replaceChildren` does not drop nulls the way `el()` does; one painted the word
+  "null" into every pane head.
+- **A terminal wears this interface, and a real emulator is not negotiable.** Claude Code drives
+  the alternate screen, addresses the cursor and wants raw keys, so the arrows, Ctrl+C and its
+  own permission menus only work through something that speaks the protocol; re-rendering its
+  output as components would lose exactly that. What is negotiable is the look. xterm paints
+  transparent over the pane's own `--panel`, in JetBrains Mono with a line height you can read, a
+  bar cursor in `--accent`, a seam ring and the thin `--cold` scrollbar, with the 16 ANSI slots
+  repainted in the instrument palette. That last part is not enough on its own: measured against
+  a live pty, Claude Code writes its own colours as **truecolor** (`38;2;r;g;b`), which walks
+  straight past any theme, so the handful it hardcodes (its orange is `#d77757`) are substituted
+  in the stream on the way to the renderer. Anything not in that table passes through untouched,
+  which is the safe direction: an unseen colour keeps its own value rather than becoming a wrong one.
 - **The terminal lives inside the session it belongs to.** "Take the stick" mounts it in the
   session's own full-screen view rather than in a panel over the page; detaching leaves the
   session running. A formation holds session ids, not sessions: sessions come and go, the

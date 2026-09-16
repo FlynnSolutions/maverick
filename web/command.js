@@ -94,7 +94,6 @@ export const mountCommandCenter = (root, ctx) => {
   const DAY = 86400000;
   let all = null;
   let model = null;
-  let full = null; // { session, offset, events, timer, scroller, list }
   let timer = null;
   let editing = false; // a rename is open: the repaint would tear the input out mid-word
   let formations = [];
@@ -224,21 +223,26 @@ export const mountCommandCenter = (root, ctx) => {
    * through here, so the two can never drift out of alignment with each other. An action slot
    * is always emitted: a missing verb would slide the rest into the wrong column.
    */
-  const stripLine = ({ status, band, name, chips = [], state, note, when, up, where, acts = [] }) =>
+  const stripLine = ({ status, band, name, lead = null, chips = [], state, note, when, up, where, acts = [] }) =>
     el("div", { class: "strip-line" },
       lamp(status, band),
-      el("div", { class: "strip-id" }, name, ...chips),
+      el("div", { class: "strip-id" }, lead, name, ...chips),
       el("span", { class: "strip-state", title: [state, note].filter(Boolean).join(" · ") }, el("b", {}, state), note ? el("i", {}, note) : null),
       el("span", { class: "strip-when", title: [when, up].filter(Boolean).join(" · ") }, when, up ? el("i", {}, up) : null),
       el("span", { class: "strip-where", title: where }, where),
       el("div", { class: "strip-acts" }, ...acts));
 
-  /** One session as a flight progress strip. `full` carries the last exchange under the line. */
-  const strip = (s, record, full = false, band = "") => {
+  /** One session as a flight progress strip. `wide` carries the last exchange under the line. */
+  const strip = (s, record, wide = false, band = "") => {
     const name = el("h4", { class: "strip-name" }, s.title);
     const inFormation = formations.find((x) => x.id === activeFormation) ?? null;
-    return el("article", {
-      class: `strip ${s.status}${finished(s.status) ? " finished" : ""}${full ? " full" : ""}`,
+    // Inside a formation a strip opens where it sits, so several run at once. In the rack it
+    // still goes full screen: sixteen strips have no room to hold a conversation open.
+    const expandable = Boolean(inFormation) && Boolean(s.sessionId);
+    const isOpen = expandable && opened.has(s.key);
+    const openIt = () => (expandable ? toggleOpen(s.key) : openFull(s));
+    const node = el("article", {
+      class: `strip ${s.status}${finished(s.status) ? " finished" : ""}${wide ? " full" : ""}${isOpen ? " open" : ""}`,
       tabindex: "0",
       title: s.title,
       // A session with no id has nothing a formation could hold on to, so it stays put.
@@ -253,13 +257,16 @@ export const mountCommandCenter = (root, ctx) => {
       // Inside a formation the same moves the drags make are on the strip, for a pointer that
       // would rather click and for the keyboard's own menu key.
       oncontextmenu: inFormation && s.sessionId ? (e) => { e.preventDefault(); stripMenu(inFormation, s, e.clientX, e.clientY); } : null,
-      onclick: (e) => { if (!e.target.closest("button, input")) openFull(s); },
-      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFull(s); } },
+      onclick: (e) => { if (!e.target.closest("button, input, .cc-pane")) openIt(); },
+      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openIt(); } },
     },
     stripLine({
       status: s.status,
       band,
       name,
+      lead: expandable
+        ? el("button", { type: "button", class: "strip-turn", "aria-label": isOpen ? `collapse ${s.title}` : `open ${s.title} here`, "aria-expanded": String(isOpen), title: isOpen ? "collapse back to the strip" : "open this session here, beside the others", onclick: (e) => { e.stopPropagation(); openIt(); } }, icon("chevron"))
+        : null,
       chips: [roleChip(record), auditChip(record)],
       state: s.status,
       note: s.waitingFor,
@@ -268,7 +275,20 @@ export const mountCommandCenter = (root, ctx) => {
       where: whereText(s, true),
       acts: [s.sessionId ? renameButton(s, name) : disabledRename(), terminalButton(s), endButton(s, "ghost act end")],
     }),
-    full ? say(s) : null);
+    // An open strip shows the conversation itself; the one-line excerpt would only repeat it.
+    isOpen ? null : wide ? say(s) : null);
+    if (isOpen) node.append(paneFor(s).node);
+    return node;
+  };
+
+  /** The pane a strip holds open, made once and kept while the strip stays open. */
+  const paneFor = (session) => {
+    const open = panes.get(session.key);
+    if (open?.inline) {
+      open.session = session;
+      return open;
+    }
+    return makePane(session, { inline: true });
   };
 
   /** A record whose session is gone: the strip stays in the rack, greyed, carrying its handoff. */
@@ -557,7 +577,7 @@ export const mountCommandCenter = (root, ctx) => {
           el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { members: [...f.members, s.sessionId] }), "Add to the flight"); } }, "add a session"),
           newSessionButton(f, "member")),
         flight.length || starting("member").length
-          ? el("div", { class: "rack-strips" }, ...flight.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "working")), ...starting("member").map(startingSlot))
+          ? el("div", { class: `rack-strips${flight.filter((x) => opened.has(x.key)).length > 1 ? " grid" : ""}` }, ...flight.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "working")), ...starting("member").map(startingSlot))
           : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet. Drop a strip here, or start one.")),
         (d) => d.from === f.id && d.sessionId === f.lead, (d) => demote(f, d.sessionId)),
       gone ? el("p", { class: "muted small cc-empty" }, `${gone} session${gone === 1 ? " is" : "s are"} no longer running; the formation keeps the slot.`) : null,
@@ -631,10 +651,17 @@ export const mountCommandCenter = (root, ctx) => {
     const section = active ? formationView(active) : projectSection(proj, mine);
     const sections = section ? [section] : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
     root.replaceChildren(...sections);
-    if (full) paintFullHead();
+    // Every open pane's head carries live state (lamp, status, timing), so they follow the model.
+    for (const p of panes.values()) paintHead(p);
+    // A repaint rebuilds the racks, so a pane whose strip is no longer drawn has nothing to
+    // live in: the session keeps running, the pane does not. Its terminal is detached, not ended.
+    for (const p of [...panes.values()]) if (p.inline && !p.node.isConnected) destroyPane(p);
+    refitAll();
   };
-
-  /* ---------- full screen conversation ---------- */
+  /* ---------- the session pane: one conversation, in a strip or full screen ----------
+     One implementation, two hosts. A pane owns a session's transcript, its composer and, when
+     you take the stick, its terminal. Full screen is a pane in an overlay; a formation expands
+     a pane inside the strip it belongs to, which is how several run at once. */
 
   const chip = (t) => el("span", { class: "tool-chip", title: t.gloss }, el("b", {}, t.name), t.gloss ? text(` ${clip(t.gloss, 64)}`) : null);
 
@@ -677,60 +704,72 @@ export const mountCommandCenter = (root, ctx) => {
     return nodes;
   };
 
-  const paintFullHead = () => {
-    if (!full) return;
-    const live = model.sessions.find((s) => s.key === full.session.key) ?? full.session;
-    full.session = live;
-    full.head.replaceChildren(
-      el("button", { type: "button", class: "ghost back", onclick: closeFull }, "← all sessions"),
-      lamp(live.status),
-      el("h2", { title: live.title }, full.title ?? live.title),
-      el("span", { class: "meta" }, el("span", { class: "k" }, live.status), live.waitingFor ? el("span", {}, live.waitingFor) : null, el("span", {}, whereText(live)), el("span", { class: "mono" }, live.sessionId.slice(0, 8))),
-      el("span", { class: "spacer" }),
-      endButton(live, "ghost end-long", true),
-      full?.stickPane ? null : el("button", { type: "button", class: "primary", onclick: () => takeTheStick(live) }, "Take the stick"),
-      // Top right is where every interface puts dismiss, so that is all it may do here.
-      el("button", { type: "button", class: "ghost icon-btn dismiss", "aria-label": "close this view; the session keeps running", title: "close this view; the session keeps running", onclick: closeFull }, icon("close")),
-    );
+  /** Every pane alive on the page, by session key. A strip's pane and the overlay's are the same thing. */
+  const panes = new Map();
+  let full = null; // the pane that is full screen, if one is
+
+  const liveSession = (p) => model?.sessions.find((s) => s.key === p.key) ?? p.session;
+
+  const paintHead = (p) => {
+    const s = (p.session = liveSession(p));
+    const stick = p.stickPane
+      ? el("button", { type: "button", class: "ghost", title: "put the terminal away and read the conversation", onclick: () => dropTheStick(p) }, "back to the conversation")
+      : el("button", { type: "button", class: p.inline ? "ghost" : "primary", title: "type into this session's own terminal", onclick: () => takeTheStick(p) }, "Take the stick");
+    // Top right is where every interface puts dismiss, so that is all it may do here.
+    const dismiss = el("button", { type: "button", class: "ghost icon-btn dismiss", "aria-label": p.inline ? "collapse this session back to its strip" : "close this view; the session keeps running", title: p.inline ? "collapse back to the strip; the session keeps running" : "close this view; the session keeps running", onclick: () => (p.inline ? collapse(p.key) : closeFull()) }, icon("close"));
+    // Inline, the strip line directly above already names the session, its state, its timing,
+    // where it lives and the three verbs. Repeating all of that would be a second header saying
+    // what the first one said, so the pane keeps only what the strip has no column for.
+    const parts = p.inline
+      ? [el("span", { class: "spacer" }), stick, dismiss]
+      : [
+          el("button", { type: "button", class: "ghost back", onclick: () => closeFull() }, "← all sessions"),
+          lamp(s.status),
+          el("h2", { title: s.title }, p.title ?? s.title),
+          el("span", { class: "meta" }, el("span", { class: "k" }, s.status), s.waitingFor ? el("span", {}, s.waitingFor) : null, el("span", {}, whereText(s)), el("span", { class: "mono" }, s.sessionId.slice(0, 8))),
+          el("span", { class: "spacer" }),
+          endButton(s, "ghost end-long", true),
+          stick,
+          dismiss,
+        ];
+    // replaceChildren does not drop nulls the way el() does: one would be painted as "null".
+    p.head.replaceChildren(...parts.filter(Boolean));
   };
 
-  const pullTranscript = async () => {
-    if (!full || full.busy) return; // one read in flight at a time, or the first (widening) read is appended twice
-    const f = full;
-    f.busy = true;
+  const pullTranscript = async (p) => {
+    if (p.busy || p.dead) return; // one read in flight at a time, or the first (widening) read is appended twice
+    p.busy = true;
     let page;
     try {
-      page = await api(`/api/transcript?cwd=${encodeURIComponent(f.session.cwd)}&session=${encodeURIComponent(f.session.sessionId)}&from=${f.offset}`);
+      page = await api(`/api/transcript?cwd=${encodeURIComponent(p.session.cwd)}&session=${encodeURIComponent(p.session.sessionId)}&from=${p.offset}`);
     } finally {
-      f.busy = false;
+      p.busy = false;
     }
-    if (full !== f) return;
-    if (page.title && !f.title) {
-      f.title = page.title;
-      paintFullHead();
+    if (p.dead) return;
+    if (page.title && !p.title) {
+      p.title = page.title;
+      paintHead(p);
     }
     if (!page.events.length) {
-      f.offset = page.offset;
+      p.offset = page.offset;
       return;
     }
-    const nearBottom = f.scroller.scrollHeight - f.scroller.scrollTop - f.scroller.clientHeight < NEAR_BOTTOM;
+    const nearBottom = p.scroller.scrollHeight - p.scroller.scrollTop - p.scroller.clientHeight < NEAR_BOTTOM;
     // Re-render from the last unfinished fold so consecutive tool turns keep merging.
-    f.events.push(...page.events);
-    f.offset = page.offset;
-    f.list.replaceChildren(...turnNodes(f.events));
-    if (f.list.childElementCount === 0) f.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
-    if (nearBottom || f.first) f.scroller.scrollTop = f.scroller.scrollHeight;
-    f.first = false;
+    p.events.push(...page.events);
+    p.offset = page.offset;
+    p.list.replaceChildren(...turnNodes(p.events));
+    if (p.list.childElementCount === 0) p.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
+    if (nearBottom || p.first) p.scroller.scrollTop = p.scroller.scrollHeight;
+    p.first = false;
   };
 
-  /** Typing into the session. A background session gets a real composer over a headless attach; a terminal's session cannot be reached. */
-  const paintComposer = () => {
-    const f = full;
-    if (!f) return;
-    const s = f.session;
-    const peer = s.kind !== "background" && !s.terminalId; // lives in another terminal: reached over its messaging socket
+  /** Typing into the session. A background session gets a real composer over a headless attach; a terminal's session is reached over its messaging socket. */
+  const paintComposer = (p) => {
+    const s = p.session;
+    const peer = s.kind !== "background" && !s.terminalId; // lives in another terminal
     if (finished(s.status)) {
-      f.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
+      p.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
       return;
     }
     const area = el("textarea", { rows: "2", placeholder: peer ? `Message this session in ${s.app ?? "its terminal"}. It arrives as a peer message; Enter sends.` : "Message this session. Enter sends, Shift+Enter for a new line, drop files to attach." });
@@ -743,8 +782,8 @@ export const mountCommandCenter = (root, ctx) => {
           // Another terminal's session: Claude Code's messaging socket, the channel sessions use for each other.
           await post(`/api/sessions/${s.pid}/message`, { text: body });
         } else {
-          // A session living in Maverick's dock is typed into through its own pty; a background one through a headless attach.
-          const target = s.terminalId ?? (f.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title })).id;
+          // A session living in one of Maverick's ptys is typed into through it; a background one through a headless attach.
+          const target = s.terminalId ?? (p.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title })).id;
           await sendInput(target, body);
           await new Promise((r) => window.setTimeout(r, 180)); // a burst ending in Enter reads as a paste; a beat later it submits
           await sendInput(target, "\r");
@@ -759,96 +798,229 @@ export const mountCommandCenter = (root, ctx) => {
       }
     };
     area.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
-    acceptDrops(f.composer, (paths) => {
+    acceptDrops(p.composer, (paths) => {
       area.value = `${area.value}${area.value && !area.value.endsWith(" ") ? " " : ""}${paths.join(" ")} `;
       area.focus();
     });
-    f.composer.replaceChildren(
+    p.composer.replaceChildren(
       el("div", { class: "row" }, area, el("button", { type: "button", class: "primary", onclick: send }, "Send")),
       el("div", { class: "hint" },
         el("span", {}, peer
           ? `Lives in ${s.app ?? "a terminal"}${s.tty ? ` on ${s.tty}` : ""} · sent over its session socket, so Claude reads it as a peer's request under that session's permissions`
-          : `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in Maverick's dock" : ""}`),
+          : `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in one of Maverick's terminals" : ""}`),
         peer && s.app && s.pid ? el("button", { type: "button", class: "ghost", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
         null),
     );
   };
 
+  /* ---------- the terminal, wearing the interface ----------
+     A real emulator is not negotiable: Claude Code drives the alternate screen, addresses the
+     cursor and wants raw keys, so the arrows, Ctrl+C and its own permission menus only work if
+     something speaks the protocol. What is negotiable is that it look like a terminal. */
+
+  /** Resolve a token to a real colour. Tokens are `color-mix()` as often as hex, so ask the browser. */
+  const cssColor = (token, probe = el("span")) => {
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const value = getComputedStyle(probe).color;
+    probe.remove();
+    return value;
+  };
+
   /**
-   * The terminal, inside the session's own view. This is what the dock used to be: a pane over
-   * live content was the confusing part, so it lives where the session already is.
+   * The 16 ANSI slots, repainted in the instrument palette. Anything the session colours through
+   * them adopts the project's accent rather than a stock red or green.
    */
-  const takeTheStick = async (session) => {
-    if (!full || full.stickPane) return;
-    const pane = el("div", { class: "cc-stick" }, el("div", { class: "cc-stick-head" },
-      el("span", { class: "k" }, "terminal"),
-      el("span", { class: "t" }, session.title),
-      el("span", { class: "spacer" }),
-      el("button", { type: "button", class: "ghost icon-btn", "aria-label": "detach the terminal; the session keeps running", title: "detach; the session keeps running", onclick: dropTheStick }, icon("close"))));
+  const termLook = () => ({
+    fontFamily: "JetBrains Mono, Menlo, monospace",
+    fontSize: 12.5,
+    lineHeight: 1.55,
+    letterSpacing: 0.2,
+    cursorBlink: true,
+    cursorStyle: "bar",
+    cursorWidth: 2,
+    scrollback: 5000,
+    allowTransparency: true,
+    theme: {
+      background: "rgba(0,0,0,0)", // the pane's own surface shows through; no black gutter
+      foreground: cssColor("--ink"),
+      cursor: cssColor("--accent"),
+      cursorAccent: cssColor("--panel"),
+      selectionBackground: cssColor("--accent-dim"),
+      black: cssColor("--carbon"),
+      red: cssColor("--threat"),
+      green: cssColor("--hud"),
+      yellow: cssColor("--caution"),
+      blue: cssColor("--accent"),
+      magenta: cssColor("--accent-hot"),
+      cyan: cssColor("--accent-hot"),
+      white: cssColor("--ink-soft"),
+      brightBlack: cssColor("--ink-ghost"),
+      brightRed: cssColor("--threat"),
+      brightGreen: cssColor("--hud"),
+      brightYellow: cssColor("--caution"),
+      brightBlue: cssColor("--accent-hot"),
+      brightMagenta: cssColor("--accent-hot"),
+      brightCyan: cssColor("--accent-hot"),
+      brightWhite: cssColor("--ink"),
+    },
+  });
+
+  const rgbTriplet = (css) => (css.match(/\d+/g) ?? ["0", "0", "0"]).slice(0, 3).join(";");
+
+  /**
+   * Claude Code writes its own colours as truecolor (`38;2;r;g;b`), which walks straight past the
+   * palette above: measured against a live pty, its orange arrives as a hardcoded #d77757 no
+   * theme can reach. So the handful it hardcodes are substituted in the stream on the way to the
+   * renderer. Anything not in the table passes through untouched, which is the safe direction: a
+   * colour we have not seen keeps its own value rather than turning into the wrong one.
+   */
+  const CLAUDE_INK = {
+    "215;119;87": "--accent",    // #d77757, the one it signs everything with
+    "255;193;7": "--caution",    // #ffc107
+    "136;136;136": "--ink-faint", // #888888
+    "153;153;153": "--ink-faint", // #999999
+  };
+
+  const skinTable = () => new Map(Object.entries(CLAUDE_INK).map(([from, token]) => [from, rgbTriplet(cssColor(token))]));
+
+  const reskin = (chunk, table) =>
+    chunk.replace(/([34]8;2;)(\d+;\d+;\d+)/g, (whole, lead, rgb) => (table.has(rgb) ? lead + table.get(rgb) : whole));
+
+  /**
+   * The terminal, inside the pane the session already occupies. This is what the dock used to
+   * be: a pane over live content was the confusing part, so it lives where the session is.
+   */
+  const takeTheStick = async (p) => {
+    if (p.stickPane) return;
+    const session = p.session;
+    const pane = el("div", { class: "cc-stick" });
     const host = el("div", { class: "term" });
     pane.append(host);
-    full.overlay.insertBefore(pane, full.composer);
-    full.stickPane = pane;
+    p.body.replaceChildren(pane);
+    p.stickPane = pane;
+    paintHead(p);
     try {
       const info = session.terminalId
         ? (await api("/api/terminals")).find((t) => t.id === session.terminalId)
-        : (full.stick ??= await createTerminal(dockFor(session)));
+        : (p.stick ??= await createTerminal(dockFor(session)));
       if (!info) throw new Error("that terminal is gone");
-      const term = new window.Terminal({ fontFamily: "JetBrains Mono, Menlo, monospace", fontSize: 12.5, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: { background: "#0a0c0f", foreground: "#e8ecf1" } });
+      const term = new window.Terminal(termLook());
       const fit = new window.FitAddon.FitAddon();
       term.loadAddon(fit);
       term.open(host);
       fit.fit();
       const src = new EventSource(`/api/terminals/${info.id}/stream`);
-      src.onmessage = (e) => term.write(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)));
+      // Decoded as a stream, because a multi-byte character can land across two chunks.
+      const decoder = new TextDecoder();
+      const table = skinTable();
+      src.onmessage = (e) => term.write(reskin(decoder.decode(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)), { stream: true }), table));
       src.addEventListener("exit", () => { term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n"); src.close(); });
       term.onData((d) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: d, keepalive: true }).catch(() => {}));
       term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
       acceptDrops(host, (paths) => sendInput(info.id, `${paths.join(" ")} `));
-      full.stickTerm = { term, fit, src, id: info.id };
+      p.stickTerm = { term, fit, src, id: info.id };
       term.focus();
-      paintFullHead();
     } catch (err) {
       pane.append(el("p", { class: "muted small" }, err.message));
     }
   };
 
-  const dropTheStick = () => {
-    if (!full?.stickPane) return;
-    full.stickTerm?.src.close();
-    full.stickTerm?.term.dispose();
-    full.stickPane.remove();
-    full.stickPane = null;
-    full.stickTerm = null;
-    paintFullHead();
+  const dropTheStick = (p) => {
+    if (!p.stickPane) return;
+    p.stickTerm?.src.close();
+    p.stickTerm?.term.dispose();
+    p.stickPane.remove();
+    p.stickPane = null;
+    p.stickTerm = null;
+    p.body.replaceChildren(p.scroller, p.composer);
+    paintHead(p);
   };
 
-  const openFull = (session, opts = {}) => {
-    closeFull();
+  /**
+   * xterm measures its own box, so every visible terminal is refit and its pty resized whenever
+   * the layout moves: a pane opening beside it, one closing, the columns changing. Inside a
+   * requestAnimationFrame, or the new geometry has not landed yet and it fits to the old one.
+   */
+  const refitAll = () => {
+    window.requestAnimationFrame(() => {
+      for (const p of panes.values()) {
+        if (!p.stickTerm || !p.node.isConnected) continue;
+        try {
+          p.stickTerm.fit.fit();
+        } catch {
+          /* a pane mid-teardown has no box to measure */
+        }
+      }
+    });
+  };
+
+  /** Build a pane for a session. `inline` panes live in a strip; the other kind is full screen. */
+  const makePane = (session, { inline }) => {
     const head = el("header", { class: "cc-full-head" });
     const list = el("div", { class: "cc-conv" });
     const scroller = el("div", { class: "cc-full-body" }, list);
     const composer = el("div", { class: "cc-composer" });
-    const overlay = el("section", { class: "cc-full", role: "dialog", "aria-label": session.title }, head, scroller, composer);
-    full = { session, offset: 0, events: [], head, list, scroller, composer, overlay, first: true };
-    document.body.append(overlay);
-    document.body.classList.add("cc-full-open");
-    paintFullHead();
-    paintComposer();
+    const body = el("div", { class: "cc-pane-body" }, scroller, composer);
+    const node = el("section", { class: `cc-pane${inline ? " inline" : " cc-full"}`, role: inline ? "group" : "dialog", "aria-label": session.title }, head, body);
+    const p = { key: session.key, session, inline, head, list, scroller, composer, body, node, offset: 0, events: [], first: true };
+    panes.set(p.key, p);
+    paintHead(p);
+    paintComposer(p);
     list.append(el("p", { class: "muted cc-empty" }, "reading the transcript…"));
-    pullTranscript().catch((err) => list.replaceChildren(el("p", { class: "muted cc-empty" }, err.message)));
-    full.timer = window.setInterval(() => pullTranscript().catch(() => {}), 2500);
+    pullTranscript(p).catch((err) => list.replaceChildren(el("p", { class: "muted cc-empty" }, err.message)));
+    p.timer = window.setInterval(() => pullTranscript(p).catch(() => {}), 2500);
+    return p;
+  };
+
+  const destroyPane = (p) => {
+    p.dead = true;
+    window.clearInterval(p.timer);
+    p.stickTerm?.src.close();
+    p.stickTerm?.term.dispose();
+    // A terminal this pane opened for itself is detached, never ended: the session runs on.
+    if (p.stick) fetch(`/api/terminals/${p.stick.id}`, { method: "DELETE" }).catch(() => {});
+    p.node.remove();
+    panes.delete(p.key);
+  };
+
+  /* ---------- expanded strips: several sessions at once, in their own rack ---------- */
+
+  /** Which strips are expanded, in the URL beside `formation`, so a layout survives a reload. */
+  const readOpen = () => new Set((new URLSearchParams(location.search).get("open") ?? "").split(",").filter(Boolean));
+  let opened = readOpen();
+
+  const writeOpen = () => {
+    const u = new URL(location.href);
+    if (opened.size) u.searchParams.set("open", [...opened].join(","));
+    else u.searchParams.delete("open");
+    history.replaceState({}, "", u);
+  };
+
+  const expand = (key) => { opened.add(key); writeOpen(); paint(); };
+  const collapse = (key) => {
+    opened.delete(key);
+    writeOpen();
+    const p = panes.get(key);
+    if (p?.inline) destroyPane(p);
+    paint();
+  };
+  const toggleOpen = (key) => (opened.has(key) ? collapse(key) : expand(key));
+
+  /* ---------- full screen ---------- */
+
+  const openFull = (session, opts = {}) => {
+    closeFull();
+    full = makePane(session, { inline: false });
+    document.body.append(full.node);
+    document.body.classList.add("cc-full-open");
     history.pushState({ ccFull: session.key }, "", location.href);
-    if (opts.stick) takeTheStick(session);
+    if (opts.stick) takeTheStick(full);
   };
 
   const closeFull = () => {
     if (!full) return;
-    window.clearInterval(full.timer);
-    full.stickTerm?.src.close();
-    full.stickTerm?.term.dispose();
-    if (full.stick) fetch(`/api/terminals/${full.stick.id}`, { method: "DELETE" }).catch(() => {}); // detach; the session keeps running
-    full.overlay.remove();
+    destroyPane(full);
     document.body.classList.remove("cc-full-open");
     full = null;
   };

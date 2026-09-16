@@ -540,13 +540,18 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 /* ---------- the terminal, inside the session it belongs to ---------- */
 /* There is no dock. A panel covering half the page over live content was the confusing part,
    so the terminal opens where the session already is. */
-.cc-stick { display: flex; flex-direction: column; min-height: 0; height: 38vh; border-top: 1px solid var(--seam); background: var(--carbon); }
+.cc-stick { display: flex; flex-direction: column; min-height: 0; flex: 1; background: transparent; }
 .cc-stick-head { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 6px 0 14px; background: var(--gunmetal); border-bottom: 1px solid var(--seam-soft); flex: 0 0 auto; }
 .cc-stick-head .k { font: 600 10.5px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
 .cc-stick-head .t { font: 11.5px var(--mono); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-stick-head .spacer { flex: 1; }
-.cc-stick .term { flex: 1; min-height: 0; padding: 6px 10px 8px; }
+/* The terminal is a panel in this interface, not a console pasted into it: the session's own
+   surface shows through (xterm paints transparent), the type is the interface's mono at a line
+   height you can read, and the scrollbar is the thin cold one every scroller here uses. */
+.cc-stick .term { flex: 1; min-height: 0; padding: 12px 14px 14px; background: var(--panel); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--seam-soft); }
 .cc-stick .term .xterm { height: 100%; }
+.cc-stick .term .xterm-viewport { background: transparent !important; scrollbar-width: thin; scrollbar-color: var(--cold) transparent; }
+.cc-stick .term .xterm-screen { padding: 2px 0; }
 
 /* ---------- formations: a lead and its flight, as tabs ---------- */
 .forms { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; background: var(--inset); }
@@ -1434,3 +1439,41 @@ body.cc-full-open { overflow: hidden; }
 .cu-meter.unset { background: repeating-linear-gradient(90deg, rgba(170, 190, 215, 0.1) 0 4px, transparent 4px 8px); }
 .releases-fold { display: flex; align-items: center; gap: 8px; }
 .board-releases.collapsed .releases { display: none; }
+
+
+/* ---------- a session opened inside its strip ----------
+   The strip stays in the rack and gets taller: its line becomes the pane's header, the body
+   below carries the conversation and the composer, or the terminal once you take the stick.
+   Several can be open at once, which is the whole point, so none of this is `position: fixed`. */
+.strip.open { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong), 0 8px 30px var(--shade-soft); }
+.strip.open > .strip-line { border-bottom: 1px solid var(--seam-soft); }
+.cc-pane { display: flex; flex-direction: column; min-height: 0; }
+.cc-pane.inline { height: min(52vh, 560px); }
+.cc-pane-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* Inline, the head is a quiet second line under the strip, not a second title bar. */
+/* One row of verbs, right-aligned, never wrapping: the strip line above is the header. */
+.cc-pane.inline .cc-full-head { padding: 6px 10px 6px 14px; background: transparent; border-bottom: 1px solid var(--seam-soft); gap: 8px; flex-wrap: nowrap; min-height: 34px; }
+.cc-pane.inline .cc-full-head .spacer { flex: 1; }
+.cc-pane.inline .cc-full-body { padding: 12px 14px 18px; }
+.cc-pane.inline .cc-conv { max-width: none; }
+.cc-pane.inline .cc-full-head .primary, .cc-pane.inline .cc-full-head .end-long { height: 26px; font-size: 11.5px; }
+
+/* The disclosure sits in the name cell, so the six columns the rack lines up on are untouched. */
+/* The drawn chevron points down, so collapsed turns it a quarter to the right and open is home. */
+.strip-turn { width: 18px; height: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; box-shadow: none; color: var(--ink-ghost); align-self: center; flex: 0 0 auto; transform: rotate(-90deg); transition: transform 140ms var(--ease-out), color 140ms var(--ease-out); }
+.strip-turn .icon { width: 13px; height: 13px; }
+.strip:hover .strip-turn { color: var(--ink-faint); }
+.strip.open .strip-turn { color: var(--accent); transform: rotate(0deg); }
+
+/* More than one open and the rack goes to columns. A collapsed strip is still a full-width
+   line, because it is still a line: only the open ones share the row. */
+.rack-strips.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.rack-strips.grid > .strip:not(.open) { grid-column: 1 / -1; }
+/* A column is ~780px and the six-column line wants 881, so the verbs spilled off the page.
+   An open strip drops `where`: its own pane header says where the session lives, and repeating
+   it in the line above is what was costing the room. Collapsed strips span the row and keep it. */
+.rack-strips.grid > .strip.open .strip-line { grid-template-columns: 14px minmax(0, 1fr) 180px 175px 198px; }
+.rack-strips.grid > .strip.open .strip-where { display: none; }
+@media (max-width: 1100px) {
+  .rack-strips.grid { grid-template-columns: minmax(0, 1fr); }
+}
