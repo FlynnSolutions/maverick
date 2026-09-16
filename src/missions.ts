@@ -706,11 +706,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
         // A repo with nothing left to do gets its pull request now rather than at the close, so
         // an earlier repo can be reviewed and merged while the later ones are still flying.
         if (mission.repos.some((r) => r.land !== "merge")) {
-          try {
-            await landTheWork(mission, true);
-          } catch (err) {
-            mission.trouble = `could not open a pull request: ${(err as Error).message}`;
-          }
+          const { failed } = await landTheWork(mission, true);
+          if (failed.length) mission.trouble = `could not land: ${failed.join(" · ")}`;
         }
         const next = mission.milestones.find((x) => x.n > m.n && !x.dispatched);
         if (next) await dispatch(project, mission, next);
@@ -798,10 +795,12 @@ export const acceptTask = async (project: Project, id: string, taskId: string, n
  * that repo's base, and that is as far as Maverick goes: a project whose own rules say never
  * self-merge (Realtime's `CLAUDE.md` says exactly that) must not have a tool merge for it.
  */
-const landTheWork = async (mission: Mission, onlyFinished = false): Promise<string[]> => {
+const landTheWork = async (mission: Mission, onlyFinished = false): Promise<{ landed: string[]; failed: string[] }> => {
   const opened: string[] = [];
+  const failed: string[] = [];
   const all = mission.milestones.flatMap((m) => m.tasks);
   for (const repo of mission.repos) {
+   try {
     if (repo.land === "merge") continue;
     if (repo.landed) {
       opened.push(repo.landed);
@@ -830,15 +829,20 @@ const landTheWork = async (mission: Mission, onlyFinished = false): Promise<stri
     ].join("\n");
     repo.landed = await openPullRequest(repo.path, repo.branch, repo.base, `${mission.name} (${repo.label})`, body);
     opened.push(repo.landed);
+   } catch (err) {
+     // One repo's remote is not the others' problem: land what can land and name what could not.
+     failed.push(`${repo.label}: ${(err as Error).message.split("\n")[0]}`);
+   }
   }
-  return opened;
+  return { landed: opened, failed };
 };
 
 export const closeMission = async (project: Project, id: string): Promise<{ mission: Mission; commit: string; ticked: string[]; pullRequests: string[] }> => {
   const mission = await missionOr404(project.id, id);
   // Opened before the tracker is touched: a failure to push or open must not leave the board
   // saying done while nothing is up for review.
-  const pullRequests = await landTheWork(mission);
+  const { landed: pullRequests, failed } = await landTheWork(mission);
+  if (failed.length) throw new Error(`the work is built and merged onto the mission branches, but landing it failed and nothing has been ticked: ${failed.join(" · ")}`);
   const tracker = project.trackers[mission.trackerIndex];
   if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${mission.trackerIndex}`);
   const tasks = mission.milestones.flatMap((m) => m.tasks.map((t) => ({ milestone: m.n, task: t })));
