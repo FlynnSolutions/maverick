@@ -471,7 +471,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     await sweepShips(project);
     return sendJson(res, 200, await readShip(project.id, decodeURIComponent(path.slice("/api/ships/".length))));
   }
-  // Missions: a bounded effort run by a RIO. Nothing here spawns a Wingman before /approve.
+  // Missions: a bounded effort run by a Strike Lead. Nothing here spawns a Wingman before /approve.
   if (path === "/api/missions") {
     const project = await requireProject(url);
     if (method === "GET") {

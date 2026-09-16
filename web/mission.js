@@ -75,7 +75,7 @@ const mountTerminal = (host, terminalId) => {
   term.open(host);
   const source = new EventSource(`/api/terminals/${terminalId}/stream`);
   source.onmessage = (e) => term.write(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)));
-  source.addEventListener("exit", () => { term.write("\r\n\x1b[2m[the RIO's session ended]\x1b[0m\r\n"); source.close(); });
+  source.addEventListener("exit", () => { term.write("\r\n\x1b[2m[the Strike Lead's session ended]\x1b[0m\r\n"); source.close(); });
   term.onData((data) => fetch(`/api/terminals/${terminalId}/input`, { method: "POST", body: data, keepalive: true }).catch(() => {}));
   term.onResize(({ cols, rows }) => post(`/api/terminals/${terminalId}/resize`, { cols, rows }).catch(() => {}));
   // xterm measures its own box, so fit after the new geometry has actually landed.
@@ -173,9 +173,9 @@ const renderPlan = () => {
   if (!mission.approved) {
     const gate = [];
     if (!doc.found) {
-      gate.push(el("p", { class: "why" }, `The RIO has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the session below; it will not plan off your first line.`));
+      gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the session below; it will not plan off your first line.`));
     } else if (parsed?.problems?.length) {
-      gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. Tell the RIO in the session below; these are the reasons a Wingman would be sent out under-briefed:"),
+      gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. Tell the Strike Lead in the session below; these are the reasons a Wingman would be sent out under-briefed:"),
         el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
     } else {
       gate.push(el("p", { class: "why" }, "This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts the mission's branch, and sends the first milestone out."),
@@ -208,9 +208,9 @@ const renderPlan = () => {
   if (!mission.approved) {
     const host = el("div", { class: "term" });
     blocks.push(el("section", { class: "panel mv-interview" },
-      el("h2", {}, "The RIO", el("span", { class: "spacer" }), btn("start a new interview session", () => act("interview", {}, "a new RIO session is open"), "ghost")),
+      el("h2", {}, "The Strike Lead", el("span", { class: "spacer" }), btn("start a new interview session", () => act("interview", {}, "a new Strike Lead session is open"), "ghost")),
       el("div", { class: "mv-term-well" }, host)));
-    const gone = () => host.replaceChildren(el("p", { class: "mv-empty" }, "The RIO's session is not running any more: terminals do not survive a restart of the server. Start a new interview above; it opens with the same brief."));
+    const gone = () => host.replaceChildren(el("p", { class: "mv-empty" }, "The Strike Lead's session is not running any more: terminals do not survive a restart of the server. Start a new interview above; it opens with the same brief."));
     if (mission.interview?.terminalId) {
       api("/api/terminals").then((open) => {
         const live = open.find((x) => x.id === mission.interview.terminalId && x.exitCode === null);
@@ -218,7 +218,7 @@ const renderPlan = () => {
         else gone();
       }).catch(gone);
     } else {
-      host.replaceChildren(el("p", { class: "mv-empty" }, "No RIO session is attached. Start one above."));
+      host.replaceChildren(el("p", { class: "mv-empty" }, "No Strike Lead session is attached. Start one above."));
     }
   }
   show(...blocks);
@@ -235,8 +235,8 @@ const taskRow = (task) => {
     el("span", { class: `verdict ${task.status}` }, task.status === "reviewing" ? "in review" : task.status),
     el("span", { class: "mv-acts" },
       task.status === "handed-back" ? btn("send it back out", () => act(`tasks/${task.id}/retry`, {}, `${task.title} is flying again`), "primary") : null,
-      task.status === "handed-back" ? btn("accept it anyway", async () => {
-        const note = window.prompt(`Accept "${task.title}" over the reviewer?\n\nSay why; it is kept on the task.`, "");
+      task.status === "handed-back" ? btn("accept it over the RIO", async () => {
+        const note = window.prompt(`Accept "${task.title}" over its RIO?\n\nSay why; it is kept on the task.`, "");
         if (note === null) return;
         await act(`tasks/${task.id}/accept`, { note }, `${task.title} accepted`);
       }, "ghost") : null),
@@ -244,12 +244,12 @@ const taskRow = (task) => {
       `attempt ${task.attempts}`,
       task.branch,
       task.claudeId ? `session ${task.claudeId}` : null,
-      task.verdict ? `reviewer: ${task.verdict}` : null,
+      task.verdict ? `RIO: ${task.verdict}` : null,
       task.commits ? `${task.commits.length} commit${task.commits.length === 1 ? "" : "s"}` : null,
     ].filter(Boolean).join(" · ")),
     task.note ? el("div", { class: "note" }, task.note) : null,
     diff ? el("pre", { class: "diffstat" }, diff) : null,
-    findings ? el("details", {}, el("summary", { class: "muted small" }, "the reviewer's findings"), renderMarkdown(findings.replace(/^verdict:.*\n?/i, ""), { project: projectId })) : null);
+    findings ? el("details", {}, el("summary", { class: "muted small" }, "what its RIO found"), renderMarkdown(findings.replace(/^verdict:.*\n?/i, ""), { project: projectId })) : null);
 };
 
 const renderMilestone = (m) => {
@@ -265,7 +265,7 @@ const renderMilestone = (m) => {
     mission.trouble ? el("section", { class: "panel" }, el("h2", {}, "Needs you"), el("p", { class: "mv-plan" }, mission.trouble)) : null,
     m.conflicts?.length ? el("section", { class: "panel" }, el("h2", {}, "It will not merge"), el("p", { class: "mv-plan" }, `These paths collided merging into ${mission.branch}: ${m.conflicts.join(", ")}. The merge was aborted, so nothing is half-applied.`)) : null,
     el("section", { class: "panel" },
-      el("h2", {}, "Tasks", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "one Wingman each, in its own worktree, reviewed by a session that did not write it")),
+      el("h2", {}, "Tasks", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "one Wingman each in its own worktree, with a RIO in the back seat that did not write the code")),
       tasks.length ? el("div", {}, ...tasks.map(taskRow)) : el("p", { class: "mv-empty" }, "No tasks in this milestone.")));
 };
 

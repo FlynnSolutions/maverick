@@ -38,20 +38,20 @@ format: checklist
 
 ### The level model
 
-- [ ] `[ENG]` `[L]` **Air Boss, RIO, Wingman: three levels of agent per project**
+- [ ] `[ENG]` `[L]` **CAG, Strike Lead, Wingman: three levels of agent per project**
   - created: 2026-09-16
   - source: Cory, 2026-09-16
   - kind: feature
-  The reframe, named 2026-09-16. **Air Boss (L1)**: one long-lived agent per project that holds
+  The reframe, named 2026-09-16; the names settled the same day (decisions M9). **CAG (L1)**: one long-lived agent per project that holds
   the whole landscape, answers questions about it, and writes plan documents. Never builds a
   feature, never edits product code. It is the project's chat box. **Mission (L2), run by a
-  RIO**: a bounded multi-feature effort planned into milestones, dispatching and validating
+  Strike Lead**: a bounded multi-feature effort planned into milestones, dispatching and validating
   workers. **Wingman (L3)**: one item off the board, fresh context, a worktree, a diff, which is
   what Maverick spawns today. The levels are blast radius, not seniority.
-  Open: where the Air Boss's tool boundary is enforced (allowed-tools list, not prompt) and where
+  Open: where the CAG's tool boundary is enforced (allowed-tools list, not prompt) and where
   its plan documents are written.
 
-- [~] `[ENG]` `[L]` **The RIO: grow the audit from a validator into an orchestrator**
+- [~] `[ENG]` `[L]` **The Strike Lead: grow the audit from a validator into an orchestrator**
   - created: 2026-09-16
   - source: Cory, 2026-09-16, after reading Factory's Missions docs
   - kind: feature
@@ -66,12 +66,12 @@ format: checklist
   audit-parent records are the seam this grows out of. Their published cost, median 12x the tokens
   of a normal session, is the reason the blessing gate is not optional.
   **The gap, named 2026-09-16:** what `audits.ts` does today is the *validator half only*, a verdict
-  and findings on a session that already finished. The RIO is the missing half in front of it: the
+  and findings on a session that already finished. The Strike Lead is the missing half in front of it: the
   interview, the milestone plan, the dispatch. Build that, then rename. Renaming first would be
   exactly the drift the positioning note warns about.
   **Built 2026-09-16 on `feat/rio`,** verified end to end against a fixture project with real
   agents: interview, gate, tracker write, dispatch into worktrees, a separate reviewer's verdict,
-  the merge into `mission/<id>`, and the close that ticks the items. Left open: the Air Boss, a
+  the merge into `mission/<id>`, and the close that ticks the items. Left open: the CAG, a
   mission across more than one repo, and human-style QA driving the real UI (Playwright is a
   dependency, so it is a decision rather than a step).
 

@@ -55,35 +55,43 @@ they come in three levels that differ in what they are allowed to touch.
 
 | Level | Name | Holds | May write |
 |---|---|---|---|
-| 1 | **Air Boss** | the whole project | plan documents |
-| 2 | **Mission**, run by a **RIO** | one bounded effort | the plan, and the workers |
+| 1 | **CAG** | the whole project | plan documents |
+| 2 | **Mission**, run by a **Strike Lead** | one bounded effort | the plan, and the workers |
 | 3 | **Wingman** | one item | code, in a worktree |
 
-**Air Boss** runs the flight deck and does not fly. One long-lived agent per project that has
+**CAG** commands the wing and does not fly. One long-lived agent per project that has
 read everything: ask it where things stand, what a decision was, what is blocked. It writes plan
 documents. It does **not** build features and does not edit product code, and that boundary is
 enforced by its tool list, not by its prompt. An agent asked politely not to fix something will
 fix it the first time the fix looks small.
 
-**Mission** is a bounded multi-feature effort, and the **RIO** is the agent that runs it. In a
-two-seat fighter the RIO works the radar and calls the intercept while the pilot flies: it holds
-the tactical picture and directs, which is exactly the orchestrator role. A RIO opens with a
+**Mission** is a bounded multi-feature effort, and the **Strike Lead** is the agent that runs it.
+A strike lead is the aviator designated to plan one package, brief it, send it and debrief it:
+a role for that mission rather than a rank, which is exactly the orchestrator. A Strike Lead
+opens with a
 clarifying interview, builds features grouped into milestones, gets blessed once, then dispatches
 Wingmen and validates at every milestone gate.
 
 **Wingman** is one item off the board: fresh context, a worktree, a diff. This is what Maverick
 spawns today.
 
-The levels are not seniority. They are **blast radius**: Air Boss writes documents, the RIO writes
+The levels are not seniority. They are **blast radius**: the CAG writes documents, the Strike Lead writes
 plans and spawns, Wingmen write code.
 
 ### Where the current audit fits
 
-`src/audits.ts` and the audit-parent records implement the **validator half only**: a verdict and
-findings on a task session that has already finished. That is one output of a RIO, not a RIO. The
-work is to grow the missing half in front of it, the interview and the milestone plan and the
-dispatch, rather than to rename what is there. Naming it RIO before it orchestrates anything would
-be the kind of drift this document exists to prevent.
+`src/audits.ts` and the audit-parent records give a verdict and findings on a task session that
+has already finished, and never fix what they find.
+
+This section used to argue that calling that a RIO would be drift, because a RIO was then the
+name for the orchestrator. **Re-argued 2026-09-16, and the reversal went the other way:** a RIO
+flies in one back seat, behind one pilot, watching one aircraft. A verdict on one Wingman is not
+a diminished orchestrator, it *is* a RIO, and `src/audits.ts` has been one since it was written.
+The name was in the wrong seat, not the code. The orchestrator is the **Strike Lead**
+([`03-decisions.md`](./03-decisions.md) M9).
+
+What was genuinely missing was the half in front: the interview, the milestone plan, the
+dispatch. That is built (M7, M8).
 
 ## What we take from Factory, and what we leave
 
@@ -95,8 +103,8 @@ Factory's Missions is documented behaviour, not a file format, and the behaviour
 - **Fresh context per unit of work.** The orchestrator holds the plan; no worker holds the
   project. This is the actual answer to context exhaustion, and it is cheap to adopt.
 - **Validation is a milestone gate, not a step inside the worker.** An agent checking its own
-  work is the failure mode the audit already exists to catch. The RIO validates; the Wingman does
-  not grade itself.
+  work is the failure mode the audit already exists to catch. A RIO that did not write the code
+  validates it; the Wingman does not grade itself.
 - **Human-style QA.** Drive the real UI, not only the unit tests. Playwright is the seam.
 - **Narrow parallelism.** Within a feature and during validation. Sequential elsewhere, because
   coordination overhead beats the speed gain.

@@ -72,9 +72,12 @@ takes one item, in a worktree, and writes code.
 by its prompt. An agent asked politely not to change something will change it the first time the
 change looks small.
 
-**Status:** the RIO half is built; see [M7](#m7--a-missions-plan-is-tracker-items-and-membership-is-a-field--built).
-The Air Boss is still designed only. `src/audits.ts` remains the validator, which is one output
-of a RIO rather than a RIO. See [`POSITIONING.md`](./POSITIONING.md).
+**Status:** the orchestrator is built; see [M7](#m7--a-missions-plan-is-tracker-items-and-membership-is-a-field--built).
+The project level is still designed only. **The names in this entry were superseded on
+2026-09-16 by [M9](#m9--the-levels-take-the-carriers-own-names--decided):** the orchestrator is
+the **Strike Lead**, the project level is the **CAG**, and **RIO** now means what
+`src/audits.ts` has always been. The decision itself, three levels separated by blast radius,
+is unchanged. See [`POSITIONING.md`](./POSITIONING.md).
 
 ## M6 — Readiness gates an unattended launch ◐ design
 
@@ -110,7 +113,7 @@ survives being hand-edited, and can be dismantled by deleting two field lines. T
 mission is scattered across lanes once it flies, so gathering it needs the `mission` field rather
 than one place to look.
 
-This completes the RIO half of [M5](#m5--three-levels-of-agent-separated-by-blast-radius--design).
+This completes the orchestrator half of [M5](#m5--three-levels-of-agent-separated-by-blast-radius--design).
 
 ## M8 — Maverick merges a mission into its own branch, never into main ✅ built
 
@@ -124,3 +127,35 @@ already has Cory in it phase by phase, is what puts it on main.
 
 **Consequence:** a finished mission is a branch to check out and test, not a claim to believe,
 which is the whole point of the second gate.
+
+## M9 — The levels take the carrier's own names ✅ decided
+
+Renamed 2026-09-16, before the vocabulary hardened anywhere outside this branch.
+
+| Level | Name | What that person actually is |
+|---|---|---|
+| project | **CAG** | Commander, Air Group: one per carrier, commands every squadron aboard |
+| mission | **Strike Lead** | designated to plan, brief, send and debrief one strike package |
+| milestone | *(vacant)* | a division or section lead takes 4 or 2 aircraft; no agent holds one here |
+| task | **Wingman** | flies his own jet off the lead |
+| review | **RIO** | the back seat of that one jet, calling what he sees |
+
+**Rejected: keeping RIO for the orchestrator** ([M5](#m5--three-levels-of-agent-separated-by-blast-radius--design)).
+**Why:** a RIO sits in one back seat, behind one pilot, watching one aircraft. That is a reviewer
+of a single Wingman, which is exactly what `src/audits.ts` does and has always done. Using the
+name for the thing that plans a whole mission put a per-aircraft role in a package-level seat.
+
+**Rejected: Air Boss for the project level.** **Why:** an Air Boss does not plan anything. He runs
+the deck from Pri-Fly and decides what launches and whether the deck is fit. That is
+[M6](#m6--readiness-gates-an-unattended-launch--design), the readiness gate, so the name moves
+there rather than being retired.
+
+**Rejected: Skipper, and Mission Commander.** Skipper is a squadron CO, a standing command that
+overlaps the CAG rather than sitting below it; Mission Commander is the right role but reads as
+a job title rather than a callsign. Strike Lead is the per-mission designation and it lands on a
+word the model already uses: a formation is one **lead** plus its flight, and a mission makes one.
+
+**Consequence:** the milestone rung is deliberately empty. In the real chain a division lead takes
+the four aircraft that launch together, which is what a milestone is; here the Strike Lead
+dispatches every task itself. That is either the next agent to build or over-structure, and this
+entry does not decide which.

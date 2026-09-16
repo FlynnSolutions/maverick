@@ -56,7 +56,7 @@ Environment overrides (see `src/config.ts`):
 - `src/trackers.ts` parses a tracker into sections, groups and items, and applies a move.
 - `src/projects.ts` the project registry, tracker detection, the Finder picker.
 - `src/git.ts` commit one file; repo discovery, worktree, PR and `claude agents` reads.
-- `src/missions.ts` a mission: the RIO's interview, the plan, the flight of Wingmen, the reviews.
+- `src/missions.ts` a mission: the Strike Lead's interview, the plan, the flight of Wingmen, their RIOs.
 - `src/live.ts`, `src/sessions.ts` the side rail data.
 - `bin/session-open`, `bin/session-close` write the per-session JSON record
   (`~/.claude/console-sessions/<id>.json`) that the session tree is drawn from.
@@ -225,7 +225,7 @@ that follows it. A move relocates that whole block and touches nothing else.
 A **mission** is one bounded piece of work run end to end, and you are in it exactly twice.
 
 Open one from the Missions rack in the Workspace, which is where a mission belongs: it is a
-bundle of sessions. A **RIO** starts in an embedded terminal and *interviews*
+bundle of sessions. A **Strike Lead** starts in an embedded terminal and *interviews*
 you: it reads the repo, probes what done means and what is out of scope, and refuses to plan off
 your first line. When you agree, it writes a plan to `deliverables/missions/<id>.md` as
 milestones, each with one testable "done when" line and its tasks.
@@ -237,9 +237,10 @@ has spawned yet. Approving writes the whole plan into your tracker as ordinary i
 one **Wingman** per task, each in its own worktree, in parallel within a milestone and sequential
 across them.
 
-When a Wingman finishes, a session that did not write the code reviews it and writes a verdict.
-A fail or a mixed verdict hands the task back to a fresh Wingman with the findings, twice, before
-it stops and asks you. A milestone whose tasks all pass merges into the mission branch; a
+When a Wingman finishes, a **RIO** climbs into its back seat: a separate session that did not
+write the code, reads every commit on the branch, runs the thing, and writes a verdict. It never
+fixes what it finds. A fail or a mixed verdict hands the task back to a fresh Wingman with those
+findings, twice, before it stops and asks you. A milestone whose tasks all pass merges into the mission branch; a
 conflict aborts and names the paths.
 
 The second gate is the result: every task with its diff, its verdict and its findings, on a
@@ -248,4 +249,4 @@ a mission into main** — the ship wizard does, with you in it phase by phase.
 
 ## Not built yet
 
-The Air Boss (the project-level agent), checkbox flips from the UI, the archive-on-ship button, rewriting `release: next+1` to `next` at ship time, and the Electron shell (the server is already shaped as its main process). The data directories still carry the old name (`~/.claude/session-console`, `~/.claude/console-sessions`) so nothing recorded so far is lost.
+The CAG (the project-level agent), the Air Boss (the readiness gate on what may launch unattended), checkbox flips from the UI, the archive-on-ship button, rewriting `release: next+1` to `next` at ship time, and the Electron shell (the server is already shaped as its main process). The data directories still carry the old name (`~/.claude/session-console`, `~/.claude/console-sessions`) so nothing recorded so far is lost.

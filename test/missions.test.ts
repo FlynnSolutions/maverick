@@ -1,5 +1,5 @@
 /**
- * The parts of a mission that are pure: the plan the RIO writes, and the claim the whole
+ * The parts of a mission that are pure: the plan the Strike Lead writes, and the claim the whole
  * design rests on — that mission membership survives an item moving lane, which is why it is
  * a field and not a `###` group.
  */
@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { costOf, parsePlan } from "../src/missions.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
-const PLAN = `# Mission: the RIO
+const PLAN = `# Mission: the Strike Lead
 
 An orchestrator that plans with Cory, then flies the mission. Not an Air Boss: it never
 answers project questions, and it never writes product code itself.
@@ -18,7 +18,7 @@ answers project questions, and it never writes product code itself.
 _done when: a plan exists in the tracker as items and nothing has spawned._
 
 - [ ] **Parse the plan document**
-  Read the RIO's markdown into milestones and tasks, reusing the tracker parser.
+  Read the Strike Lead's markdown into milestones and tasks, reusing the tracker parser.
   Reject a plan whose tasks carry only a title.
 
 - [ ] **Write the plan into the tracker**
@@ -35,7 +35,7 @@ _done when: every task has a passing verdict from a reviewer that did not write 
 test("parsePlan reads the milestones, their done lines and their tasks", () => {
   const plan = parsePlan(PLAN);
   assert.equal(plan.problems.length, 0, plan.problems.join("; "));
-  assert.equal(plan.name, "the RIO");
+  assert.equal(plan.name, "the Strike Lead");
   assert.match(plan.intro, /^An orchestrator that plans/);
   assert.deepEqual(plan.milestones.map((m) => m.n), [1, 2]);
   assert.equal(plan.milestones[0].title, "the plan and the gate");
@@ -73,7 +73,7 @@ const TRACKER = `# T
 
 ## 🔥 Priority
 
-### Mission: the RIO
+### Mission: the Strike Lead
 
 ## 🚧 In Progress
 
@@ -83,27 +83,27 @@ _Nothing yet._
 `;
 
 test("a task written into the tracker parses back as an ordinary item carrying its fields", () => {
-  const block = ["- [ ] `[ENG]` **Dispatch one Wingman per task**", "  - created: 2026-09-16", "  - mission: rio", "  - milestone: 2", "  A worktree each, branched from the mission branch."].join("\n");
-  const text = addItem(TRACKER, "🔥 Priority", "Mission: the RIO", block);
-  const item = parseTracker(text).sections[0].groups.find((g) => g.name === "Mission: the RIO").items[0];
+  const block = ["- [ ] `[ENG]` **Dispatch one Wingman per task**", "  - created: 2026-09-16", "  - mission: strike-lead", "  - milestone: 2", "  A worktree each, branched from the mission branch."].join("\n");
+  const text = addItem(TRACKER, "🔥 Priority", "Mission: the Strike Lead", block);
+  const item = parseTracker(text).sections[0].groups.find((g) => g.name === "Mission: the Strike Lead").items[0];
   assert.equal(item.title, "Dispatch one Wingman per task");
-  assert.equal(item.fields.mission, "rio");
+  assert.equal(item.fields.mission, "strike-lead");
   assert.equal(item.fields.milestone, "2");
   assert.match(item.description, /A worktree each/);
 });
 
 test("mission membership survives the move a group would not", () => {
-  const block = ["- [ ] `[ENG]` **Dispatch one Wingman per task**", "  - mission: rio", "  - milestone: 2"].join("\n");
-  const planned = addItem(TRACKER, "🔥 Priority", "Mission: the RIO", block);
-  const item = parseTracker(planned).sections[0].groups.find((g) => g.name === "Mission: the RIO").items[0];
+  const block = ["- [ ] `[ENG]` **Dispatch one Wingman per task**", "  - mission: strike-lead", "  - milestone: 2"].join("\n");
+  const planned = addItem(TRACKER, "🔥 Priority", "Mission: the Strike Lead", block);
+  const item = parseTracker(planned).sections[0].groups.find((g) => g.name === "Mission: the Strike Lead").items[0];
 
   const moved = applyMove(planned, { itemStart: item.start, itemFirstLine: item.firstLine, targetHeading: "🚧 In Progress", targetGroup: "", targetIndex: 0 });
   const after = parseTracker(moved);
   const inProgress = after.sections.find((s) => s.heading === "🚧 In Progress").groups.flatMap((g) => g.items);
 
   assert.equal(inProgress.length, 1, "the item moved lane");
-  assert.equal(inProgress[0].fields.mission, "rio", "the field came with it");
+  assert.equal(inProgress[0].fields.mission, "strike-lead", "the field came with it");
   assert.equal(inProgress[0].fields.milestone, "2");
   // And the group it was planned under is exactly what did not survive.
-  assert.equal(after.sections[0].groups.find((g) => g.name === "Mission: the RIO")?.items.length ?? 0, 0);
+  assert.equal(after.sections[0].groups.find((g) => g.name === "Mission: the Strike Lead")?.items.length ?? 0, 0);
 });

@@ -405,7 +405,7 @@ export const mountCommandCenter = (root, ctx) => {
    */
   const MISSION_LAMP = { interviewing: "waiting", planned: "waiting", flying: "busy", blocked: "blocked", review: "waiting", closed: "done" };
   const MISSION_SAYS = {
-    interviewing: "the RIO is interviewing you",
+    interviewing: "the Strike Lead is interviewing you",
     planned: "waiting on your approval",
     flying: "flying",
     blocked: "needs you",
@@ -447,13 +447,13 @@ export const mountCommandCenter = (root, ctx) => {
         el("button", { type: "button", class: "ghost", onclick: newMission }, "open one")),
       mine.length
         ? el("div", { class: "rack-strips" }, ...mine.map(missionRow))
-        : el("p", { class: "muted small cc-empty" }, "None. A mission is for work too big for one session and too shaped to hand over cold: the RIO interviews you, plans it into milestones, and flies it once you approve."));
+        : el("p", { class: "muted small cc-empty" }, "None. A mission is for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve."));
   };
 
   const newMission = async () => {
-    const name = await ask({ title: "Open a mission", body: "A mission is a bounded multi-feature effort: the RIO interviews you, plans it into milestones, and flies it once you approve. Give it a name.", confirm: "next", field: { placeholder: "what this mission is called" } });
+    const name = await ask({ title: "Open a mission", body: "A mission is a bounded multi-feature effort: the Strike Lead interviews you, plans it into milestones, and flies it once you approve. Give it a name.", confirm: "next", field: { placeholder: "what this mission is called" } });
     if (!name) return;
-    const brief = await ask({ title: "What do you want done?", body: "One line is enough, and one line is all it gets. The RIO will not plan off it: it interviews you first.", confirm: "open the interview", field: { placeholder: "the line you would have opened a session with" } });
+    const brief = await ask({ title: "What do you want done?", body: "One line is enough, and one line is all it gets. The Strike Lead will not plan off it: it interviews you first.", confirm: "open the interview", field: { placeholder: "the line you would have opened a session with" } });
     if (!brief) return;
     try {
       const { mission } = await post(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`, { name, brief });

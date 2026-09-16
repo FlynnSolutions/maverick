@@ -1,9 +1,10 @@
 /**
- * Missions, flown by a RIO.
+ * Missions, led by a Strike Lead.
  *
- * A mission is a bounded multi-feature effort. The RIO interviews Cory, writes a plan, and
+ * A mission is a bounded multi-feature effort, the way a strike is one package off the deck.
+ * The Strike Lead interviews Cory, writes a plan, and
  * flies it once he has blessed it: one Wingman per task in a worktree of its own, a separate
- * reviewer on every finished Wingman, and a merge into the mission's own branch when a
+ * RIO on every finished Wingman, and a merge into the mission's own branch when a
  * milestone passes. Nothing spawns before the blessing.
  *
  * Where the plan lives is the load-bearing decision (`docs/03-decisions.md` M1). The plan is
@@ -14,7 +15,7 @@
  * the repo as a document, the artifact of the gate, and is never read back as state.
  *
  * What Maverick stores is only the run — which background session is on which task, what the
- * reviewer said, which gates opened — at `~/.claude/console-sessions/missions/<project>/<id>.json`,
+ * RIO said, which gates opened — at `~/.claude/console-sessions/missions/<project>/<id>.json`,
  * the same named exception `ships/` already uses.
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -54,7 +55,7 @@ export interface MissionTask {
   ended?: string;
   /** Commit subjects the Wingman actually produced; empty means it changed nothing. */
   commits?: string[];
-  /** The reviewer: a separate session, never the Wingman and never the RIO. */
+  /** The RIO in this Wingman's back seat: a separate session, never the Wingman, never the lead. */
   review?: { claudeId: string; file: string; started: string };
   verdict?: Verdict;
   /** Why this task stopped needing an agent, in words, when it did not simply pass. */
@@ -83,7 +84,7 @@ export interface Mission {
   created: string;
   approved?: string;
   finished?: string;
-  /** The plan document, relative to the project. Written by the RIO, frozen at approval. */
+  /** The plan document, relative to the project. Written by the Strike Lead, frozen at approval. */
   plan: string;
   /** The interview is a conversation, so it runs in an embedded terminal, not a background agent. */
   interview?: { terminalId: string; started: string };
@@ -139,7 +140,7 @@ const missionOr404 = async (projectId: string, id: string): Promise<Mission> => 
   return mission;
 };
 
-/* ---------- the plan, as the RIO must write it ---------- */
+/* ---------- the plan, as the Strike Lead must write it ---------- */
 
 const PLAN_FORMAT = `# Mission: <name>
 
@@ -166,7 +167,7 @@ _done when: <one testable line>_
 const MILESTONE_HEADING = /^Milestone\s+(\d+)\s*[—–:-]\s*(.+)$/;
 const DONE_LINE = /^_*\s*done when:\s*(.+?)\s*_*$/i;
 
-/** Parse the RIO's plan document. Reuses the tracker parser, because the plan is written in its shape. */
+/** Parse the Strike Lead's plan document. Reuses the tracker parser, because the plan is written in its shape. */
 export const parsePlan = (text: string): { name: string; intro: string; milestones: Milestone[]; problems: string[] } => {
   const lines = text.split("\n");
   const name = text.match(/^#\s*Mission:\s*(.+)$/m)?.[1].trim() ?? "";
@@ -206,7 +207,7 @@ export const parsePlan = (text: string): { name: string; intro: string; mileston
 export interface Cost {
   milestones: number;
   tasks: number;
-  /** Two background sessions per task: the Wingman, then the reviewer that is not the Wingman. */
+  /** Two background sessions per task: the Wingman, then the RIO in its back seat. */
   sessions: number;
   /** Factory's published numbers for the equivalent feature, quoted as theirs, not measured here. */
   reference: string;
@@ -222,7 +223,7 @@ export const costOf = (milestones: Milestone[]): Cost => {
   };
 };
 
-/* ---------- the RIO's interview ---------- */
+/* ---------- the Strike Lead's interview ---------- */
 
 const rootRepo = async (project: Project): Promise<string> => {
   const repos = await reposUnder(project.path);
@@ -232,7 +233,7 @@ const rootRepo = async (project: Project): Promise<string> => {
 };
 
 const interviewPrompt = (project: Project, mission: Mission, planPath: string): string => [
-  `You are the RIO for a mission in the project at ${project.path}. A RIO plans the intercept and directs; it does not fly. Your entire job in this session is the interview and the plan.`,
+  `You are the Strike Lead for a mission in the project at ${project.path}. A strike lead plans the package, briefs it and sends it; it does not fly every jet in it. Your entire job in this session is the interview and the plan.`,
   "",
   `Cory opened this mission with one line: "${mission.brief}"`,
   "",
@@ -257,7 +258,7 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string): 
   `When the plan is written, tell Cory it is ready and that he approves it on the mission page in Maverick. Then stop.`,
 ].join("\n");
 
-/** Open a mission: the record, and the RIO in an embedded terminal, because an interview is a conversation. */
+/** Open a mission: the record, and the Strike Lead in an embedded terminal, because an interview is a conversation. */
 export const startMission = async (project: Project, name: string, brief: string, trackerIndex = 0): Promise<{ mission: Mission; terminal: TerminalInfo }> => {
   if (!name.trim()) throw new Error("a mission needs a name");
   if (!brief.trim()) throw new Error("a mission needs the line you would have opened a session with");
@@ -282,7 +283,7 @@ export const startMission = async (project: Project, name: string, brief: string
   };
   if (!project.trackers[trackerIndex]) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
   await mkdir(join(project.path, "deliverables", "missions"), { recursive: true });
-  const terminal = openTerminal(`RIO · ${mission.name}`, ["claude", interviewPrompt(project, mission, join(project.path, plan))], project.path, 120, 36);
+  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", interviewPrompt(project, mission, join(project.path, plan))], project.path, 120, 36);
   mission.interview = { terminalId: terminal.id, started: new Date().toISOString() };
   await writeMission(mission);
   return { mission, terminal };
@@ -292,13 +293,13 @@ export const startMission = async (project: Project, name: string, brief: string
 export const reopenInterview = async (project: Project, id: string): Promise<TerminalInfo> => {
   const mission = await missionOr404(project.id, id);
   if (mission.approved) throw new Error(`${mission.name} is already approved; the interview is over`);
-  const terminal = openTerminal(`RIO · ${mission.name}`, ["claude", interviewPrompt(project, mission, join(project.path, mission.plan))], project.path, 120, 36);
+  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", interviewPrompt(project, mission, join(project.path, mission.plan))], project.path, 120, 36);
   mission.interview = { terminalId: terminal.id, started: new Date().toISOString() };
   await writeMission(mission);
   return terminal;
 };
 
-/** Read the plan the RIO wrote, without committing to it. This is what the gate shows. */
+/** Read the plan the Strike Lead wrote, without committing to it. This is what the gate shows. */
 export const previewPlan = async (project: Project, id: string): Promise<{ found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost }> => {
   const mission = await missionOr404(project.id, id);
   let text: string;
@@ -329,7 +330,7 @@ const itemBlock = (title: string, fields: Record<string, string>, body: string[]
 ].join("\n");
 
 const headerBlock = (mission: Mission, intro: string): string =>
-  itemBlock(`Mission: ${mission.name}`, { created: today(), source: `RIO interview, ${today()}`, kind: "mission", mission: mission.id, plan: mission.plan },
+  itemBlock(`Mission: ${mission.name}`, { created: today(), source: `Strike Lead interview, ${today()}`, kind: "mission", mission: mission.id, plan: mission.plan },
     [intro, ...mission.milestones.map((m) => `Milestone ${m.n} — ${m.title}: done when ${m.done}`)]);
 
 const taskBlock = (mission: Mission, m: Milestone, task: MissionTask): string =>
@@ -361,7 +362,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   const mission = await missionOr404(project.id, id);
   if (mission.approved) throw new Error(`${mission.name} was already approved at ${mission.approved}`);
   const text = await readFile(join(project.path, mission.plan), "utf8").catch(() => {
-    throw new Error(`no plan at ${mission.plan}; the RIO has not written one yet`);
+    throw new Error(`no plan at ${mission.plan}; the Strike Lead has not written one yet`);
   });
   const parsed = parsePlan(text);
   if (parsed.problems.length) throw new Error(`the plan cannot be flown as written: ${parsed.problems.join("; ")}`);
@@ -371,7 +372,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   await ensureWorktree(mission.repo, mission.integration, mission.branch, "HEAD");
   const formation = await createFormation(project.id, mission.name.slice(0, 40));
   mission.formation = formation.id;
-  await seatTheRio(mission);
+  await seatTheLead(mission);
   mission.approved = new Date().toISOString();
   mission.status = "flying";
   await writeMission(mission);
@@ -391,16 +392,16 @@ const wingmanPrompt = (project: Project, mission: Mission, m: Milestone, task: M
   "",
   task.intent,
   "",
-  ...(findings ? [`A reviewer who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${findings}\n\nStart from the code that is already on your branch and fix what the findings name. Do not argue with the reviewer in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.`, ""] : []),
+  ...(findings ? [`A RIO who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${findings}\n\nStart from the code that is already on your branch and fix what the findings name. Do not argue with the RIO in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.`, ""] : []),
   "Read the repo's own rules before you write anything: its rulebook, its decision log and its design contract if it has them. Match the code around you.",
   "",
   "Commit your work in your worktree, in small commits with plain lowercase subjects. Do not write to the project's trackers; Maverick owns those for this mission. Do not open a pull request. Do not spawn other agents.",
   "",
-  "When you are done, stop. A reviewer that is not you will check the work, so do not grade yourself in the commit messages: say what you did and what you could not verify.",
+  "When you are done, stop. A RIO that is not you will check the work, so do not grade yourself in the commit messages: say what you did and what you could not verify.",
 ].join("\n");
 
 const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, file: string): string => [
-  `You are the reviewer for one task on the mission "${mission.name}" in the project at ${project.path}. You did not write this code and you will not fix it.`,
+  `You are the RIO for one Wingman on the mission "${mission.name}" in the project at ${project.path}. You fly in its back seat: you read what it did and you call it. You did not write this code and you will not fix it.`,
   "",
   `The work is on branch ${task.branch} in the worktree at ${task.worktree}. Read every commit on it that ${mission.branch} does not have (\`git -C ${task.worktree} log ${mission.branch}..HEAD -p\`).`,
   "",
@@ -423,7 +424,7 @@ const reviewFile = (mission: Mission, task: MissionTask, attempt: number): strin
 /**
  * A Wingman gets the same session record any other spawned task session gets, so it appears in
  * the rack and in the ship's release review instead of in a parallel universe. Its `audit` is
- * set to the mission's own reviewer, which is also what stops the ship auditing it a second
+ * set to the mission's own RIO, which is also what stops the ship auditing it a second
  * time: `ships.ts` skips a develop record that already has one.
  */
 const recordWingman = async (mission: Mission, task: MissionTask): Promise<void> => {
@@ -473,7 +474,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
   return writeMission(mission);
 };
 
-/** Put a task back out with the reviewer's findings, in the worktree it already has. */
+/** Put a task back out with the RIO's findings, in the worktree it already has. */
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
   const previous = task.claudeId;
   task.claudeId = await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanPrompt(project, mission, m, task, findings));
@@ -500,7 +501,7 @@ const isOver = (state: Map<string, string>, claudeId: string, since?: string): b
 /**
  * One pass over every flying mission. Called on the server's timer and on every read of the
  * mission page, which polls: two passes overlapping would each see the same finished Wingman
- * and each spawn a reviewer for it, so a project sweeps one at a time.
+ * and each spawn a RIO for it, so a project sweeps one at a time.
  */
 const sweeping = new Set<string>();
 
@@ -555,24 +556,25 @@ const sweepOnce = async (project: Project): Promise<void> => {
         if (task.status === "built") {
           const file = reviewFile(mission, task, task.attempts);
           try {
-            const claudeId = await spawnBackgroundAgent(project.path, `review · ${task.title}`, reviewPrompt(project, mission, m, task, file), "auditor");
+            // "auditor" is Claude Code's own agent name (`~/.claude/agents/auditor.md`), not our word for the role.
+            const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, reviewPrompt(project, mission, m, task, file), "auditor");
             task.review = { claudeId, file, started: new Date().toISOString() };
             task.status = "reviewing";
             agentCache.delete(project.path);
             await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { audit: task.review });
           } catch (err) {
             task.status = "handed-back";
-            task.note = `could not start the reviewer: ${(err as Error).message}`;
+            task.note = `could not start the RIO: ${(err as Error).message}`;
           }
         }
         if (task.status === "reviewing" && task.review) {
           const findings = await readFile(task.review.file, "utf8").catch(() => null);
           const verdict = findings ? verdictOf(findings) : undefined;
           if (!verdict || verdict === "pending") {
-            // The reviewer is gone and wrote nothing: that is a failed review, not a pass.
+            // The RIO is gone and wrote nothing: that is a failed review, not a pass.
             if (isOver(state, task.review.claudeId, task.review.started)) {
               task.status = "handed-back";
-              task.note = "the reviewer finished without writing a verdict";
+              task.note = "the RIO finished without writing a verdict";
             }
             continue;
           }
@@ -589,7 +591,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
             }
           } else {
             task.status = "handed-back";
-            task.note = `the reviewer said ${verdict} after ${task.attempts} attempts; this one is yours`;
+            task.note = `the RIO said ${verdict} after ${task.attempts} attempts; this one is yours`;
           }
         }
       }
@@ -617,15 +619,15 @@ const sweepOnce = async (project: Project): Promise<void> => {
       // A milestone with any task that needs Cory stops the mission rather than flying past it.
       if (m.tasks.some((t) => t.status === "handed-back")) {
         mission.status = "blocked";
-        mission.trouble = m.tasks.filter((t) => t.status === "handed-back").map((t) => `${t.title}: ${t.note ?? `reviewer said ${t.verdict}`}`).join(" · ");
+        mission.trouble = m.tasks.filter((t) => t.status === "handed-back").map((t) => `${t.title}: ${t.note ?? `the RIO said ${t.verdict}`}`).join(" · ");
       }
     }
     if (waiting.length && mission.status === "flying") mission.trouble = waiting.join(" · ");
     // One formation write per pass rather than one per task that gained a session id.
     if (seated && mission.formation) await updateFormation(mission.formation, { members: memberIds(mission) }).catch(() => undefined);
-    // The RIO only reaches Claude Code's session registry once its session has done something,
+    // The Strike Lead only reaches Claude Code's session registry once its session has done something,
     // which can be well after the formation was made; keep offering it the lead seat.
-    await seatTheRio(mission).catch(() => undefined);
+    await seatTheLead(mission).catch(() => undefined);
     await writeMission(mission);
   }
 };
@@ -634,11 +636,12 @@ const memberIds = (mission: Mission): string[] =>
   mission.milestones.flatMap((m) => m.tasks.map((t) => t.sessionId).filter((s): s is string => Boolean(s)));
 
 /**
- * The RIO is the formation's lead, and a formation holds session uuids. The RIO runs in one of
- * our ptys, so its uuid is the registry session whose process descends from that pty, which is
- * how the workspace already matches a session to its dock terminal.
+ * The Strike Lead is the formation's lead, which is the same word twice on purpose: a formation
+ * is one lead plus its flight, and a mission makes one. A formation holds session uuids, and the
+ * lead runs in one of our ptys, so its uuid is the registry session whose process descends from
+ * that pty, the way the workspace already matches a session to its dock terminal.
  */
-const seatTheRio = async (mission: Mission): Promise<void> => {
+const seatTheLead = async (mission: Mission): Promise<void> => {
   if (!mission.formation || !mission.interview) return;
   if ((await listFormations(mission.project)).find((f) => f.id === mission.formation)?.lead) return;
   const pty = listTerminals().find((t) => t.id === mission.interview!.terminalId);
@@ -647,8 +650,8 @@ const seatTheRio = async (mission: Mission): Promise<void> => {
   // Asked of every session at once: `parentChain` reads one cached process table, so the cost
   // of this is one `ps` rather than one per session.
   const chains = await Promise.all(sessions.map((s) => parentChain(s.pid)));
-  const rio = sessions.find((_, i) => chains[i].includes(pty.pid!));
-  if (rio) await updateFormation(mission.formation, { lead: rio.sessionId }).catch(() => undefined);
+  const lead = sessions.find((_, i) => chains[i].includes(pty.pid!));
+  if (lead) await updateFormation(mission.formation, { lead: lead.sessionId }).catch(() => undefined);
 };
 
 /* ---------- Cory's second and last gate ---------- */
@@ -669,13 +672,13 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
   return writeMission(mission);
 };
 
-/** Accept a task Cory has looked at himself, so a milestone the reviewer failed can still merge. */
+/** Accept a task Cory has looked at himself, so a milestone its RIO failed can still merge. */
 export const acceptTask = async (project: Project, id: string, taskId: string, note: string): Promise<Mission> => {
   const mission = await missionOr404(project.id, id);
   const task = mission.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId);
   if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
   task.status = "passed";
-  task.note = `accepted by Cory over the reviewer: ${note}`.trim();
+  task.note = `accepted by Cory over the RIO: ${note}`.trim();
   if (task.claudeId) await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { decision: "accepted" });
   mission.status = "flying";
   mission.trouble = undefined;

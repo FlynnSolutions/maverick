@@ -31,7 +31,7 @@ becomes the Electron main process later (see [`03-decisions.md`](./03-decisions.
 | `trackers.ts` | parse a markdown tracker into sections/groups/items, and apply a move |
 | `releases.ts` | versions from the changelog plus merged PRs, and the two planned slots |
 | `ships.ts` | a ship run: saved, resumable steps for one version |
-| `missions.ts` | a mission: the RIO's interview, the plan, the flight of Wingmen, the reviews |
+| `missions.ts` | a mission: the Strike Lead's interview, the plan, the flight of Wingmen, their RIOs |
 | `sessions.ts` | session records written by `bin/session-open` / `session-close` |
 | `formations.ts` | a named group of sessions: one lead, its flight |
 | `audits.ts` | audit parents: a record that owns a group of task sessions |
