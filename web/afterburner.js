@@ -35,10 +35,10 @@ export const flyby = ({ y = rand(40, 120), duration = 1400 } = {}) => {
   jet.setAttribute("class", "jet");
   const burner = document.createElementNS(NS, "ellipse");
   burner.setAttribute("class", "burner");
-  burner.setAttribute("cx", "-7");
-  burner.setAttribute("cy", "10");
-  burner.setAttribute("rx", "10");
-  burner.setAttribute("ry", "2.6");
+  burner.setAttribute("cx", "6");
+  burner.setAttribute("cy", "50");
+  burner.setAttribute("rx", "9");
+  burner.setAttribute("ry", "3.4");
   jet.append(burner, ...jetPaths());
   jet.style.setProperty("--y", `${y}px`);
   jet.style.setProperty("--dur", `${duration}ms`);
@@ -146,8 +146,8 @@ export const loading = ({ y = 0.42, scale = 3.4, duration = 2200 } = {}) => {
     jet.setAttribute("class", "jet big");
     const burner = document.createElementNS(NS, "ellipse");
     burner.setAttribute("class", "burner");
-    burner.setAttribute("cx", "-7"); burner.setAttribute("cy", "10");
-    burner.setAttribute("rx", "12"); burner.setAttribute("ry", "3");
+    burner.setAttribute("cx", "6"); burner.setAttribute("cy", "50");
+    burner.setAttribute("rx", "10"); burner.setAttribute("ry", "3.8");
     jet.append(burner, ...jetPaths());
     jet.style.setProperty("--y", `${py}px`);
     jet.style.setProperty("--dur", `${duration}ms`);

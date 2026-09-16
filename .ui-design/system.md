@@ -105,6 +105,11 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Idle decays in three steps, and the first step is yours.** Under an hour between turns is a
   conversation you are in the middle of (`Needs action`, carries the exchange); under a day is
   `Idle`; beyond that is `Stale`. Distinct from `Needs you`, which is blocked on a prompt.
+- **Every colour a surface uses is a token, or light mode inherits the dark one's hard-coded
+  darks.** The bar (`--bar`), the lamp's machined metal (`--metal`, `--metal-edge`, `--metal-lip`,
+  the `--cold-*` set), the release tile (`--tile`), the stat wells (`--inset`), every lift shadow
+  (`--shade`, `--shade-soft`), the deck gradient (`--deck-top`) and the status colours (`--ok`,
+  `--warn`, `--gold`, `--info`, `--on-accent`). The light bar is silver, not a lightened dark.
 - **Never name a class with a bare generic word.** `.dock` styled the terminal dock *and* every
   card's `dock` button, silently making those buttons sticky, column-flex and blurred, which is
   what knocked their labels out of line with `close`. Style a one-off region by id (`#dock`) and
