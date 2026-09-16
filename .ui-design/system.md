@@ -105,6 +105,11 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Idle decays in three steps, and the first step is yours.** Under an hour between turns is a
   conversation you are in the middle of (`Needs action`, carries the exchange); under a day is
   `Idle`; beyond that is `Stale`. Distinct from `Needs you`, which is blocked on a prompt.
+- **The edge between the board and the rail belongs to the grid, not to the rail.** The rail is
+  sticky and only as tall as its own content, especially collapsed, while the board beside it
+  runs for thousands of pixels; an edge drawn on the rail can never reach the bottom. It is a
+  pseudo-element on `.project`, positioned off a `--rail` custom property that the collapsed
+  state overrides, so it is full height by construction and moves when the rail narrows.
 - **The rail is an edge, not a box.** A background plus a ring plus a shadow made it a card
   floating in a column, which reads worst when it is collapsed to a strip. It carries one thing:
   an inset shadow on the deck side, so the separation fades out instead of stopping dead.

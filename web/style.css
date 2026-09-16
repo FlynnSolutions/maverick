@@ -277,12 +277,25 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 /* ---------- project view ---------- */
 
 .project {
+  --rail: 340px;
+  position: relative;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) var(--rail);
   gap: calc(var(--unit) * 4);
   padding: calc(var(--unit) * 4);
   align-items: start;
+}
+/* The separation between the board and the rail, full height whatever either of them does. */
+.project::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--rail) + var(--unit) * 4 - 10px);
+  width: 22px;
+  box-shadow: inset 22px 0 24px -24px var(--shade);
+  pointer-events: none;
 }
 .muted { color: var(--ink-faint); }
 .mono { font-family: var(--mono); font-size: 12px; }
@@ -414,8 +427,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 /* ---------- dispatch (sessions) ---------- */
 
 .dispatch {
-  padding: 0 0 0 20px;
-  box-shadow: inset 20px 0 22px -22px var(--shade);
+  padding: 0 0 0 14px;
   position: sticky;
   top: 62px;
   max-height: calc(100vh - 62px - 16px);
@@ -425,7 +437,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
   scrollbar-color: var(--ink-ghost) transparent;
 }
 body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
-.project.rail-collapsed .dispatch { padding: 0 0 0 10px; }
+.project.rail-collapsed .dispatch { padding: 0 0 0 6px; }
 .dispatch h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; margin: 14px 0 6px; }
 .dispatch .lane-title { margin: 0; }
 .dispatch ul { list-style: none; margin: 0; padding: 0; }
@@ -562,6 +574,7 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 }
 @media (max-width: 1100px) {
   .project { grid-template-columns: 1fr; }
+  .project::before { display: none; }
   .dispatch { position: static; max-height: none; }
   .lanes { grid-template-columns: 1fr 1fr !important; }
 }
@@ -772,7 +785,7 @@ body.ask-open { overflow: hidden; }
 
 /* ---------- collapsible sessions rail ---------- */
 
-.project.rail-collapsed { grid-template-columns: minmax(0, 1fr) 36px; }
+.project.rail-collapsed { --rail: 36px; }
 .project.rail-collapsed .dispatch > :not(.lane-title):not(#tally) { display: none; }
 .project.rail-collapsed .dispatch .lane-title { writing-mode: vertical-rl; height: auto; min-height: 120px; padding: 10px 0; gap: 10px; justify-content: flex-start; white-space: nowrap; }
 .project.rail-collapsed .dispatch .lane-title .fold { writing-mode: horizontal-tb; }
