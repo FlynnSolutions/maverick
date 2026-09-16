@@ -179,3 +179,29 @@ export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: st
   if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);
   return id;
 };
+
+/** The branch a repo is currently on; empty on a detached HEAD. */
+export const currentBranch = async (repoPath: string): Promise<string> => {
+  const { stdout } = await run("git", ["-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD"]);
+  const name = stdout.trim();
+  return name === "HEAD" ? "" : name;
+};
+
+/**
+ * Open a pull request with `gh` and return its url. Used where a project's own rules forbid
+ * Maverick merging anything: the mission's output is then a PR per repo and a person decides.
+ */
+export const openPullRequest = async (repoPath: string, head: string, base: string, title: string, body: string): Promise<string> => {
+  const { stdout } = await run("gh", ["pr", "create", "--head", head, "--base", base, "--title", title, "--body", body], { cwd: repoPath }).catch(async (err: { stderr?: string }) => {
+    // An existing PR for this head is the answer, not a failure: report the one that is open.
+    const existing = await run("gh", ["pr", "list", "--head", head, "--json", "url", "--jq", ".[0].url"], { cwd: repoPath }).catch(() => ({ stdout: "" }));
+    if (existing.stdout.trim()) return { stdout: existing.stdout };
+    throw new Error(`gh pr create failed in ${repoPath}: ${(err.stderr ?? "").trim() || "no output"}`);
+  });
+  return stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+};
+
+/** Push a branch to `origin`, setting upstream the first time. */
+export const pushBranch = async (repoPath: string, branch: string): Promise<void> => {
+  await run("git", ["-C", repoPath, "push", "--set-upstream", "origin", branch]);
+};

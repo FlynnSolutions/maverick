@@ -28,6 +28,8 @@ export interface SessionRecord {
   audit?: { claudeId: string; started: string; file: string };
   /** Cory's call on the audit findings. */
   decision?: "accepted" | "rejected";
+  /** Which repo of a multi-repo project this session works in, by its directory name. */
+  repo?: string;
   /** The mission that owns this session, if one does. A mission reviews its own work, so the
    *  ship must not audit it a second time (`src/ships.ts`). Set at dispatch, not when a
    *  verdict exists, so there is no window in which the session looks unowned. */

@@ -73,3 +73,9 @@
 .mv-plan-task h4 { font-family: var(--display); font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
 .mv-plan-task p { margin: 0; font-size: 13px; color: var(--ink-soft); white-space: pre-wrap; max-width: 78ch; }
 .mv-interview .mv-empty { padding: 14px; }
+
+/* Which repo a task lands in. A multi-repo project plans across several, and the order they
+   land in is the whole point of the milestones, so the repo reads on the task and not once. */
+.mv-repo { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-faint); margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--panel); }
+.mv-repos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.mv-repos a, .mv-repos span { font-family: var(--mono); font-size: 12px; }

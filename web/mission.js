@@ -152,6 +152,7 @@ const renderNav = () => {
 };
 
 const costBand = (cost) => el("div", { class: "mv-band" },
+  el("div", { class: "cell" }, el("span", { class: "k" }, "repos"), el("span", { class: "v" }, String(cost.repos ?? 1))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "milestones"), el("span", { class: "v" }, String(cost.milestones))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "tasks"), el("span", { class: "v" }, String(cost.tasks))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "sessions it spawns"), el("span", { class: "v" }, String(cost.sessions))),
@@ -178,7 +179,7 @@ const renderPlan = () => {
       gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. Tell the Strike Lead in the session below; these are the reasons a Wingman would be sent out under-briefed:"),
         el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
     } else {
-      gate.push(el("p", { class: "why" }, "This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts the mission's branch, and sends the first milestone out."),
+      gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
         costBand(doc.cost),
         el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
         el("div", { class: "gate-actions" },
@@ -198,7 +199,7 @@ const renderPlan = () => {
         el("h3", {}, el("span", {}, `Milestone ${m.n} — ${m.title}`)),
         el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
         ...m.tasks.map((t) => el("div", { class: "mv-plan-task" },
-          el("h4", {}, t.title),
+          el("h4", {}, t.title, t.repo ? el("span", { class: "mv-repo" }, t.repo) : null),
           el("p", {}, t.intent)))))));
   } else if (doc.text) {
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
@@ -241,6 +242,7 @@ const taskRow = (task) => {
         await act(`tasks/${task.id}/accept`, { note }, `${task.title} accepted`);
       }, "ghost") : null),
     el("div", { class: "meta" }, [
+      task.repo,
       `attempt ${task.attempts}`,
       task.branch,
       task.claudeId ? `session ${task.claudeId}` : null,
@@ -275,22 +277,31 @@ const renderReview = () => {
   const passed = tasks.filter((t) => t.status === "passed");
   const ready = mission.status === "review";
   const closed = mission.status === "closed";
+  const byPr = mission.land === "pr";
   show(
     el("div", { class: "detail-head" }, el("h1", {}, "What the mission built"), el("span", { class: `verdict ${mission.status}` }, mission.status)),
     el("div", { class: "detail-meta" },
       el("span", {}, `${passed.length} of ${tasks.length} tasks passed`),
-      el("span", {}, `on ${mission.branch}`),
+      ...(mission.repos ?? []).map((r) => el("span", { title: `lands against ${r.base}` }, `${r.label} · ${r.branch}`)),
       mission.finished ? el("span", {}, `finished ${fmtTime(mission.finished)}`) : null),
     el("section", { class: "panel mv-gate" }, el("h2", {}, "Your second and last gate"),
       el("p", { class: "why" }, closed
-        ? `Closed. Its items are ticked in the tracker and ${mission.branch} is waiting for the ship, which is what merges to main. Everything below is still here to read.`
+        ? (byPr
+            ? "Closed. Its items are ticked in the tracker and its pull requests are open below. Maverick has not merged anything and will not: this project's own rules say so."
+            : `Closed. Its items are ticked in the tracker and the mission branches are waiting for the ship, which is what merges. Everything below is still here to read.`)
         : ready
-          ? `Every milestone merged into ${mission.branch}. Check it out and test it yourself: it is a branch, not a claim. Closing ticks each passed item in the tracker and hands the branch on; Maverick does not merge a mission into main, the ship does.`
+          ? (byPr
+              ? `Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks the tracker and opens one pull request per repo against its base. It stops there. This project forbids a tool merging, so the merge is yours.`
+              : `Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks each passed item in the tracker and hands the branches on; Maverick does not merge a mission to a base, the ship does.`)
           : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
+      (mission.repos ?? []).some((r) => r.landed) ? el("div", { class: "mv-repos" }, el("span", { class: "muted" }, "pull requests:"), ...(mission.repos ?? []).filter((r) => r.landed).map((r) => el("a", { href: r.landed, target: "_blank" }, `${r.label} ↗`))) : null,
       ready ? el("div", { class: "gate-actions" },
-        btn("close the mission and tick its items", async () => {
-          if (!window.confirm(`Close "${mission.name}"?\n\nThis ticks ${passed.length} item(s) in the tracker in one commit. The branch ${mission.branch} is left for the ship.`)) return;
-          await act("close", {}, "mission closed; its items are ticked");
+        btn(byPr ? "close it and open the pull requests" : "close the mission and tick its items", async () => {
+          const what = byPr
+            ? `This pushes ${(mission.repos ?? []).length} branch(es) and opens a pull request for each, against its own base. It merges nothing.`
+            : `The mission branches are left for the ship.`;
+          if (!window.confirm(`Close "${mission.name}"?\n\nThis ticks ${passed.length} item(s) in the tracker in one commit. ${what}`)) return;
+          await act("close", {}, byPr ? "closed; pull requests opened" : "mission closed; its items are ticked");
         }, "primary"),
         el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}&view=workspace` }, "back to the workspace"),
       ) : null),

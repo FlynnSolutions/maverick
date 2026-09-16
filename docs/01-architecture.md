@@ -27,6 +27,7 @@ becomes the Electron main process later (see [`03-decisions.md`](./03-decisions.
 | Module | Concern |
 |---|---|
 | `config.ts` | every environment-specific value, overridable by `SESSION_CONSOLE_*` env |
+| `project-config.ts` | what a project's `maverick.json` says about flying a mission in it |
 | `projects.ts` | the project registry, tracker detection, the Finder import |
 | `trackers.ts` | parse a markdown tracker into sections/groups/items, and apply a move |
 | `releases.ts` | versions from the changelog plus merged PRs, and the two planned slots |

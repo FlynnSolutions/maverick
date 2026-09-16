@@ -56,6 +56,37 @@ It drives headless Chrome over the DevTools protocol. See [`../tools/README.md`]
 Measure computed styles and element boxes; do not assert from the CSS. Allow 6 to 9 seconds for
 a page to settle.
 
+## Configure how a mission flies in a project
+
+A mission uses Maverick's own conventions unless the project's `maverick.json` says otherwise.
+A project with its own worktree tooling should say so, because a second convention beside the
+first is what the tooling was usually written to stop.
+
+```json
+{
+  "callsign": "Realtime",
+  "missions": {
+    "worktrees": "worktrees",
+    "branchPrefix": "feature/",
+    "land": "pr",
+    "repos": {
+      "contracts": { "base": "main" },
+      "RTMFG-backend": { "base": "develop" },
+      "RTMFG-frontend": { "base": "develop" }
+    }
+  }
+}
+```
+
+| Key | Default | Means |
+|---|---|---|
+| `worktrees` | `.claude/worktrees` | where task and integration worktrees go, relative to the project |
+| `branchPrefix` | `mission/` | a task's branch is `<prefix><mission>-<task>` |
+| `land` | `merge` | `merge` leaves the work on each repo's mission branch; `pr` pushes and opens one pull request per repo against its base, and merges nothing |
+| `repos.<dir>.base` | that repo's current branch | what its work is cut from and lands against |
+
+Everything is optional. A repo the plan never names gets no branch, however many the project has.
+
 ## Check its agent readiness
 
 ```bash

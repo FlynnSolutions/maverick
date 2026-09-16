@@ -17,7 +17,8 @@ A project's tracker is a markdown file. `src/trackers.ts` parses it; the shape *
 - A `- [ ]` bullet is an **item**. Markers: `[ ]` todo, `[~]` in progress, `[x]` done,
   `[!]` deferred, `[-]` dropped.
 - Indented `  - key: value` lines under a bullet are **fields**: `source`, `due`, `release`,
-  `size`, `kind`, `status`, `owner`, `plan`, `pr`, `links`, `blocked-by`, `mission`, `milestone`.
+  `size`, `kind`, `status`, `owner`, `plan`, `pr`, `links`, `blocked-by`, `mission`, `milestone`,
+  `repo`.
 
 Recognised filenames are in `src/projects.ts`: `deliverables/CHECKLIST.md`, `CHECKLIST.md`,
 `PUNCHLIST.md`, `TODO.md`, `NEXT_STEPS.md`.
@@ -33,9 +34,10 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | `Formation` | `src/formations.ts` | `session-console/` | `name` (phonetic callsign), `lead`, `members[]` |
 | `ShipRun` | `src/ships.ts` | `console-sessions/ships/<project>/<version>.json` | `version`, `steps[]` |
 | `ShipStep` | `src/ships.ts` | within the run | `prompt`, `status`, `claudeId`, `report`, `artifacts[]` |
-| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `branch`, `formation`, `milestones[]` |
+| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `repos[]`, `land`, `formation`, `milestones[]` |
+| `MissionRepo` | `src/missions.ts` | within the mission | `label`, `path`, `base`, `branch`, `integration`, `landed` |
 | `Milestone` | `src/missions.ts` | within the mission | `n`, `title`, `done`, `tasks[]`, `merged`, `mergeSha` |
-| `MissionTask` | `src/missions.ts` | within the milestone | `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict` |
+| `MissionTask` | `src/missions.ts` | within the milestone | `repo`, `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict` |
 | release labels | `src/releases.ts` | `session-console/releases.json` | the two planned slots' names and deploy dates only |
 
 `SessionRole` is `driver | develop | audit | plan`; `SessionStatus` is `open | closed |

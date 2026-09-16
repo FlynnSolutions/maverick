@@ -33,7 +33,7 @@ _done when: every task has a passing verdict from a reviewer that did not write 
 `;
 
 test("parsePlan reads the milestones, their done lines and their tasks", () => {
-  const plan = parsePlan(PLAN);
+  const plan = parsePlan(PLAN, ["root"]);
   assert.equal(plan.problems.length, 0, plan.problems.join("; "));
   assert.equal(plan.name, "the Strike Lead");
   assert.match(plan.intro, /^An orchestrator that plans/);
@@ -47,25 +47,25 @@ test("parsePlan reads the milestones, their done lines and their tasks", () => {
 });
 
 test("a plan missing its done line, its tasks or a task's body is named, not flown", () => {
-  const bad = parsePlan(`# Mission: thin\n\n## Milestone 1 — no criterion\n\n- [ ] **A task with nothing under it**\n`);
+  const bad = parsePlan(`# Mission: thin\n\n## Milestone 1 — no criterion\n\n- [ ] **A task with nothing under it**\n`, ["root"]);
   assert.ok(bad.problems.some((p) => /no "_done when/.test(p)), bad.problems.join("; "));
   assert.ok(bad.problems.some((p) => /a Wingman gets no other context/.test(p)), bad.problems.join("; "));
 
-  const empty = parsePlan(`# Mission: empty\n\n## Milestone 1 — nothing here\n\n_done when: never._\n`);
+  const empty = parsePlan(`# Mission: empty\n\n## Milestone 1 — nothing here\n\n_done when: never._\n`, ["root"]);
   assert.ok(empty.problems.some((p) => /milestone 1 has no tasks/.test(p)), empty.problems.join("; "));
 
-  const stray = parsePlan(`# Mission: stray\n\n## Notes\n\n- [ ] **x**\n  y\n`);
+  const stray = parsePlan(`# Mission: stray\n\n## Notes\n\n- [ ] **x**\n  y\n`, ["root"]);
   assert.ok(stray.problems.some((p) => /is not a milestone heading/.test(p)), stray.problems.join("; "));
   assert.ok(stray.problems.some((p) => /no milestones/.test(p)), stray.problems.join("; "));
 });
 
 test("a plan with no mission heading is rejected", () => {
-  assert.ok(parsePlan("## Milestone 1 — x\n\n_done when: y._\n\n- [ ] **z**\n  w\n").problems.some((p) => /no "# Mission/.test(p)));
+  assert.ok(parsePlan("## Milestone 1 — x\n\n_done when: y._\n\n- [ ] **z**\n  w\n", ["root"]).problems.some((p) => /no "# Mission/.test(p)));
 });
 
 test("costOf counts two background sessions per task: the Wingman and the reviewer that is not it", () => {
-  const cost = costOf(parsePlan(PLAN).milestones);
-  assert.deepEqual({ milestones: cost.milestones, tasks: cost.tasks, sessions: cost.sessions }, { milestones: 2, tasks: 3, sessions: 6 });
+  const cost = costOf(parsePlan(PLAN, ["root"]).milestones);
+  assert.deepEqual({ milestones: cost.milestones, tasks: cost.tasks, sessions: cost.sessions, repos: cost.repos }, { milestones: 2, tasks: 3, sessions: 6, repos: 1 });
   assert.match(cost.reference, /12x the tokens/);
 });
 
@@ -106,4 +106,67 @@ test("mission membership survives the move a group would not", () => {
   assert.equal(inProgress[0].fields.milestone, "2");
   // And the group it was planned under is exactly what did not survive.
   assert.equal(after.sections[0].groups.find((g) => g.name === "Mission: the Strike Lead")?.items.length ?? 0, 0);
+});
+
+const MULTI = `# Mission: the conversation foundation
+
+Scope as a real key across three repos, in the order they have to land.
+
+## Milestone 1 — the contract
+
+_done when: the scope pair is on main in contracts and pushed._
+
+- [ ] **Reshape MessageScopeType**
+  - repo: contracts
+  Rename the scope pair and regenerate.
+
+## Milestone 2 — the backend and its migration
+
+_done when: the backfill dry-run reports counts for every environment._
+
+- [ ] **Scope key on Message and Notification**
+  - repo: RTMFG-backend
+  Add scopeType, scopeId and the stored scopeKey with a byScope index.
+
+- [ ] **The backfill**
+  - repo: RTMFG-backend
+  Write the migration and dry-run it.
+
+## Milestone 3 — the client
+
+_done when: the dock reads the scope key and the E2E suite is green._
+
+- [ ] **Read the scope key**
+  - repo: RTMFG-frontend
+  Point MessagingConversation at the new key.
+`;
+
+const REPOS = ["root", "contracts", "RTMFG-backend", "RTMFG-frontend"];
+
+test("a task names the repo it works in, and the plan carries the order across them", () => {
+  const plan = parsePlan(MULTI, REPOS);
+  assert.equal(plan.problems.length, 0, plan.problems.join("; "));
+  assert.deepEqual(plan.milestones.map((m) => m.tasks.map((t) => t.repo)), [["contracts"], ["RTMFG-backend", "RTMFG-backend"], ["RTMFG-frontend"]]);
+  // Two tasks in one milestone share a repo, so they are parallel inside it; the repos that
+  // must land in order are in different milestones, which is what makes that order hold.
+  const cost = costOf(plan.milestones);
+  assert.deepEqual({ repos: cost.repos, tasks: cost.tasks, milestones: cost.milestones }, { repos: 3, tasks: 4, milestones: 3 });
+});
+
+test("a multi-repo project refuses a plan whose task does not say where it works", () => {
+  const plan = parsePlan(MULTI.replace("  - repo: contracts\n", ""), REPOS);
+  assert.ok(plan.problems.some((p) => /names no repo/.test(p)), plan.problems.join("; "));
+});
+
+test("a task naming a repo the project does not have is refused, and the message lists the real ones", () => {
+  const plan = parsePlan(MULTI.replace("- repo: contracts", "- repo: RTMFG-backendd"), REPOS);
+  const problem = plan.problems.find((p) => /is not one of/.test(p));
+  assert.ok(problem, plan.problems.join("; "));
+  assert.match(problem, /RTMFG-backend, RTMFG-frontend/);
+});
+
+test("a single-repo project may leave the repo line off, and every task gets that repo", () => {
+  const plan = parsePlan(PLAN, ["root"]);
+  assert.equal(plan.problems.length, 0, plan.problems.join("; "));
+  assert.ok(plan.milestones.flatMap((m) => m.tasks).every((t) => t.repo === "root"));
 });

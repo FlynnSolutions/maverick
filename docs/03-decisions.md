@@ -159,3 +159,28 @@ word the model already uses: a formation is one **lead** plus its flight, and a 
 the four aircraft that launch together, which is what a milestone is; here the Strike Lead
 dispatches every task itself. That is either the next agent to build or over-structure, and this
 entry does not decide which.
+
+## M10 — A mission bends to the project's git conventions, not the reverse ✅ built
+
+A mission reads `maverick.json` for where worktrees go, what branches are called, what each
+repo's work is cut from, and whether it ends in a merge or a pull request
+([`06-runbook.md`](./06-runbook.md)). A task names its repo with a `repo:` field, so one mission
+can span several and the order they land in is carried by the milestones.
+
+**Rejected: Maverick's own layout everywhere.** **Why:** Realtime's `claude/scripts/worktree.sh`
+exists, and its header says why, because two contradictory worktree conventions already collided
+there once and the docs lost to the commands. A tool that reads other people's systems
+(`01-architecture.md`) does not get to add a third naming scheme to a repo that has settled on
+one. The same argument covers the branch prefix and the base branch.
+
+**Rejected: one branch per mission across all repos.** **Why:** a multi-repo project rarely
+shares a base. Realtime's contracts sits on `main` while its services sit on `develop`, so a
+single base would cut half the work from the wrong commit.
+
+**Safety-load-bearing: `land: "pr"`.** Realtime's `CLAUDE.md` says never self-merge, absolutely
+and without exception. A mission there ends by pushing each repo's branch and opening a pull
+request against its base, and stops. `merge` stays the default, and even it only ever merges onto
+the mission's own branch, never onto a base ([M8](#m8--maverick-merges-a-mission-into-its-own-branch-never-into-main--built)).
+
+**Consequence:** a repo the plan does not name gets no branch, which matters when a project holds
+eleven of them and a mission touches three.
