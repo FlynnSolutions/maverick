@@ -1477,3 +1477,46 @@ body.cc-full-open { overflow: hidden; }
 @media (max-width: 1100px) {
   .rack-strips.grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* ---------- the lead gets a column once it is open ----------
+   A formation is one session you are driving and several you are watching, so when the lead is
+   open it takes the left column and the flight becomes the rail beside it: you type to the one
+   that orchestrates while the rest stay in sight. Closed, the lead is a single line and a column
+   of its own would just be empty deck, so the stacked layout stands. */
+.formation.with-lead { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.formation.with-lead > .lead-rack { grid-column: 1; }
+.formation.with-lead > .rack:not(.lead-rack) { grid-column: 2; }
+/* Anything that closes the formation speaks for both columns. */
+.formation.with-lead > .cc-empty, .formation.with-lead > .forms-foot { grid-column: 1 / -1; }
+/* The flight is a rail now, so it never splits again inside its own column. */
+.formation.with-lead .rack-strips.grid { grid-template-columns: minmax(0, 1fr); }
+/* Both columns are narrower than the six-column line wants (881px), and the name is the cell
+   that pays: at 919px it was squeezed to 24px and the lead had no title at all. So each column
+   drops what it can spare. The lead keeps state and its verbs and loses `where`, which its own
+   composer already spells out ("Lives in Warp on ttys019"). The rail, at ~633px, keeps the name,
+   the timing and the verbs, because losing `close` there would mean opening a pane to use it. */
+.formation.with-lead > .lead-rack .strip-line { grid-template-columns: 14px minmax(0, 1fr) 180px 175px 198px; }
+.formation.with-lead > .lead-rack .strip-where { display: none; }
+/* The action group is three fixed verbs, 198px including its gaps; a 152px slot for it put the
+   last one 16px off the page. The column is the width the thing actually is. */
+.formation.with-lead > .rack:not(.lead-rack) .strip-line { grid-template-columns: 14px minmax(0, 1fr) 148px 198px; }
+.formation.with-lead > .rack:not(.lead-rack) .strip-where,
+.formation.with-lead > .rack:not(.lead-rack) .strip-state { display: none; }
+/* An open lead runs the height of the rail beside it rather than a stock 52vh. */
+.formation.with-lead .lead-rack .cc-pane.inline { height: min(74vh, 780px); }
+@media (max-width: 1100px) {
+  .formation.with-lead { grid-template-columns: minmax(0, 1fr); }
+  .formation.with-lead > .lead-rack, .formation.with-lead > .rack:not(.lead-rack) { grid-column: 1; }
+  .formation.with-lead > .lead-rack .strip-line,
+  .formation.with-lead > .rack:not(.lead-rack) .strip-line { grid-template-columns: 14px minmax(0, 1fr) 180px 175px 198px; }
+  .formation.with-lead > .rack:not(.lead-rack) .strip-state { display: flex; }
+}
+
+/* ---------- sizing a pane ----------
+   A drawn bar, not CSS `resize`: that brings the browser's own grip, sits in the corner only,
+   and forgets the size the moment the pane is rebuilt. */
+.cc-pane-grip { flex: 0 0 auto; height: 9px; cursor: ns-resize; position: relative; background: transparent; border-radius: 0 0 var(--radius-s) var(--radius-s); touch-action: none; }
+.cc-pane-grip::before { content: ""; position: absolute; left: 50%; top: 3px; width: 34px; height: 3px; margin-left: -17px; border-radius: 2px; background: var(--seam-strong); transition: background 140ms var(--ease-out); }
+.cc-pane-grip:hover::before, .cc-pane-grip:focus-visible::before { background: var(--accent); }
+.cc-pane-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

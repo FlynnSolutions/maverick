@@ -157,6 +157,26 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   Past one open strip the rack becomes two columns, and a *collapsed* strip still spans the full
   row, because it is still a line: only the open ones share. In a column the strip drops its
   `where`, which is the one thing its own pane header repeats.
+- **The lead takes a column once it is open, and the flight becomes the rail beside it.** A
+  formation is one session you are driving and several you are watching, so an open lead sits
+  left and the flight stands to its right: you type to the one that orchestrates while the rest
+  stay in sight. Closed, the lead is a single line and a column of its own is empty deck, so the
+  stacked layout stands. Neither column fits the six-column line (it wants 881px), and the cell
+  that pays is the **name**: at 919px it was squeezed to 24px and the lead had no title at all.
+  So each column drops what it can spare rather than letting the name starve, and a fixed column
+  is given the width the thing in it actually is: a 152px slot for a 198px action group put the
+  last verb off the page.
+- **A pane is sized by a drawn bar, and it remembers.** CSS `resize` brings the browser's own
+  grip, sits only in the corner, and forgets. The grip is a 9px bar across the bottom edge with
+  the terminal refitting as it moves, arrow keys doing the same job for a keyboard, and the
+  height kept in `localStorage` per session, because a height is a per-viewer convenience rather
+  than something the URL should carry.
+- **The transcript is pushed, not polled.** Claude Code appends a line per message block as it
+  goes, so the data was always live; what lagged was the page asking every 2.5 seconds. The
+  server watches the file and writes events to an `EventSource` as they land: measured, 1-2ms
+  from write to delivery. `fs.watch` can miss an event, so a slow interval sits behind it, and a
+  stream that will not open falls back to polling, because a pane a couple of seconds behind
+  beats a pane showing nothing.
 - **The pane header says only what the strip has no column for.** Inline it is one row: take the
   stick, and dismiss. The strip line directly above already carries the name, state, timing,
   place and the three verbs, and a second header repeating them was the defect, not the design.

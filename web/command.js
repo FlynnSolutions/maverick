@@ -557,7 +557,11 @@ export const mountCommandCenter = (root, ctx) => {
     const gone = (f.lead && !lead ? 1 : 0) + f.members.length - flight.length;
     const holding = f.pending ?? [];
     const starting = (as) => holding.filter((p) => p.as === as);
-    return el("section", { class: "cc-project formation" },
+    // Once the lead is open it takes a column of its own and the flight becomes the rail beside
+    // it: that is the whole point of a formation, typing to the one that orchestrates while the
+    // rest stay in sight. Closed, the lead is a single line and a column would be empty space.
+    const leadOpen = Boolean(lead && opened.has(lead.key));
+    return el("section", { class: `cc-project formation${leadOpen ? " with-lead" : ""}` },
       // Drop a strip on the lead slot to put it in front; the lead it replaces joins the flight.
       dropZone(el("section", { class: "rack lead-rack" },
         el("h4", {}, jetSvg("jet-glyph band"), el("span", {}, "Oversight"),
@@ -736,6 +740,53 @@ export const mountCommandCenter = (root, ctx) => {
     p.head.replaceChildren(...parts.filter(Boolean));
   };
 
+  /**
+   * The transcript, pushed rather than asked for. Claude Code writes a line per message block as
+   * it goes, so a reply lands here within a beat of being written instead of on the next poll.
+   * If the stream cannot be opened the pane falls back to asking, because a pane that shows
+   * nothing is worse than one that is a couple of seconds behind.
+   */
+  const openTranscriptStream = (p) => {
+    const q = `cwd=${encodeURIComponent(p.session.cwd)}&session=${encodeURIComponent(p.session.sessionId)}&from=0`;
+    try {
+      const src = new EventSource(`/api/transcript/stream?${q}`);
+      src.onmessage = (e) => {
+        if (p.dead) return;
+        try {
+          applyPage(p, JSON.parse(e.data));
+        } catch {
+          /* a half-written frame: the next one carries the same events */
+        }
+      };
+      src.onerror = () => {
+        // EventSource reconnects on its own; a run of failures means falling back to polling.
+        if (p.dead || p.timer) return;
+        p.timer = window.setInterval(() => pullTranscript(p).catch(() => {}), 2500);
+      };
+      p.stream = src;
+    } catch {
+      p.timer = window.setInterval(() => pullTranscript(p).catch(() => {}), 2500);
+      pullTranscript(p).catch(() => {});
+    }
+  };
+
+  /** Fold one page of events into the pane, wherever it came from. */
+  const applyPage = (p, page) => {
+    if (page.title && !p.title) {
+      p.title = page.title;
+      paintHead(p);
+    }
+    p.offset = page.offset;
+    if (!page.events.length) return;
+    const nearBottom = p.scroller.scrollHeight - p.scroller.scrollTop - p.scroller.clientHeight < NEAR_BOTTOM;
+    // Re-render from the last unfinished fold so consecutive tool turns keep merging.
+    p.events.push(...page.events);
+    p.list.replaceChildren(...turnNodes(p.events));
+    if (p.list.childElementCount === 0) p.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
+    if (nearBottom || p.first) p.scroller.scrollTop = p.scroller.scrollHeight;
+    p.first = false;
+  };
+
   const pullTranscript = async (p) => {
     if (p.busy || p.dead) return; // one read in flight at a time, or the first (widening) read is appended twice
     p.busy = true;
@@ -746,22 +797,7 @@ export const mountCommandCenter = (root, ctx) => {
       p.busy = false;
     }
     if (p.dead) return;
-    if (page.title && !p.title) {
-      p.title = page.title;
-      paintHead(p);
-    }
-    if (!page.events.length) {
-      p.offset = page.offset;
-      return;
-    }
-    const nearBottom = p.scroller.scrollHeight - p.scroller.scrollTop - p.scroller.clientHeight < NEAR_BOTTOM;
-    // Re-render from the last unfinished fold so consecutive tool turns keep merging.
-    p.events.push(...page.events);
-    p.offset = page.offset;
-    p.list.replaceChildren(...turnNodes(p.events));
-    if (p.list.childElementCount === 0) p.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
-    if (nearBottom || p.first) p.scroller.scrollTop = p.scroller.scrollHeight;
-    p.first = false;
+    applyPage(p, page);
   };
 
   /** Typing into the session. A background session gets a real composer over a headless attach; a terminal's session is reached over its messaging socket. */
@@ -973,6 +1009,66 @@ export const mountCommandCenter = (root, ctx) => {
     });
   };
 
+  /** Heights are a per-viewer convenience, so they live in this browser rather than the URL. */
+  const HEIGHTS = "mv.paneHeights";
+  const readHeights = () => {
+    try {
+      return JSON.parse(localStorage.getItem(HEIGHTS) ?? "{}");
+    } catch {
+      return {}; // private window, blocked storage: the default height is a fine answer
+    }
+  };
+  const rememberHeight = (key, px) => {
+    try {
+      localStorage.setItem(HEIGHTS, JSON.stringify({ ...readHeights(), [key]: Math.round(px) }));
+    } catch {
+      /* nothing to remember it with */
+    }
+  };
+
+  const MIN_PANE = 180;
+
+  /**
+   * Drag the bottom edge to size a pane. A drawn bar rather than CSS `resize`, which brings the
+   * browser's own grip and does not persist. The terminal inside refits as the edge moves, so it
+   * follows the drag rather than snapping once it is let go.
+   */
+  const resizeHandle = (p) => {
+    const bar = el("div", { class: "cc-pane-grip", role: "separator", "aria-label": "drag to resize this session", "aria-orientation": "horizontal", tabindex: "0" });
+    bar.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      bar.setPointerCapture(e.pointerId);
+      const startY = e.clientY;
+      const startH = p.node.getBoundingClientRect().height;
+      const move = (ev) => {
+        const h = Math.max(MIN_PANE, startH + (ev.clientY - startY));
+        p.node.style.height = `${h}px`;
+        refitAll();
+      };
+      const up = (ev) => {
+        bar.releasePointerCapture(ev.pointerId);
+        bar.removeEventListener("pointermove", move);
+        bar.removeEventListener("pointerup", up);
+        rememberHeight(p.key, p.node.getBoundingClientRect().height);
+        refitAll();
+      };
+      bar.addEventListener("pointermove", move);
+      bar.addEventListener("pointerup", up);
+    });
+    // The keyboard gets the same control, because a drag is unreachable without a pointer.
+    bar.addEventListener("keydown", (e) => {
+      const step = e.key === "ArrowDown" ? 40 : e.key === "ArrowUp" ? -40 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const h = Math.max(MIN_PANE, p.node.getBoundingClientRect().height + step);
+      p.node.style.height = `${h}px`;
+      rememberHeight(p.key, h);
+      refitAll();
+    });
+    return bar;
+  };
+
   /** Build a pane for a session. `inline` panes live in a strip; the other kind is full screen. */
   const makePane = (session, { inline }) => {
     const head = el("header", { class: "cc-full-head" });
@@ -982,17 +1078,22 @@ export const mountCommandCenter = (root, ctx) => {
     const body = el("div", { class: "cc-pane-body" }, scroller, composer);
     const node = el("section", { class: `cc-pane${inline ? " inline" : " cc-full"}`, role: inline ? "group" : "dialog", "aria-label": session.title }, head, body);
     const p = { key: session.key, session, inline, head, list, scroller, composer, body, node, offset: 0, events: [], first: true };
+    if (inline) {
+      const saved = readHeights()[p.key];
+      if (saved) node.style.height = `${Math.max(MIN_PANE, saved)}px`;
+      node.append(resizeHandle(p));
+    }
     panes.set(p.key, p);
     paintHead(p);
     paintComposer(p);
     list.append(el("p", { class: "muted cc-empty" }, "reading the transcript…"));
-    pullTranscript(p).catch((err) => list.replaceChildren(el("p", { class: "muted cc-empty" }, err.message)));
-    p.timer = window.setInterval(() => pullTranscript(p).catch(() => {}), 2500);
+    openTranscriptStream(p);
     return p;
   };
 
   const destroyPane = (p) => {
     p.dead = true;
+    p.stream?.close();
     window.clearInterval(p.timer);
     p.stickTerm?.src.close();
     p.stickTerm?.term.dispose();

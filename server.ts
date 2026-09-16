@@ -8,6 +8,7 @@
  */
 import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { watch, type FSWatcher } from "node:fs";
 import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,7 @@ import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/r
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
-import { readTranscript } from "./src/transcript-view.ts";
+import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
 import { backgroundAgents } from "./src/git.ts";
 import { focusApp, parentChain, processHome } from "./src/processes.ts";
 import { liveUsage } from "./src/claude-usage.ts";
@@ -386,6 +387,47 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const sessionId = url.searchParams.get("session");
     if (!cwd || !sessionId) throw new Error("transcript needs cwd and session");
     return sendJson(res, 200, await readTranscript(cwd, sessionId, Number(url.searchParams.get("from") ?? 0)));
+  }
+  /**
+   * The same transcript, pushed instead of asked for. Claude Code appends a line per message
+   * block as it goes, so the data was always live; what lagged was the page asking every 2.5
+   * seconds. The file is watched and new events go out as they land, with a slow interval behind
+   * it because fs.watch can miss an event and a pane that silently stops updating is worse than
+   * a poll. The response is the same shape the polling endpoint returns.
+   */
+  if (method === "GET" && path === "/api/transcript/stream") {
+    const cwd = url.searchParams.get("cwd");
+    const sessionId = url.searchParams.get("session");
+    if (!cwd || !sessionId) throw new Error("transcript stream needs cwd and session");
+    let offset = Number(url.searchParams.get("from") ?? 0);
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    let sending = false;
+    const flush = async () => {
+      if (sending || res.writableEnded) return;
+      sending = true;
+      try {
+        const page = await readTranscript(cwd, sessionId, offset);
+        offset = page.offset;
+        if (page.events.length || page.title) res.write(`data: ${JSON.stringify(page)}\n\n`);
+      } catch {
+        /* the file may not exist yet; the next tick tries again */
+      } finally {
+        sending = false;
+      }
+    };
+    let watcher: FSWatcher | null = null;
+    try {
+      watcher = watch(transcriptPath(cwd, sessionId), () => void flush());
+    } catch {
+      /* no file to watch yet: the interval carries it */
+    }
+    const backstop = setInterval(() => void flush(), 2500);
+    void flush();
+    req.on("close", () => {
+      clearInterval(backstop);
+      watcher?.close();
+    });
+    return;
   }
   if (method === "GET" && path === "/api/workspace") {
     const lan = lanAddress();
