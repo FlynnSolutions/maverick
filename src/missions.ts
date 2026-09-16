@@ -456,6 +456,13 @@ const wingmanPrompt = (project: Project, mission: Mission, m: Milestone, task: M
   `You are a Wingman on the mission "${mission.name}" in the project at ${project.path}. You own one task and nothing else.`,
   "",
   `Your repo is ${repo.label}, at ${repo.path}. Your worktree is ${task.worktree}, on branch ${task.branch}, branched from ${repo.branch}. Work there and only there: do not touch the project's other repos, do not touch their main worktrees, do not switch branches, and do not merge anything.`,
+  ...(mission.repos.length > 1
+    ? ["", [
+        "This mission spans more than one repo, and the milestones before yours have already landed their work on their own branches. **None of it has been merged to a base branch**, so do not expect to find it on main or develop. Where you need to read what an earlier milestone did, read it there:",
+        ...mission.repos.filter((r) => r.label !== repo.label).map((r) => `  - ${r.label}: branch ${r.branch} in ${r.path}, checked out at ${r.integration}`),
+        "If your task depends on something upstream that is not on that branch either, stop and say so rather than inventing it.",
+      ].join("\n")]
+    : []),
   "",
   `Milestone ${m.n} — ${m.title}. That milestone is done when: ${m.done}`,
   "",
@@ -687,6 +694,15 @@ const sweepOnce = async (project: Project): Promise<void> => {
           if (result.sha) m.mergeShas[repo.label] = result.sha;
         }
         m.merged = new Date().toISOString();
+        // A repo with nothing left to do gets its pull request now rather than at the close, so
+        // an earlier repo can be reviewed and merged while the later ones are still flying.
+        if (mission.land === "pr") {
+          try {
+            await landTheWork(mission, true);
+          } catch (err) {
+            mission.trouble = `could not open a pull request: ${(err as Error).message}`;
+          }
+        }
         const next = mission.milestones.find((x) => x.n > m.n && !x.dispatched);
         if (next) await dispatch(project, mission, next);
         else if (mission.milestones.every((x) => x.merged)) {
@@ -773,15 +789,19 @@ export const acceptTask = async (project: Project, id: string, taskId: string, n
  * that repo's base, and that is as far as Maverick goes: a project whose own rules say never
  * self-merge (Realtime's `CLAUDE.md` says exactly that) must not have a tool merge for it.
  */
-const landTheWork = async (mission: Mission): Promise<string[]> => {
+const landTheWork = async (mission: Mission, onlyFinished = false): Promise<string[]> => {
   if (mission.land !== "pr") return [];
   const opened: string[] = [];
+  const all = mission.milestones.flatMap((m) => m.tasks);
   for (const repo of mission.repos) {
     if (repo.landed) {
       opened.push(repo.landed);
       continue;
     }
-    const tasks = mission.milestones.flatMap((m) => m.tasks).filter((t) => t.repo === repo.label && t.status === "passed");
+    const mine = all.filter((t) => t.repo === repo.label);
+    // Mid-flight, a repo is only ready when nothing of its own is still moving.
+    if (onlyFinished && mine.some((t) => t.status !== "passed")) continue;
+    const tasks = mine.filter((t) => t.status === "passed");
     if (!tasks.length) continue;
     await pushBranch(repo.path, repo.branch);
     const body = [
