@@ -26,7 +26,7 @@ import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
 import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
-import { descendsFrom, parentMap } from "./processes.ts";
+import { parentChain } from "./processes.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { addGroup, addItem, parseTracker, setChecked } from "./trackers.ts";
 
@@ -644,9 +644,10 @@ const seatTheRio = async (mission: Mission): Promise<void> => {
   const pty = listTerminals().find((t) => t.id === mission.interview!.terminalId);
   if (!pty?.pid || pty.exitCode !== null) return;
   const sessions = await readRegistrySessions();
-  if (!sessions.length) return;
-  const parents = await parentMap();
-  const rio = sessions.find((s) => descendsFrom(parents, s.pid, pty.pid!));
+  // Asked of every session at once: `parentChain` reads one cached process table, so the cost
+  // of this is one `ps` rather than one per session.
+  const chains = await Promise.all(sessions.map((s) => parentChain(s.pid)));
+  const rio = sessions.find((_, i) => chains[i].includes(pty.pid!));
   if (rio) await updateFormation(mission.formation, { lead: rio.sessionId }).catch(() => undefined);
 };
 

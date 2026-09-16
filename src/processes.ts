@@ -46,29 +46,6 @@ export const parentChain = async (pid: number, depth = 5): Promise<number[]> => 
 };
 
 /** Bring a terminal app to the front; the tab inside it is not scriptable, so the caller names the tty. */
-/** Every process's parent, in one listing: walking this beats a `ps` per pid per level. */
-export const parentMap = async (): Promise<Map<number, number>> => {
-  const { stdout } = await run("ps", ["-Ao", "pid=,ppid="]);
-  const out = new Map<number, number>();
-  for (const line of stdout.split("\n")) {
-    const m = line.trim().match(/^(\d+)\s+(\d+)$/);
-    if (m) out.set(Number(m[1]), Number(m[2]));
-  }
-  return out;
-};
-
-/** Whether `pid` descends from `ancestor`, using a map from `parentMap`. */
-export const descendsFrom = (parents: Map<number, number>, pid: number, ancestor: number, depth = 8): boolean => {
-  let current = pid;
-  for (let i = 0; i < depth; i += 1) {
-    const parent = parents.get(current);
-    if (parent === undefined || parent === current) return false;
-    if (parent === ancestor) return true;
-    current = parent;
-  }
-  return false;
-};
-
 export const focusApp = async (app: string): Promise<void> => {
   await run("osascript", ["-e", `tell application "${app.replace(/"/g, "")}" to activate`]);
 };
