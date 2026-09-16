@@ -107,3 +107,62 @@ export const backgroundAgents = async (cwd: string): Promise<BackgroundAgent[]> 
   const all = JSON.parse(stdout) as Array<BackgroundAgent & { kind: string }>;
   return all.filter((a) => a.kind === "background");
 };
+
+/* ---------- branches and worktrees, for a mission's flight ---------- */
+
+const branchExists = async (repoPath: string, branch: string): Promise<boolean> => {
+  try {
+    await run("git", ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Create `branch` at `from` unless it is already there. Never checks anything out. */
+export const ensureBranch = async (repoPath: string, branch: string, from = "HEAD"): Promise<void> => {
+  if (await branchExists(repoPath, branch)) return;
+  await run("git", ["-C", repoPath, "branch", branch, from]);
+};
+
+/**
+ * A worktree at `path` on `branch`, branched from `from` when it is new. Idempotent, so a
+ * sweep that runs twice does not fail: an existing worktree at that path is accepted as is.
+ */
+export const ensureWorktree = async (repoPath: string, path: string, branch: string, from: string): Promise<void> => {
+  if ((await worktrees(repoPath)).some((w) => w.path === path)) return;
+  await ensureBranch(repoPath, branch, from);
+  await run("git", ["-C", repoPath, "worktree", "add", path, branch]);
+};
+
+/** Drop a worktree and the directory with it; a worktree that is already gone is not an error. */
+export const removeWorktree = async (repoPath: string, path: string): Promise<void> => {
+  try {
+    await run("git", ["-C", repoPath, "worktree", "remove", "--force", path]);
+  } catch (err) {
+    if (!/is not a working tree|No such file/i.test((err as { stderr?: string }).stderr ?? "")) throw err;
+  }
+};
+
+/** Commit subjects on `branch` that `base` does not have, oldest first. Empty means the branch did nothing. */
+export const commitsAhead = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
+  const { stdout } = await run("git", ["-C", repoPath, "log", "--reverse", "--format=%h %s", `${base}..${branch}`]);
+  return stdout.split("\n").filter(Boolean);
+};
+
+/**
+ * Merge `branch` into whatever is checked out at `worktreePath`. A conflict is reported, not
+ * thrown: the merge is aborted and the conflicting paths come back so the mission can say
+ * plainly which work collided rather than leaving a half-merged index behind.
+ */
+export const mergeInto = async (worktreePath: string, branch: string, message: string): Promise<{ merged: boolean; sha?: string; conflicts?: string[] }> => {
+  try {
+    await run("git", ["-C", worktreePath, "merge", "--no-ff", "-m", message, branch]);
+  } catch {
+    const { stdout } = await run("git", ["-C", worktreePath, "diff", "--name-only", "--diff-filter=U"]).catch(() => ({ stdout: "" }));
+    await run("git", ["-C", worktreePath, "merge", "--abort"]).catch(() => undefined);
+    return { merged: false, conflicts: stdout.split("\n").filter(Boolean) };
+  }
+  const { stdout: sha } = await run("git", ["-C", worktreePath, "rev-parse", "--short", "HEAD"]);
+  return { merged: true, sha: sha.trim() };
+};
