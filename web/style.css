@@ -38,7 +38,6 @@
   --display: "Chakra Petch", "IBM Plex Sans", sans-serif;
   --sans: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
-  --dock-h: 44vh;
   /* The deck's own gradient, so the page background is not two hard-coded darks. */
   --deck-top: #0d1117;
   --deck-grain: 0.045;
@@ -450,7 +449,6 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
   scrollbar-width: thin;
   scrollbar-color: var(--ink-ghost) transparent;
 }
-body.docked .dispatch { max-height: calc(100vh - 68px - 16px - var(--dock-h)); }
 .project.rail-collapsed .dispatch { padding: 0 0 0 6px; }
 .dispatch h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; margin: 14px 0 6px; }
 .dispatch .lane-title { margin: 0; }
@@ -539,91 +537,34 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
   52% { opacity: 1; } 54% { opacity: 0.3; } 56% { opacity: 1; }
 }
 
-/* ---------- terminal dock ---------- */
-/* Selected by id: a bare `.dock` also matched the cards' dock buttons and made them sticky. */
-#dock {
-  position: sticky;
-  bottom: 0;
-  z-index: 4;
-  background: rgba(4, 6, 12, 0.92);
-  backdrop-filter: blur(8px);
-  border-top: 1px solid var(--seam);
-  box-shadow: 0 -12px 40px var(--shade);
-  height: var(--dock-h);
-  display: flex;
-  flex-direction: column;
-}
-/* The dock's own header: which pane, how they are laid out, and a way to put it away. */
-.dock-head { display: flex; align-items: flex-end; gap: 10px; padding: 6px 8px 0; border-bottom: 1px solid var(--seam-soft); }
-.dock-tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.dock-gap { flex: 1; }
-.dock-ctl { display: inline-flex; align-items: center; gap: 6px; padding-bottom: 5px; }
-.dock-ctl .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--inset); }
-.dock-ctl .seg button { height: 22px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: var(--ink-faint); font: 500 11.5px var(--sans); }
-.dock-ctl .seg button.on { background: var(--panel-lifted); color: var(--ink); }
-.dock-ctl .icon-btn { height: 26px; width: 26px; min-width: 26px; }
+/* ---------- the terminal, inside the session it belongs to ---------- */
+/* There is no dock. A panel covering half the page over live content was the confusing part,
+   so the terminal opens where the session already is. */
+.cc-stick { display: flex; flex-direction: column; min-height: 0; height: 38vh; border-top: 1px solid var(--seam); background: var(--carbon); }
+.cc-stick-head { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 6px 0 14px; background: var(--gunmetal); border-bottom: 1px solid var(--seam-soft); flex: 0 0 auto; }
+.cc-stick-head .k { font: 600 10.5px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+.cc-stick-head .t { font: 11.5px var(--mono); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-stick-head .spacer { flex: 1; }
+.cc-stick .term { flex: 1; min-height: 0; padding: 6px 10px 8px; }
+.cc-stick .term .xterm { height: 100%; }
 
-/* A pane: a caption so a grid of terminals says which is which. */
-.term-cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-radius: var(--radius-s); background: var(--carbon); box-shadow: 0 0 0 1px var(--seam-soft); overflow: hidden; }
-.term-cell.on { box-shadow: 0 0 0 1px var(--seam-strong); }
-.term-cap { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 4px 0 8px; background: var(--gunmetal); border-bottom: 1px solid var(--seam-soft); flex: 0 0 auto; }
-.term-cap .lamp { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-hot); }
-.term-cap .t { flex: 1; min-width: 0; font: 11.5px var(--mono); color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.term-cell.on .term-cap .t { color: var(--ink-soft); }
-.term-cap .cap-btn { width: 22px; height: 20px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-ghost); }
-.term-cap .cap-btn .icon { width: 13px; height: 13px; }
-.term-cap .cap-btn:hover { color: var(--ink); background: var(--panel); }
-.term-cap .cap-btn.x:hover { color: var(--threat); }
-.term-cell.lead .term-cap .lamp { background: var(--caution); }
-
-/* Layouts. Tabs shows one; split sits two side by side; grid fits as many as will go, with
-   the lead pane holding a full column so three sessions can run under one overseer. */
-#dock.layout-tabs .dock-body { display: block; }
-#dock.layout-split .dock-body,
-#dock.layout-grid .dock-body { display: grid; gap: 6px; align-content: stretch; }
-#dock.layout-split .dock-body { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); grid-auto-rows: 1fr; }
-#dock.layout-grid .dock-body { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); grid-auto-rows: minmax(0, 1fr); }
-#dock.layout-grid .term-cell.lead { grid-row: span 2; }
-#dock.layout-split, #dock.layout-grid { --dock-h: 62vh; }
-
-/* Put away, not closed: the terminals are still running. */
-.dock-restore {
-  position: fixed; right: 16px; bottom: 16px; z-index: 6;
-  display: inline-flex; align-items: center; gap: 8px;
-  height: 36px; padding: 0 14px 0 12px; border: 0; border-radius: 18px;
-  background: var(--panel-lifted); color: var(--ink);
-  box-shadow: 0 0 0 1px var(--seam), 0 8px 24px var(--shade);
-}
-.dock-restore b { font: 500 12.5px var(--sans); }
-.dock-restore:hover { background: var(--panel); }
-
-/* A tab is two real buttons: the name activates, the × closes. Neither is nested in the other. */
-.dock-tab {
-  display: inline-flex;
-  align-items: stretch;
-  height: 30px;
-  max-width: 280px;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: var(--radius-s) var(--radius-s) 0 0;
-  color: var(--ink-faint);
-  font-family: var(--mono);
-  font-size: 12px;
-}
-.dock-tab.active { background: var(--gunmetal); border-color: var(--seam); color: var(--ink); }
-.dock-tab button { height: auto; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; box-shadow: none; }
-.dock-tab button:hover { background: var(--steel); box-shadow: none; }
-.dock-tab button:active { transform: none; }
-.dock-tab .name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 0 6px 0 10px; border-radius: var(--radius-s) 0 0 0; }
-.dock-tab .name .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dock-tab .lamp { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--accent-hot); }
-.dock-tab .close { width: 28px; flex: 0 0 auto; color: var(--ink-faint); font-size: 16px; line-height: 1; border-left: 1px solid var(--seam-soft); border-radius: 0 var(--radius-s) 0 0; }
-.dock-tab.active .close { color: var(--ink-soft); }
-.dock-tab .close:hover { color: var(--threat); background: var(--panel); }
-.dock-body { flex: 1; min-height: 0; padding: 6px 8px 8px; }
-.term { flex: 1; min-height: 0; width: 100%; }
-#dock.layout-tabs .term-cell { height: 100%; }
-.term .xterm { height: 100%; }
+/* ---------- formations: a lead and its flight, as tabs ---------- */
+.forms { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; background: var(--inset); }
+.forms button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--ink-faint); font: 500 12.5px var(--sans); }
+.forms button:hover { color: var(--ink-soft); background: transparent; box-shadow: none; }
+.forms button.on { background: var(--panel-lifted); color: var(--ink); box-shadow: 0 1px 2px var(--shade-soft); }
+.forms button b { font: 600 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-faint); }
+.forms button.on b { color: var(--accent-hot); }
+.forms .new { width: 28px; padding: 0; justify-content: center; }
+.forms .new .icon { width: 14px; height: 14px; }
+.formation .rack > h4 .spacer { flex: 1; }
+.formation .rack > h4 button { height: 24px; font-size: 11.5px; }
+.lead-rack > h4 { color: var(--accent-hot); }
+.lead-rack .strip { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent); }
+.forms-foot { margin-top: 6px; }
+.forms-foot button:hover { color: var(--threat); }
+.pick-menu .pick-row { width: 100%; text-align: left; border: 0; background: transparent; box-shadow: none; height: auto; }
+.pick-menu .pick-row i { font-style: normal; }
 
 /* Reduce motion quiets the ambient pulses and entrances; the action effects stay. */
 @media (prefers-reduced-motion: reduce) {
@@ -994,7 +935,7 @@ body.ask-open { overflow: hidden; }
   70% { opacity: 0.9; }
   100% { transform: translate(var(--dx), calc(var(--dy) + 90px)); opacity: 0; }
 }
-.card.struck, .row.struck, .dock-tab.struck, .items.struck, .lane.struck, .release-card.struck {
+.card.struck, .row.struck, .items.struck, .lane.struck, .release-card.struck {
   box-shadow: 0 0 0 1px var(--accent-hot), 0 0 28px var(--accent-glow), 0 0 70px var(--accent-dim);
 }
 .brand .callsign { color: var(--accent-hot); margin-left: 8px; font-weight: 500; letter-spacing: 0.04em; text-transform: none; }
@@ -1378,7 +1319,6 @@ button.icon-btn { position: relative; width: 30px; min-width: 30px; height: 30px
 
 /* full screen conversation */
 .cc-full { position: fixed; left: 0; right: 0; top: 52px; bottom: 0; z-index: 6; display: flex; flex-direction: column; background: var(--carbon); animation: cc-in 200ms var(--ease-out); }
-body:has(#dock:not([hidden])) .cc-full { bottom: var(--dock-h); }
 @keyframes cc-in { from { opacity: 0; transform: translateY(10px); } }
 .cc-full-head { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--seam); background: var(--gunmetal); flex-wrap: wrap; }
 .cc-full-head h2 { margin: 0; font-family: var(--display); font-size: 18px; font-weight: 600; letter-spacing: 0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50vw; }
@@ -1438,8 +1378,6 @@ input, textarea { caret-color: var(--accent); }
   .cu-row { grid-template-columns: 72px minmax(0, 1fr) auto; }
   .cu-row .nums { display: none; }
   .ws-filter button, .cu-tabs button, .strip-acts .act, .cc-full-head button, .cc-lead button, .ask-actions button { min-height: 44px; }
-  .dock-tab { height: 44px; }
-  .dock-tab .close { width: 44px; }
   .ask input[type="text"] { height: 44px; }
   .cc-full-head h2 { max-width: 100%; white-space: normal; }
   /* Phone keeps what the rack is sorted by (state, recency) and puts the verbs beside the

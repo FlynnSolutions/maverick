@@ -30,6 +30,7 @@ import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
 import { readSessions, sessionsForProject, type SessionRecord } from "./src/sessions.ts";
+import { createFormation, deleteFormation, listFormations, updateFormation } from "./src/formations.ts";
 import { readNames, setName } from "./src/names.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
 import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
@@ -546,6 +547,21 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     await focusApp(app);
     return sendJson(res, 200, { ok: true, app });
   }
+  // Formations: Cory's groupings of sessions, one lead and its flight.
+  if (path === "/api/formations") {
+    if (method === "GET") return sendJson(res, 200, await listFormations((await requireProject(url)).id));
+    if (method === "POST") {
+      const body = await readJson<{ name?: string }>(req);
+      return sendJson(res, 200, await createFormation((await requireProject(url)).id, body.name));
+    }
+  }
+  const formationMatch = path.match(/^\/api\/formations\/([A-Za-z0-9-]+)$/);
+  if (formationMatch) {
+    const [, id] = formationMatch;
+    if (method === "PATCH") return sendJson(res, 200, await updateFormation(id, await readJson(req)));
+    if (method === "DELETE") { await deleteFormation(id); return sendJson(res, 200, { ok: true }); }
+  }
+
   // Rename a session: Maverick's own name for it, kept beside the CLI's read-only registry.
   if (method === "POST" && path === "/api/sessions/name") {
     const { sessionId, name } = await readJson<{ sessionId: string; name: string }>(req);

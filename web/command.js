@@ -79,13 +79,15 @@ const assemble = (all) => {
 };
 
 export const mountCommandCenter = (root, ctx) => {
-  const { el, text, api, post, askClose, askEnd, loading, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus } = ctx;
+  const { el, text, api, post, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops, setStatus } = ctx;
   const DAY = 86400000;
   let all = null;
   let model = null;
   let full = null; // { session, offset, events, timer, scroller, list }
   let timer = null;
   let editing = false; // a rename is open: the repaint would tear the input out mid-word
+  let formations = [];
+  let activeFormation = new URLSearchParams(location.search).get("formation");
 
   /* ---------- panels ---------- */
 
@@ -137,7 +139,8 @@ export const mountCommandCenter = (root, ctx) => {
           window.setTimeout(load, 1500);
         }, title: `close the Claude running "${s.title}"` }, long ? "end session" : "close");
 
-  const dockButton = (s) => el("button", { type: "button", class: "ghost act", title: s.terminalId ? "show its dock terminal" : "open the terminal in the dock", onclick: () => { if (s.terminalId) mountExisting(s.terminalId); else openTerminal(dockFor(s)); } }, "dock");
+  /** Open the session full screen with its terminal already attached. */
+  const terminalButton = (s) => el("button", { type: "button", class: "ghost act", title: "open this session with its terminal", onclick: (e) => { e.stopPropagation(); openFull(s, { stick: true }); } }, "open");
 
   /**
    * Rename in place, the way a controller annotates a flight strip: the name becomes an input
@@ -231,7 +234,7 @@ export const mountCommandCenter = (root, ctx) => {
       when: age(s.at),
       up: s.elapsed ? `up ${s.elapsed}` : null,
       where: whereText(s, true),
-      acts: [s.sessionId ? renameButton(s, name) : disabledRename(), dockButton(s), endButton(s, "ghost act end")],
+      acts: [s.sessionId ? renameButton(s, name) : disabledRename(), terminalButton(s), endButton(s, "ghost act end")],
     }),
     full ? say(s) : null);
   };
@@ -285,6 +288,85 @@ export const mountCommandCenter = (root, ctx) => {
       el("span", { class: "name" }, parentRecord.loop),
       el("span", { class: "sub" }, `${parentRecord.status} · ${children.length} session${children.length === 1 ? "" : "s"}${parentRecord.handoff ? ` · ${clip(parentRecord.handoff, 90)}` : ""}`),
     );
+  };
+
+  /* ---------- formations: a lead and its flight, as tabs ---------- */
+
+  const saveFormation = async (id, patch) => {
+    const next = await api(`/api/formations/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+    formations = formations.map((f) => (f.id === id ? next : f));
+    paint();
+  };
+
+  /** This project's sessions, minus whoever is already in this formation. */
+  const mySessions = () => model.sessions.filter((s) => s.project === ctx.projectId);
+  const addable = (f) => mySessions().filter((s) => s.sessionId && s.sessionId !== f.lead && !f.members.includes(s.sessionId));
+
+  const formationTabs = () => {
+    const tab = (id, label, count) =>
+      el("button", { type: "button", class: activeFormation === id ? "on" : "", onclick: () => {
+        activeFormation = id;
+        const u = new URL(location.href);
+        if (id) u.searchParams.set("formation", id); else u.searchParams.delete("formation");
+        history.replaceState({}, "", u);
+        paint();
+      } }, label, count != null ? el("b", {}, String(count)) : null);
+    return el("div", { class: "forms" },
+      tab(null, "Rack", mySessions().length),
+      ...formations.map((f) => tab(f.id, f.name, (f.lead ? 1 : 0) + f.members.length)),
+      el("button", { type: "button", class: "new", title: "new formation", onclick: async () => {
+        const f = await api("/api/formations?project=" + encodeURIComponent(ctx.projectId), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+        formations = [...formations, f];
+        activeFormation = f.id;
+        paint();
+      } }, icon("plus")));
+  };
+
+  const pickSession = (f, onPick, label) => {
+    const options = addable(f);
+    if (!options.length) return setStatus("every session in this project is already in this formation");
+    const menu = el("div", { class: "menu pick-menu", role: "dialog", "aria-label": label },
+      el("h4", {}, label),
+      ...options.map((s) => el("button", { type: "button", class: "pick-row", onclick: () => { menu.remove(); onPick(s); } },
+        lamp(s.status), el("b", {}, s.title), el("i", {}, s.status))));
+    menu.style.top = "96px";
+    menu.style.left = "24px";
+    document.body.append(menu);
+    window.setTimeout(() => document.addEventListener("click", function once(ev) {
+      if (!menu.isConnected) return document.removeEventListener("click", once);
+      if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener("click", once); }
+    }), 0);
+  };
+
+  const formationView = (f) => {
+    const byId = new Map(mySessions().filter((s) => s.sessionId).map((s) => [s.sessionId, s]));
+    const lead = f.lead ? byId.get(f.lead) : null;
+    const flight = f.members.map((id) => byId.get(id)).filter(Boolean);
+    const gone = (f.lead && !lead ? 1 : 0) + f.members.length - flight.length;
+    return el("section", { class: "cc-project formation" },
+      el("section", { class: "rack lead-rack" },
+        el("h4", {}, jetSvg("jet-glyph band"), el("span", {}, "Oversight"),
+          el("span", { class: "spacer" }),
+          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { lead: s.sessionId }), "Who is the lead?"); } }, lead ? "change lead" : "assign a lead")),
+        lead
+          ? el("div", { class: "rack-strips" }, strip(lead, model.byClaudeId.get(lead.claudeId), true, "working"))
+          : el("p", { class: "muted small cc-empty" }, "No lead yet. The lead is the session that orchestrates; the flight reports into it.")),
+      el("section", { class: "rack" },
+        el("h4", {}, el("span", {}, "Flight"), el("span", { class: "n" }, String(flight.length)),
+          el("span", { class: "spacer" }),
+          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { members: [...f.members, s.sessionId] }), "Add to the flight"); } }, "add a session")),
+        flight.length
+          ? el("div", { class: "rack-strips" }, ...flight.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "working")))
+          : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet.")),
+      gone ? el("p", { class: "muted small cc-empty" }, `${gone} session${gone === 1 ? " is" : "s are"} no longer running; the formation keeps the slot.`) : null,
+      el("div", { class: "forms-foot" },
+        el("button", { type: "button", class: "ghost", onclick: async () => {
+          if (!(await askEnd(true, `formation ${f.name}`))) return;
+          await api(`/api/formations/${f.id}`, { method: "DELETE" });
+          formations = formations.filter((x) => x.id !== f.id);
+          activeFormation = null;
+          paint();
+        } }, "disband this formation")));
   };
 
   const rack = (name, sessions, cls = "", full = false) =>
@@ -343,9 +425,11 @@ export const mountCommandCenter = (root, ctx) => {
     // One project at a time. Maverick is opened on a project; sessions running somewhere else
     // are that project's business, not this page's.
     const mine = model.sessions.filter((s) => s.project === ctx.projectId);
-    ctx.filterRoot?.replaceChildren();
+    ctx.filterRoot?.replaceChildren(formationTabs());
+    const active = formations.find((f) => f.id === activeFormation);
+    if (activeFormation && !active) activeFormation = null;
     const proj = all.projects.find((p) => p.id === ctx.projectId) ?? null;
-    const section = projectSection(proj, mine);
+    const section = active ? formationView(active) : projectSection(proj, mine);
     const sections = section ? [section] : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
     root.replaceChildren(...sections);
     if (full) paintFullHead();
@@ -405,7 +489,7 @@ export const mountCommandCenter = (root, ctx) => {
       el("span", { class: "meta" }, el("span", { class: "k" }, live.status), live.waitingFor ? el("span", {}, live.waitingFor) : null, el("span", {}, whereText(live)), el("span", { class: "mono" }, live.sessionId.slice(0, 8))),
       el("span", { class: "spacer" }),
       endButton(live, "ghost end-long", true),
-      el("button", { type: "button", class: "primary", onclick: () => openTerminal(dockFor(live)) }, live.kind === "background" ? "Take the stick" : "Open in dock"),
+      full?.stickPane ? null : el("button", { type: "button", class: "primary", onclick: () => takeTheStick(live) }, "Take the stick"),
       // Top right is where every interface puts dismiss, so that is all it may do here.
       el("button", { type: "button", class: "ghost icon-btn dismiss", "aria-label": "close this view; the session keeps running", title: "close this view; the session keeps running", onclick: closeFull }, icon("close")),
     );
@@ -487,11 +571,60 @@ export const mountCommandCenter = (root, ctx) => {
           ? `Lives in ${s.app ?? "a terminal"}${s.tty ? ` on ${s.tty}` : ""} · sent over its session socket, so Claude reads it as a peer's request under that session's permissions`
           : `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in Maverick's dock" : ""}`),
         peer && s.app && s.pid ? el("button", { type: "button", class: "ghost", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
-        peer ? null : el("button", { type: "button", class: "ghost", onclick: () => (s.terminalId ? mountExisting(s.terminalId) : openTerminal(dockFor(s))) }, "take the stick")),
+        null),
     );
   };
 
-  const openFull = (session) => {
+  /**
+   * The terminal, inside the session's own view. This is what the dock used to be: a pane over
+   * live content was the confusing part, so it lives where the session already is.
+   */
+  const takeTheStick = async (session) => {
+    if (!full || full.stickPane) return;
+    const pane = el("div", { class: "cc-stick" }, el("div", { class: "cc-stick-head" },
+      el("span", { class: "k" }, "terminal"),
+      el("span", { class: "t" }, session.title),
+      el("span", { class: "spacer" }),
+      el("button", { type: "button", class: "ghost icon-btn", "aria-label": "detach the terminal; the session keeps running", title: "detach; the session keeps running", onclick: dropTheStick }, icon("close"))));
+    const host = el("div", { class: "term" });
+    pane.append(host);
+    full.overlay.insertBefore(pane, full.composer);
+    full.stickPane = pane;
+    try {
+      const info = session.terminalId
+        ? (await api("/api/terminals")).find((t) => t.id === session.terminalId)
+        : (full.stick ??= await createTerminal(dockFor(session)));
+      if (!info) throw new Error("that terminal is gone");
+      const term = new window.Terminal({ fontFamily: "JetBrains Mono, Menlo, monospace", fontSize: 12.5, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: { background: "#0a0c0f", foreground: "#e8ecf1" } });
+      const fit = new window.FitAddon.FitAddon();
+      term.loadAddon(fit);
+      term.open(host);
+      fit.fit();
+      const src = new EventSource(`/api/terminals/${info.id}/stream`);
+      src.onmessage = (e) => term.write(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)));
+      src.addEventListener("exit", () => { term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n"); src.close(); });
+      term.onData((d) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: d, keepalive: true }).catch(() => {}));
+      term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
+      acceptDrops(host, (paths) => sendInput(info.id, `${paths.join(" ")} `));
+      full.stickTerm = { term, fit, src, id: info.id };
+      term.focus();
+      paintFullHead();
+    } catch (err) {
+      pane.append(el("p", { class: "muted small" }, err.message));
+    }
+  };
+
+  const dropTheStick = () => {
+    if (!full?.stickPane) return;
+    full.stickTerm?.src.close();
+    full.stickTerm?.term.dispose();
+    full.stickPane.remove();
+    full.stickPane = null;
+    full.stickTerm = null;
+    paintFullHead();
+  };
+
+  const openFull = (session, opts = {}) => {
     closeFull();
     const head = el("header", { class: "cc-full-head" });
     const list = el("div", { class: "cc-conv" });
@@ -507,11 +640,14 @@ export const mountCommandCenter = (root, ctx) => {
     pullTranscript().catch((err) => list.replaceChildren(el("p", { class: "muted cc-empty" }, err.message)));
     full.timer = window.setInterval(() => pullTranscript().catch(() => {}), 2500);
     history.pushState({ ccFull: session.key }, "", location.href);
+    if (opts.stick) takeTheStick(session);
   };
 
   const closeFull = () => {
     if (!full) return;
     window.clearInterval(full.timer);
+    full.stickTerm?.src.close();
+    full.stickTerm?.term.dispose();
     if (full.stick) fetch(`/api/terminals/${full.stick.id}`, { method: "DELETE" }).catch(() => {}); // detach; the session keeps running
     full.overlay.remove();
     document.body.classList.remove("cc-full-open");
@@ -527,7 +663,10 @@ export const mountCommandCenter = (root, ctx) => {
     // Rebuilding every session record takes over a second; the jet flies while it does.
     const stop = firstLoad ? loading?.() : null;
     try {
-      all = await api("/api/sessions/all");
+      [all, formations] = await Promise.all([
+        api("/api/sessions/all"),
+        api(`/api/formations?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
+      ]);
       paint();
     } catch (err) {
       // refresh lives in the page head, so it survives this.

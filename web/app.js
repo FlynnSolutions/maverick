@@ -1106,7 +1106,8 @@ const terminalFor = async (claudeId, title) => {
 
 const tailInto = async (node, claudeId, title) => {
   if (tails.has(claudeId)) return;
-  if (new URLSearchParams(location.search).has("nodock")) {
+  // A live stream keeps a headless capture from ever settling, so screenshots opt out.
+  if (new URLSearchParams(location.search).has("nolive")) {
     node.textContent = "(live view off in capture mode)";
     return;
   }
@@ -1212,13 +1213,11 @@ const openShipWizard = async (version) => {
           el("span", { class: "spacer" }),
           el("span", { class: "actions" },
             step.status === "pending" || step.status === "failed" ? btn(step.id === "audits" ? "run audits" : "run", () => stepCall(step, "run"), "primary") : null,
-            step.claudeId ? btn("open in dock", async () => {
-              const t = tails.get(step.claudeId);
-              const info = t?.info ?? (await terminalFor(step.claudeId, `ship ${bare}: ${step.title}`));
+            step.claudeId ? btn("open session", async () => {
+              await terminalFor(step.claudeId, `ship ${bare}: ${step.title}`);
               stopTails();
               closeDrawer();
-              mountTerminal(info);
-              setStatus(`ship ${bare}: session in the dock. Reopen the wizard from the v${bare} card.`);
+              setStatus(`ship ${bare}: ${step.title} is attached. Find it in the workspace.`);
             }) : null,
             step.status !== "done" && step.status !== "skipped" && step.status !== "pending" ? btn("mark done", () => stepCall(step, "", { status: "done" })) : null,
             step.status === "pending" ? btn("skip", () => stepCall(step, "", { status: "skipped" }), "ghost") : null,
@@ -1280,7 +1279,7 @@ const renderWorkspace = async () => {
   const center = el("div", { class: "cc" });
   wrap.append(center);
   claudeUsage.mount(usageRoot, { api, post });
-  commandCenter = mountCommandCenter(center, { el, text, api, post, askClose, askEnd, loading, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus, projectId, project, filterRoot });
+  commandCenter = mountCommandCenter(center, { el, text, api, post, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops, setStatus, projectId, project, filterRoot });
   return wrap;
 };
 
@@ -1489,163 +1488,12 @@ const loadRail = async (refresh = false) => {
   }
 };
 
-/* ---------- terminal dock ---------- */
+/* ---------- terminals ----------
+   There is no dock any more. A terminal is created headlessly and surfaced inside the session's
+   own full-screen view, which already knows how to carry one: a panel covering half the page
+   over live content was the confusing part, not the terminal. */
 
-const dockTerminals = new Map();
-let activeTerminal = null;
-/** tabs: one at a time. split: side by side. grid: as many as fit, one of them the lead. */
-let dockLayout = (() => { try { return localStorage.getItem("mv.dockLayout") ?? "tabs"; } catch { return "tabs"; } })();
-let leadTerminal = null;
-
-/** Hide the dock without ending anything; a pill brings it back. */
-const hideDock = () => {
-  $("#dock").hidden = true;
-  document.body.classList.remove("docked");
-  paintRestore();
-};
-const showDock = () => {
-  $("#dock").hidden = false;
-  document.body.classList.add("docked");
-  paintRestore();
-  applyDockLayout();
-};
-const paintRestore = () => {
-  document.querySelector(".dock-restore")?.remove();
-  if (!dockTerminals.size || !$("#dock").hidden) return;
-  document.body.append(el("button", { type: "button", class: "dock-restore", onclick: showDock },
-    icon("workspace"), el("b", {}, `${dockTerminals.size} terminal${dockTerminals.size === 1 ? "" : "s"}`)));
-};
-
-const applyDockLayout = () => {
-  const dock = $("#dock");
-  for (const m of ["tabs", "split", "grid"]) dock.classList.toggle(`layout-${m}`, dockLayout === m);
-  for (const [tid, t] of dockTerminals) {
-    t.cell.hidden = dockLayout === "tabs" && tid !== activeTerminal;
-    t.cell.classList.toggle("lead", dockLayout === "grid" && tid === leadTerminal);
-    t.cell.classList.toggle("on", tid === activeTerminal);
-  }
-  // xterm measures its own box, so every visible pane has to be told the box changed.
-  window.requestAnimationFrame(() => {
-    for (const [tid, t] of dockTerminals) {
-      if (t.cell.hidden) continue;
-      t.fit.fit();
-      post(`/api/terminals/${tid}/resize`, { cols: t.term.cols, rows: t.term.rows }).catch(() => {});
-    }
-  });
-  paintDockCtl();
-};
-
-const paintDockCtl = () => {
-  const modes = [["tabs", "Tabs"], ["split", "Split"], ["grid", "Grid"]];
-  $("#dock-ctl").replaceChildren(
-    el("span", { class: "seg" }, ...modes.map(([m, label]) =>
-      el("button", { type: "button", class: dockLayout === m ? "on" : "", title: `${label} layout`, onclick: () => {
-        dockLayout = m;
-        try { localStorage.setItem("mv.dockLayout", m); } catch {}
-        applyDockLayout();
-      } }, label))),
-    el("button", { type: "button", class: "ghost icon-btn", "aria-label": "hide the dock; the terminals keep running", title: "hide the dock; the terminals keep running", onclick: hideDock }, icon("close")));
-};
-
-const termSize = () => {
-  const body = $("#dock-body");
-  const cols = Math.max(40, Math.floor((body.clientWidth - 16) / 8.4));
-  const rows = Math.max(8, Math.floor((body.clientHeight - 14) / 18));
-  return { cols, rows };
-};
-
-const activate = (id) => {
-  activeTerminal = id;
-  for (const [tid, t] of dockTerminals) t.tab.classList.toggle("active", tid === id);
-  applyDockLayout();
-  const t = dockTerminals.get(id);
-  if (t && !t.cell.hidden) t.term.focus();
-};
-
-/** A pty onto a background agent only detaches when closed; any other pty hangs up the claude living in it. */
-const endsClaude = (info) => !info.agentId;
-
-const closeDockTerminal = async (id) => {
-  const t = dockTerminals.get(id);
-  if (!t) return;
-  if (endsClaude(t.info) && !t.tab.classList.contains("exited") && !(await askClose({ title: t.info.title, app: "its dock terminal" }))) return;
-  try {
-    await api(`/api/terminals/${id}`, { method: "DELETE" });
-  } catch (err) {
-    setStatus(`terminal ${id}: ${err.message}`, true);
-  }
-  t.source.close();
-  t.term.dispose();
-  t.tab.remove();
-  t.cell.remove();
-  dockTerminals.delete(id);
-  if (leadTerminal === id) leadTerminal = null;
-  paintRestore();
-  if (activeTerminal === id) {
-    const next = [...dockTerminals.keys()].pop();
-    if (next) activate(next);
-    else hideDock();
-  }
-};
-
-const mountTerminal = (info) => {
-  showDock();
-  const term = new window.Terminal({
-    fontFamily: "JetBrains Mono, Menlo, monospace",
-    fontSize: 13,
-    lineHeight: 1.2,
-    cursorBlink: true,
-    scrollback: 5000,
-    theme: {
-      background: "#0a0c0f",
-      foreground: "#e8ecf1",
-      cursor: getComputedStyle(document.documentElement).getPropertyValue("--accent-hot").trim() || "#ffb36b",
-      selectionBackground: "rgba(255, 179, 107, 0.25)",
-      black: "#10141a", brightBlack: "#4a5468",
-      red: "#ff4d5e", green: "#8dffb0", yellow: "#ffd166", blue: "#7cc4ff", magenta: "#c79bd8", cyan: "#7ccfd0", white: "#aeb8c6",
-    },
-  });
-  const fit = new window.FitAddon.FitAddon();
-  term.loadAddon(fit);
-  // Each terminal is a titled pane, so a grid of them says which is which.
-  const container = el("div", { class: "term" });
-  const cell = el("div", { class: "term-cell" },
-    el("div", { class: "term-cap" },
-      el("span", { class: "lamp" }),
-      el("span", { class: "t", title: info.title }, info.title),
-      el("button", { type: "button", class: "ghost cap-btn", title: "make this the oversight pane", "aria-label": `make ${info.title} the oversight pane`,
-        onclick: () => { leadTerminal = leadTerminal === info.id ? null : info.id; applyDockLayout(); } }, icon("board")),
-      el("button", { type: "button", class: "ghost cap-btn x", title: "close this pane", "aria-label": `close ${info.title}`,
-        onclick: () => closeDockTerminal(info.id) }, icon("close"))),
-    container);
-  $("#dock-body").append(cell);
-  term.open(container);
-  acceptDrops(container, (paths) => sendInput(info.id, `${paths.join(" ")} `));
-
-  const tab = el(
-    "div",
-    { class: "dock-tab" },
-    el("button", { type: "button", class: "name", title: info.title, onclick: () => activate(info.id) }, el("span", { class: "lamp" }), el("span", { class: "t" }, info.title)),
-    el("button", { type: "button", class: "close", title: endsClaude(info) ? "close this terminal and end its claude" : "detach (the background session keeps running)", "aria-label": `close ${info.title}`, onclick: () => closeDockTerminal(info.id) }, "×"),
-  );
-  $("#dock-tabs").append(tab);
-
-  const source = new EventSource(`/api/terminals/${info.id}/stream`);
-  source.onmessage = (e) => term.write(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)));
-  source.addEventListener("exit", (e) => {
-    tab.classList.add("exited");
-    term.write(`\r\n\x1b[2m[process exited with ${e.data}]\x1b[0m\r\n`);
-    source.close();
-  });
-  source.onerror = () => setStatus(`terminal ${info.id}: stream dropped`, true);
-
-  term.onData((data) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: data, keepalive: true }).catch(() => {}));
-  term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
-
-  dockTerminals.set(info.id, { term, fit, tab, container, cell, source, info });
-  paintDockCtl();
-  activate(info.id);
-};
+const termSize = () => ({ cols: 120, rows: 34 });
 
 /** A pty without a view: the command center's composer types into one of these. */
 const createTerminal = (opts) => post("/api/terminals", { project: projectId, ...opts, ...termSize() });
@@ -1680,25 +1528,14 @@ const acceptDrops = (host, onPaths) => {
   });
 };
 
-/** Show a pty the server already has: the dock tab if this page mounted it, otherwise mount it now (its earlier output is not replayed). */
-const mountExisting = async (id) => {
-  if (dockTerminals.has(id)) {
-    $("#dock").hidden = false;
-    activate(id);
-    return;
-  }
-  const info = (await api("/api/terminals")).find((t) => t.id === id);
-  if (!info) return setStatus(`terminal ${id} is gone`, true);
-  mountTerminal(info);
-};
-
 const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent }) => {
   setStatus(`opening ${title ?? kind}`);
   try {
     const info = await createTerminal({ kind, id, sessionId, title, prompt, cwd, parent });
-    mountTerminal(info);
-    setStatus(`terminal ${info.id}: ${info.command.join(" ")}`);
+    setStatus(`${info.title}: running. It appears in the rack as it registers.`);
     if (kind === "spawn") loadRail(true);
+    commandCenter?.refresh();
+    return info;
   } catch (err) {
     setStatus(err.message, true);
   }
@@ -1709,11 +1546,6 @@ const spawnOnItem = async (item, card, parent) => {
   if (card) missile(card);
   openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body, parent });
 };
-
-window.addEventListener("resize", () => {
-  if (activeTerminal) dockTerminals.get(activeTerminal)?.fit.fit();
-});
-
 
 /* ---------- theme: the project's colours and display font ---------- */
 
@@ -1821,8 +1653,6 @@ const boot = async () => {
 
   $("#project").hidden = false;
   $("#reload").hidden = false;
-  // The dock's controls exist before anything mounts, so an empty dock is still operable.
-  paintDockCtl();
   const ns = $("#new-session");
   ns.replaceChildren(icon("plus"), el("span", {}, "New session"));
   ns.hidden = false;
@@ -1922,11 +1752,6 @@ const boot = async () => {
       const item = tracker.sections.flatMap((sec) => sec.groups.flatMap((g) => g.items)).find((i) => i.start === line);
       if (item) openDrawer(tracker.index, item);
     }
-  }
-  // `?nodock=1` leaves open terminals unmounted: a live event stream keeps a headless screenshot from ever settling.
-  if (!new URLSearchParams(location.search).has("nodock")) {
-    const existing = await api("/api/terminals");
-    for (const t of existing) if (t.exitCode === null) mountTerminal(t);
   }
 };
 

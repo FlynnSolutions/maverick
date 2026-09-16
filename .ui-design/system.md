@@ -110,12 +110,15 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   the command centre, because the bar already names it and every rack carries its own count.
 - **Development only.** Every tracker row Maverick shows is a dev row. There is no toggle for
   non-dev items, because there is no reason to look at them here.
-- **The dock has three layouts and a way out.** Tabs shows one pane; Split sits them side by
-  side; Grid fits as many as will go and lets one be the *lead*, spanning a full column, so three
-  sessions run under one overseer. Every pane carries a caption (lamp, title, promote, close) so
-  a grid of terminals says which is which. Closing the dock hides it and leaves every terminal
-  running, with a pill bottom-right to bring it back: putting it away is not the same as ending
-  what is in it, and there was previously no way to do the first without doing the second.
+- **Formations, not a dock.** A dock covering half the page over live content was the confusing
+  part. Sessions group into *formations*, named phonetically (Alpha, Bravo, Charlie), each a tab
+  beside the Rack. A formation is one **lead**, the session that orchestrates, and its **flight**,
+  one to twenty sessions under it, drawn with the same strips as everywhere else. The active
+  formation is in the URL, so one can be pulled into its own window or desktop.
+- **The terminal lives inside the session it belongs to.** "Take the stick" mounts it in the
+  session's own full-screen view rather than in a panel over the page; detaching leaves the
+  session running. A formation holds session ids, not sessions: sessions come and go, the
+  grouping outlives them, and a slot whose session is gone says so rather than vanishing.
 - **xterm measures its own box**, so every visible pane must be refit and its pty resized on any
   layout change, inside a `requestAnimationFrame` so the new geometry has actually landed.
 - **The bar** (52px): the traced jet at 27px in the accent, then the wordmark, then the project
