@@ -51,10 +51,12 @@ format: checklist
   Open: where the Air Boss's tool boundary is enforced (allowed-tools list, not prompt) and where
   its plan documents are written.
 
-- [ ] `[ENG]` `[L]` **The RIO: grow the audit from a validator into an orchestrator**
+- [~] `[ENG]` `[L]` **The RIO: grow the audit from a validator into an orchestrator**
   - created: 2026-09-16
   - source: Cory, 2026-09-16, after reading Factory's Missions docs
   - kind: feature
+  - status: built on `feat/rio`, not merged. `src/missions.ts`, `web/mission.*`, the first tests.
+  - plan: docs/03-decisions.md M7 and M8
   Take from Factory's Missions, which are documented behaviour, not a format: a **clarifying
   interview** before any work (probe constraints, refuse to start on one prompt), a plan of
   **features grouped into milestones** that Cory blesses once, a **fresh worker session per
@@ -67,6 +69,11 @@ format: checklist
   and findings on a session that already finished. The RIO is the missing half in front of it: the
   interview, the milestone plan, the dispatch. Build that, then rename. Renaming first would be
   exactly the drift the positioning note warns about.
+  **Built 2026-09-16 on `feat/rio`,** verified end to end against a fixture project with real
+  agents: interview, gate, tracker write, dispatch into worktrees, a separate reviewer's verdict,
+  the merge into `mission/<id>`, and the close that ticks the items. Left open: the Air Boss, a
+  mission across more than one repo, and human-style QA driving the real UI (Playwright is a
+  dependency, so it is a decision rather than a step).
 
 ### Readiness at the door
 

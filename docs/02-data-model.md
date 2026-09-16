@@ -17,7 +17,7 @@ A project's tracker is a markdown file. `src/trackers.ts` parses it; the shape *
 - A `- [ ]` bullet is an **item**. Markers: `[ ]` todo, `[~]` in progress, `[x]` done,
   `[!]` deferred, `[-]` dropped.
 - Indented `  - key: value` lines under a bullet are **fields**: `source`, `due`, `release`,
-  `size`, `kind`, `status`, `owner`, `plan`, `pr`, `links`, `blocked-by`.
+  `size`, `kind`, `status`, `owner`, `plan`, `pr`, `links`, `blocked-by`, `mission`, `milestone`.
 
 Recognised filenames are in `src/projects.ts`: `deliverables/CHECKLIST.md`, `CHECKLIST.md`,
 `PUNCHLIST.md`, `TODO.md`, `NEXT_STEPS.md`.
@@ -33,10 +33,20 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | `Formation` | `src/formations.ts` | `session-console/` | `name` (phonetic callsign), `lead`, `members[]` |
 | `ShipRun` | `src/ships.ts` | `console-sessions/ships/<project>/<version>.json` | `version`, `steps[]` |
 | `ShipStep` | `src/ships.ts` | within the run | `prompt`, `status`, `claudeId`, `report`, `artifacts[]` |
+| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `branch`, `formation`, `milestones[]` |
+| `Milestone` | `src/missions.ts` | within the mission | `n`, `title`, `done`, `tasks[]`, `merged`, `mergeSha` |
+| `MissionTask` | `src/missions.ts` | within the milestone | `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict` |
 | release labels | `src/releases.ts` | `session-console/releases.json` | the two planned slots' names and deploy dates only |
 
 `SessionRole` is `driver | develop | audit | plan`; `SessionStatus` is `open | closed |
 handed-off`; `StepStatus` is `pending | running | finished | done | failed | skipped`.
+`MissionStatus` is `interviewing | planned | flying | blocked | review | closed`; `TaskStatus` is
+`pending | flying | built | reviewing | passed | handed-back`.
+
+**A mission's plan is not in its record.** The milestones and tasks live in the tracker as items
+carrying `mission` and `milestone`; the record holds the run, and the record's `milestones[]` is
+what was parsed from the approved plan document plus what each task's sessions did. If the two
+disagree the tracker wins, exactly as everywhere else ([`03-decisions.md`](./03-decisions.md) M7).
 
 **A formation is one lead and its flight.** The lead is the session that orchestrates;
 `members` are the sessions under it, in the order they were put there.

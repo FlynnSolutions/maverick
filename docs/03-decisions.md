@@ -72,9 +72,9 @@ takes one item, in a worktree, and writes code.
 by its prompt. An agent asked politely not to change something will change it the first time the
 change looks small.
 
-**Status:** designed, not built. `src/audits.ts` today implements only the validator half of what
-a RIO is meant to be: a verdict on a session that already finished. See
-[`POSITIONING.md`](./POSITIONING.md).
+**Status:** the RIO half is built; see [M7](#m7--a-missions-plan-is-tracker-items-and-membership-is-a-field--built).
+The Air Boss is still designed only. `src/audits.ts` remains the validator, which is one output
+of a RIO rather than a RIO. See [`POSITIONING.md`](./POSITIONING.md).
 
 ## M6 — Readiness gates an unattended launch ◐ design
 
@@ -85,3 +85,42 @@ cannot verify, and name the missing signal.
 interesting part is not the score, it is that the score gates the expensive thing.
 
 **Status:** designed, not built. Scoring at import is the first step.
+
+## M7 — A mission's plan is tracker items, and membership is a field ✅ built
+
+A mission's milestones and tasks are written into the project's tracker as ordinary items, each
+carrying `mission: <id>` and `milestone: <n>` (`src/trackers.ts`). Maverick stores only the run —
+which background session is on which task, what the reviewer said, which gates opened — at
+`~/.claude/console-sessions/missions/<project>/<id>.json`, the shape `ships/` already uses. The
+approved plan is also frozen as a document at `deliverables/missions/<id>.md`; that copy is the
+artifact of the gate and is never read back as state.
+
+**Rejected: a `###` group, the way a release is a group under Priority.** An item's group is lost
+the moment it moves lane, because `applyMove` relocates the block into a target section and its
+group there. A mission's tasks move lane constantly while it flies, so a group would silently
+shed its members. This is the same reason a release *slot* is a field and not only a group, and
+it is covered by a test.
+
+**Rejected: a private store for the plan.** That is [M1](#m1--the-markdown-trackers-are-the-source-of-truth-maverick-keeps-no-store--built)
+directly: a plan a session cannot read or edit in the repo is a plan fenced off from the agents
+doing the work.
+
+**Consequence:** a mission is visible on the board without the board knowing what a mission is,
+survives being hand-edited, and can be dismantled by deleting two field lines. The cost is that a
+mission is scattered across lanes once it flies, so gathering it needs the `mission` field rather
+than one place to look.
+
+This completes the RIO half of [M5](#m5--three-levels-of-agent-separated-by-blast-radius--design).
+
+## M8 — Maverick merges a mission into its own branch, never into main ✅ built
+
+Each Wingman works in a worktree on `mission/<id>-<task>`; a milestone whose tasks all pass is
+merged into `mission/<id>` in an integration worktree. A conflict aborts the merge and is
+reported as the paths that collided.
+
+**Safety-load-bearing:** the console spawns unattended agents, so the furthest their work can
+reach without a person is a branch nothing is built from. Handing that branch to the ship, which
+already has Cory in it phase by phase, is what puts it on main.
+
+**Consequence:** a finished mission is a branch to check out and test, not a claim to believe,
+which is the whole point of the second gate.

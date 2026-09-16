@@ -22,14 +22,27 @@ move and plan into a release; the calendar; releases computed from the changelog
 PRs; the ship wizard driving the project's own `SHIP_WORKFLOW.md` phase by phase with saved,
 resumable state; embedded terminals; audit parents; per-project theming from `maverick.json`.
 
+**Missions, added 2026-09-16.** A RIO interviews in an embedded terminal and writes a plan;
+nothing spawns until Cory approves it; approval writes the plan into the tracker as items and
+dispatches one Wingman per task in its own worktree; a separate reviewer session judges each
+finished Wingman and a fail hands the task back twice before it becomes Cory's; a passing
+milestone merges into `mission/<id>`, never main. Verified end to end against a fixture project
+with real agents on 2026-09-16: plan, dispatch, review verdict, merge, close and tick.
+
 ## What does not
 
 - **Agent readiness: Level 1, 6%** (`npx @kodus/agent-readiness . --ci --no-web`, 2026-09-16).
-  Eight criteria short of Level 2. No linter, formatter, type checker, tests, or CI.
+  Short of Level 2. No linter, formatter, type checker or CI. `npm test` now exists
+  (`node --test`, no dependency) but covers only the mission plan parser and the tracker;
+  the score has not been re-taken since.
 - **A known banding defect**: the client helper that decides a session is finished counts
   `blocked`, while the "Needs you" rack also claims `blocked`, so a blocked session renders in
   both. Visible in `web/command.js`; not reproducible live because the registry currently has no
   blocked sessions. Recorded in `HANDOFF.md`.
+- **A mission's Air Boss.** Level 1 of the model is still designed only; only the RIO half of
+  M5 is built.
+- **A mission is one repo.** It merges into the root repo's branch, so a multi-repo project
+  gets a mission only on its root.
 - **Single agent runtime.** Only Claude Code is read. `web/providers/` has the shape for more.
 - No checkbox flips from the board; no ship-time `release: next+1` rewrite; no Electron shell.
 

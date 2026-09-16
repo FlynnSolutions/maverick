@@ -56,6 +56,7 @@ Environment overrides (see `src/config.ts`):
 - `src/trackers.ts` parses a tracker into sections, groups and items, and applies a move.
 - `src/projects.ts` the project registry, tracker detection, the Finder picker.
 - `src/git.ts` commit one file; repo discovery, worktree, PR and `claude agents` reads.
+- `src/missions.ts` a mission: the RIO's interview, the plan, the flight of Wingmen, the reviews.
 - `src/live.ts`, `src/sessions.ts` the side rail data.
 - `bin/session-open`, `bin/session-close` write the per-session JSON record
   (`~/.claude/console-sessions/<id>.json`) that the session tree is drawn from.
@@ -219,6 +220,31 @@ A `## ` heading is a section; its emoji picks the column (🔥 priority, 🚧 in
 section is a group. A top-level `- ` bullet is an item, together with every indented line
 that follows it. A move relocates that whole block and touches nothing else.
 
+## Missions
+
+A **mission** is one bounded piece of work run end to end, and you are in it exactly twice.
+
+Open one from the rail on the board. A **RIO** starts in an embedded terminal and *interviews*
+you: it reads the repo, probes what done means and what is out of scope, and refuses to plan off
+your first line. When you agree, it writes a plan to `deliverables/missions/<id>.md` as
+milestones, each with one testable "done when" line and its tasks.
+
+That plan is the first gate. Maverick shows it with what it will cost — how many tasks, how many
+background sessions, and Factory's published numbers for a mission of this kind — and nothing
+has spawned yet. Approving writes the whole plan into your tracker as ordinary items carrying
+`mission` and `milestone` fields, cuts a `mission/<id>` branch, and sends the first milestone out:
+one **Wingman** per task, each in its own worktree, in parallel within a milestone and sequential
+across them.
+
+When a Wingman finishes, a session that did not write the code reviews it and writes a verdict.
+A fail or a mixed verdict hands the task back to a fresh Wingman with the findings, twice, before
+it stops and asks you. A milestone whose tasks all pass merges into the mission branch; a
+conflict aborts and names the paths.
+
+The second gate is the result: every task with its diff, its verdict and its findings, on a
+branch you can check out and test. Closing ticks the items in the tracker. **Maverick never merges
+a mission into main** — the ship wizard does, with you in it phase by phase.
+
 ## Not built yet
 
-Checkbox flips from the UI, the archive-on-ship button, the manager agent, rewriting `release: next+1` to `next` at ship time, and the Electron shell (the server is already shaped as its main process). The data directories still carry the old name (`~/.claude/session-console`, `~/.claude/console-sessions`) so nothing recorded so far is lost.
+The Air Boss (the project-level agent), checkbox flips from the UI, the archive-on-ship button, rewriting `release: next+1` to `next` at ship time, and the Electron shell (the server is already shaped as its main process). The data directories still carry the old name (`~/.claude/session-console`, `~/.claude/console-sessions`) so nothing recorded so far is lost.

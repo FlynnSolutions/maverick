@@ -10,9 +10,9 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 |---|---|
 | **Maverick** | the application itself. The pilot: it flies the work. |
 | **Air Boss** | the project-level agent. Holds the whole project, writes plans, never edits product code. Runs the flight deck, does not fly. *(designed, not built)* |
-| **Mission** | a bounded multi-feature effort, planned into milestones and blessed once. *(designed)* |
-| **RIO** | Radar Intercept Officer. The agent that runs a mission: interviews, plans milestones, dispatches and validates. The back-seater works the radar and calls the intercept. *(designed; `src/audits.ts` is its validator half only)* |
-| **Wingman** | one item off the board: fresh context, a worktree, a diff. What Maverick spawns today. |
+| **Mission** | a bounded multi-feature effort, planned into milestones and blessed once. Its plan lives in the tracker as items carrying `mission` and `milestone`. |
+| **RIO** | Radar Intercept Officer. The agent that runs a mission: it interviews Cory in an embedded terminal, writes the plan, and after he blesses it Maverick dispatches and validates on its behalf. The back-seater works the radar and calls the intercept. |
+| **Wingman** | one item off the board: fresh context, a worktree, a diff. On a mission it is one task, and a session that did not write it reviews the result. |
 | **Formation** | a named group of sessions flying one job. One **lead** plus its **flight**. Named with phonetic callsigns (Alpha, Bravo, Charlie). |
 | **Flight** | the sessions under a formation's lead. |
 | **Rack** | the workspace's list of sessions for one project, grouped by urgency. |
@@ -23,6 +23,8 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 | **Item** | a `- [ ]` bullet, optionally carrying indented `key: value` fields. |
 | **Tracker** | the project's markdown work file. The source of truth for all board state. |
 | **Ship run** | a saved, resumable set of steps for one version, driving the project's own `SHIP_WORKFLOW.md`. |
+| **Milestone** | a group of a mission's tasks that fly together and merge together. Tasks inside one are parallel; milestones are sequential. |
+| **Gate** | one of the two places a mission stops for Cory: the plan before anything spawns, and the result before anything ships. |
 | **Audit parent** | a session record with role `audit` that owns a group of task sessions and returns a verdict. |
 | **Callsign** | a project's short label, from its `maverick.json`, shown beside the name in the top bar. |
 | **Agent readiness** | how well a repo supports an unattended agent, scored 1 to 5. Here: a gate on what may be launched, not a badge. |

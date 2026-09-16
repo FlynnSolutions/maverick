@@ -40,8 +40,12 @@ bin/session-close --id <id> --status handed-off --handoff "path/to/plan.md secti
 
 ## Test it
 
-There is no test suite yet; `package.json` has no `test` script. Adding one is the first item
-on the Priority lane. What exists instead is a browser harness:
+```bash
+npm test          # node --test "test/**/*.test.ts", no dependency, no build
+```
+
+That covers the mission plan parser and the tracker, including the claim the mission design
+rests on. Everything else is still checked with the browser harness:
 
 ```bash
 node tools/cdp.mjs http://localhost:8766/?view=workspace --shot out.png
