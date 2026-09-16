@@ -942,11 +942,29 @@ export const mountCommandCenter = (root, ctx) => {
    * the layout moves: a pane opening beside it, one closing, the columns changing. Inside a
    * requestAnimationFrame, or the new geometry has not landed yet and it fits to the old one.
    */
+  let refitSoon = null;
   const refitAll = () => {
+    // One gesture can move the layout twice: closing a pane narrows the page, and losing the
+    // scrollbar it needed widens it again a beat later. Fitting to each posts the pty two
+    // resizes and a full-screen TUI repaints on both, so wait for it to settle and fit once.
+    if (refitSoon) window.clearTimeout(refitSoon);
+    refitSoon = window.setTimeout(() => {
+      refitSoon = null;
+      doRefit();
+    }, 90);
+  };
+
+  const doRefit = () => {
     window.requestAnimationFrame(() => {
       for (const p of panes.values()) {
         if (!p.stickTerm || !p.node.isConnected) continue;
         try {
+          // Fit only when the grid it would land on actually differs. Two fits in a frame send
+          // the pty two resizes, and a full-screen TUI repaints on each: measured, widening a
+          // pane posted 206 columns and then 207, which is one flicker for nothing.
+          const want = p.stickTerm.fit.proposeDimensions();
+          const { term } = p.stickTerm;
+          if (!want || (want.cols === term.cols && want.rows === term.rows)) continue;
           p.stickTerm.fit.fit();
         } catch {
           /* a pane mid-teardown has no box to measure */
