@@ -12,7 +12,18 @@ import { icon } from "./icons.js";
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5 };
 const HOUR = 3600000;
-const finished = (s) => /^(done|exited|stopped|blocked)$/.test(s ?? "");
+/**
+ * A session that has ended. `blocked` is deliberately not here: it is running and stopped at a
+ * prompt, which is the loudest thing on the page, not the quietest. Counting it as finished put
+ * the same session in "Needs you" and in "Background · done" at once, because those two filters
+ * run independently over one list, and painted a lock lamp on a strip marked finished.
+ */
+const finished = (s) => /^(done|exited|stopped)$/.test(s ?? "");
+/**
+ * The agent's own word about itself, which outranks the registry's read of its process: it has
+ * ended, or it is stopped at a prompt. Neither is something a live pid can show.
+ */
+const trustAgent = (s) => finished(s) || s === "blocked";
 
 const age = (ms) => {
   if (!ms) return "";
@@ -59,7 +70,7 @@ const assemble = (all) => {
     const merged = {
       ...(twin ?? {}),
       key: `bg:${a.id}`, kind: "background", claudeId: a.id, sessionId: a.sessionId, cwd: a.cwd, project: a.project ?? twin?.project ?? record?.project,
-      title: named(a.sessionId, record?.loop, twin?.title, a.name, a.id), status: finished(a.state) ? a.state : twin?.status ?? a.state ?? "running", at: twin?.at ?? a.startedAt, record,
+      title: named(a.sessionId, record?.loop, twin?.title, a.name, a.id), status: trustAgent(a.state) ? a.state : twin?.status ?? a.state ?? "running", at: twin?.at ?? a.startedAt, record,
       lastPrompt: a.lastPrompt ?? twin?.lastPrompt, lastReply: a.lastReply ?? twin?.lastReply,
     };
     if (twin) sessions.splice(sessions.indexOf(twin), 1, merged);

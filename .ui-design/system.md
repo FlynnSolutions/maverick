@@ -54,6 +54,14 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **A state colour belongs to one state.** `@keyframes arc` hardcoded `--hud`, so a *working*
   session pulsed in the colour a *finished* one is painted. A keyframe that sets colour is a
   second place a state is defined; keep the colour on the class and the motion in the keyframe.
+- **A state belongs to one rack, and the lamp is the tie-breaker.** The racks filter one list
+  independently, so a state named by two of them draws the same session twice. `blocked` was
+  counted as finished *and* claimed by "Needs you", so one session sat in both "Needs you" and
+  "Background · done", wearing a lock lamp on a strip marked `finished`. Blocked is running and
+  stopped at a prompt: it is the loudest thing on the page, never the quietest. When a predicate
+  and a lamp disagree about a state, the lamp is right, because it is what the pilot actually
+  reads at 14px. Keep "has ended" and "the agent's own word outranks the registry" as two
+  predicates; they overlap but they are not the same question.
 - **The lamp is an engine, or a reticle.** Running states are an afterburner nozzle drawn off a
   photograph: a serrated petal rim (a *ring* with the teeth cut into its inner edge, never a
   filled star, which reads as a sun), a banded throat, and an iris whose area opens with heat.
