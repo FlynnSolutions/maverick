@@ -47,10 +47,10 @@
   --metal-edge: #39424a;
   --metal-lip: #4a545e;
   --cold-hot: #2f3844; --cold-mid: #2a323c; --cold-deep: #222933; --cold-rim: #39424a;
-  --ok: var(--ok);
-  --warn: var(--warn);
-  --gold: var(--gold);
-  --info: var(--info);
+  --ok: #7fe0a0;
+  --warn: #f2d25b;
+  --gold: #d9b86a;
+  --info: #dff0ff;
   --on-accent: #04101f;
   --tile: linear-gradient(180deg, rgba(26, 43, 71, 0.55), rgba(13, 21, 36, 0.6));
   --inset: rgba(4, 6, 12, 0.5);
@@ -798,10 +798,10 @@ body.ask-open { overflow: hidden; }
 
 .supervisor { appearance: none; height: 28px; padding: 0 26px 0 10px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink-soft); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .verdict { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; background: var(--panel); color: var(--ink-faint); }
-.verdict.pending { color: var(--accent-hot); background: var(--accent-dim); }
-.verdict.pass { color: var(--ok); background: rgba(80, 200, 120, 0.16); }
-.verdict.mixed { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
-.verdict.fail { color: var(--threat); background: var(--threat-dim); }
+.verdict.pending, .verdict.flying, .verdict.reviewing { color: var(--accent-hot); background: var(--accent-dim); }
+.verdict.pass, .verdict.passed { color: var(--ok); background: rgba(80, 200, 120, 0.16); }
+.verdict.mixed, .verdict.built { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
+.verdict.fail, .verdict.handed-back, .verdict.blocked { color: var(--threat); background: var(--threat-dim); }
 .verdict.rejected { text-decoration: line-through; opacity: 0.7; }
 .row .actions .verdict { align-self: center; }
 
