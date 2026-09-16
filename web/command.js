@@ -73,7 +73,7 @@ const assemble = (all) => {
 };
 
 export const mountCommandCenter = (root, ctx) => {
-  const { el, text, api, post, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus } = ctx;
+  const { el, text, api, post, askClose, askEnd, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus } = ctx;
   const DAY = 86400000;
   let all = null;
   let model = null;
@@ -106,7 +106,7 @@ export const mountCommandCenter = (root, ctx) => {
       ? el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
           const done = finished(s.status);
-          if (!confirm(done ? `Remove background session ${s.claudeId} from the list? Its transcript stays on disk.` : `Stop background session ${s.claudeId}? Its conversation is kept.`)) return;
+          if (!(await askEnd(done, `"${s.title}"`))) return;
           try {
             const r = await post(`/api/agents/${s.claudeId}/${done ? "remove" : "stop"}`);
             setStatus(r.output || (done ? `removed ${s.claudeId}` : `stopped ${s.claudeId}`), Boolean(r.failed));
@@ -117,9 +117,9 @@ export const mountCommandCenter = (root, ctx) => {
         } }, finished(s.status) ? "remove" : "stop")
       : el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
-          if (!confirm(`Close "${s.title}"?\n\nThis ends the Claude process in ${s.app ?? "its terminal"} (${s.tty ?? "no tty"}). The conversation stays on disk and can be resumed later.`)) return;
+          if (!(await askClose(s))) return;
           try {
-            await post(`/api/sessions/${s.pid}/close?project=${encodeURIComponent(s.project ?? ctx.projectId ?? "")}`);
+            await post(`/api/sessions/${s.pid}/close`);
             setStatus(`closed pid ${s.pid}`);
           } catch (err) {
             setStatus(err.message, true);
@@ -129,11 +129,11 @@ export const mountCommandCenter = (root, ctx) => {
 
   const dockButton = (s) => el("button", { type: "button", class: "ghost dock", title: s.terminalId ? "show its dock terminal" : "open the terminal in the dock", onclick: (e) => { e.stopPropagation(); if (s.terminalId) mountExisting(s.terminalId); else openTerminal(dockFor(s)); } }, "dock");
 
-  const panel = (s, record, compact = false, endable = false) =>
+  const panel = (s, record, compact = false) =>
     el(
       "article",
-      { class: `cc-panel ${s.status}${finished(s.status) ? " finished" : ""}${compact ? " compact" : ""}`, tabindex: "0", title: s.title, onclick: () => openFull(s), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFull(s); } } },
-      el("header", {}, lamp(s.status), el("h4", {}, s.title), roleChip(record), auditChip(record), dockButton(s), endable ? endButton(s, "ghost end") : null),
+      { class: `cc-panel ${s.status}${finished(s.status) ? " finished" : ""}${compact ? " compact" : ""}`, tabindex: "0", title: s.title, onclick: () => openFull(s), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFull(s); } } },
+      el("header", {}, lamp(s.status), el("h4", {}, s.title), roleChip(record), auditChip(record), dockButton(s), endButton(s, "ghost end")),
       el("div", { class: "meta" }, el("span", { class: "k" }, s.status), s.waitingFor ? el("span", { class: "k soft" }, s.waitingFor) : null, el("span", {}, age(s.at)), s.elapsed ? el("span", {}, `up ${s.elapsed}`) : null, el("span", { class: "where" }, whereText(s))),
       compact
         ? null
@@ -189,11 +189,11 @@ export const mountCommandCenter = (root, ctx) => {
     );
   };
 
-  const band = (name, sessions, cls = "", compact = false, endable = false) =>
+  const band = (name, sessions, cls = "", compact = false) =>
     sessions.length
       ? el("section", { class: `cc-band ${cls}` },
           el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(sessions.length))),
-          el("div", { class: "cc-grid" }, ...sessions.map((s) => panel(s, s.record ?? model.byClaudeId.get(s.claudeId), compact, endable))))
+          el("div", { class: "cc-grid" }, ...sessions.map((s) => panel(s, s.record ?? model.byClaudeId.get(s.claudeId), compact))))
       : null;
 
   const projectSection = (proj, sessions) => {
@@ -228,7 +228,7 @@ export const mountCommandCenter = (root, ctx) => {
       ...formations,
       band("Working", working, "working"),
       band("Idle", fresh, "idle", true),
-      band("Stale · idle over a day", stale, "stale", true, true),
+      band("Stale · idle over a day", stale, "stale", true),
       band("Background · done", done, "done", true),
       closed.length ? el("ul", { class: "cc-closed" }, ...closed) : null,
       !sessions.length && !formations.length ? el("p", { class: "muted small cc-empty" }, "nothing running here") : null,

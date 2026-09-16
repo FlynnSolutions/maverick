@@ -127,7 +127,9 @@ const mountTerminal = (info) => {
   const container = el("div", { class: "term" });
   $("#dock-body").append(container);
   term.open(container);
-  const tab = el("button", { type: "button", class: "dock-tab", onclick: () => activate(info.id) }, el("span", { class: "lamp" }), text(info.title), el("span", { class: "close", onclick: (e) => { e.stopPropagation(); source.close(); term.dispose(); tab.remove(); container.remove(); dockTerminals.delete(info.id); if (!dockTerminals.size) { $("#dock").hidden = true; document.body.classList.remove("docked"); } } }, "×"));
+  const tab = el("div", { class: "dock-tab" },
+    el("button", { type: "button", class: "name", title: info.title, onclick: () => activate(info.id) }, el("span", { class: "lamp" }), el("span", { class: "t" }, info.title)),
+    el("button", { type: "button", class: "close", title: "close this view (the session keeps running)", "aria-label": `close ${info.title}`, onclick: () => { source.close(); term.dispose(); tab.remove(); container.remove(); dockTerminals.delete(info.id); if (!dockTerminals.size) { $("#dock").hidden = true; document.body.classList.remove("docked"); } } }, "×"));
   $("#dock-tabs").append(tab);
   const source = new EventSource(`/api/terminals/${info.id}/stream`);
   source.onmessage = (e) => term.write(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)));

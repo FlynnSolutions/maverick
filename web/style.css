@@ -382,25 +382,29 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
   flex-direction: column;
 }
 .dock-tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--seam-soft); }
+/* A tab is two real buttons: the name activates, the × closes. Neither is nested in the other. */
 .dock-tab {
   display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding: 0 10px;
+  align-items: stretch;
+  height: 30px;
+  max-width: 280px;
   border: 1px solid transparent;
   border-bottom: none;
   border-radius: var(--radius-s) var(--radius-s) 0 0;
-  background: transparent;
   color: var(--ink-faint);
   font-family: var(--mono);
   font-size: 12px;
-  box-shadow: none;
 }
 .dock-tab.active { background: var(--gunmetal); border-color: var(--seam); color: var(--ink); }
-.dock-tab .lamp { width: 6px; height: 6px; }
-.dock-tab .close { border: 0; background: none; height: auto; padding: 0 0 0 4px; color: var(--ink-ghost); box-shadow: none; }
-.dock-tab .close:hover { color: var(--threat); }
+.dock-tab button { height: auto; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; box-shadow: none; }
+.dock-tab button:hover { background: var(--steel); box-shadow: none; }
+.dock-tab button:active { transform: none; }
+.dock-tab .name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 0 6px 0 10px; border-radius: var(--radius-s) 0 0 0; }
+.dock-tab .name .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-tab .lamp { width: 6px; height: 6px; flex: 0 0 auto; }
+.dock-tab .close { width: 28px; flex: 0 0 auto; color: var(--ink-faint); font-size: 16px; line-height: 1; border-left: 1px solid var(--seam-soft); border-radius: 0 var(--radius-s) 0 0; }
+.dock-tab.active .close { color: var(--ink-soft); }
+.dock-tab .close:hover, .cc-panel header .end:hover { color: var(--threat); background: var(--panel); }
 .dock-body { flex: 1; min-height: 0; padding: 6px 8px 8px; }
 .term { height: 100%; width: 100%; }
 .term .xterm { height: 100%; }
@@ -416,11 +420,34 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
   .lanes { grid-template-columns: 1fr 1fr !important; }
 }
 
+/* ---------- dialog: Maverick's own confirm and prompt (above drawers at 40, below effects at 50) ---------- */
+
+.ask-backdrop { z-index: 45; display: flex; align-items: center; justify-content: center; padding: 16px; }
+body.ask-open { overflow: hidden; }
+.ask {
+  width: min(440px, 100%);
+  padding: 18px 20px 16px;
+  border-radius: var(--radius-m);
+  background: var(--gunmetal);
+  box-shadow: 0 0 0 1px var(--seam), 0 24px 60px rgba(0, 0, 0, 0.55);
+  animation: cc-in 160ms var(--ease-out);
+}
+.ask h2 { margin: 0 0 6px; font: 600 15px/1.3 var(--display); letter-spacing: 0.01em; overflow-wrap: anywhere; }
+.ask p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-soft); white-space: pre-line; overflow-wrap: anywhere; }
+.ask input[type="text"] { width: 100%; margin-top: 12px; }
+.ask input::placeholder { color: var(--ink-faint); }
+.ask-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.ask-actions button { height: 30px; padding: 0 12px; }
+.ask-actions button.danger { background: var(--threat-dim); border-color: var(--threat); color: var(--ink); }
+.ask-actions button.danger:hover { background: var(--threat); color: #04101f; }
+.ask-actions button:disabled { opacity: 0.5; pointer-events: none; }
+
 /* ---------- item drawer ---------- */
 
 /* The drawer root must sit above the sticky header (5) and dock (4), and below the effects layer (50). */
 #drawer-root { z-index: 40; }
-.drawer-backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(2, 4, 8, 0.55); backdrop-filter: blur(2px); }
+.drawer-backdrop, .ask-backdrop { position: fixed; inset: 0; background: rgba(2, 4, 8, 0.55); backdrop-filter: blur(2px); }
+.drawer-backdrop { z-index: 30; }
 .drawer {
   position: fixed;
   top: 0;
@@ -798,7 +825,6 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .row .actions button, .ship-step-head .actions button, .card .spawn, button.ghost, .lane-title .fold, .release-name button.ghost, .release-list li button.ghost { height: 24px; padding: 0 8px; font-size: 11.5px; }
 .lane-title .fold { width: 24px; padding: 0; }
 .row .actions { gap: 6px; }
-.dock-tab { height: 30px; }
 
 /* accessibility.md: keyboard reach. Cards are focusable and open on Enter; focus is visible. */
 .card:focus-visible, .row:focus-visible, .cal-event:focus-visible, .release-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1007,7 +1033,7 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .cc-panel header h4 { flex: 1; min-width: 0; margin: 0; font: 600 15px/1.3 var(--display); letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-panel header .role { margin: 0; }
 .cc-panel header .verdict { height: 18px; display: inline-flex; align-items: center; }
-.cc-panel header .dock { height: 30px; min-width: 44px; padding: 0 8px; flex: 0 0 auto; }
+.cc-panel header .dock, .cc-panel header .end { height: 30px; min-width: 44px; padding: 0 8px; flex: 0 0 auto; color: var(--ink-soft); }
 .cc-panel .meta { display: flex; gap: 10px; flex-wrap: wrap; min-width: 0; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
 .cc-panel .meta .k { color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--display); font-size: 11px; }
 .cc-panel .meta .k.soft { color: var(--caution); text-transform: none; letter-spacing: 0; font-family: var(--mono); font-size: 11.5px; }
@@ -1068,7 +1094,7 @@ body:has(#dock:not([hidden])) .cc-full { bottom: var(--dock-h); }
 ::selection { background: var(--accent-dim); color: var(--ink); }
 input, textarea { caret-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
-  .cu-panel, .cc-full { animation: none !important; }
+  .cu-panel, .cc-full, .ask { animation: none !important; }
   .cc-panel, .cu-meter i { transition: none !important; }
 }
 @media (max-width: 600px) {
@@ -1081,7 +1107,10 @@ input, textarea { caret-color: var(--accent); }
   .cu-panel { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; max-height: 80vh; overflow: auto; }
   .cu-row { grid-template-columns: 72px minmax(0, 1fr) auto; }
   .cu-row .nums { display: none; }
-  .cc-filter button, .cu-tabs button, .cc-panel header .dock, .cc-full-head button, .cc-lead button { min-height: 44px; }
+  .cc-filter button, .cu-tabs button, .cc-panel header .dock, .cc-panel header .end, .cc-full-head button, .cc-lead button, .ask-actions button { min-height: 44px; }
+  .dock-tab { height: 44px; }
+  .dock-tab .close { width: 44px; }
+  .ask input[type="text"] { height: 44px; }
   .cc-full-head h2 { max-width: 100%; white-space: normal; }
   .cc-grid { grid-template-columns: minmax(0, 1fr); }
 }
@@ -1099,7 +1128,6 @@ body.cc-full-open { overflow: hidden; }
 .cc-composer .notice { max-width: 680px; width: 100%; margin: 0 auto; font-size: 13px; color: var(--ink-soft); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-height: 44px; }
 .term.dropping { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cc-band.stale > h4 { color: var(--ink-faint); }
-.cc-panel header .end { height: 30px; min-width: 44px; padding: 0 8px; flex: 0 0 auto; }
 .cu-cal { display: flex; flex-direction: column; gap: 10px; }
 .cu-cal .row { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-size: 12.5px; }
 .cu-cal .row .cur { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }

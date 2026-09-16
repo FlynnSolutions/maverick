@@ -41,6 +41,58 @@ const setStatus = (msg, isError = false) => {
   statusTimer = window.setTimeout(() => s.classList.remove("flash"), 900);
 };
 
+/**
+ * Maverick's own confirm and prompt, in place of the browser's. Resolves true or false; with
+ * `field` it resolves the trimmed text, or null on cancel. Escape and the backdrop cancel, the
+ * page behind goes inert, and focus returns where it was. A dangerous question focuses cancel,
+ * so a reflex Enter cannot destroy anything; Enter in a field submits, as a form does.
+ */
+const ask = ({ title, body, confirm, danger = false, field = null }) =>
+  new Promise((resolve) => {
+    const before = document.activeElement;
+    const page = [...document.body.children];
+    const finish = (value) => {
+      window.removeEventListener("keydown", onKey, true);
+      for (const n of page) n.inert = false;
+      document.body.classList.remove("ask-open");
+      backdrop.remove();
+      before?.focus?.();
+      resolve(value);
+    };
+    const bail = () => finish(field ? null : false);
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      bail();
+    };
+    const input = field ? el("input", { type: "text", placeholder: field.placeholder ?? "", value: field.value ?? "", "aria-label": title }) : null;
+    const ok = el("button", { type: "submit", class: danger ? "danger" : "primary" }, confirm);
+    const no = btn("cancel", bail, "ghost");
+    if (input) {
+      ok.disabled = !input.value.trim();
+      input.addEventListener("input", () => { ok.disabled = !input.value.trim(); });
+    }
+    const form = el("form",
+      { class: "ask", role: "dialog", "aria-modal": "true", "aria-labelledby": "ask-title", ...(body ? { "aria-describedby": "ask-body" } : {}), onsubmit: (e) => { e.preventDefault(); finish(field ? input.value.trim() : true); } },
+      el("h2", { id: "ask-title" }, title),
+      body ? el("p", { id: "ask-body" }, body) : null,
+      input,
+      el("div", { class: "ask-actions" }, no, ok));
+    const backdrop = el("div", { class: "ask-backdrop", onclick: (e) => { if (e.target === backdrop) bail(); } }, form);
+    for (const n of page) n.inert = true;
+    document.body.append(backdrop);
+    document.body.classList.add("ask-open");
+    window.addEventListener("keydown", onKey, true);
+    (input ?? (danger ? no : ok)).focus();
+  });
+
+/** The two questions every session surface asks: close an interactive claude, or stop / remove a background one. */
+const askClose = (s) => ask({ title: `Close "${s.title ?? s.name}"?`, body: `This ends the Claude process in ${s.app ?? "its terminal"}${s.tty ? ` (${s.tty})` : ""}. The conversation stays on disk and can be resumed later.`, confirm: "close", danger: true });
+const askEnd = (done, label) => ask(done
+  ? { title: `Remove ${label}?`, body: "It leaves the list; its transcript stays on disk.", confirm: "remove" }
+  : { title: `Stop ${label}?`, body: "Its conversation is kept and can be resumed.", confirm: "stop", danger: true });
+
 const api = async (path, init) => {
   const res = await fetch(path, init);
   const body = await res.json();
@@ -76,7 +128,7 @@ const renderPicker = async () => {
             type: "button",
             class: "ghost",
             onclick: async () => {
-              if (!confirm(`Forget "${p.name}"? The directory is untouched.`)) return;
+              if (!(await ask({ title: `Forget "${p.name}"?`, body: "The directory is untouched.", confirm: "forget" }))) return;
               await api(`/api/projects/${encodeURIComponent(p.id)}`, { method: "DELETE" });
               renderPicker();
             },
@@ -371,7 +423,7 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
       if (group.name) {
         const removable = group.items.length === 0;
         block.append(el("div", { class: "group-name" }, cleanGroupName(group.name), removable ? btn("×", async () => {
-          if (!confirm(`Delete the empty group "${cleanGroupName(group.name)}"?`)) return;
+          if (!(await ask({ title: `Delete the empty group "${cleanGroupName(group.name)}"?`, confirm: "delete", danger: true }))) return;
           try {
             const { commit } = await api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) });
             setStatus(`committed ${commit}`);
@@ -549,7 +601,7 @@ const openDrawer = (trackerIndex, item) => {
       el("option", { value: "__new" }, "new audit parent…"));
     supervisor.addEventListener("change", async () => {
       if (supervisor.value !== "__new") return;
-      const name = prompt("Name the audit parent (a group of task sessions it oversees):", "");
+      const name = await ask({ title: "Name the audit parent", body: "A group of task sessions it oversees.", confirm: "create", field: { placeholder: "audit parent name" } });
       supervisor.value = "";
       if (!name) return;
       try {
@@ -568,11 +620,11 @@ const openDrawer = (trackerIndex, item) => {
       el("span", { class: "spacer" }),
       btn(item.checked ? "reopen" : "mark done", () => saveBody(flipped, item.checked ? "reopening" : "marking done"), item.checked ? "" : "primary"),
       btn("remove", async () => {
-        const reason = prompt("Why is this leaving the tracker? It moves to the Removed section with the date and this reason.", "");
-        if (!reason?.trim()) return;
+        const reason = await ask({ title: "Why is this leaving the tracker?", body: "It moves to the Removed section with the date and this reason.", confirm: "remove", danger: true, field: { placeholder: "reason" } });
+        if (!reason) return;
         setStatus("removing");
         try {
-          const { commit } = await post("/api/remove", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, reason: reason.trim() });
+          const { commit } = await post("/api/remove", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, reason });
           setStatus(`committed ${commit}`);
           closeDrawer();
           await loadBoard();
@@ -1044,7 +1096,7 @@ const stopTails = () => {
 /** Find the console terminal attached to a background session, or attach one quietly (not in the dock). */
 const terminalFor = async (claudeId, title) => {
   const open = await api("/api/terminals");
-  const existing = open.find((t) => t.exitCode === null && t.command.join(" ") === `claude attach ${claudeId}`);
+  const existing = open.find((t) => t.exitCode === null && t.agentId === claudeId);
   if (existing) return existing;
   return post("/api/terminals", { project: projectId, kind: "attach", id: claudeId, title, cols: 110, rows: 32 });
 };
@@ -1219,7 +1271,7 @@ const renderWorkspace = async () => {
   const center = el("div", { class: "cc" });
   wrap.append(center);
   claudeUsage.mount(usageRoot, { api, post });
-  commandCenter = mountCommandCenter(center, { el, text, api, post, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus, projectId, project });
+  commandCenter = mountCommandCenter(center, { el, text, api, post, askClose, askEnd, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus, projectId, project });
   return wrap;
 };
 
@@ -1273,9 +1325,9 @@ const renderSessions = (records, live) => {
           { class: "actions" },
           btn("open", () => openTerminal({ kind: "resume", sessionId: s.sessionId, title: s.title ?? s.name ?? s.sessionId.slice(0, 8) })),
           btn("close", async () => {
-            if (!confirm(`Close "${s.title ?? s.name}"?\n\nThis ends the Claude process in ${s.app ?? "its terminal"} (${s.tty ?? "no tty"}). The conversation stays on disk and can be resumed later.`)) return;
+            if (!(await askClose(s))) return;
             try {
-              await post(`/api/sessions/${s.pid}/close?project=${encodeURIComponent(projectId)}`);
+              await post(`/api/sessions/${s.pid}/close`);
               setStatus(`closed pid ${s.pid}`);
             } catch (err) {
               setStatus(err.message, true);
@@ -1300,7 +1352,7 @@ const renderSessions = (records, live) => {
           btn("open", () => openTerminal({ kind: "attach", id: a.id, title: record?.loop ?? a.name ?? a.id })),
           btn(/^(done|exited|stopped|blocked)$/.test(a.state ?? "") ? "remove" : "stop", async () => {
             const finished = /^(done|exited|stopped|blocked)$/.test(a.state ?? "");
-            if (!confirm(finished ? `Remove background session ${a.id} from the list? Its transcript stays on disk.` : `Stop background session ${a.id}? Its conversation is kept.`)) return;
+            if (!(await askEnd(finished, `background session ${a.id}`))) return;
             try {
               const r = await post(`/api/agents/${a.id}/${finished ? "remove" : "stop"}`);
               setStatus(r.output || (finished ? `removed ${a.id}` : `stopped ${a.id}`), Boolean(r.failed));
@@ -1434,15 +1486,23 @@ const activate = (id) => {
   }
 };
 
+/** A pty onto a background agent only detaches when closed; any other pty hangs up the claude living in it. */
+const endsClaude = (info) => !info.agentId;
+
 const closeDockTerminal = async (id) => {
   const t = dockTerminals.get(id);
   if (!t) return;
+  if (endsClaude(t.info) && !t.tab.classList.contains("exited") && !(await askClose({ title: t.info.title, app: "its dock terminal" }))) return;
+  try {
+    await api(`/api/terminals/${id}`, { method: "DELETE" });
+  } catch (err) {
+    setStatus(`terminal ${id}: ${err.message}`, true);
+  }
   t.source.close();
   t.term.dispose();
   t.tab.remove();
   t.container.remove();
   dockTerminals.delete(id);
-  await api(`/api/terminals/${id}`, { method: "DELETE" }).catch(() => {});
   if (activeTerminal === id) {
     const next = [...dockTerminals.keys()].pop();
     if (next) activate(next);
@@ -1479,11 +1539,10 @@ const mountTerminal = (info) => {
   acceptDrops(container, (paths) => sendInput(info.id, `${paths.join(" ")} `));
 
   const tab = el(
-    "button",
-    { type: "button", class: "dock-tab", onclick: () => activate(info.id) },
-    el("span", { class: "lamp" }),
-    text(info.title),
-    el("span", { class: "close", title: "close this terminal (the session keeps running)", onclick: (e) => { e.stopPropagation(); closeDockTerminal(info.id); } }, "×"),
+    "div",
+    { class: "dock-tab" },
+    el("button", { type: "button", class: "name", title: info.title, onclick: () => activate(info.id) }, el("span", { class: "lamp" }), el("span", { class: "t" }, info.title)),
+    el("button", { type: "button", class: "close", title: endsClaude(info) ? "close this terminal and end its claude" : "detach (the background session keeps running)", "aria-label": `close ${info.title}`, onclick: () => closeDockTerminal(info.id) }, "×"),
   );
   $("#dock-tabs").append(tab);
 
@@ -1499,7 +1558,7 @@ const mountTerminal = (info) => {
   term.onData((data) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: data, keepalive: true }).catch(() => {}));
   term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
 
-  dockTerminals.set(info.id, { term, fit, tab, container, source });
+  dockTerminals.set(info.id, { term, fit, tab, container, source, info });
   activate(info.id);
 };
 
@@ -1560,8 +1619,8 @@ const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent })
   }
 };
 
-const spawnOnItem = (item, card, parent) => {
-  if (!confirm(`Spawn a headless Claude session on:\n\n${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.${parent ? "\nWhen it finishes, the auditor reviews it." : ""}`)) return;
+const spawnOnItem = async (item, card, parent) => {
+  if (!(await ask({ title: "Spawn a headless Claude session on this item?", body: `${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.${parent ? " When it finishes, the auditor reviews it." : ""}`, confirm: "spawn" }))) return;
   if (card) missile(card);
   openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body, parent });
 };

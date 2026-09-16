@@ -23,6 +23,8 @@ export interface TerminalInfo {
   exitCode: number | null;
   /** The pty bridge's pid; the claude inside is its descendant, which is how a registry session is matched to its dock terminal. */
   pid?: number;
+  /** The background agent this pty is a view onto: closing it only detaches, the agent runs on. */
+  agentId?: string;
 }
 
 interface Terminal extends TerminalInfo {
@@ -42,6 +44,7 @@ const info = (t: Terminal): TerminalInfo => ({
   cwd: t.cwd,
   startedAt: t.startedAt,
   exitCode: t.exitCode,
+  agentId: t.agentId,
 });
 
 export const listTerminals = (): TerminalInfo[] => [...terminals.values()].map(info);
@@ -59,14 +62,14 @@ const cleanEnv = (): NodeJS.ProcessEnv => {
   return env;
 };
 
-export const openTerminal = (title: string, command: string[], cwd: string, cols = 120, rows = 36): TerminalInfo => {
+export const openTerminal = (title: string, command: string[], cwd: string, cols = 120, rows = 36, agentId?: string): TerminalInfo => {
   const id = randomUUID().slice(0, 8);
   const child = spawn("python3", [ptyHelper, String(cols), String(rows), ...command], {
     cwd,
     env: { ...cleanEnv(), TERM: "xterm-256color", COLORTERM: "truecolor", LANG: process.env.LANG ?? "en_US.UTF-8" },
   });
   const terminal: Terminal = {
-    id, title, command, cwd, startedAt: new Date().toISOString(), exitCode: null,
+    id, title, command, cwd, startedAt: new Date().toISOString(), exitCode: null, agentId,
     child, scrollback: [], scrollbackBytes: 0, subscribers: new Set(),
   };
   terminals.set(id, terminal);

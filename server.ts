@@ -258,7 +258,7 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
   switch (body.kind) {
     case "attach": {
       if (!body.id) throw new Error("attach needs id");
-      return openTerminal(body.title ?? `attach ${body.id}`, ["claude", "attach", body.id], project.path, size.cols, size.rows);
+      return openTerminal(body.title ?? `attach ${body.id}`, ["claude", "attach", body.id], project.path, size.cols, size.rows, body.id);
     }
     case "resume": {
       if (!body.sessionId) throw new Error("resume needs sessionId");
@@ -283,7 +283,7 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
         claudeId: id,
         ...(body.parent ? { parent: body.parent } : {}),
       });
-      return { ...openTerminal(body.title, ["claude", "attach", id], project.path, size.cols, size.rows), agentId: id };
+      return openTerminal(body.title, ["claude", "attach", id], project.path, size.cols, size.rows, id);
     }
     default:
       throw new Error(`unknown terminal kind "${String(body.kind)}"`);
@@ -543,12 +543,12 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     await focusApp(app);
     return sendJson(res, 200, { ok: true, app });
   }
+  // The workspace lists every session on the machine, so the guard is the registry, not the project.
   if (method === "POST" && /^\/api\/sessions\/\d+\/close$/.test(path)) {
     const pid = Number(path.split("/")[3]);
-    const project = await requireProject(url);
-    const live = await liveSignals(project, true);
-    if (!live.claudeSessions.some((s) => s.pid === pid)) throw new Error(`pid ${pid} is not a Claude session under ${project.name}`);
+    if (!(await readRegistrySessions()).some((s) => s.pid === pid)) throw new Error(`pid ${pid} is not a Claude session`);
     process.kill(pid, "SIGTERM");
+    liveCache.clear();
     return sendJson(res, 200, { ok: true });
   }
 

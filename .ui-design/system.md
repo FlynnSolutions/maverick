@@ -36,10 +36,19 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 
 ## Patterns
 
-- **Session panel** (`.cc-panel`): lamp · title (display 15/600) · role chip · verdict · one
-  quiet `dock` ghost action (30px, 44px wide). Meta line mono 11.5. Last exchange as `YOU` /
-  `CLAUDE` rows. The whole panel is the click target (Enter and Space too); close and stop live
-  only in the full-screen head. Compact variant drops the exchange.
+- **Session panel** (`.cc-panel`): lamp · title (display 15/600) · role chip · verdict · two
+  quiet ghost actions (30px, 44px wide, `--ink-soft`): `dock`, then `close` / `stop` / `remove`,
+  which reddens on hover and always asks first. Enter or Space on the panel opens it; on one of
+  its buttons it is that button's. Meta line mono 11.5. Last exchange as `YOU` / `CLAUDE` rows.
+  The whole panel is the click target (Enter and Space too). Compact variant drops the exchange.
+- **Dialog** (`.ask`): every question the browser would draw (confirm, prompt) is Maverick's
+  own: a 440px gunmetal card (a form) on the drawer's backdrop, title display 15/600, body 13px
+  soft ink, actions right-aligned as `cancel` ghost then the verb. A dangerous verb is threat-dim
+  filled and focus starts on cancel. The page behind goes inert and stops scrolling; Escape and
+  the backdrop cancel; Enter in a field submits; focus returns where it was.
+- **Dock tab** (`.dock-tab`): two real buttons side by side, the name (lamp + ellipsised title)
+  and a 28px `×` that reddens on hover; closing a live claude's terminal asks first, detaching
+  a background attach does not.
 - **Bands**: Needs you (caution, jet glyph) → formations → Working → Idle (compact) → Finished
   (compact) → closed formations as one-line rows. The focal element of the deck is whatever
   waits on the pilot.
