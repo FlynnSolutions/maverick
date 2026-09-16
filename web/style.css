@@ -311,7 +311,9 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .lane-title .count { font-family: var(--mono); font-weight: 400; color: var(--ink-ghost); }
 .lane-title .fold { height: 18px; width: 18px; padding: 0; font-size: 10px; }
 .lane.runway .lane-title { color: var(--accent-hot); text-shadow: 0 0 12px var(--accent-dim); }
-.lane.collapsed .lane-title { writing-mode: vertical-rl; height: auto; padding: 8px 0; justify-content: flex-start; gap: 8px; }
+/* Collapsed: the label turns, and every collapsed lane is as tall as the longest heading so
+   the row of them reads as one band rather than three ragged stubs. */
+.lane.collapsed .lane-title { writing-mode: vertical-rl; height: auto; min-height: 250px; padding: 10px 0; justify-content: flex-start; gap: 10px; white-space: nowrap; }
 .lane.collapsed .lane-title .fold { writing-mode: horizontal-tb; }
 .lane.collapsed .lane-title .label { flex: 0; }
 .group-name { font-size: 11px; color: var(--ink-ghost); margin: 10px 0 4px; padding-left: 2px; }
@@ -412,8 +414,10 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 /* ---------- dispatch (sessions) ---------- */
 
 .dispatch {
-  padding-left: 14px;
-  border-left: 1px solid var(--seam-strong);
+  padding: 10px 6px 10px 12px;
+  border-radius: var(--radius-m);
+  background: var(--gunmetal);
+  box-shadow: 0 0 0 1px var(--seam), -8px 0 24px var(--shade-soft);
   position: sticky;
   top: 62px;
   max-height: calc(100vh - 62px - 16px);
@@ -423,6 +427,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
   scrollbar-color: var(--ink-ghost) transparent;
 }
 body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
+.project.rail-collapsed .dispatch { padding: 10px 4px; }
 .dispatch h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; margin: 14px 0 6px; }
 .dispatch .lane-title { margin: 0; }
 .dispatch ul { list-style: none; margin: 0; padding: 0; }
@@ -764,9 +769,9 @@ body.ask-open { overflow: hidden; }
 
 /* ---------- collapsible sessions rail ---------- */
 
-.project.rail-collapsed { grid-template-columns: minmax(0, 1fr) 28px; }
+.project.rail-collapsed { grid-template-columns: minmax(0, 1fr) 36px; }
 .project.rail-collapsed .dispatch > :not(.lane-title) { display: none; }
-.project.rail-collapsed .dispatch .lane-title { writing-mode: vertical-rl; height: auto; padding: 8px 0; gap: 8px; justify-content: flex-start; }
+.project.rail-collapsed .dispatch .lane-title { writing-mode: vertical-rl; height: auto; min-height: 120px; padding: 10px 0; gap: 10px; justify-content: flex-start; white-space: nowrap; }
 .project.rail-collapsed .dispatch .lane-title .fold { writing-mode: horizontal-tb; }
 .project.rail-collapsed .dispatch .lane-title #refresh-live { display: none; }
 .cal-undated.over { background: var(--accent-dim); box-shadow: inset 0 0 0 1px var(--accent-glow); border-radius: var(--radius-m); }

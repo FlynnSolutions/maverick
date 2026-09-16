@@ -450,7 +450,9 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
 const renderBoard = (tracker) => {
   const lanes = el("div", { class: "lanes" });
   for (const lane of LANES) lanes.append(renderLane(tracker, lane));
-  lanes.style.gridTemplateColumns = LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "minmax(0, 0.16fr)" : id === "priority" ? "1.5fr" : "1fr")).join(" ");
+  // A collapsed lane is a fixed strip, not a fraction: a fraction grows with the window and
+  // never actually gets out of the way.
+  lanes.style.gridTemplateColumns = LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "36px" : id === "priority" ? "1.5fr" : "1fr")).join(" ");
   return el(
     "section",
     { class: "board" },

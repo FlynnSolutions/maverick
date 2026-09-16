@@ -105,6 +105,14 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Idle decays in three steps, and the first step is yours.** Under an hour between turns is a
   conversation you are in the middle of (`Needs action`, carries the exchange); under a day is
   `Idle`; beyond that is `Stale`. Distinct from `Needs you`, which is blocked on a prompt.
+- **A rail is a surface, not a line.** The sessions rail is sticky and one viewport tall; the
+  board beside it runs to 30,000px, so any border on it stops a screen down and reads as broken.
+  It is a floating panel instead: its own background, a 1px ring and a soft shadow on the deck
+  side, which needs no relationship to the length of what it sits next to.
+- **Collapsed means a fixed strip, never a fraction.** A collapsed lane at `0.16fr` grows with
+  the window and never gets out of the way; it is 36px. The turned heading gets a `min-height`
+  matching the longest label, so a row of collapsed lanes reads as one band and no heading wraps
+  inside a short column.
 - **Every colour a surface uses is a token, or light mode inherits the dark one's hard-coded
   darks.** The bar (`--bar`), the lamp's machined metal (`--metal`, `--metal-edge`, `--metal-lip`,
   the `--cold-*` set), the release tile (`--tile`), the stat wells (`--inset`), every lift shadow
