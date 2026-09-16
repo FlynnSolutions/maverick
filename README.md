@@ -206,8 +206,11 @@ server, never sent to the page), cached a minute. The pill shows the 5-hour wind
 reset time, the week, and any per-model weekly scope, coloured by Claude's severity; the
 panel's Now tab lists each limit with "resets in", and the 5-hour and week tabs show what
 consumed them, load per hour and per week by model family from the transcripts (load is
-output × 4 + input + cache writes + cache reads ÷ 10). If the endpoint is unreachable the
-widget falls back to that load with a Calibrate tab (`usage-limits.json`).
+output × 4 + input + cache writes + cache reads ÷ 10). If a fetch fails the widget keeps the
+last good numbers, marked "as of" their time with the reason; a 429 also holds off further
+fetches (Retry-After, else doubling from two minutes), since every running Claude Code session
+draws on the same token's allowance. With no good numbers at all it falls back to that load
+with a Calibrate tab (`usage-limits.json`).
 
 ## How a tracker is read
 

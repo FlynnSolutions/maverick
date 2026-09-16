@@ -295,6 +295,8 @@ export const mount = (root, ctx) => {
     return { five: win ?? five, win, week: windowLoad(data.hourly, 168) };
   };
   const liveLimits = () => (live?.data?.limits ?? []).slice().sort((a, b) => (a.kind === "session" ? -1 : b.kind === "session" ? 1 : 0));
+  /** "as of <time>" while the last check failed and the numbers are the previous good ones. */
+  const asOf = () => (live?.stale ? `as of ${when(live.fetchedAt)}` : "");
 
   const pill = (children, title) =>
     el("button", { type: "button", class: `cu-baby${open ? " open" : ""}`, "aria-expanded": open ? "true" : "false", "aria-label": title, title, onclick: () => { open = !open; paint(); } }, el("span", { class: "brand" }, "Claude"), ...children, el("span", { class: "chev" }, open ? "▴" : "▾"));
@@ -309,7 +311,8 @@ export const mount = (root, ctx) => {
           liveMeter(l),
           el("span", { class: "v" }, `${l.percent}%`),
           l === session && l.resets_at ? el("span", { class: "reset" }, `resets ${when(l.resets_at)}`) : null));
-      return pill(cells, `Claude usage from Claude: ${ls.map((l) => `${limitName(l)} ${l.percent}%${l.resets_at ? `, resets ${when(l.resets_at)}` : ""}`).join("; ")}`);
+      if (live.stale) cells.push(el("span", { class: "reset" }, asOf()));
+      return pill(cells, `Claude usage from Claude${live.stale ? ` ${asOf()} (${live.stale})` : ""}: ${ls.map((l) => `${limitName(l)} ${l.percent}%${l.resets_at ? `, resets ${when(l.resets_at)}` : ""}`).join("; ")}`);
     }
     // Fallback: the transcript-derived load against your own calibration.
     const cur = current();
@@ -341,7 +344,9 @@ export const mount = (root, ctx) => {
     if (tab === "now") {
       if (ls.length) {
         body.append(
-          el("p", { class: "cu-lede" }, `Claude's own numbers for your ${live.subscription ?? ""} plan: the same figures its /usage screen shows. The 5-hour window is a rolling session; the weekly limits roll over seven days, with the heavy model metered on its own.`),
+          el("p", { class: "cu-lede" }, live.stale
+            ? `Claude's own numbers for your ${live.subscription ?? ""} plan ${asOf()}; the last check failed (${live.stale}), so these stand until the next one succeeds.`
+            : `Claude's own numbers for your ${live.subscription ?? ""} plan: the same figures its /usage screen shows. The 5-hour window is a rolling session; the weekly limits roll over seven days, with the heavy model metered on its own.`),
           liveRows(ls),
         );
         const rows = live.data?.seven_day_breakdown?.rows?.filter((r) => r.percent > 0) ?? [];
