@@ -156,7 +156,8 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   URL beside `formation`, so a layout survives a reload and can be pulled into its own window.
   Past one open strip the rack becomes two columns, and a *collapsed* strip still spans the full
   row, because it is still a line: only the open ones share. In a column the strip drops its
-  `where`, which is the one thing its own pane header repeats.
+  `where`, which is the one thing its own pane header repeats. This is every rack's rule, not
+  the flight's: two open shells belong side by side for exactly the reason two open sessions do.
 - **The lead takes a column once it is open, and the flight becomes the rail beside it.** A
   formation is one session you are driving and several you are watching, so an open lead sits
   left and the flight stands to its right: you type to the one that orchestrates while the rest
@@ -202,6 +203,21 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   next to the primary, read as prose rather than as something to click. The wording is clipped at
   58 characters with the whole of it in the title, because Claude Code's second option is
   routinely a paragraph carrying two merged choices.
+- **A shell is a strip like everything else.** Every pty Maverick opened used to exec `claude`,
+  so there was nowhere to run `git status` without a Claude in front of it. A shell has no
+  registry session behind it, so it is keyed by its pty (`term:<id>`) rather than a session id,
+  gets its own quiet rack, and opens straight into its terminal because there is no conversation
+  to show. It is closed, never "stopped" or "removed": there is no agent to end and no record to
+  keep. Being somewhere you can work is the point; a console you have to leave to run a command
+  is a console you will not live in.
+- **Selection, copy, paste and find are what make a terminal one you can work in.** xterm gives
+  the primitives and none of the bindings. Cmd+C copies a selection and otherwise falls through,
+  so Ctrl+C still interrupts. Cmd+V pastes through the pty rather than the page, so the shell
+  sees typing. Cmd+F opens a find rail above the screen rather than a box over it, so it never
+  covers the output you went looking for; it is an `indexOf` over the buffer plus `select` and
+  `scrollToLine`, because the repo vendors xterm's files rather than taking packages and the
+  search addon is more than this needs. The selection colour has to be set against the pane,
+  since xterm assumes it is painting on black.
 - **A terminal wears this interface, and a real emulator is not negotiable.** Claude Code drives
   the alternate screen, addresses the cursor and wants raw keys, so the arrows, Ctrl+C and its
   own permission menus only work through something that speaks the protocol; re-rendering its

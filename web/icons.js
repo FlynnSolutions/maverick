@@ -22,6 +22,8 @@ const PATHS = {
   chevron: ["M4.8 6.4 L8 9.6 L11.2 6.4"],
   /** Plus. */
   plus: ["M8 3.6v8.8", "M3.6 8h8.8"],
+  /** Terminal: a screen, a prompt caret and the line you type on. */
+  terminal: ["M2.3 3.3h11.4v9.4h-11.4z", "M4.9 6.5 L7 8.3 L4.9 10.1", "M8.4 10.3h3"],
   /** Refresh: an open circle with an arrowhead closing it. */
   refresh: ["M11.6 4.4 A5 5 0 1 0 13 8", "M8.6 4.1 L11.9 4.5 L11.5 1.2"],
 };

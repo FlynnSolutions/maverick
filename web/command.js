@@ -77,6 +77,15 @@ const assemble = (all) => {
     else sessions.push(merged);
     bySessionId.set(a.sessionId, merged);
   }
+  // A shell has no Claude behind it, so nothing above would ever mention it. It is still a
+  // terminal you are working in, so it gets a strip like everything else, keyed by its pty.
+  for (const t of all.shells ?? []) {
+    sessions.push({
+      key: `term:${t.id}`, kind: "shell", terminalId: t.id, sessionId: null, cwd: t.cwd, project: t.project,
+      title: t.title, status: t.exitCode === null ? "shell" : "exited", app: "Maverick",
+      at: Date.parse(t.startedAt), isShell: true,
+    });
+  }
   // Records that are parents of others (audit parents, drivers) or children of a parent.
   const parents = new Map();
   for (const r of all.records) {
@@ -128,7 +137,19 @@ export const mountCommandCenter = (root, ctx) => {
 
   /** `long` names the object: the rack has one column to spare, the overlay header has room. */
   const endButton = (s, cls = "danger", long = false) =>
-    s.kind === "background"
+    s.isShell
+      ? el("button", { type: "button", class: cls, title: `close the shell "${s.title}"`, onclick: async (e) => {
+          e.stopPropagation();
+          if (!(await askEnd(false, `the shell "${s.title}"`))) return;
+          try {
+            await api(`/api/terminals/${s.terminalId}`, { method: "DELETE" });
+            setStatus(`closed ${s.title}`);
+          } catch (err) {
+            setStatus(err.message, true);
+          }
+          window.setTimeout(load, 600);
+        } }, long ? "close shell" : "close")
+    : s.kind === "background"
       ? el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
           const done = finished(s.status);
@@ -239,7 +260,7 @@ export const mountCommandCenter = (root, ctx) => {
     const inFormation = formations.find((x) => x.id === activeFormation) ?? null;
     // Inside a formation a strip opens where it sits, so several run at once. In the rack it
     // still goes full screen: sixteen strips have no room to hold a conversation open.
-    const expandable = Boolean(inFormation) && Boolean(s.sessionId);
+    const expandable = s.isShell || (Boolean(inFormation) && Boolean(s.sessionId));
     const isOpen = expandable && opened.has(s.key);
     const openIt = () => (expandable ? toggleOpen(s.key) : openFull(s));
     const node = el("article", {
@@ -485,6 +506,21 @@ export const mountCommandCenter = (root, ctx) => {
     return el("div", { class: "forms" },
       tab(null, "Rack", mySessions().length),
       ...formations.map((f) => tab(f.id, f.name, slots(f), f)),
+      el("button", { type: "button", class: "new shell", title: "open a shell in this project", onclick: async () => {
+        try {
+          const t = await post("/api/terminals", { project: ctx.projectId, kind: "shell", cols: 120, rows: 34 });
+          activeFormation = null;
+          const u = new URL(location.href);
+          u.searchParams.delete("formation");
+          history.replaceState({}, "", u);
+          opened.add(`term:${t.id}`);
+          writeOpen();
+          setStatus(`${t.title} opened`);
+          await load();
+        } catch (err) {
+          setStatus(err.message, true);
+        }
+      } }, icon("terminal")),
       el("button", { type: "button", class: "new", title: "new formation", onclick: async () => {
         const f = await api("/api/formations?project=" + encodeURIComponent(ctx.projectId), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
         formations = [...formations, f];
@@ -597,7 +633,9 @@ export const mountCommandCenter = (root, ctx) => {
     sessions.length
       ? el("section", { class: `rack ${cls}` },
           el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(sessions.length))),
-          el("div", { class: "rack-strips" }, ...sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, cls))))
+          // The same rule as a formation's flight: past one open strip the rack shares columns.
+          el("div", { class: `rack-strips${sessions.filter((x) => opened.has(x.key)).length > 1 ? " grid" : ""}` },
+            ...sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, cls))))
       : null;
 
   /**
@@ -680,10 +718,11 @@ export const mountCommandCenter = (root, ctx) => {
     }
     const loose = sessions.filter((s) => !used.has(s.key)).sort((a, b) => (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || (b.at ?? 0) - (a.at ?? 0));
     const is = (...st) => (s) => st.includes(s.status);
+    const shells = loose.filter((s) => s.isShell);
     const needs = loose.filter(is("waiting", "blocked"));
     const working = loose.filter(is("busy", "running"));
     const done = loose.filter((s) => finished(s.status));
-    const idle = loose.filter((s) => !needs.includes(s) && !working.includes(s) && !done.includes(s));
+    const idle = loose.filter((s) => !needs.includes(s) && !working.includes(s) && !done.includes(s) && !shells.includes(s));
     // Idle within a day is a session you are between turns on; older is a tab you have probably moved on from.
     const stale = idle.filter((s) => s.at && Date.now() - s.at > DAY);
     // Between turns for under an hour is a conversation you are in the middle of; it is your move.
@@ -700,6 +739,7 @@ export const mountCommandCenter = (root, ctx) => {
       missionsRack(),
       !sessions.length && !formations.length && !closed.length ? el("p", { class: "muted small cc-empty" }, "No sessions in this project.") : null,
       rack("Needs you", needs, "needs", true),
+      rack("Shells", shells, "shells"),
       ...formations,
       rack("Working", working, "working", true),
       rack("Needs action", recent, "action", true),
@@ -801,6 +841,16 @@ export const mountCommandCenter = (root, ctx) => {
 
   const paintHead = (p) => {
     const s = (p.session = liveSession(p));
+    if (s.isShell) {
+      p.head.replaceChildren(
+        ...(p.inline ? [] : [el("button", { type: "button", class: "ghost back", onclick: () => closeFull() }, "← all sessions")]),
+        el("span", { class: "meta" }, el("span", { class: "k" }, "shell"), el("span", {}, s.cwd.replace(/^\/Users\/[^/]+\//, "~/"))),
+        el("span", { class: "spacer" }),
+        endButton(s, "ghost end-long", true),
+        el("button", { type: "button", class: "ghost icon-btn dismiss", "aria-label": p.inline ? "collapse this shell" : "close this view", title: p.inline ? "collapse back to the strip; the shell keeps running" : "close this view; the shell keeps running", onclick: () => (p.inline ? collapse(p.key) : closeFull()) }, icon("close")),
+      );
+      return;
+    }
     const stick = p.stickPane
       ? el("button", { type: "button", class: "ghost", title: "put the terminal away and read the conversation", onclick: () => dropTheStick(p) }, "back to the conversation")
       : el("button", { type: "button", class: p.inline ? "ghost" : "primary", title: "type into this session's own terminal", onclick: () => takeTheStick(p) }, "Take the stick");
@@ -1100,6 +1150,101 @@ export const mountCommandCenter = (root, ctx) => {
     }, 300);
   };
 
+  /* ---------- living in a terminal ----------
+     Selection, copy, paste and find are what separate a terminal you can look at from one you
+     can work in. xterm gives the primitives and none of the bindings; these are the bindings. */
+
+  /** Every match for `q` in the buffer, newest last, as {row, col}. */
+  const findAll = (term, q) => {
+    if (!q) return [];
+    const b = term.buffer.active;
+    const needle = q.toLowerCase();
+    const hits = [];
+    for (let row = 0; row < b.length; row += 1) {
+      const line = b.getLine(row)?.translateToString(true).toLowerCase() ?? "";
+      let col = line.indexOf(needle);
+      while (col >= 0) {
+        hits.push({ row, col });
+        col = line.indexOf(needle, col + 1);
+      }
+    }
+    return hits;
+  };
+
+  /**
+   * Find in the scrollback. xterm ships a search addon; this repo vendors its files rather than
+   * taking packages, and the whole of what is needed here is an indexOf over the buffer plus
+   * `select` and `scrollToLine`, which it already has.
+   */
+  const findBar = (p) => {
+    if (p.findBar) return p.findBar.querySelector("input").focus();
+    const count = el("span", { class: "n" }, "");
+    let hits = [];
+    let at = -1;
+    const show = (i) => {
+      if (!hits.length) return;
+      at = (i + hits.length) % hits.length;
+      const h = hits[at];
+      p.stickTerm.term.select(h.col, h.row, p.findBar.querySelector("input").value.length);
+      p.stickTerm.term.scrollToLine(Math.max(0, h.row - 3));
+      count.textContent = `${at + 1} of ${hits.length}`;
+    };
+    const input = el("input", { type: "search", placeholder: "find in this terminal", "aria-label": "find in this terminal" });
+    input.addEventListener("input", () => {
+      hits = findAll(p.stickTerm.term, input.value);
+      count.textContent = hits.length ? `${hits.length} found` : input.value ? "nothing" : "";
+      if (hits.length) show(hits.length - 1); // the newest match, because the newest output is why you looked
+    });
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") { e.preventDefault(); show(at + (e.shiftKey ? -1 : 1)); }
+      if (e.key === "Escape") { e.preventDefault(); closeFind(p); }
+    });
+    const bar = el("div", { class: "cc-find" }, input, count,
+      el("button", { type: "button", class: "ghost", title: "previous match", onclick: () => show(at - 1) }, "prev"),
+      el("button", { type: "button", class: "ghost", title: "next match", onclick: () => show(at + 1) }, "next"),
+      el("button", { type: "button", class: "ghost icon-btn", "aria-label": "close find", onclick: () => closeFind(p) }, icon("close")));
+    p.findBar = bar;
+    p.body.insertBefore(bar, p.body.firstChild);
+    input.focus();
+    refitAll();
+  };
+
+  const closeFind = (p) => {
+    p.findBar?.remove();
+    p.findBar = null;
+    p.stickTerm?.term.clearSelection();
+    p.stickTerm?.term.focus();
+    refitAll();
+  };
+
+  /**
+   * The bindings a terminal is expected to have. Cmd+C copies a selection and otherwise falls
+   * through, so Ctrl+C still interrupts; Cmd+V pastes through the pty rather than the page, so
+   * the shell sees it as typing; Cmd+F finds. Everything else is the session's to handle.
+   */
+  const bindKeys = (p, term, id) => {
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown") return true;
+      const mod = e.metaKey || (e.ctrlKey && e.shiftKey);
+      if (!mod) return true;
+      const key = e.key.toLowerCase();
+      if (key === "c" && term.hasSelection()) {
+        navigator.clipboard?.writeText(term.getSelection()).catch(() => setStatus("the browser would not give up the clipboard", true));
+        return false;
+      }
+      if (key === "v") {
+        navigator.clipboard?.readText().then((t) => t && sendInput(id, t)).catch(() => setStatus("the browser would not give up the clipboard", true));
+        return false;
+      }
+      if (key === "f") {
+        findBar(p);
+        return false;
+      }
+      return true;
+    });
+  };
+
   /**
    * The terminal, inside the pane the session already occupies. This is what the dock used to
    * be: a pane over live content was the confusing part, so it lives where the session is.
@@ -1161,6 +1306,7 @@ export const mountCommandCenter = (root, ctx) => {
       term.onData((d) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: d, keepalive: true }).catch(() => {}));
       term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
       acceptDrops(host, (paths) => sendInput(info.id, `${paths.join(" ")} `));
+      bindKeys(p, term, info.id);
       p.stickTerm = { term, fit, src, id: info.id };
       catchPrompt(p); // it may already have been asking before this pane existed
       term.focus();
@@ -1171,6 +1317,7 @@ export const mountCommandCenter = (root, ctx) => {
 
   const dropTheStick = (p) => {
     if (!p.stickPane) return;
+    closeFind(p);
     if (p.grewFrom) {
       p.node.style.height = `${p.grewFrom}px`;
       p.grewFrom = null;
@@ -1296,6 +1443,11 @@ export const mountCommandCenter = (root, ctx) => {
     }
     panes.set(p.key, p);
     paintHead(p);
+    if (session.isShell) {
+      // There is no conversation behind a shell. The terminal is the whole of it.
+      takeTheStick(p);
+      return p;
+    }
     paintComposer(p);
     list.append(el("p", { class: "muted cc-empty" }, "reading the transcript…"));
     openTranscriptStream(p);
