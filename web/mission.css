@@ -1,0 +1,64 @@
+/* The mission page. It borrows the ship page's frame (nav left, detail right) because a
+   mission and a ship are the same shape of thing: a saved run you come back to. What it adds
+   is the gate, which has to be loud enough that approving is a decision and not a click. */
+
+.mv-band {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--seam-soft);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--seam-soft);
+}
+.mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; gap: 2px; }
+.mv-band .k { font-family: var(--display); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.mv-band .v { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* The gate. One surface, lifted, and the cost above the verb rather than beneath it. */
+.mv-gate { background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
+.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 70ch; margin: 0 0 10px; }
+.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 70ch; margin: 10px 0 0; }
+.mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--threat); font-size: 13px; }
+.mv-problems li { margin: 2px 0; }
+
+/* A milestone's tasks: the strip's columns, at the strip's density, in the page's own frame. */
+.mv-task {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: var(--radius-s);
+  background: var(--carbon);
+  box-shadow: inset 0 0 0 1px var(--seam-soft);
+  margin-bottom: 8px;
+}
+.mv-task .lamp { width: 14px; height: 14px; }
+.mv-task .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cold); justify-self: center; }
+.mv-task .dot.passed { background: var(--ok); }
+.mv-task .dot.pending { background: var(--cold); }
+.mv-task .dot.handed-back { background: var(--threat); }
+.mv-task .t { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-task .mv-acts { display: flex; gap: 6px; }
+.mv-task .meta { grid-column: 2 / -1; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+.mv-task .note { grid-column: 2 / -1; font-size: 12.5px; color: var(--caution); }
+.mv-task pre.diffstat { grid-column: 2 / -1; margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); background: transparent; box-shadow: none; padding: 0; white-space: pre-wrap; }
+
+.verdict.flying, .verdict.reviewing { color: var(--accent-hot); background: var(--accent-dim); }
+.verdict.built { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
+.verdict.passed { color: var(--ok); background: rgba(80, 200, 120, 0.16); }
+.verdict.handed-back, .verdict.blocked { color: var(--threat); background: var(--threat-dim); }
+.verdict.interviewing, .verdict.planned { color: var(--ink-soft); }
+
+/* The interview is a conversation, so it gets a real terminal inside the mission's own view. */
+.mv-interview { padding: 0; overflow: hidden; background: #0a0c0f; }
+.mv-interview .term { height: 46vh; min-height: 320px; }
+.mv-interview h2 { padding: 12px 14px 0; margin: 0 0 6px; }
+
+.mv-plan { max-width: 78ch; }
+.mv-milestone { margin-bottom: 18px; }
+.mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
+.mv-milestone > .done { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 10px; }
+.mv-empty { color: var(--ink-faint); font-size: 13px; }

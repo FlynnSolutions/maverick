@@ -1453,6 +1453,44 @@ const renderSessions = (records, live) => {
   return out;
 };
 
+/**
+ * Missions in the rail, above the sessions, because a mission is a bundle of them. The row is
+ * a link; everything a mission needs said or decided is on its own page, and the gate belongs
+ * there rather than one click from a list.
+ */
+const MISSION_LAMP = { interviewing: "waiting", planned: "waiting", flying: "busy", blocked: "blocked", review: "waiting", closed: "done" };
+
+const newMission = async () => {
+  const name = await ask({ title: "Open a mission", body: "A mission is a bounded multi-feature effort: the RIO interviews you, plans it into milestones, and flies it once you approve. Give it a name.", confirm: "next", field: { placeholder: "what this mission is called" } });
+  if (!name) return;
+  const brief = await ask({ title: `What do you want done?`, body: "One line is enough, and one line is all it gets. The RIO will not plan off it: it interviews you first.", confirm: "open the interview", field: { placeholder: "the line you would have opened a session with" } });
+  if (!brief) return;
+  try {
+    const { mission } = await post(`/api/missions?project=${encodeURIComponent(projectId)}`, { name, brief });
+    location.href = `/mission.html?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(mission.id)}`;
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+};
+
+const renderMissions = (missions) => {
+  const out = document.createDocumentFragment();
+  const head = el("h3", {}, el("span", {}, "Missions"), el("button", { type: "button", class: "ghost", onclick: newMission }, "open one"));
+  out.append(head);
+  const list = el("ul");
+  for (const m of missions) {
+    const tasks = m.milestones.flatMap((x) => x.tasks ?? []);
+    const passed = tasks.filter((t) => t.status === "passed").length;
+    const where = m.status === "interviewing" || m.status === "planned" ? "waiting on your approval" : `${passed}/${tasks.length} tasks · ${m.milestones.filter((x) => x.merged).length}/${m.milestones.length} milestones`;
+    list.append(sessionRow(MISSION_LAMP[m.status] ?? "idle", m.name, `${m.status} · ${where}`, [
+      el("a", { class: "ghost", href: `/mission.html?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(m.id)}` }, "open"),
+    ]));
+  }
+  if (!missions.length) list.append(el("li", { class: "empty" }, "None. A mission is for work too big for one session and too shaped to hand over cold."));
+  out.append(list);
+  return out;
+};
+
 const renderLive = (live) => {
   const out = document.createDocumentFragment();
   const servers = el("ul");
@@ -1478,9 +1516,14 @@ const renderLive = (live) => {
 const loadRail = async (refresh = false) => {
   try {
     const q = `project=${encodeURIComponent(projectId)}${refresh ? "&refresh" : ""}`;
-    const [sessions, live] = await Promise.all([api(`/api/sessions?project=${encodeURIComponent(projectId)}`), api(`/api/live?${q}`)]);
+    const [sessions, live, missions] = await Promise.all([
+      api(`/api/sessions?project=${encodeURIComponent(projectId)}`),
+      api(`/api/live?${q}`),
+      api(`/api/missions?project=${encodeURIComponent(projectId)}`).catch(() => []),
+    ]);
     lastSessions = sessions;
     $("#tally").replaceChildren(railTally(live));
+    $("#missions").replaceChildren(renderMissions(missions));
     $("#sessions").replaceChildren(renderSessions(sessions, live));
     $("#live").replaceChildren(renderLive(live));
   } catch (err) {

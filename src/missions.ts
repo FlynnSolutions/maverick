@@ -444,7 +444,9 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
     if (task.status !== "pending") continue;
     try {
       task.worktree = join(project.path, ".claude", "worktrees", `${mission.id}-${task.id}`);
-      task.branch = `${mission.branch}/${task.id}`;
+      // A sibling of the mission branch, never a child: git cannot hold both `mission/x` and
+      // `mission/x/m1-t1`, because the first is a ref file where the second wants a directory.
+      task.branch = `${mission.branch}-${task.id}`;
       await ensureWorktree(mission.repo, task.worktree, task.branch, mission.branch);
       task.claudeId = await spawnBackground(task.worktree, `${mission.name} · ${task.title}`, wingmanPrompt(project, mission, m, task));
       task.status = "flying";

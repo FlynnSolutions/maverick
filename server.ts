@@ -19,6 +19,7 @@ import { addProject, chooseFolder, projectById, readProjects, removeProject, typ
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
+import { acceptTask, approveMission, closeMission, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions } from "./src/missions.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript } from "./src/transcript-view.ts";
@@ -483,6 +484,40 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     await sweepShips(project);
     return sendJson(res, 200, await readShip(project.id, decodeURIComponent(path.slice("/api/ships/".length))));
   }
+  // Missions: a bounded effort run by a RIO. Nothing here spawns a Wingman before /approve.
+  if (path === "/api/missions") {
+    const project = await requireProject(url);
+    if (method === "GET") {
+      await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
+      return sendJson(res, 200, await listMissions(project.id));
+    }
+    if (method === "POST") {
+      const body = await readJson<{ name: string; brief: string; tracker?: number }>(req);
+      const { mission, terminal } = await startMission(project, body.name, body.brief, body.tracker ?? 0);
+      return sendJson(res, 200, { mission, terminal });
+    }
+  }
+  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close))?$/);
+  if (missionAction) {
+    const project = await requireProject(url);
+    const [, id, action] = missionAction;
+    if (method === "GET" && !action) {
+      await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
+      // Before the blessing the page reads the plan document; after it, the run.
+      const planDoc = await previewPlan(project, id);
+      return sendJson(res, 200, { ...(await missionView(project, id)), planDoc: { found: planDoc.found, text: planDoc.text, parsed: planDoc.parsed, cost: planDoc.cost } });
+    }
+    if (method === "POST" && action === "approve") return sendJson(res, 200, await approveMission(project, id));
+    if (method === "POST" && action === "interview") return sendJson(res, 200, await reopenInterview(project, id));
+    if (method === "POST" && action === "close") return sendJson(res, 200, await closeMission(project, id));
+  }
+  const missionTask = path.match(/^\/api\/missions\/([a-z0-9-]+)\/tasks\/([a-z0-9-]+)\/(retry|accept)$/);
+  if (method === "POST" && missionTask) {
+    const project = await requireProject(url);
+    const [, id, taskId, action] = missionTask;
+    if (action === "retry") return sendJson(res, 200, await retryTask(project, id, taskId));
+    return sendJson(res, 200, await acceptTask(project, id, taskId, (await readJson<{ note?: string }>(req)).note ?? ""));
+  }
   // The walkthrough document's own "send to Claude" button posts here (relative /feedback), exactly as the
   // skill's helper server accepted it: one JSON line appended beside the doc, in feedback/<vNNN>-feedback.jsonl.
   if (method === "POST" && path === "/feedback") {
@@ -627,6 +662,7 @@ const sweepAll = async (): Promise<void> => {
       const started = await sweep(project);
       for (const id of started) console.log(`auto-audit started for ${id} (${project.name})`);
       await sweepShips(project);
+      await sweepMissions(project);
     } catch (err) {
       console.error(`sweep failed for ${project.name}:`, (err as Error).message);
     }

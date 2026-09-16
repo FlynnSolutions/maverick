@@ -287,8 +287,14 @@ export const addItem = (text: string, heading: string, group: string, block: str
   const body = block.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n");
   if (!isBullet(body[0])) throw new Error("the first line must be a bullet (\"- [ ] ...\")");
   const found = section.groups.find((g) => g.name === group);
-  const insertAt = found?.items.length ? found.items[found.items.length - 1].end : groupBodyStart(lines, section, group);
+  let insertAt = found?.items.length ? found.items[found.items.length - 1].end : groupBodyStart(lines, section, group);
   const out = [...lines];
+  // Landing after a fresh `### ` heading can leave the file's own blank line touching the
+  // heading's; one blank between things is the shape every other writer here produces.
+  while (insertAt > 1 && isBlank(out[insertAt - 1]) && isBlank(out[insertAt - 2])) {
+    out.splice(insertAt - 1, 1);
+    insertAt -= 1;
+  }
   const above = insertAt > 0 ? out[insertAt - 1] : "";
   const below = insertAt < out.length ? out[insertAt] : "";
   const needsBlankBefore = insertAt > 0 && !isBlank(above);
