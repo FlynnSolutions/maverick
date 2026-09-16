@@ -632,7 +632,9 @@ export const mountCommandCenter = (root, ctx) => {
     sessions.length
       ? el("section", { class: `rack ${cls}` },
           el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(sessions.length))),
-          el("div", { class: "rack-strips" }, ...sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, cls))))
+          // The same rule as a formation's flight: past one open strip the rack shares columns.
+          el("div", { class: `rack-strips${sessions.filter((x) => opened.has(x.key)).length > 1 ? " grid" : ""}` },
+            ...sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, cls))))
       : null;
 
   const projectSection = (proj, sessions) => {

@@ -156,7 +156,8 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   URL beside `formation`, so a layout survives a reload and can be pulled into its own window.
   Past one open strip the rack becomes two columns, and a *collapsed* strip still spans the full
   row, because it is still a line: only the open ones share. In a column the strip drops its
-  `where`, which is the one thing its own pane header repeats.
+  `where`, which is the one thing its own pane header repeats. This is every rack's rule, not
+  the flight's: two open shells belong side by side for exactly the reason two open sessions do.
 - **The lead takes a column once it is open, and the flight becomes the rail beside it.** A
   formation is one session you are driving and several you are watching, so an open lead sits
   left and the flight stands to its right: you type to the one that orchestrates while the rest
