@@ -22,7 +22,8 @@ move and plan into a release; the calendar; releases computed from the changelog
 PRs; the ship wizard driving the project's own `SHIP_WORKFLOW.md` phase by phase with saved,
 resumable state; embedded terminals; audit parents; per-project theming from `maverick.json`.
 
-**Missions, added 2026-09-16.** A RIO interviews in an embedded terminal and writes a plan;
+**Missions, added 2026-09-16.** Opened from the Missions rack at the top of the workspace. A
+RIO interviews in an embedded terminal and writes a plan;
 nothing spawns until Cory approves it; approval writes the plan into the tracker as items and
 dispatches one Wingman per task in its own worktree; a separate reviewer session judges each
 finished Wingman and a fail hands the task back twice before it becomes Cory's; a passing

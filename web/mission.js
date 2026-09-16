@@ -292,7 +292,7 @@ const renderReview = () => {
           if (!window.confirm(`Close "${mission.name}"?\n\nThis ticks ${passed.length} item(s) in the tracker in one commit. The branch ${mission.branch} is left for the ship.`)) return;
           await act("close", {}, "mission closed; its items are ticked");
         }, "primary"),
-        el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}` }, "open the board"),
+        el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}&view=workspace` }, "back to the workspace"),
       ) : null),
     ...mission.milestones.map((m) => el("section", { class: "panel" },
       el("h2", {}, `Milestone ${m.n} — ${m.title}`, el("span", { class: "spacer" }), m.mergeSha ? el("span", { class: "muted small mono" }, `merged as ${m.mergeSha}`) : null),
@@ -321,8 +321,10 @@ const boot = async () => {
   }
   document.title = `Mission · ${project.name} · Maverick`;
   applyTheme(project.theme);
-  $("#board-link").href = `/?project=${encodeURIComponent(projectId)}`;
-  $("#back").href = `/?project=${encodeURIComponent(projectId)}`;
+  const workspace = `/?project=${encodeURIComponent(projectId)}&view=workspace`;
+  $("#board-link").replaceChildren(text("Workspace"));
+  $("#board-link").href = workspace;
+  $("#back").href = workspace;
   await load();
   // Reloading rebuilds the detail, which would tear down a terminal being typed into.
   // A hidden tab would otherwise keep driving a full server sweep, and its git calls, forever.

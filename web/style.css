@@ -557,7 +557,7 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .forms button.on b { color: var(--accent-hot); }
 .forms .new { width: 28px; padding: 0; justify-content: center; }
 .forms .new .icon { width: 14px; height: 14px; }
-.formation .rack > h4 .spacer { flex: 1; }
+.formation .rack > h4 .spacer, .rack.missions > h4 .spacer { flex: 1; }
 .formation .rack > h4 button { height: 24px; font-size: 11.5px; }
 .lead-rack > h4 { color: var(--accent-hot); }
 .lead-rack .strip { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent); }
@@ -1221,7 +1221,7 @@ body.ask-open { overflow: hidden; }
 .strip-name { margin: 0; min-width: 0; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .strip-id .role { margin: 0; flex: 0 0 auto; }
 .strip-state { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.strip-state b { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+.strip-state b { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; flex: 0 0 auto; }
 .strip-state i { font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--caution); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .strip-when, .strip-where { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .strip-when i { font-style: normal; color: var(--ink-faint); }

@@ -87,6 +87,7 @@ export const mountCommandCenter = (root, ctx) => {
   let timer = null;
   let editing = false; // a rename is open: the repaint would tear the input out mid-word
   let formations = [];
+  let missions = [];
   let activeFormation = new URLSearchParams(location.search).get("formation");
 
   /* ---------- panels ---------- */
@@ -397,6 +398,71 @@ export const mountCommandCenter = (root, ctx) => {
           el("div", { class: "rack-strips" }, ...sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, cls))))
       : null;
 
+  /**
+   * Missions live here rather than on the board, because a mission is a bundle of sessions and
+   * this is the page that holds those. A mission at its gate is waiting on the pilot, so it
+   * wears the reticle and sorts above everything else, the way any other waiting thing does.
+   */
+  const MISSION_LAMP = { interviewing: "waiting", planned: "waiting", flying: "busy", blocked: "blocked", review: "waiting", closed: "done" };
+  const MISSION_SAYS = {
+    interviewing: "the RIO is interviewing you",
+    planned: "waiting on your approval",
+    flying: "flying",
+    blocked: "needs you",
+    review: "ready for you to read and test",
+    closed: "closed",
+  };
+
+  const missionRow = (m) => {
+    const tasks = m.milestones.flatMap((x) => x.tasks ?? []);
+    const passed = tasks.filter((t) => t.status === "passed").length;
+    const merged = m.milestones.filter((x) => x.merged).length;
+    const status = m.trouble ? "blocked" : MISSION_LAMP[m.status];
+    const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
+    const openMission = () => { location.href = href; };
+    return el("article", {
+      class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" || status === "blocked" ? " full" : ""}`,
+      tabindex: "0",
+      title: `${m.name} · ${MISSION_SAYS[m.status] ?? m.status}`,
+      onclick: (e) => { if (!e.target.closest("button, input")) openMission(); },
+      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openMission(); } },
+    }, stripLine({
+      // waiting and blocked both draw the lock: a mission at its gate is blocked on the pilot,
+      // which is what the lock means, and the band is ignored for those two anyway.
+      status,
+      name: el("h4", { class: "strip-name" }, m.name),
+      state: MISSION_SAYS[m.status] ?? m.status,
+      note: m.trouble ? clip(m.trouble, 90) : null,
+      when: age(Date.parse(m.approved ?? m.created)),
+      where: tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : m.branch,
+      acts: [el("button", { type: "button", class: "act", title: "open this mission", onclick: openMission }, "open")],
+    }));
+  };
+
+  const missionsRack = () => {
+    const mine = [...missions].sort((a, b) => (rank[MISSION_LAMP[a.status]] ?? 4) - (rank[MISSION_LAMP[b.status]] ?? 4));
+    return el("section", { class: "rack missions" },
+      el("h4", {}, el("span", {}, "Missions"), el("span", { class: "n" }, String(missions.length)),
+        el("span", { class: "spacer" }),
+        el("button", { type: "button", class: "ghost", onclick: newMission }, "open one")),
+      mine.length
+        ? el("div", { class: "rack-strips" }, ...mine.map(missionRow))
+        : el("p", { class: "muted small cc-empty" }, "None. A mission is for work too big for one session and too shaped to hand over cold: the RIO interviews you, plans it into milestones, and flies it once you approve."));
+  };
+
+  const newMission = async () => {
+    const name = await ask({ title: "Open a mission", body: "A mission is a bounded multi-feature effort: the RIO interviews you, plans it into milestones, and flies it once you approve. Give it a name.", confirm: "next", field: { placeholder: "what this mission is called" } });
+    if (!name) return;
+    const brief = await ask({ title: "What do you want done?", body: "One line is enough, and one line is all it gets. The RIO will not plan off it: it interviews you first.", confirm: "open the interview", field: { placeholder: "the line you would have opened a session with" } });
+    if (!brief) return;
+    try {
+      const { mission } = await post(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`, { name, brief });
+      location.href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(mission.id)}`;
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+
   const projectSection = (proj, sessions) => {
     const used = new Set();
     const formations = [];
@@ -423,12 +489,14 @@ export const mountCommandCenter = (root, ctx) => {
     const fresh = idle.filter((s) => !stale.includes(s) && !recent.includes(s));
     const busy = sessions.filter(is("busy", "running")).length;
     const waiting = sessions.filter(is("waiting", "blocked")).length;
-    if (!sessions.length && !formations.length && !closed.length) return null;
+    // The missions rack is always drawn, even empty: it is the only way to open one.
     // No project heading: the bar already names the project, and every rack carries its own
     // count. The line here only repeats what is above it and what is below it.
     return el(
       "section",
       { class: "cc-project" },
+      missionsRack(),
+      !sessions.length && !formations.length && !closed.length ? el("p", { class: "muted small cc-empty" }, "No sessions in this project.") : null,
       rack("Needs you", needs, "needs", true),
       ...formations,
       rack("Working", working, "working", true),
@@ -684,9 +752,10 @@ export const mountCommandCenter = (root, ctx) => {
     // Rebuilding every session record takes over a second; the jet flies while it does.
     const stop = firstLoad ? loading?.() : null;
     try {
-      [all, formations] = await Promise.all([
+      [all, formations, missions] = await Promise.all([
         api("/api/sessions/all"),
         api(`/api/formations?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
+        api(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
       ]);
       paint();
     } catch (err) {

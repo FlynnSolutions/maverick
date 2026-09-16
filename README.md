@@ -224,7 +224,8 @@ that follows it. A move relocates that whole block and touches nothing else.
 
 A **mission** is one bounded piece of work run end to end, and you are in it exactly twice.
 
-Open one from the rail on the board. A **RIO** starts in an embedded terminal and *interviews*
+Open one from the Missions rack in the Workspace, which is where a mission belongs: it is a
+bundle of sessions. A **RIO** starts in an embedded terminal and *interviews*
 you: it reads the repo, probes what done means and what is out of scope, and refuses to plan off
 your first line. When you agree, it writes a plan to `deliverables/missions/<id>.md` as
 milestones, each with one testable "done when" line and its tasks.
