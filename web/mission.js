@@ -44,12 +44,27 @@ let selected = params.get("at") ?? null;
 const missionUrl = () => `/api/missions/${encodeURIComponent(missionId)}?project=${encodeURIComponent(projectId)}`;
 const actionUrl = (action) => `/api/missions/${encodeURIComponent(missionId)}/${action}?project=${encodeURIComponent(projectId)}`;
 
-/* ---------- theme, same as the board ---------- */
+/* ---------- theme, on the board's terms: its mode, its project palette, its computed ink ---------- */
+const recall = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+const luminance = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+/** A project picks the accent, so anything painted on it computes its own foreground. */
+const readableOn = (hex) => {
+  if (!/^#[0-9a-f]{6}$/i.test(hex ?? "")) return "#ffffff";
+  const l = luminance(hex);
+  return (l + 0.05) / 0.05 > 1.05 / (l + 0.05) ? "#04101f" : "#ffffff";
+};
 const applyTheme = (theme) => {
-  if (!theme) return;
+  const mode = recall("mv.theme", "");
+  if (mode) document.documentElement.setAttribute("data-theme", mode);
+  if (!theme || recall("mv.projectTheme", "1") === "0") return;
   const root = document.documentElement.style;
   root.setProperty("--accent", theme.accent);
   root.setProperty("--accent-hot", theme.accentHot);
+  root.setProperty("--on-accent", readableOn(theme.accent));
   root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
   if (theme.font !== "Chakra Petch") document.head.append(el("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
 };
@@ -127,7 +142,8 @@ const renderNav = () => {
     const state = m.merged ? "passed" : tasks.some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending";
     items.push(entry(`m${m.n}`, String(m.n), m.title, el("span", { class: `verdict ${state}` }, m.merged ? "merged" : state), state));
   });
-  items.push(el("h3", {}, "The result"), entry("review", "R", "What the mission built", el("span", { class: `verdict ${mission.status === "review" || mission.status === "closed" ? "passed" : ""}` }, mission.status === "closed" ? "closed" : mission.status === "review" ? "ready" : "in flight")));
+  const done = mission.status === "review" || mission.status === "closed";
+  items.push(el("h3", {}, "The result"), entry("review", "R", "What the mission built", el("span", { class: `verdict ${done ? "passed" : mission.status}` }, mission.status === "closed" ? "closed" : mission.status === "review" ? "ready" : "in flight")));
   nav.replaceChildren(...items);
 };
 
@@ -177,7 +193,9 @@ const renderPlan = () => {
       ...parsed.milestones.map((m) => el("div", { class: "mv-milestone" },
         el("h3", {}, el("span", {}, `Milestone ${m.n} — ${m.title}`)),
         el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
-        ...m.tasks.map((t) => el("div", { class: "mv-task" }, el("span", { class: "dot pending" }), el("span", { class: "t", title: t.title }, t.title), el("span", {}), el("span", {}), el("div", { class: "meta" }, t.intent.split("\n")[0])))))));
+        ...m.tasks.map((t) => el("div", { class: "mv-plan-task" },
+          el("h4", {}, t.title),
+          el("p", {}, t.intent)))))));
   } else if (doc.text) {
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
   }
@@ -187,11 +205,16 @@ const renderPlan = () => {
     const host = el("div", { class: "term" });
     blocks.push(el("section", { class: "panel mv-interview" },
       el("h2", {}, "The RIO", el("span", { class: "spacer" }), btn("start a new interview session", () => act("interview", {}, "a new RIO session is open"), "ghost")),
-      host));
+      el("div", { class: "mv-term-well" }, host)));
+    const gone = () => host.replaceChildren(el("p", { class: "mv-empty" }, "The RIO's session is not running any more: terminals do not survive a restart of the server. Start a new interview above; it opens with the same brief."));
     if (mission.interview?.terminalId) {
-      requestAnimationFrame(() => mountTerminal(host, mission.interview.terminalId));
+      api("/api/terminals").then((open) => {
+        const live = open.find((x) => x.id === mission.interview.terminalId && x.exitCode === null);
+        if (live) requestAnimationFrame(() => mountTerminal(host, live.id));
+        else gone();
+      }).catch(gone);
     } else {
-      host.replaceChildren(el("p", { class: "mv-empty", style: "padding:14px" }, "No RIO session is attached. Start one above."));
+      host.replaceChildren(el("p", { class: "mv-empty" }, "No RIO session is attached. Start one above."));
     }
   }
   $("#detail").replaceChildren(...blocks);
@@ -247,6 +270,7 @@ const renderReview = () => {
   const tasks = allTasks();
   const passed = tasks.filter((t) => t.status === "passed");
   const ready = mission.status === "review";
+  const closed = mission.status === "closed";
   $("#detail").replaceChildren(
     el("div", { class: "detail-head" }, el("h1", {}, "What the mission built"), el("span", { class: `verdict ${mission.status}` }, mission.status)),
     el("div", { class: "detail-meta" },
@@ -254,9 +278,11 @@ const renderReview = () => {
       el("span", {}, `on ${mission.branch}`),
       mission.finished ? el("span", {}, `finished ${fmtTime(mission.finished)}`) : null),
     el("section", { class: "panel mv-gate" }, el("h2", {}, "Your second and last gate"),
-      el("p", { class: "why" }, ready
-        ? `Every milestone merged into ${mission.branch}. Check it out and test it yourself: it is a branch, not a claim. Closing ticks each passed item in the tracker and hands the branch on; Maverick does not merge a mission into main, the ship does.`
-        : `Not finished. ${mission.milestones.filter((m) => !m.merged).length} milestone(s) still to merge.`),
+      el("p", { class: "why" }, closed
+        ? `Closed. Its items are ticked in the tracker and ${mission.branch} is waiting for the ship, which is what merges to main. Everything below is still here to read.`
+        : ready
+          ? `Every milestone merged into ${mission.branch}. Check it out and test it yourself: it is a branch, not a claim. Closing ticks each passed item in the tracker and hands the branch on; Maverick does not merge a mission into main, the ship does.`
+          : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
       ready ? el("div", { class: "gate-actions" },
         btn("close the mission and tick its items", async () => {
           if (!window.confirm(`Close "${mission.name}"?\n\nThis ticks ${passed.length} item(s) in the tracker in one commit. The branch ${mission.branch} is left for the ship.`)) return;

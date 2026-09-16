@@ -51,6 +51,8 @@ export interface MissionTask {
   sessionId?: string;
   worktree?: string;
   branch?: string;
+  /** Where the branch was cut. Once a task is merged, the mission branch is no longer a base to diff against. */
+  base?: string;
   started?: string;
   ended?: string;
   /** Commit subjects the Wingman actually produced; empty means it changed nothing. */
@@ -448,6 +450,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
       // `mission/x/m1-t1`, because the first is a ref file where the second wants a directory.
       task.branch = `${mission.branch}-${task.id}`;
       await ensureWorktree(mission.repo, task.worktree, task.branch, mission.branch);
+      task.base = (await run("git", ["-C", mission.repo, "rev-parse", mission.branch])).stdout.trim();
       task.claudeId = await spawnBackground(task.worktree, `${mission.name} · ${task.title}`, wingmanPrompt(project, mission, m, task));
       task.status = "flying";
       task.started = new Date().toISOString();
@@ -647,14 +650,18 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   const mission = await missionOr404(project.id, id);
   const tracker = project.trackers[mission.trackerIndex];
   if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${mission.trackerIndex}`);
-  const passed = new Set(mission.milestones.flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.title));
+  const tasks = mission.milestones.flatMap((m) => m.tasks);
+  const passed = new Set(tasks.filter((t) => t.status === "passed").map((t) => t.title));
+  // The mission's own row is done when every task under it is; leaving it open after the last
+  // one ticks would leave a mission on the board that nothing is working.
+  const whole = tasks.length > 0 && tasks.every((t) => t.status === "passed");
   const ticked: string[] = [];
   // Re-find every item by its fields rather than by a stored line: other sessions move them.
   for (;;) {
     const text = await readFile(tracker.path, "utf8");
     const item = parseTracker(text).sections
       .flatMap((s) => s.groups.flatMap((g) => g.items))
-      .find((i) => i.fields.mission === mission.id && !i.checked && passed.has(i.title));
+      .find((i) => i.fields.mission === mission.id && !i.checked && (passed.has(i.title) || (whole && i.fields.kind === "mission")));
     if (!item) break;
     await writeFile(tracker.path, applyEdit(text, item.start, item.firstLine, [item.firstLine.replace(/^- \[ \]/, "- [x]"), ...item.body.split("\n").slice(1)].join("\n")), "utf8");
     ticked.push(item.title);
@@ -677,7 +684,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
       if (text) findings[task.id] = text;
     }
     if (task.branch) {
-      const { stdout } = await run("git", ["-C", mission.repo, "diff", "--stat", `${mission.branch}...${task.branch}`]).catch(() => ({ stdout: "" }));
+      const { stdout } = await run("git", ["-C", mission.repo, "diff", "--stat", `${task.base ?? mission.branch}..${task.branch}`]).catch(() => ({ stdout: "" }));
       if (stdout.trim()) diffstat[task.id] = stdout.trim();
     }
   }

@@ -12,11 +12,13 @@
   box-shadow: 0 0 0 1px var(--seam-soft);
 }
 .mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; gap: 2px; }
-.mv-band .k { font-family: var(--display); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.mv-band .k { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .mv-band .v { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* The gate. One surface, lifted, and the cost above the verb rather than beneath it. */
 .mv-gate { background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
+/* A lifted surface is brighter, so its secondary text comes up a step to stay readable on it. */
+.mv-gate h2 { color: var(--ink-soft); }
 .mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 70ch; margin: 0 0 10px; }
 .mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 70ch; margin: 10px 0 0; }
 .mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
@@ -44,6 +46,8 @@
 .mv-task .mv-acts { display: flex; gap: 6px; }
 .mv-task .meta { grid-column: 2 / -1; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
 .mv-task .note { grid-column: 2 / -1; font-size: 12.5px; color: var(--caution); }
+.mv-task details { grid-column: 2 / -1; }
+.mv-task details summary { cursor: pointer; }
 .mv-task pre.diffstat { grid-column: 2 / -1; margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); background: transparent; box-shadow: none; padding: 0; white-space: pre-wrap; }
 
 .verdict.flying, .verdict.reviewing { color: var(--accent-hot); background: var(--accent-dim); }
@@ -53,12 +57,20 @@
 .verdict.interviewing, .verdict.planned { color: var(--ink-soft); }
 
 /* The interview is a conversation, so it gets a real terminal inside the mission's own view. */
-.mv-interview { padding: 0; overflow: hidden; background: #0a0c0f; }
+/* The terminal's dark is a well inside the panel, never the panel itself: a control that
+   inherits the page's ink must not land on a hard-coded dark surface in light mode. */
+.mv-interview .mv-term-well { background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
 .mv-interview .term { height: 46vh; min-height: 320px; }
-.mv-interview h2 { padding: 12px 14px 0; margin: 0 0 6px; }
 
 .mv-plan { max-width: 78ch; }
 .mv-milestone { margin-bottom: 18px; }
 .mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
 .mv-milestone > .done { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 10px; }
 .mv-empty { color: var(--ink-faint); font-size: 13px; }
+
+/* The plan is the thing being approved, so it is read in full: a title and its prose, not a
+   row clipped to one line. A gate you cannot read the terms of is not a gate. */
+.mv-plan-task { padding: 10px 12px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); margin-bottom: 8px; }
+.mv-plan-task h4 { font-family: var(--display); font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
+.mv-plan-task p { margin: 0; font-size: 13px; color: var(--ink-soft); white-space: pre-wrap; max-width: 78ch; }
+.mv-interview .mv-empty { padding: 14px; }
