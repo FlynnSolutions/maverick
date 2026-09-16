@@ -565,8 +565,10 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (method === "GET") {
       const mine = await listFormations((await requireProject(url)).id);
       // A slot held for a starting session settles here, on the read that is already polling.
-      const registry = await readRegistrySessions();
-      const inTerminal = await terminalsBySession(registry);
+      // Nothing held means nothing to match, and this is polled every ten seconds: the walk
+      // over every session's ancestry does not run unless a slot is actually waiting on it.
+      if (!mine.some((f) => f.pending?.length)) return sendJson(res, 200, mine);
+      const inTerminal = await terminalsBySession(await readRegistrySessions());
       const sessionByTerminal = new Map([...inTerminal].map(([sessionId, terminal]) => [terminal, sessionId]));
       const live = new Set(listTerminals().filter((t) => t.exitCode === null).map((t) => t.id));
       return sendJson(res, 200, await resolvePending(mine, sessionByTerminal, live));
