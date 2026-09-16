@@ -72,6 +72,21 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   nothing around it moving. Enter or blur commits, Escape restores, empty hands the session back
   Claude Code's own title. The new name paints immediately; rebuilding every session record
   takes over a second and a rename that appears to do nothing reads as one that failed.
+- **The corner dismisses; it never ends anything.** The session overlay's rightmost control was
+  the verb that kills the Claude, and there was no dismiss control at all, so the position every
+  interface reserves for "close this window" was wired to "close this session". The corner is a
+  drawn ✕ that only closes the view; the destructive verb sits left of the primary and names its
+  object (`end session`, `stop agent`, `remove record`). The rack's dense gutter keeps the short
+  verbs, because it has one column of room and a confirm behind it.
+- **Icons are drawn** (`web/icons.js`): one 16px box, one 1.6 stroke, `currentColor`, an
+  `aria-label` on the button. Never a unicode glyph, so an icon can sit next to the jet.
+  A 30px icon button carries a `::after` to a 40px hit area, the way the rack's verbs do.
+- **The page head is one row**: title, the project filter, then the instruments. The filter had a
+  row of its own that was empty but for one word at the far right. The command center renders its
+  chips into a `filterRoot` the head owns, which is also why refresh survives a failed load.
+- **Idle decays in three steps, and the first step is yours.** Under an hour between turns is a
+  conversation you are in the middle of (`Needs action`, carries the exchange); under a day is
+  `Idle`; beyond that is `Stale`. Distinct from `Needs you`, which is blocked on a prompt.
 - **Never name a class with a bare generic word.** `.dock` styled the terminal dock *and* every
   card's `dock` button, silently making those buttons sticky, column-flex and blurred, which is
   what knocked their labels out of line with `close`. Style a one-off region by id (`#dock`) and

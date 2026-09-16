@@ -4,6 +4,7 @@
 import { jetSvg } from "./jet.js";
 import { strike, scheduleWeather, missile, flares, flyby } from "./afterburner.js";
 import { mountCommandCenter } from "./command.js";
+import { icon } from "./icons.js";
 import * as claudeUsage from "./providers/claude.js";
 
 
@@ -1258,20 +1259,26 @@ const renderWorkspace = async () => {
   commandCenter?.stop();
   const wrap = el("section", { class: "workspace" });
   const usageRoot = el("div", { class: "cu-root" });
+  // The project filter is rendered into the page head by the command center, so the head is
+  // one row: title, what you are looking at, then the instruments.
+  const filterRoot = el("div", { class: "ws-filter" });
   const ws = await api("/api/workspace");
   wrap.append(
     el("div", { class: "ws-head" },
       el("h2", { class: "ws-title" }, "Command center"),
+      filterRoot,
+      el("span", { class: "ws-gap" }),
       el("div", { class: "ws-tools" },
         usageRoot,
         ...(ws.lanUrl ? [el("button", { type: "button", class: "ghost", title: ws.lanUrl, onclick: () => { navigator.clipboard?.writeText(ws.lanUrl); setStatus("phone link copied"); } }, "phone link")] : []),
+        el("button", { type: "button", class: "ghost icon-btn", "aria-label": "refresh sessions", title: "refresh sessions", onclick: () => commandCenter?.refresh() }, icon("refresh")),
       ),
     ),
   );
   const center = el("div", { class: "cc" });
   wrap.append(center);
   claudeUsage.mount(usageRoot, { api, post });
-  commandCenter = mountCommandCenter(center, { el, text, api, post, askClose, askEnd, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus, projectId, project });
+  commandCenter = mountCommandCenter(center, { el, text, api, post, askClose, askEnd, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus, projectId, project, filterRoot });
   return wrap;
 };
 
@@ -1688,7 +1695,12 @@ const boot = async () => {
   $("#project").hidden = false;
   $("#reload").hidden = false;
   $("#new-session").hidden = false;
-  $("#reload").addEventListener("click", () => { loadBoard(); loadRail(true); });
+  const reload = $("#reload");
+  reload.classList.add("ghost", "icon-btn");
+  reload.setAttribute("aria-label", "refresh the board");
+  reload.setAttribute("title", "refresh the board");
+  reload.replaceChildren(icon("refresh"));
+  reload.addEventListener("click", () => { loadBoard(); loadRail(true); });
   $("#refresh-live").addEventListener("click", () => loadRail(true));
   let railCollapsed = false;
   try { railCollapsed = localStorage.getItem("console.rail") === "collapsed"; } catch {}

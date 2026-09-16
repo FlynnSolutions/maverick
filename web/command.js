@@ -6,9 +6,11 @@
 
 import { render as renderMd } from "./markdown.js";
 import { jetSvg } from "./jet.js";
+import { icon } from "./icons.js";
 
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5 };
+const HOUR = 3600000;
 const finished = (s) => /^(done|exited|stopped|blocked)$/.test(s ?? "");
 
 const age = (ms) => {
@@ -107,7 +109,8 @@ export const mountCommandCenter = (root, ctx) => {
 
   const dockFor = (s) => (s.kind === "background" ? { kind: "attach", id: s.claudeId, title: s.title } : { kind: "resume", sessionId: s.sessionId, title: s.title });
 
-  const endButton = (s, cls = "danger") =>
+  /** `long` names the object: the rack has one column to spare, the overlay header has room. */
+  const endButton = (s, cls = "danger", long = false) =>
     s.kind === "background"
       ? el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
@@ -120,7 +123,8 @@ export const mountCommandCenter = (root, ctx) => {
             setStatus(err.message, true);
           }
           window.setTimeout(load, 1200);
-        }, title: finished(s.status) ? `remove the record for "${s.title}"` : `stop the background agent running "${s.title}"` }, finished(s.status) ? "remove" : "stop")
+        }, title: finished(s.status) ? `remove the record for "${s.title}"` : `stop the background agent running "${s.title}"` },
+        finished(s.status) ? (long ? "remove record" : "remove") : long ? "stop agent" : "stop")
       : el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
           if (!(await askClose(s))) return;
@@ -131,7 +135,7 @@ export const mountCommandCenter = (root, ctx) => {
             setStatus(err.message, true);
           }
           window.setTimeout(load, 1500);
-        }, title: `close the Claude running "${s.title}"` }, "close");
+        }, title: `close the Claude running "${s.title}"` }, long ? "end session" : "close");
 
   const dockButton = (s) => el("button", { type: "button", class: "ghost act", title: s.terminalId ? "show its dock terminal" : "open the terminal in the dock", onclick: () => { if (s.terminalId) mountExisting(s.terminalId); else openTerminal(dockFor(s)); } }, "dock");
 
@@ -309,7 +313,9 @@ export const mountCommandCenter = (root, ctx) => {
     const idle = loose.filter((s) => !needs.includes(s) && !working.includes(s) && !done.includes(s));
     // Idle within a day is a session you are between turns on; older is a tab you have probably moved on from.
     const stale = idle.filter((s) => s.at && Date.now() - s.at > DAY);
-    const fresh = idle.filter((s) => !stale.includes(s));
+    // Between turns for under an hour is a conversation you are in the middle of; it is your move.
+    const recent = idle.filter((s) => s.at && Date.now() - s.at <= HOUR);
+    const fresh = idle.filter((s) => !stale.includes(s) && !recent.includes(s));
     const busy = sessions.filter(is("busy", "running")).length;
     const waiting = sessions.filter(is("waiting", "blocked")).length;
     if (!sessions.length && !formations.length && !closed.length) return null;
@@ -320,6 +326,7 @@ export const mountCommandCenter = (root, ctx) => {
       rack("Needs you", needs, "needs", true),
       ...formations,
       rack("Working", working, "working", true),
+      rack("Needs action", recent, "action", true),
       rack("Idle", fresh, "idle"),
       rack("Stale · idle over a day", stale, "stale"),
       rack("Background · done", done, "done"),
@@ -332,16 +339,13 @@ export const mountCommandCenter = (root, ctx) => {
     model = assemble(all);
     const populated = all.projects.filter((p) => model.sessions.some((s) => s.project === p.id));
     const elsewhere = model.sessions.filter((s) => !s.project).length;
-    const filterBar = el("div", { class: "cc-filter" },
-      ...(populated.length + (elsewhere ? 1 : 0) > 1
-        ? [
-            el("button", { type: "button", class: projectFilter === "all" ? "on" : "", onclick: () => { projectFilter = "all"; paint(); } }, `All · ${model.sessions.length}`),
-            ...populated.map((p) => el("button", { type: "button", class: projectFilter === p.id ? "on" : "", onclick: () => { projectFilter = p.id; paint(); } }, `${p.name} · ${model.sessions.filter((s) => s.project === p.id).length}`)),
-          ]
-        : []),
-      el("span", { class: "spacer" }),
-      el("button", { type: "button", class: "ghost", onclick: () => load(true) }, "refresh"),
-    );
+    const chips = populated.length + (elsewhere ? 1 : 0) > 1
+      ? [
+          el("button", { type: "button", class: projectFilter === "all" ? "on" : "", onclick: () => { projectFilter = "all"; paint(); } }, `All · ${model.sessions.length}`),
+          ...populated.map((p) => el("button", { type: "button", class: projectFilter === p.id ? "on" : "", onclick: () => { projectFilter = p.id; paint(); } }, `${p.name} · ${model.sessions.filter((s) => s.project === p.id).length}`)),
+        ]
+      : [];
+    ctx.filterRoot?.replaceChildren(...chips);
     const sections = [];
     const groups = projectFilter === "all" ? [...all.projects, null] : all.projects.filter((p) => p.id === projectFilter);
     const sessionsOf = (proj) => model.sessions.filter((s) => (proj ? s.project === proj.id : !s.project));
@@ -357,7 +361,7 @@ export const mountCommandCenter = (root, ctx) => {
       const section = projectSection(proj, sessionsOf(proj));
       if (section) sections.push(section);
     }
-    root.replaceChildren(filterBar, ...sections);
+    root.replaceChildren(...sections);
     if (full) paintFullHead();
   };
 
@@ -414,8 +418,10 @@ export const mountCommandCenter = (root, ctx) => {
       el("h2", { title: live.title }, full.title ?? live.title),
       el("span", { class: "meta" }, el("span", { class: "k" }, live.status), live.waitingFor ? el("span", {}, live.waitingFor) : null, el("span", {}, whereText(live)), el("span", { class: "mono" }, live.sessionId.slice(0, 8))),
       el("span", { class: "spacer" }),
+      endButton(live, "ghost end-long", true),
       el("button", { type: "button", class: "primary", onclick: () => openTerminal(dockFor(live)) }, live.kind === "background" ? "Take the stick" : "Open in dock"),
-      endButton(live),
+      // Top right is where every interface puts dismiss, so that is all it may do here.
+      el("button", { type: "button", class: "ghost icon-btn dismiss", "aria-label": "close this view; the session keeps running", title: "close this view; the session keeps running", onclick: closeFull }, icon("close")),
     );
   };
 
@@ -535,10 +541,8 @@ export const mountCommandCenter = (root, ctx) => {
       all = await api("/api/sessions/all");
       paint();
     } catch (err) {
-      // Keep a way back: replacing everything took `refresh` with it, leaving only the 10s poll.
-      root.replaceChildren(
-        el("div", { class: "cc-filter" }, el("span", { class: "spacer" }), el("button", { type: "button", class: "ghost", onclick: () => load() }, "refresh")),
-        el("p", { class: "muted cc-empty" }, `sessions unavailable: ${err.message}`));
+      // refresh lives in the page head, so it survives this.
+      root.replaceChildren(el("p", { class: "muted cc-empty" }, `sessions unavailable: ${err.message}`));
     }
   };
   root.replaceChildren(el("p", { class: "muted cc-empty" }, "reading sessions…"));
