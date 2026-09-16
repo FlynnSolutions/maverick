@@ -105,6 +105,11 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Idle decays in three steps, and the first step is yours.** Under an hour between turns is a
   conversation you are in the middle of (`Needs action`, carries the exchange); under a day is
   `Idle`; beyond that is `Stale`. Distinct from `Needs you`, which is blocked on a prompt.
+- **One project at a time.** Maverick is opened on a project; sessions running elsewhere are
+  that project's business. No cross-project view, no project filter, and no project heading on
+  the command centre, because the bar already names it and every rack carries its own count.
+- **Development only.** Every tracker row Maverick shows is a dev row. There is no toggle for
+  non-dev items, because there is no reason to look at them here.
 - **The dock has three layouts and a way out.** Tabs shows one pane; Split sits them side by
   side; Grid fits as many as will go and lets one be the *lead*, spanning a full column, so three
   sessions run under one overseer. Every pane carries a caption (lamp, title, promote, close) so

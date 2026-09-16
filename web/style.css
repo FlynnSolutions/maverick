@@ -1135,6 +1135,7 @@ body.ask-open { overflow: hidden; }
 .ws-head { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .ws-gap { flex: 1; }
 .ws-filter { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.ws-filter:empty { display: none; }
 .ws-head p { margin: 2px 0 0; }
 .ws-tools { display: flex; align-items: center; gap: 8px; position: relative; }
 .cu-root { position: relative; }

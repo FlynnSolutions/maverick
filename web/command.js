@@ -83,7 +83,6 @@ export const mountCommandCenter = (root, ctx) => {
   const DAY = 86400000;
   let all = null;
   let model = null;
-  let projectFilter = "all";
   let full = null; // { session, offset, events, timer, scroller, list }
   let timer = null;
   let editing = false; // a rename is open: the repaint would tear the input out mid-word
@@ -322,10 +321,11 @@ export const mountCommandCenter = (root, ctx) => {
     const busy = sessions.filter(is("busy", "running")).length;
     const waiting = sessions.filter(is("waiting", "blocked")).length;
     if (!sessions.length && !formations.length && !closed.length) return null;
+    // No project heading: the bar already names the project, and every rack carries its own
+    // count. The line here only repeats what is above it and what is below it.
     return el(
       "section",
       { class: "cc-project" },
-      el("h3", {}, el("span", { class: "pname" }, proj ? proj.name : "Elsewhere"), el("span", { class: "counts" }, `${sessions.length} session${sessions.length === 1 ? "" : "s"}${busy ? ` · ${busy} working` : ""}${waiting ? ` · ${waiting} waiting on you` : ""}`)),
       rack("Needs you", needs, "needs", true),
       ...formations,
       rack("Working", working, "working", true),
@@ -340,30 +340,13 @@ export const mountCommandCenter = (root, ctx) => {
   const paint = () => {
     if (!all) return;
     model = assemble(all);
-    const populated = all.projects.filter((p) => model.sessions.some((s) => s.project === p.id));
-    const elsewhere = model.sessions.filter((s) => !s.project).length;
-    const chips = populated.length + (elsewhere ? 1 : 0) > 1
-      ? [
-          el("button", { type: "button", class: projectFilter === "all" ? "on" : "", onclick: () => { projectFilter = "all"; paint(); } }, `All · ${model.sessions.length}`),
-          ...populated.map((p) => el("button", { type: "button", class: projectFilter === p.id ? "on" : "", onclick: () => { projectFilter = p.id; paint(); } }, `${p.name} · ${model.sessions.filter((s) => s.project === p.id).length}`)),
-        ]
-      : [];
-    ctx.filterRoot?.replaceChildren(...chips);
-    const sections = [];
-    const groups = projectFilter === "all" ? [...all.projects, null] : all.projects.filter((p) => p.id === projectFilter);
-    const sessionsOf = (proj) => model.sessions.filter((s) => (proj ? s.project === proj.id : !s.project));
-    // The rack is ordered by who needs you, projects included: a project holding a waiting
-    // session is read before one that is merely busy, and a quiet one comes last.
-    const urgency = (proj) => {
-      const ss = sessionsOf(proj);
-      if (ss.some((s) => s.status === "waiting" || s.status === "blocked")) return 0;
-      if (ss.some((s) => s.status === "busy" || s.status === "running")) return 1;
-      return ss.length ? 2 : 3;
-    };
-    for (const proj of [...groups].sort((a, b) => urgency(a) - urgency(b))) {
-      const section = projectSection(proj, sessionsOf(proj));
-      if (section) sections.push(section);
-    }
+    // One project at a time. Maverick is opened on a project; sessions running somewhere else
+    // are that project's business, not this page's.
+    const mine = model.sessions.filter((s) => s.project === ctx.projectId);
+    ctx.filterRoot?.replaceChildren();
+    const proj = all.projects.find((p) => p.id === ctx.projectId) ?? null;
+    const section = projectSection(proj, mine);
+    const sections = section ? [section] : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
     root.replaceChildren(...sections);
     if (full) paintFullHead();
   };

@@ -106,9 +106,8 @@ const post = (path, body) =>
 
 const projectId = new URLSearchParams(location.search).get("project");
 let project = null;
-let showAll = false;
+
 try {
-  showAll = localStorage.getItem("console.showAll") === "1";
 } catch {}
 
 /* ---------- picker ---------- */
@@ -329,7 +328,7 @@ const dropIndexIn = (list, y) => {
 const showsInLane = (item, laneId) => {
   if (laneId === "shipped") return true;
   if (item.checked) return false;
-  return showAll || isDevItem(item);
+  return isDevItem(item);
 };
 
 const itemsList = (trackerIndex, section, group, laneId, numbered) => {
@@ -704,7 +703,7 @@ const eventsFor = (trackers) => {
       for (const group of section.groups) {
         for (const item of group.items) {
           if (!item.fields.due) continue;
-          if (!showAll && !isDevItem(item)) continue;
+          if (!isDevItem(item)) continue;
           events.push({ date: item.fields.due, kind: "item", title: item.title, tracker, section, item, column: section.column });
         }
       }
@@ -769,7 +768,7 @@ const bump = (version, level) => {
 };
 /** The two planning slots: what is in them, and the version each earns from its contents. */
 const planningSlots = (trackers) => {
-  const items = trackers.flatMap((t) => t.sections.filter((sec) => sec.column && sec.column !== "shipped").flatMap((sec) => sec.groups.flatMap((g) => g.items.filter((i) => !i.checked && (showAll || isDevItem(i))).map((i) => ({ tracker: t, section: sec, item: i })))));
+  const items = trackers.flatMap((t) => t.sections.filter((sec) => sec.column && sec.column !== "shipped").flatMap((sec) => sec.groups.flatMap((g) => g.items.filter((i) => !i.checked && isDevItem(i)).map((i) => ({ tracker: t, section: sec, item: i })))));
   const next = items.filter(({ item }) => item.fields.release === "next");
   const nextNext = items.filter(({ item }) => item.fields.release === "next+1");
   const base = releasesData?.shipped[0]?.version ?? "0.0.0";
@@ -1036,7 +1035,7 @@ const renderCalendar = (trackers) => {
     dropZone(cell, (d) => d.type === "item" && d.item.fields.due !== date, (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${fmtDate(date)}`));
     grid.append(cell);
   }
-  const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && (showAll || isDevItem(i))).map((i) => ({ t, i, s })))));
+  const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && isDevItem(i)).map((i) => ({ t, i, s })))));
   const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`), el("div", { class: "muted small" }, "drop a dated item here to clear its deadline"));
   dropZone(side, (d) => d.type === "item" && Boolean(d.item.fields.due), (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, ""), "clearing deadline"));
   for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(el("div", { class: "cal-event item undated", onclick: () => openDrawer(t.index, i) }, i.title), t, i, s));
@@ -1860,11 +1859,7 @@ const boot = async () => {
         remember("mv.projectTheme", on ? "1" : "0");
         applyTheme(project?.theme);
       }),
-      option("Non-dev items", "tracker rows outside engineering", showAll, (on) => {
-        showAll = on;
-        remember("console.showAll", on ? "1" : "0");
-        loadBoard();
-      }));
+      );
     const r = anchor.getBoundingClientRect();
     menu.style.top = `${r.bottom + 8}px`;
     menu.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
