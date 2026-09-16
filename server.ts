@@ -217,8 +217,8 @@ const editItem = async (body: EditBody): Promise<{ commit: string }> => {
 
 interface OpenTerminalBody {
   project: string;
-  /** attach a background agent, resume an interactive session, start a fresh claude, or spawn a task agent and attach it. */
-  kind: "attach" | "resume" | "new" | "spawn";
+  /** attach a background agent, resume an interactive session, start a fresh claude, spawn a task agent and attach it, or open a plain shell. */
+  kind: "attach" | "resume" | "new" | "spawn" | "shell";
   id?: string;
   sessionId?: string;
   title?: string;
@@ -286,6 +286,15 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
       const cwd = body.cwd ?? project.path;
       if (cwd !== project.path && !cwd.startsWith(`${project.path}/`)) throw new Error(`cwd ${cwd} is outside the project`);
       return openTerminal(body.title ?? `claude · ${project.name}`, ["claude"], cwd, size.cols, size.rows);
+    }
+    case "shell": {
+      // A terminal with no Claude in it. The point of the console is not only to watch sessions
+      // but to be somewhere you can work, and every other kind here execs claude.
+      const cwd = body.cwd ?? project.path;
+      if (cwd !== project.path && !cwd.startsWith(`${project.path}/`)) throw new Error(`cwd ${cwd} is outside the project`);
+      const shell = process.env.SHELL || "/bin/zsh";
+      // A login shell, so it is the same environment the user's own terminal gives them.
+      return openTerminal(body.title ?? shell.split("/").pop() ?? "shell", [shell, "-l"], cwd, size.cols, size.rows, undefined, "shell");
     }
     case "spawn": {
       if (!body.prompt || !body.title) throw new Error("spawn needs title and prompt");
@@ -369,6 +378,8 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const bg = (await Promise.all(projects.map((p) => backgroundAgents(p.path).catch(() => [])))).flat();
     const seen = new Set<string>();
     const agents = bg.filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));
+    // Shells have no registry session behind them, so the page would never hear about them.
+    const shells = listTerminals().filter((t) => t.kind === "shell");
     const records = await readSessions(config.sessionsDir);
     const states = new Map(agents.map((a) => [a.id, a.state ?? ""]));
     const projectOf = (cwd: string) => projects.find((p) => cwd === p.path || cwd.startsWith(`${p.path}/`))?.id ?? null;
@@ -379,6 +390,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       names: await readNames(),
       interactive: enriched.map((s) => ({ ...s, project: projectOf(s.cwd) })),
       background,
+      shells: shells.map((t) => ({ ...t, project: projectOf(t.cwd) })),
       records: await Promise.all(records.map(async (r) => ({ ...r, auditView: await auditView(r, states) }))),
     });
   }
