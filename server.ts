@@ -19,7 +19,7 @@ import { addProject, chooseFolder, projectById, readProjects, removeProject, typ
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { acceptTask, approveMission, closeMission, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions } from "./src/missions.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees } from "./src/missions.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript } from "./src/transcript-view.ts";
@@ -484,7 +484,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, { mission, terminal });
     }
   }
-  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close))?$/);
+  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy))?$/);
   if (missionAction) {
     const project = await requireProject(url);
     const [, id, action] = missionAction;
@@ -499,6 +499,14 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (method === "POST" && action === "approve") return sendJson(res, 200, await approveMission(project, id));
     if (method === "POST" && action === "interview") return sendJson(res, 200, await reopenInterview(project, id));
     if (method === "POST" && action === "close") return sendJson(res, 200, await closeMission(project, id));
+    // The brake. `claude stop` refuses on stdout with exit 0, so a refusal is not an exception.
+    if (method === "POST" && action === "abandon") {
+      return sendJson(res, 200, await abandonMission(project, id, async (claudeId) => {
+        await run("claude", ["stop", claudeId]).catch(() => undefined);
+        liveCache.clear();
+      }));
+    }
+    if (method === "POST" && action === "tidy") return sendJson(res, 200, { removed: await tidyWorktrees(project, id) });
   }
   const missionTask = path.match(/^\/api\/missions\/([a-z0-9-]+)\/tasks\/([a-z0-9-]+)\/(retry|accept)$/);
   if (method === "POST" && missionTask) {

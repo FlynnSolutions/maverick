@@ -61,12 +61,14 @@ const applyTheme = (theme) => {
 };
 
 /* ---------- the interview's terminal, mounted inside the mission's own view ---------- */
-let attached = null;
+let attached = [];
 const detachTerminal = () => {
-  if (!attached) return;
-  attached.source.close();
-  attached.term.dispose();
-  attached = null;
+  for (const a of attached) {
+    a.source.close();
+    a.term.dispose();
+  }
+  attached = [];
+  watching.clear();
 };
 const mountTerminal = (host, terminalId) => {
   const term = new window.Terminal({ fontFamily: "JetBrains Mono, Menlo, monospace", fontSize: 13, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: { background: "#0a0c0f", foreground: "#e8ecf1" } });
@@ -80,9 +82,30 @@ const mountTerminal = (host, terminalId) => {
   term.onResize(({ cols, rows }) => post(`/api/terminals/${terminalId}/resize`, { cols, rows }).catch(() => {}));
   // xterm measures its own box, so fit after the new geometry has actually landed.
   requestAnimationFrame(() => { fit.fit(); term.focus(); });
-  attached = { term, fit, source };
+  attached.push({ term, fit, source });
 };
-window.addEventListener("resize", () => { if (attached) requestAnimationFrame(() => attached.fit.fit()); });
+window.addEventListener("resize", () => { for (const a of attached) requestAnimationFrame(() => a.fit.fit()); });
+
+/**
+ * A session's own screen, inside the task it belongs to. A mission runs six or more agents for
+ * two hours; not being able to look at any of them is the difference between steering it and
+ * hoping. Attaching is read-and-write: it is a real terminal, so you can take the stick.
+ */
+const watching = new Map();
+const watchSession = async (host, claudeId, title) => {
+  if (watching.has(claudeId)) return;
+  watching.set(claudeId, true);
+  try {
+    const open = await api("/api/terminals");
+    const existing = open.find((t) => t.exitCode === null && t.command.join(" ") === `claude attach ${claudeId}`);
+    const info = existing ?? (await post("/api/terminals", { project: projectId, kind: "attach", id: claudeId, title, cols: 110, rows: 28 }));
+    host.replaceChildren();
+    mountTerminal(host, info.id);
+  } catch (err) {
+    watching.delete(claudeId);
+    host.replaceChildren(el("p", { class: "mv-empty" }, `could not attach: ${err.message}`));
+  }
+};
 
 /* ---------- data ---------- */
 let lastPayload = "";
@@ -93,6 +116,13 @@ const load = async (force = false) => {
   // A poll that changed nothing must not rebuild the page: re-rendering collapses whatever
   // findings you had open and drops you back to the top of the panel every eight seconds.
   if (!force && body === lastPayload) return;
+  // A repaint disposes every mounted terminal, so a poll holds off while one is open, the way
+  // the workspace holds off during a rename. The page says so rather than quietly going stale.
+  if (!force && attached.length) {
+    lastPayload = "";
+    $("#status").textContent = "paused while you are attached to a session";
+    return;
+  }
   lastPayload = body;
   mission = JSON.parse(body);
   const keys = [...mission.milestones.map((m) => `m${m.n}`), "plan", "review"];
@@ -116,6 +146,8 @@ const act = async (action, body, said) => {
 /* ---------- render ---------- */
 const tasksOf = (m) => m.tasks ?? [];
 /** Derived in one place: the nav and the detail head disagreed about a handed-back milestone. */
+/** A milestone's merges, one per repo it touched. */
+const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${repo} ${sha}`).join(" · ");
 const milestoneState = (m) => (m.merged ? "passed" : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending");
 const allTasks = () => mission.milestones.flatMap(tasksOf);
 
@@ -185,7 +217,14 @@ const renderPlan = () => {
   const doc = mission.planDoc ?? {};
   const parsed = doc.parsed;
   const blocks = [
-    el("div", { class: "detail-head" }, el("h1", {}, mission.name), el("span", { class: `verdict ${mission.status}` }, mission.status)),
+    el("div", { class: "detail-head" }, el("h1", {}, mission.name), el("span", { class: `verdict ${mission.status}` }, mission.status),
+      mission.approved && !["closed", "abandoned"].includes(mission.status)
+        ? el("span", { class: "actions" }, btn("stop this mission", async () => {
+            const live = allTasks().filter((t) => t.status === "flying" || t.status === "reviewing").length;
+            if (!window.confirm(`Stop "${mission.name}"?\n\nThis stops ${live} running session(s). Every branch and worktree is left exactly as it is, so nothing built so far is lost. It cannot be resumed.`)) return;
+            await act("abandon", {}, "mission stopped");
+          }, "ghost danger"))
+        : null),
     el("div", { class: "detail-meta" },
       el("span", {}, `opened ${fmtTime(mission.created)}`),
       mission.approved ? el("span", {}, `approved ${fmtTime(mission.approved)}`) : null,
@@ -258,6 +297,12 @@ const taskRow = (task) => {
     el("span", { class: "t", title: task.title }, task.title),
     el("span", { class: `verdict ${task.status}` }, task.status === "reviewing" ? "in review" : task.status),
     el("span", { class: "mv-acts" },
+      task.claudeId || task.review?.claudeId ? btn(live ? "watch" : "read it back", (e) => {
+        const row = e.target.closest(".mv-task");
+        const host = row.querySelector(".mv-term-well") ?? row.appendChild(el("div", { class: "mv-term-well" }, el("div", { class: "term" })));
+        const id = task.status === "reviewing" ? task.review?.claudeId : task.claudeId;
+        if (id) watchSession(host.querySelector(".term") ?? host, id, task.title);
+      }, "ghost") : null,
       task.status === "handed-back" ? btn("send it back out", () => act(`tasks/${task.id}/retry`, {}, `${task.title} is flying again`), "primary") : null,
       task.status === "handed-back" ? btn("accept it over the RIO", async () => {
         const note = window.prompt(`Accept "${task.title}" over its RIO?\n\nSay why; it is kept on the task.`, "");
@@ -286,7 +331,7 @@ const renderMilestone = (m) => {
     el("div", { class: "detail-meta" },
       el("span", {}, `done when ${m.done}`),
       m.dispatched ? el("span", {}, `sent ${fmtTime(m.dispatched)}`) : null,
-      m.merged ? el("span", {}, `merged ${fmtTime(m.merged)} as ${m.mergeSha}`) : null),
+      m.merged ? el("span", {}, `merged ${fmtTime(m.merged)}${merges(m) ? ` · ${merges(m)}` : ""}`) : null),
     mission.trouble ? el("section", { class: "panel" }, el("h2", {}, "Needs you"), el("p", { class: "mv-plan" }, mission.trouble)) : null,
     m.conflicts?.length ? el("section", { class: "panel" }, el("h2", {}, "It will not merge"), el("p", { class: "mv-plan" }, `These paths collided merging into ${mission.branch}: ${m.conflicts.join(", ")}. The merge was aborted, so nothing is half-applied.`)) : null,
     el("section", { class: "panel" },
@@ -332,9 +377,20 @@ const renderReview = () => {
           await act("close", {}, byPr ? "closed; pull requests opened" : "mission closed; its items are ticked");
         }, "primary"),
         el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}&view=workspace` }, "back to the workspace"),
-      ) : null),
+      ) : null,
+      closed ? el("div", { class: "gate-actions" },
+        btn("take back the worktrees", async () => {
+          if (!window.confirm("Remove the worktree each task was built in?\n\nThe branches stay, so nothing is lost. Only the directories go.")) return;
+          try {
+            const { removed } = await post(actionUrl("tidy"), {});
+            setStatus(removed.length ? `${removed.length} worktree(s) removed` : "nothing left to remove");
+          } catch (err) {
+            setStatus(err.message, true);
+          }
+        }, "ghost"),
+        el("span", { class: "muted small" }, "the branches stay; this only clears the directories")) : null),
     ...mission.milestones.map((m) => el("section", { class: "panel" },
-      el("h2", {}, `Milestone ${m.n} — ${m.title}`, el("span", { class: "spacer" }), m.mergeSha ? el("span", { class: "muted small mono" }, `merged as ${m.mergeSha}`) : null),
+      el("h2", {}, `Milestone ${m.n} — ${m.title}`, el("span", { class: "spacer" }), merges(m) ? el("span", { class: "muted small mono" }, `merged as ${merges(m)}`) : null),
       ...tasksOf(m).map(taskRow))));
 };
 

@@ -93,3 +93,8 @@
    the page that must not be skimmed. It gets the deck's own darker surface to sit on and a
    caution ring, rather than a lighter shade of warning on a brighter panel. */
 .mv-warn { margin: 10px 0 0; padding: 8px 12px; font-size: 12.5px; color: var(--caution); max-width: 74ch; background: var(--carbon); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--caution); }
+
+/* A session's screen inside the task it belongs to. The row is a grid, so the well spans it. */
+.mv-task .mv-term-well { grid-column: 1 / -1; margin-top: 8px; background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
+.mv-task .mv-term-well .term { height: 34vh; min-height: 260px; }
+.detail-head .actions .danger { color: var(--threat); }

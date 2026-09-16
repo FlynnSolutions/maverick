@@ -22,7 +22,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { backgroundAgents, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, pushFastForward, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
+import { backgroundAgents, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
 import { slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -35,7 +35,7 @@ import { addGroup, addItem, parseTracker, setChecked } from "./trackers.ts";
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
 
-export type MissionStatus = "interviewing" | "planned" | "flying" | "blocked" | "review" | "closed";
+export type MissionStatus = "interviewing" | "planned" | "flying" | "blocked" | "review" | "closed" | "abandoned";
 export type TaskStatus = "pending" | "flying" | "built" | "reviewing" | "passed" | "handed-back";
 
 export interface MissionTask {
@@ -755,6 +755,46 @@ const seatTheLead = async (mission: Mission): Promise<void> => {
 };
 
 /* ---------- Cory's second and last gate ---------- */
+
+/**
+ * Every live session a mission owns: its Wingmen and the RIOs reviewing them. The brake on a
+ * thing that costs twelve times a normal session has to be one call, not one per agent.
+ */
+export const abandonMission = async (project: Project, id: string, stop: (claudeId: string) => Promise<void>): Promise<{ mission: Mission; stopped: string[] }> => {
+  const mission = await missionOr404(project.id, id);
+  const stopped: string[] = [];
+  for (const task of mission.milestones.flatMap((m) => m.tasks)) {
+    for (const live of [task.status === "flying" ? task.claudeId : undefined, task.status === "reviewing" ? task.review?.claudeId : undefined]) {
+      if (!live) continue;
+      await stop(live).then(() => stopped.push(live)).catch(() => undefined);
+    }
+    if (task.status === "flying" || task.status === "reviewing" || task.status === "built") {
+      task.status = "handed-back";
+      task.note = "stopped when the mission was abandoned";
+    }
+  }
+  mission.status = "abandoned";
+  mission.finished = mission.finished ?? new Date().toISOString();
+  // The branches and their worktrees are deliberately left: whatever was built is still there.
+  mission.trouble = `abandoned; ${stopped.length} session(s) stopped. The branches and worktrees are untouched.`;
+  return { mission: await writeMission(mission), stopped };
+};
+
+/**
+ * Take back the worktrees the tasks were built in, once their work is merged and landed. The
+ * branches stay, so nothing is lost; it is the directories that pile up, three repos deep.
+ */
+export const tidyWorktrees = async (project: Project, id: string): Promise<string[]> => {
+  const mission = await missionOr404(project.id, id);
+  const gone: string[] = [];
+  for (const task of mission.milestones.flatMap((m) => m.tasks)) {
+    if (!task.worktree || task.status !== "passed") continue;
+    const repo = mission.repos.find((r) => r.label === task.repo);
+    if (!repo) continue;
+    await removeWorktree(repo.path, task.worktree).then(() => gone.push(task.worktree!)).catch(() => undefined);
+  }
+  return gone;
+};
 
 /** Put a blocked task back in the air after Cory has had a look, with one more attempt. */
 export const retryTask = async (project: Project, id: string, taskId: string): Promise<Mission> => {

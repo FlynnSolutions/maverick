@@ -228,3 +228,12 @@ export const pushFastForward = async (repoPath: string, branch: string, base: st
   const { stdout: sha } = await run("git", ["-C", repoPath, "rev-parse", "--short", branch]);
   return sha.trim();
 };
+
+/** Drop a worktree and the directory with it; one that is already gone is not an error. */
+export const removeWorktree = async (repoPath: string, path: string): Promise<void> => {
+  try {
+    await run("git", ["-C", repoPath, "worktree", "remove", "--force", path]);
+  } catch (err) {
+    if (!/is not a working tree|No such file|not a valid/i.test((err as { stderr?: string }).stderr ?? "")) throw err;
+  }
+};
