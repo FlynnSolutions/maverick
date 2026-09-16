@@ -674,7 +674,7 @@ export const mountCommandCenter = (root, ctx) => {
       state: MISSION_SAYS[m.status] ?? m.status,
       note: m.trouble ? clip(m.trouble, 90) : null,
       when: age(Date.parse(m.approved ?? m.created)),
-      where: tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : m.branch,
+      where: tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "),
       acts: [el("button", { type: "button", class: "act", title: "open this mission", onclick: openMission }, "open")],
     }));
   };
@@ -990,7 +990,8 @@ export const mountCommandCenter = (root, ctx) => {
      something speaks the protocol. What is negotiable is that it look like a terminal. */
 
   /** Resolve a token to a real colour. Tokens are `color-mix()` as often as hex, so ask the browser. */
-  const cssColor = (token, probe = el("span")) => {
+  const cssColor = (token) => {
+    const probe = el("span");
     probe.style.color = `var(${token})`;
     document.body.append(probe);
     const value = getComputedStyle(probe).color;

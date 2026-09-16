@@ -58,6 +58,8 @@ export interface MissionTask {
   ended?: string;
   /** Commit subjects the Wingman actually produced; empty means it changed nothing. */
   commits?: string[];
+  /** How many RIOs this task has had. Only ever goes up, so their findings never share a path. */
+  reviews?: number;
   /** The RIO in this Wingman's back seat: a separate session, never the Wingman, never the lead. */
   review?: { claudeId: string; file: string; started: string };
   verdict?: Verdict;
@@ -258,7 +260,7 @@ export const costOf = (milestones: Milestone[]): Cost => {
 /* ---------- the Strike Lead's interview ---------- */
 
 /** Every repo a mission could touch, with the base branch each one lands against. */
-export const repoChoices = async (project: Project, cfg: MissionConfig): Promise<Array<{ label: string; path: string; base: string; land: Landing }>> => {
+const repoChoices = async (project: Project, cfg: MissionConfig): Promise<Array<{ label: string; path: string; base: string; land: Landing }>> => {
   const found = await reposUnder(project.path);
   if (!found.length) throw new Error(`${project.name} holds no git repository; a mission needs at least one`);
   return Promise.all(found.map(async (r) => ({
@@ -505,8 +507,13 @@ const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: Mi
   "Do not fix anything. Do not commit. Do not touch the trackers. Do not spawn other agents.",
 ].join("\n");
 
-const reviewFile = (mission: Mission, task: MissionTask, attempt: number): string =>
-  join(missionsDir(mission.project), `${mission.id}-${task.id}-review${attempt}.md`);
+/**
+ * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:
+ * a hand-driven retry rewinds that, and a colliding path meant the sweep read the previous
+ * RIO's "fail" the moment the new Wingman finished, before the new RIO had written a word.
+ */
+const reviewFile = (mission: Mission, task: MissionTask): string =>
+  join(missionsDir(mission.project), `${mission.id}-${task.id}-review${task.reviews ?? 1}.md`);
 
 /**
  * A Wingman gets the same session record any other spawned task session gets, so it appears in
@@ -644,7 +651,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
           task.commits = await commitsAhead(missionRepo(mission, task).path, missionRepo(mission, task).branch, task.branch!).catch(() => []);
         }
         if (task.status === "built") {
-          const file = reviewFile(mission, task, task.attempts);
+          task.reviews = (task.reviews ?? 0) + 1;
+          const file = reviewFile(mission, task);
           try {
             // "auditor" is Claude Code's own agent name (`~/.claude/agents/auditor.md`), not our word for the role.
             const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, reviewPrompt(project, mission, m, task, missionRepo(mission, task), file), "auditor");
@@ -657,7 +665,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
             task.note = `could not start the RIO: ${(err as Error).message}`;
           }
         }
-        if (task.status === "reviewing" && task.review) {
+        else if (task.status === "reviewing" && task.review) {
           const findings = await readFile(task.review.file, "utf8").catch(() => null);
           const verdict = findings ? verdictOf(findings) : undefined;
           if (!verdict || verdict === "pending") {
@@ -706,7 +714,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
         // A repo with nothing left to do gets its pull request now rather than at the close, so
         // an earlier repo can be reviewed and merged while the later ones are still flying.
         if (mission.repos.some((r) => r.land !== "merge")) {
-          const { failed } = await landTheWork(mission, true);
+          const { failed } = await landTheWork(mission);
           if (failed.length) mission.trouble = `could not land: ${failed.join(" · ")}`;
         }
         const next = mission.milestones.find((x) => x.n > m.n && !x.dispatched);
@@ -786,13 +794,21 @@ export const abandonMission = async (project: Project, id: string, stop: (claude
  */
 export const tidyWorktrees = async (project: Project, id: string): Promise<string[]> => {
   const mission = await missionOr404(project.id, id);
+  // `git worktree remove --force` discards uncommitted changes, which is the only thing in a
+  // mission that can destroy work. It runs when the mission is over and not before.
+  if (mission.status !== "closed" && mission.status !== "abandoned") {
+    throw new Error(`${mission.name} is ${mission.status}; its worktrees are still being worked in`);
+  }
   const gone: string[] = [];
   for (const task of mission.milestones.flatMap((m) => m.tasks)) {
     if (!task.worktree || task.status !== "passed") continue;
     const repo = mission.repos.find((r) => r.label === task.repo);
     if (!repo) continue;
-    await removeWorktree(repo.path, task.worktree).then(() => gone.push(task.worktree!)).catch(() => undefined);
+    const at = task.worktree;
+    await removeWorktree(repo.path, at).then(() => { gone.push(at); task.worktree = undefined; }).catch(() => undefined);
   }
+  // The record stops pointing at directories that are no longer there.
+  if (gone.length) await writeMission(mission);
   return gone;
 };
 
@@ -802,6 +818,7 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
   const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId));
   const task = m?.tasks.find((t) => t.id === taskId);
   if (!m || !task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+  if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
   if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
   const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
   task.attempts = MAX_ATTEMPTS - 1;
@@ -817,6 +834,7 @@ export const acceptTask = async (project: Project, id: string, taskId: string, n
   const mission = await missionOr404(project.id, id);
   const task = mission.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId);
   if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+  if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; accepting a task now would resurrect it`);
   task.status = "passed";
   task.note = `accepted by Cory over the RIO: ${note}`.trim();
   if (task.claudeId) await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { decision: "accepted" });
@@ -835,7 +853,7 @@ export const acceptTask = async (project: Project, id: string, taskId: string, n
  * that repo's base, and that is as far as Maverick goes: a project whose own rules say never
  * self-merge (Realtime's `CLAUDE.md` says exactly that) must not have a tool merge for it.
  */
-const landTheWork = async (mission: Mission, onlyFinished = false): Promise<{ landed: string[]; failed: string[] }> => {
+const landTheWork = async (mission: Mission): Promise<{ landed: string[]; failed: string[] }> => {
   const opened: string[] = [];
   const failed: string[] = [];
   const all = mission.milestones.flatMap((m) => m.tasks);
@@ -847,9 +865,10 @@ const landTheWork = async (mission: Mission, onlyFinished = false): Promise<{ la
       continue;
     }
     const mine = all.filter((t) => t.repo === repo.label);
-    // Mid-flight, a repo is only ready when nothing of its own is still moving.
-    if (onlyFinished && mine.some((t) => t.status !== "passed")) continue;
-    const tasks = mine.filter((t) => t.status === "passed");
+    // A repo lands only when nothing of its own is still moving, at the close as much as
+    // mid-flight: landing half a repo's work is the same mistake whenever it happens.
+    if (!mine.length || mine.some((t) => t.status !== "passed")) continue;
+    const tasks = mine;
     if (!tasks.length) continue;
     if (repo.land === "push") {
       repo.landed = `${repo.base}@${await pushFastForward(repo.path, repo.branch, repo.base)}`;
@@ -879,6 +898,9 @@ const landTheWork = async (mission: Mission, onlyFinished = false): Promise<{ la
 
 export const closeMission = async (project: Project, id: string): Promise<{ mission: Mission; commit: string; ticked: string[]; pullRequests: string[] }> => {
   const mission = await missionOr404(project.id, id);
+  // The page only offers this at the review gate, but the page is not the guard: a stale tab
+  // or a second request must not land half a mission's work or tick a board that is still live.
+  if (mission.status !== "review") throw new Error(`${mission.name} is ${mission.status}, not ready to close; only a mission whose every milestone has merged can be closed`);
   // Opened before the tracker is touched: a failure to push or open must not leave the board
   // saying done while nothing is up for review.
   const { landed: pullRequests, failed } = await landTheWork(mission);
@@ -909,7 +931,6 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   return { mission, commit, ticked, pullRequests };
 };
 
-/** What the review gate reads: every task with its commits, its verdict and its findings. */
 /**
  * What the review gate reads. A task that has passed will not change again — its range is
  * frozen and its findings file is written once — so both are remembered against keys that

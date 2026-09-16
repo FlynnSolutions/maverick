@@ -82,7 +82,9 @@ const mountTerminal = (host, terminalId) => {
   term.onResize(({ cols, rows }) => post(`/api/terminals/${terminalId}/resize`, { cols, rows }).catch(() => {}));
   // xterm measures its own box, so fit after the new geometry has actually landed.
   requestAnimationFrame(() => { fit.fit(); term.focus(); });
-  attached.push({ term, fit, source });
+  const held = { term, fit, source };
+  attached.push(held);
+  return held;
 };
 window.addEventListener("resize", () => { for (const a of attached) requestAnimationFrame(() => a.fit.fit()); });
 
@@ -92,6 +94,16 @@ window.addEventListener("resize", () => { for (const a of attached) requestAnima
  * hoping. Attaching is read-and-write: it is a real terminal, so you can take the stick.
  */
 const watching = new Map();
+/** Let one session go without tearing down the others. */
+const stopWatching = (claudeId) => {
+  const held = watching.get(claudeId);
+  if (held && held !== true) {
+    held.source.close();
+    held.term.dispose();
+    attached = attached.filter((a) => a !== held);
+  }
+  watching.delete(claudeId);
+};
 const watchSession = async (host, claudeId, title) => {
   if (watching.has(claudeId)) return;
   watching.set(claudeId, true);
@@ -100,7 +112,7 @@ const watchSession = async (host, claudeId, title) => {
     const existing = open.find((t) => t.exitCode === null && t.command.join(" ") === `claude attach ${claudeId}`);
     const info = existing ?? (await post("/api/terminals", { project: projectId, kind: "attach", id: claudeId, title, cols: 110, rows: 28 }));
     host.replaceChildren();
-    mountTerminal(host, info.id);
+    watching.set(claudeId, mountTerminal(host, info.id));
   } catch (err) {
     watching.delete(claudeId);
     host.replaceChildren(el("p", { class: "mv-empty" }, `could not attach: ${err.message}`));
@@ -120,7 +132,7 @@ const load = async (force = false) => {
   // the workspace holds off during a rename. The page says so rather than quietly going stale.
   if (!force && attached.length) {
     lastPayload = "";
-    $("#status").textContent = "paused while you are attached to a session";
+    $("#status").textContent = "paused while you are watching a session · click the verb again to resume";
     return;
   }
   lastPayload = body;
@@ -145,10 +157,12 @@ const act = async (action, body, said) => {
 
 /* ---------- render ---------- */
 const tasksOf = (m) => m.tasks ?? [];
-/** Derived in one place: the nav and the detail head disagreed about a handed-back milestone. */
 /** A milestone's merges, one per repo it touched. */
 const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${repo} ${sha}`).join(" · ");
+/** Derived in one place: the nav and the detail head disagreed about a handed-back milestone. */
 const milestoneState = (m) => (m.merged ? "passed" : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending");
+/** And its word, for the same reason: three places had spelled it three ways. */
+const milestoneLabel = (m) => (m.merged ? "merged" : milestoneState(m) === "handed-back" ? "needs you" : m.dispatched ? "flying" : "not sent yet");
 const allTasks = () => mission.milestones.flatMap(tasksOf);
 
 const renderTop = () => {
@@ -162,7 +176,7 @@ const renderTop = () => {
       el("span", { class: `verdict ${mission.status}` }, mission.status),
       el("span", {}, `${passed} of ${tasks.length || "?"} tasks passed`),
       el("span", {}, `${mission.milestones.filter((m) => m.merged).length} of ${mission.milestones.length} milestones merged`),
-      mission.branch ? el("span", { title: "every milestone merges here; Maverick never merges a mission to main" }, mission.branch) : null));
+      ...(mission.repos ?? []).map((r) => el("span", { title: `${r.label} lands against ${r.base}` }, r.branch))));
 };
 
 const renderNav = () => {
@@ -176,7 +190,7 @@ const renderNav = () => {
   const items = [entry("plan", "P", mission.approved ? "The plan, as approved" : "The plan, and the gate", el("span", { class: `verdict ${mission.approved ? "passed" : mission.status}` }, mission.approved ? "approved" : mission.status))];
   mission.milestones.forEach((m) => {
     const state = milestoneState(m);
-    items.push(entry(`m${m.n}`, String(m.n), m.title, el("span", { class: `verdict ${state}` }, m.merged ? "merged" : state), state));
+    items.push(entry(`m${m.n}`, String(m.n), m.title, el("span", { class: `verdict ${state}` }, milestoneLabel(m)), state));
   });
   const done = mission.status === "review" || mission.status === "closed";
   items.push(el("h3", {}, "The result"), entry("review", "R", "What the mission built", el("span", { class: `verdict ${done ? "passed" : mission.status}` }, mission.status === "closed" ? "closed" : mission.status === "review" ? "ready" : "in flight")));
@@ -299,9 +313,21 @@ const taskRow = (task) => {
     el("span", { class: "mv-acts" },
       task.claudeId || task.review?.claudeId ? btn(live ? "watch" : "read it back", (e) => {
         const row = e.target.closest(".mv-task");
-        const host = row.querySelector(".mv-term-well") ?? row.appendChild(el("div", { class: "mv-term-well" }, el("div", { class: "term" })));
         const id = task.status === "reviewing" ? task.review?.claudeId : task.claudeId;
-        if (id) watchSession(host.querySelector(".term") ?? host, id, task.title);
+        if (!id) return;
+        const open = row.querySelector(".mv-term-well");
+        // A second click closes it, which is also how the page starts polling again: while a
+        // terminal is mounted a repaint would dispose it mid-keystroke, so load() holds off.
+        if (open) {
+          stopWatching(id);
+          open.remove();
+          e.target.textContent = live ? "watch" : "read it back";
+          load(true).catch(() => {});
+          return;
+        }
+        const host = row.appendChild(el("div", { class: "mv-term-well" }, el("div", { class: "term" })));
+        e.target.textContent = "stop watching";
+        watchSession(host.querySelector(".term"), id, task.title);
       }, "ghost") : null,
       task.status === "handed-back" ? btn("send it back out", () => act(`tasks/${task.id}/retry`, {}, `${task.title} is flying again`), "primary") : null,
       task.status === "handed-back" ? btn("accept it over the RIO", async () => {
@@ -327,13 +353,13 @@ const renderMilestone = (m) => {
   show(
     el("div", { class: "detail-head" },
       el("h1", {}, `Milestone ${m.n} — ${m.title}`),
-      el("span", { class: `verdict ${milestoneState(m)}` }, m.merged ? "merged" : m.dispatched ? "flying" : "not sent yet")),
+      el("span", { class: `verdict ${milestoneState(m)}` }, milestoneLabel(m))),
     el("div", { class: "detail-meta" },
       el("span", {}, `done when ${m.done}`),
       m.dispatched ? el("span", {}, `sent ${fmtTime(m.dispatched)}`) : null,
       m.merged ? el("span", {}, `merged ${fmtTime(m.merged)}${merges(m) ? ` · ${merges(m)}` : ""}`) : null),
     mission.trouble ? el("section", { class: "panel" }, el("h2", {}, "Needs you"), el("p", { class: "mv-plan" }, mission.trouble)) : null,
-    m.conflicts?.length ? el("section", { class: "panel" }, el("h2", {}, "It will not merge"), el("p", { class: "mv-plan" }, `These paths collided merging into ${mission.branch}: ${m.conflicts.join(", ")}. The merge was aborted, so nothing is half-applied.`)) : null,
+    m.conflicts?.length ? el("section", { class: "panel" }, el("h2", {}, "It will not merge"), el("p", { class: "mv-plan" }, `These paths collided: ${m.conflicts.join(", ")}, each prefixed with the repo it is in. The merge was aborted, so nothing is half-applied.`)) : null,
     el("section", { class: "panel" },
       el("h2", {}, "Tasks", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "one Wingman each in its own worktree, with a RIO in the back seat that did not write the code")),
       tasks.length ? el("div", {}, ...tasks.map(taskRow)) : el("p", { class: "mv-empty" }, "No tasks in this milestone.")));

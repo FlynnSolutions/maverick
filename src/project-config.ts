@@ -43,8 +43,6 @@ export interface MissionConfig {
   land: Landing;
   /** Per repo, keyed by the label `reposUnder` gives it (a directory name, or "root"). */
   repos: Record<string, RepoConfig>;
-  /** True when the project said nothing and these are Maverick's own defaults. */
-  implicit: boolean;
 }
 
 export const DEFAULT_MISSION_CONFIG: MissionConfig = {
@@ -52,10 +50,47 @@ export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   branchPrefix: "mission/",
   land: "merge",
   repos: {},
-  implicit: true,
 };
 
 const isLanding = (v: unknown): v is Landing => v === "merge" || v === "pr" || v === "push";
+
+/**
+ * `push` is refused here and only here. It is the one value that moves a shared branch on a
+ * remote, and the whole argument for allowing it at all (M10) is that a repo opts into it by
+ * name. Read at the mission level it would apply to every repo the plan touches, which is
+ * exactly what the per-repo rule exists to prevent, and a `land` key one level too high is an
+ * easy thing to write by hand.
+ */
+const missionLanding = (v: unknown): Landing =>
+  v === "push" || !isLanding(v) ? DEFAULT_MISSION_CONFIG.land : v;
+
+/**
+ * A branch prefix reaches `git branch` as argv and is the difference between a mission branch
+ * and the base itself. An empty one puts a mission called "Main" on `main`; one starting with
+ * `-` is read by git as bundled short options. Neither is worth guessing at, so anything that
+ * is not plainly a prefix falls back to Maverick's own.
+ */
+const BRANCH_PREFIX = /^[A-Za-z0-9][A-Za-z0-9._-]*[/-]$/;
+const branchPrefix = (v: unknown): string =>
+  typeof v === "string" && BRANCH_PREFIX.test(v) && !v.includes("..") ? v : DEFAULT_MISSION_CONFIG.branchPrefix;
+
+/** A base is a branch name, so it is a string that git will not read as a flag or a path trick. */
+const REF = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
+const repoConfigs = (v: unknown): Record<string, RepoConfig> => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const out: Record<string, RepoConfig> = {};
+  for (const [label, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const r = raw as Record<string, unknown>;
+    const cfg: RepoConfig = {};
+    if (typeof r.base === "string" && REF.test(r.base) && !r.base.includes("..")) cfg.base = r.base;
+    // Here `push` is honoured: this is the per-repo opt-in by name that M10 requires.
+    if (isLanding(r.land)) cfg.land = r.land;
+    if (typeof r.note === "string") cfg.note = r.note;
+    out[label] = cfg;
+  }
+  return out;
+};
 
 export const missionConfigFor = async (projectPath: string): Promise<MissionConfig> => {
   let raw: { missions?: Partial<MissionConfig> };
@@ -73,9 +108,8 @@ export const missionConfigFor = async (projectPath: string): Promise<MissionConf
     : DEFAULT_MISSION_CONFIG.worktrees;
   return {
     worktrees,
-    branchPrefix: typeof m.branchPrefix === "string" ? m.branchPrefix : DEFAULT_MISSION_CONFIG.branchPrefix,
-    land: isLanding(m.land) ? m.land : DEFAULT_MISSION_CONFIG.land,
-    repos: m.repos && typeof m.repos === "object" ? m.repos : {},
-    implicit: false,
+    branchPrefix: branchPrefix(m.branchPrefix),
+    land: missionLanding(m.land),
+    repos: repoConfigs(m.repos),
   };
 };

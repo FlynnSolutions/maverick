@@ -14,7 +14,7 @@ import { dirname, extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
-import { commitFile, spawnBackgroundAgent } from "./src/git.ts";
+import { backgroundAgents, commitFile, spawnBackgroundAgent } from "./src/git.ts";
 import { liveCache, liveSignals, readRegistrySessions } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
@@ -24,7 +24,6 @@ import { abandonMission, acceptTask, approveMission, closeMission, listMissions,
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
-import { backgroundAgents } from "./src/git.ts";
 import { focusApp, parentChain, processHome } from "./src/processes.ts";
 import { liveUsage } from "./src/claude-usage.ts";
 import { sendToSession } from "./src/peer.ts";
@@ -557,7 +556,6 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const [, id, action] = missionAction;
     if (method === "GET" && !action) {
       await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
-      // Before the blessing the page reads the plan document; after it, the run.
       // Before the blessing the page reads the plan document; after it, only the run. Parsing
       // the plan on every poll of a mission that is already flying buys nothing.
       const view = await missionView(project, id);
