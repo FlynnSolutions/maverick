@@ -1639,9 +1639,21 @@ window.addEventListener("resize", () => {
 
 /* ---------- theme: the project's colours and display font ---------- */
 
+/** Whether Maverick wears the project's colours or its own. Cory's call, remembered. */
+const usingProjectTheme = () => {
+  try { return localStorage.getItem("mv.projectTheme") !== "0"; } catch { return true; }
+};
+
+/**
+ * Clearing the inline overrides is what "the Maverick theme" means: the stylesheet's own
+ * tokens take over, and they already flip with light and dark.
+ */
 const applyTheme = (theme) => {
-  if (!theme) return;
   const root = document.documentElement.style;
+  if (!theme || !usingProjectTheme()) {
+    for (const prop of ["--accent", "--accent-hot", "--display"]) root.removeProperty(prop);
+    return;
+  }
   root.setProperty("--accent", theme.accent);
   root.setProperty("--accent-hot", theme.accentHot);
   root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
@@ -1683,32 +1695,61 @@ const boot = async () => {
     });
   }
 
-  const toggle = $("#show-all");
-  toggle.checked = showAll;
-  $("#scope-toggle").hidden = false;
-  toggle.addEventListener("change", () => {
-    showAll = toggle.checked;
-    try { localStorage.setItem("console.showAll", showAll ? "1" : "0"); } catch {}
-    loadBoard();
-  });
 
   $("#project").hidden = false;
   $("#reload").hidden = false;
   $("#new-session").hidden = false;
-  // Dark by default, light when the system says so, and an explicit choice outranks both.
-  // Named setMode, not applyTheme: that name already belongs to the project's own palette.
+  // One menu for every preference, so the bar carries one control instead of three.
   const setMode = (m) => {
     if (m) document.documentElement.setAttribute("data-theme", m);
     else document.documentElement.removeAttribute("data-theme");
   };
-  try { setMode(localStorage.getItem("mv.theme")); } catch {}
-  const themeBtn = el("button", { type: "button", class: "ghost icon-btn", "aria-label": "switch light and dark", title: "switch light and dark",
-    onclick: () => {
-      const next = getComputedStyle(document.body).colorScheme.trim() === "light" ? "dark" : "light";
-      try { localStorage.setItem("mv.theme", next); } catch {}
-      setMode(next);
-    } }, icon("theme"));
-  $("#reload").before(themeBtn);
+  const remember = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  const recall = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+  setMode(recall("mv.theme", ""));
+
+  const option = (label, hint, on, onchange) => {
+    const box = el("input", { type: "checkbox" });
+    box.checked = on;
+    box.addEventListener("change", () => onchange(box.checked));
+    return el("label", { class: "opt" }, box, el("span", {}, el("b", {}, label), el("i", {}, hint)));
+  };
+
+  let menu = null;
+  const closeMenu = () => { menu?.remove(); menu = null; document.removeEventListener("keydown", onMenuKey, true); };
+  function onMenuKey(e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); } }
+  const openMenu = (anchor) => {
+    const mode = recall("mv.theme", "");
+    const seg = el("div", { class: "seg" }, ...[["", "System"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) =>
+      el("button", { type: "button", class: v === mode ? "on" : "", onclick: (e) => {
+        remember("mv.theme", v);
+        setMode(v);
+        for (const b of e.currentTarget.parentElement.children) b.classList.toggle("on", b === e.currentTarget);
+      } }, l)));
+    menu = el("div", { class: "menu", role: "dialog", "aria-label": "Settings" },
+      el("h4", {}, "Appearance"), seg,
+      option("The project's colours", project ? `${project.name}'s accent and display face` : "accent and display face", usingProjectTheme(), (on) => {
+        remember("mv.projectTheme", on ? "1" : "0");
+        applyTheme(project?.theme);
+      }),
+      option("Non-dev items", "tracker rows outside engineering", showAll, (on) => {
+        showAll = on;
+        remember("console.showAll", on ? "1" : "0");
+        loadBoard();
+      }));
+    const r = anchor.getBoundingClientRect();
+    menu.style.top = `${r.bottom + 8}px`;
+    menu.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
+    document.body.append(menu);
+    document.addEventListener("keydown", onMenuKey, true);
+    window.setTimeout(() => document.addEventListener("click", function once(e) {
+      if (menu && !menu.contains(e.target) && e.target !== anchor) { closeMenu(); document.removeEventListener("click", once); }
+      else if (!menu) document.removeEventListener("click", once);
+    }), 0);
+  };
+  const gear = el("button", { type: "button", class: "ghost icon-btn", "aria-label": "settings", title: "settings",
+    onclick: (e) => (menu ? closeMenu() : openMenu(e.currentTarget)) }, icon("settings"));
+  $("#reload").before(gear);
 
   const reload = $("#reload");
   reload.classList.add("ghost", "icon-btn");

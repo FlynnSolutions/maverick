@@ -53,22 +53,37 @@ files a human and an agent both read.
 The reframe this document exists for. Maverick is **project-scoped**, so agents are too, and
 they come in three levels that differ in what they are allowed to touch.
 
-**Level 1 — the project overview agent.** One long-lived agent per project that holds the whole
-landscape. It is the project's chat box: ask it where things stand, what a decision was, what is
-blocked. It writes **plan documents**. It does **not** build features and does not edit product
-code, and that boundary is enforced by its tools, not by asking nicely. Value comes from it being
-the one thing that has read everything.
+| Level | Name | Holds | May write |
+|---|---|---|---|
+| 1 | **Air Boss** | the whole project | plan documents |
+| 2 | **Mission**, run by a **RIO** | one bounded effort | the plan, and the workers |
+| 3 | **Wingman** | one item | code, in a worktree |
 
-**Level 2 — the mission.** A bounded multi-feature effort. It opens with a clarifying interview,
-produces features grouped into milestones, gets blessed once, then owns a set of Level 3 workers
-and validates at every milestone. It is the unit for "build this whole thing", and it is
-expensive enough that the blessing gate is not optional.
+**Air Boss** runs the flight deck and does not fly. One long-lived agent per project that has
+read everything: ask it where things stand, what a decision was, what is blocked. It writes plan
+documents. It does **not** build features and does not edit product code, and that boundary is
+enforced by its tool list, not by its prompt. An agent asked politely not to fix something will
+fix it the first time the fix looks small.
 
-**Level 3 — the task session.** One item from the board, fresh context, a worktree, a diff. This
-is what Maverick spawns today.
+**Mission** is a bounded multi-feature effort, and the **RIO** is the agent that runs it. In a
+two-seat fighter the RIO works the radar and calls the intercept while the pilot flies: it holds
+the tactical picture and directs, which is exactly the orchestrator role. A RIO opens with a
+clarifying interview, builds features grouped into milestones, gets blessed once, then dispatches
+Wingmen and validates at every milestone gate.
 
-The levels are not seniority. They are **blast radius**: Level 1 writes documents, Level 2 writes
-plans and spawns, Level 3 writes code.
+**Wingman** is one item off the board: fresh context, a worktree, a diff. This is what Maverick
+spawns today.
+
+The levels are not seniority. They are **blast radius**: Air Boss writes documents, the RIO writes
+plans and spawns, Wingmen write code.
+
+### Where the current audit fits
+
+`src/audits.ts` and the audit-parent records implement the **validator half only**: a verdict and
+findings on a task session that has already finished. That is one output of a RIO, not a RIO. The
+work is to grow the missing half in front of it, the interview and the milestone plan and the
+dispatch, rather than to rename what is there. Naming it RIO before it orchestrates anything would
+be the kind of drift this document exists to prevent.
 
 ## What we take from Factory, and what we leave
 
@@ -80,7 +95,8 @@ Factory's Missions is documented behaviour, not a file format, and the behaviour
 - **Fresh context per unit of work.** The orchestrator holds the plan; no worker holds the
   project. This is the actual answer to context exhaustion, and it is cheap to adopt.
 - **Validation is a milestone gate, not a step inside the worker.** An agent checking its own
-  work is the failure mode the audit already exists to catch.
+  work is the failure mode the audit already exists to catch. The RIO validates; the Wingman does
+  not grade itself.
 - **Human-style QA.** Drive the real UI, not only the unit tests. Playwright is the seam.
 - **Narrow parallelism.** Within a feature and during validation. Sequential elsewhere, because
   coordination overhead beats the speed gain.

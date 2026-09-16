@@ -1250,6 +1250,29 @@ body.ask-open { overflow: hidden; }
   .strip-state { display: none; }
 }
 
+/* The settings menu: one control in the bar instead of three. */
+.menu {
+  position: fixed;
+  z-index: 46;
+  width: 290px;
+  padding: 14px;
+  border-radius: var(--radius-m);
+  background: var(--gunmetal);
+  box-shadow: 0 0 0 1px var(--seam), 0 18px 44px var(--shade);
+  animation: cc-in 140ms var(--ease-out);
+}
+.menu h4 { margin: 0 0 8px; font: 600 11px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.menu .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 14px; }
+.menu .seg button { height: 30px; padding: 0; font-size: 12px; background: var(--steel); border-color: transparent; box-shadow: none; color: var(--ink-faint); }
+.menu .seg button:hover { color: var(--ink-soft); }
+.menu .seg button.on { background: var(--panel-lifted); color: var(--ink); box-shadow: 0 0 0 1px var(--seam-strong); }
+.menu .opt { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; cursor: pointer; }
+.menu .opt + .opt { border-top: 1px solid var(--seam-soft); }
+.menu .opt input { margin: 2px 0 0; accent-color: var(--accent); width: 15px; height: 15px; flex: 0 0 auto; }
+.menu .opt b { display: block; font: 500 13px/1.3 var(--sans); color: var(--ink); }
+.menu .opt i { display: block; margin-top: 2px; font: 11.5px/1.4 var(--mono); font-style: normal; color: var(--ink-faint); }
+@media (prefers-reduced-motion: reduce) { .menu { animation: none; } }
+
 /* Icons are drawn at one stroke weight and take the button's colour. */
 button.icon-btn { position: relative; width: 30px; min-width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
 /* The glyph is 30px; the hit area reaches 40, the way the rack's verbs do. */

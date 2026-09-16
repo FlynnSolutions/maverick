@@ -38,19 +38,20 @@ format: checklist
 
 ### The level model
 
-- [ ] `[ENG]` `[L]` **Three levels of agent per project, not one pool of sessions**
+- [ ] `[ENG]` `[L]` **Air Boss, RIO, Wingman: three levels of agent per project**
   - created: 2026-09-16
   - source: Cory, 2026-09-16
   - kind: feature
-  The reframe. **Level 1, the project overview agent**: one long-lived agent per project that
-  holds the whole landscape, answers questions about it, and writes plan documents. It never
-  builds a feature and never edits product code. It is the project's chat box. **Level 2, the
-  mission**: a bounded, multi-feature effort planned into milestones, owning a set of Level 3
-  workers. **Level 3, the task session**: what the board spawns today, one item, fresh context.
-  Needs a decision on where the overview agent's tool boundary is enforced (allowed tools vs.
-  prompt), and where its plan documents are written.
+  The reframe, named 2026-09-16. **Air Boss (L1)**: one long-lived agent per project that holds
+  the whole landscape, answers questions about it, and writes plan documents. Never builds a
+  feature, never edits product code. It is the project's chat box. **Mission (L2), run by a
+  RIO**: a bounded multi-feature effort planned into milestones, dispatching and validating
+  workers. **Wingman (L3)**: one item off the board, fresh context, a worktree, a diff, which is
+  what Maverick spawns today. The levels are blast radius, not seniority.
+  Open: where the Air Boss's tool boundary is enforced (allowed-tools list, not prompt) and where
+  its plan documents are written.
 
-- [ ] `[ENG]` `[L]` **Missions: make the audit a planned, validated, multi-agent run**
+- [ ] `[ENG]` `[L]` **The RIO: grow the audit from a validator into an orchestrator**
   - created: 2026-09-16
   - source: Cory, 2026-09-16, after reading Factory's Missions docs
   - kind: feature
@@ -62,6 +63,10 @@ format: checklist
   tests. Parallelism stays narrow: within a feature and during validation. `src/audits.ts` and the
   audit-parent records are the seam this grows out of. Their published cost, median 12x the tokens
   of a normal session, is the reason the blessing gate is not optional.
+  **The gap, named 2026-09-16:** what `audits.ts` does today is the *validator half only*, a verdict
+  and findings on a session that already finished. The RIO is the missing half in front of it: the
+  interview, the milestone plan, the dispatch. Build that, then rename. Renaming first would be
+  exactly the drift the positioning note warns about.
 
 ### Readiness at the door
 
@@ -92,13 +97,26 @@ _Nothing. Move an item here only when its session starts._
   - created: 2026-09-14
 - [ ] `[ENG]` `[L]` **Electron shell** — `server.ts` becomes the main process.
   - created: 2026-09-14
-- [ ] `[DOC]` `[M]` **Carry-over between related projects** — a fix to the flow, a skill, or a UI
-  testing pattern in one repo should not leave the others behind. Unresolved: whether that is a
-  Maverick surface (show which repos are behind on a shared skill or standard), an Imbas
-  responsibility, or just the plugin version already in `installed_plugins.json`. Decide before
-  building anything.
+- [ ] `[ENG]` `[M]` **"Who is behind" on the project picker** — a fix to the flow, a skill, or a
+  UI-testing pattern in one repo should not leave the others behind. Decided 2026-09-16: do **not**
+  build a propagation engine. Skills already propagate (one versioned `flynn-kit` plugin at user
+  scope), standards already propagate (one `WORKSPACE.md`, one `check.py`). What is missing is
+  visibility. Show per project: doc-standard governed or not, `RULEBOOK.md` present and newer than
+  the last workspace change, readiness level, installed plugin version vs. latest. The picker
+  already enumerates the repos and already has somewhere to put a badge.
   - created: 2026-09-16
   - source: Cory, 2026-09-16
+  - kind: feature
+- [ ] `[ENG]` `[M]` **Highlights in the ship / session review walkthrough** — _note only, not
+  scoped._ The walkthrough already deep-links to the exact page under test and fills it with
+  realistic data. Next step is showing the reviewer **where to look**: a highlight that flashes on
+  the element and fades, the same device the Realtime tutorial uses. Lift the pattern from
+  Realtime's tutorial rather than inventing one. Open: how a walkthrough step names its target
+  (selector, test id, or a coordinate the QA pass captured), and whether the highlight is driven by
+  the walkthrough document or by the session that wrote it.
+  - created: 2026-09-16
+  - source: Cory, 2026-09-16
+  - kind: feature
 - [ ] `[ENG]` `[M]` **Support agents other than Claude Code.** `web/providers/` already has the
   shape. Every competitor runs Codex alongside Claude; Maverick reading only one runtime is a
   ceiling, not a position.
