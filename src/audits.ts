@@ -44,7 +44,7 @@ const writeRecord = async (record: SessionRecord): Promise<void> => {
   await writeFile(recordPath(record.id), `${JSON.stringify(record, null, 2)}\n`, "utf8");
 };
 
-const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
+export const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
 
 export const createParent = async (project: Project, name: string): Promise<SessionRecord> => {
   const record: SessionRecord = {
@@ -104,6 +104,10 @@ export const runAudit = async (project: Project, childId: string): Promise<Audit
   return audit;
 };
 
+/** The auditor's contract: the first line of a findings file is its verdict. */
+export const verdictOf = (findings: string | undefined): Verdict =>
+  (findings?.match(/^verdict:\s*(pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
+
 export const auditView = async (record: SessionRecord & { audit?: AuditInfo; decision?: string }, agentStates: Map<string, string>): Promise<AuditView> => {
   if (!record.audit) return { verdict: "none" };
   let findings: string | undefined;
@@ -112,8 +116,7 @@ export const auditView = async (record: SessionRecord & { audit?: AuditInfo; dec
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
-  const verdict = (findings?.match(/^verdict:\s*(pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
-  return { verdict, findings, decision: record.decision as AuditView["decision"], agentState: agentStates.get(record.audit.claudeId) };
+  return { verdict: verdictOf(findings), findings, decision: record.decision as AuditView["decision"], agentState: agentStates.get(record.audit.claudeId) };
 };
 
 export const recordDecision = async (childId: string, decision: "accepted" | "rejected"): Promise<void> => {

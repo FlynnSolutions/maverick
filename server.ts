@@ -13,7 +13,7 @@ import { dirname, extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
-import { commitFile } from "./src/git.ts";
+import { commitFile, spawnBackgroundAgent } from "./src/git.ts";
 import { liveCache, liveSignals, readRegistrySessions } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
@@ -30,7 +30,7 @@ import { sendToSession } from "./src/peer.ts";
 import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
-import { readSessions, sessionsForProject, type SessionRecord } from "./src/sessions.ts";
+import { readSessions, sessionsForProject, writeSession, type SessionRecord } from "./src/sessions.ts";
 import { createFormation, deleteFormation, listFormations, updateFormation } from "./src/formations.ts";
 import { readNames, setName } from "./src/names.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
@@ -231,19 +231,6 @@ interface OpenTerminalBody {
   rows?: number;
 }
 
-const writeSessionRecord = async (record: SessionRecord): Promise<void> => {
-  await mkdir(config.sessionsDir, { recursive: true });
-  await writeFile(join(config.sessionsDir, `${record.id}.json`), `${JSON.stringify(record, null, 2)}\n`, "utf8");
-};
-
-/** `claude --bg` prints "backgrounded · <id> · <name>"; the id is what attach/stop/logs take. */
-const spawnBackgroundAgent = async (cwd: string, prompt: string, name: string): Promise<string> => {
-  const { stdout } = await run("claude", ["--bg", "--name", name, "--permission-mode", "auto", prompt], { cwd });
-  const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
-  if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);
-  return id;
-};
-
 const spawnPrompt = (project: Project, title: string, body: string, trackerPath: string): string =>
   [
     `You are a develop session for the project at ${project.path}. Your one loop is: ${title}.`,
@@ -275,8 +262,8 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
     case "spawn": {
       if (!body.prompt || !body.title) throw new Error("spawn needs title and prompt");
       const trackerPath = project.trackers[0]?.path ?? project.path;
-      const id = await spawnBackgroundAgent(project.path, spawnPrompt(project, body.title, body.prompt, trackerPath), body.title.slice(0, 60));
-      await writeSessionRecord({
+      const id = await spawnBackgroundAgent(project.path, body.title, spawnPrompt(project, body.title, body.prompt, trackerPath));
+      await writeSession(config.sessionsDir, {
         id: `bg-${id}`,
         role: "develop",
         loop: body.title,
@@ -504,8 +491,10 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (method === "GET" && !action) {
       await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
       // Before the blessing the page reads the plan document; after it, the run.
-      const planDoc = await previewPlan(project, id);
-      return sendJson(res, 200, { ...(await missionView(project, id)), planDoc: { found: planDoc.found, text: planDoc.text, parsed: planDoc.parsed, cost: planDoc.cost } });
+      // Before the blessing the page reads the plan document; after it, only the run. Parsing
+      // the plan on every poll of a mission that is already flying buys nothing.
+      const view = await missionView(project, id);
+      return sendJson(res, 200, view.approved ? view : { ...view, planDoc: await previewPlan(project, id) });
     }
     if (method === "POST" && action === "approve") return sendJson(res, 200, await approveMission(project, id));
     if (method === "POST" && action === "interview") return sendJson(res, 200, await reopenInterview(project, id));

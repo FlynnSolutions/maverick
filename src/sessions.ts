@@ -28,6 +28,10 @@ export interface SessionRecord {
   audit?: { claudeId: string; started: string; file: string };
   /** Cory's call on the audit findings. */
   decision?: "accepted" | "rejected";
+  /** The mission that owns this session, if one does. A mission reviews its own work, so the
+   *  ship must not audit it a second time (`src/ships.ts`). Set at dispatch, not when a
+   *  verdict exists, so there is no window in which the session looks unowned. */
+  mission?: string;
 }
 
 export const readSessions = async (dir: string): Promise<SessionRecord[]> => {

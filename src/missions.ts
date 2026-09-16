@@ -17,22 +17,18 @@
  * reviewer said, which gates opened — at `~/.claude/console-sessions/missions/<project>/<id>.json`,
  * the same named exception `ships/` already uses.
  */
-import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { config } from "./config.ts";
-import { backgroundAgents, commitFile, commitsAhead, ensureBranch, ensureWorktree, mergeInto, reposUnder } from "./git.ts";
-import type { Verdict } from "./audits.ts";
+import { backgroundAgents, commitFile, commitsAhead, diffStat, ensureBranch, ensureWorktree, mergeInto, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
+import { slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
 import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
-import { parentChain } from "./processes.ts";
+import { descendsFrom, parentMap } from "./processes.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
-import { addGroup, addItem, applyEdit, parseTracker } from "./trackers.ts";
-
-const run = promisify(execFile);
+import { addGroup, addItem, parseTracker, setChecked } from "./trackers.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -110,8 +106,6 @@ export interface Mission {
 const missionsDir = (projectId: string): string => join(config.sessionsDir, "missions", projectId);
 const missionPath = (projectId: string, id: string): string => join(missionsDir(projectId), `${id}.json`);
 
-export const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
-
 export const readMission = async (projectId: string, id: string): Promise<Mission | null> => {
   try {
     return JSON.parse(await readFile(missionPath(projectId, id), "utf8")) as Mission;
@@ -147,7 +141,7 @@ const missionOr404 = async (projectId: string, id: string): Promise<Mission> => 
 
 /* ---------- the plan, as the RIO must write it ---------- */
 
-export const PLAN_FORMAT = `# Mission: <name>
+const PLAN_FORMAT = `# Mission: <name>
 
 <One paragraph: what this mission is for, and what it is deliberately not.>
 
@@ -305,14 +299,14 @@ export const reopenInterview = async (project: Project, id: string): Promise<Ter
 };
 
 /** Read the plan the RIO wrote, without committing to it. This is what the gate shows. */
-export const previewPlan = async (project: Project, id: string): Promise<{ mission: Mission; found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost }> => {
+export const previewPlan = async (project: Project, id: string): Promise<{ found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost }> => {
   const mission = await missionOr404(project.id, id);
   let text: string;
   try {
     text = await readFile(join(project.path, mission.plan), "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    return { mission, found: false };
+    return { found: false };
   }
   const parsed = parsePlan(text);
   if (!parsed.problems.length && mission.status === "interviewing") {
@@ -320,46 +314,39 @@ export const previewPlan = async (project: Project, id: string): Promise<{ missi
     mission.milestones = parsed.milestones;
     await writeMission(mission);
   }
-  return { mission, found: true, text, parsed, cost: costOf(parsed.milestones) };
+  return { found: true, text, parsed, cost: costOf(parsed.milestones) };
 };
 
 /* ---------- the blessing, and the tracker write ---------- */
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
-const headerBlock = (mission: Mission, intro: string): string => [
-  `- [ ] \`[ENG]\` **Mission: ${mission.name}**`,
-  `  - created: ${today()}`,
-  `  - source: RIO interview, ${today()}`,
-  "  - kind: mission",
-  `  - mission: ${mission.id}`,
-  `  - plan: ${mission.plan}`,
-  ...intro.split("\n").filter(Boolean).map((l) => `  ${l.trim()}`),
-  ...mission.milestones.map((m) => `  Milestone ${m.n} — ${m.title}: done when ${m.done}`),
+/** One item block, in the shape `src/trackers.ts` parses: a bullet, its fields, then its prose. */
+const itemBlock = (title: string, fields: Record<string, string>, body: string[]): string => [
+  `- [ ] \`[ENG]\` **${title}**`,
+  ...Object.entries(fields).map(([k, v]) => `  - ${k}: ${v}`),
+  ...body.flatMap((line) => line.split("\n")).map((l) => l.trim()).filter(Boolean).map((l) => `  ${l}`),
 ].join("\n");
 
-const taskBlock = (mission: Mission, m: Milestone, task: MissionTask): string => [
-  `- [ ] \`[ENG]\` **${task.title}**`,
-  `  - created: ${today()}`,
-  `  - source: mission ${mission.id}, milestone ${m.n}`,
-  `  - mission: ${mission.id}`,
-  `  - milestone: ${String(m.n)}`,
-  ...task.intent.split("\n").filter((l) => l.trim()).map((l) => `  ${l.trim()}`),
-].join("\n");
+const headerBlock = (mission: Mission, intro: string): string =>
+  itemBlock(`Mission: ${mission.name}`, { created: today(), source: `RIO interview, ${today()}`, kind: "mission", mission: mission.id, plan: mission.plan },
+    [intro, ...mission.milestones.map((m) => `Milestone ${m.n} — ${m.title}: done when ${m.done}`)]);
+
+const taskBlock = (mission: Mission, m: Milestone, task: MissionTask): string =>
+  itemBlock(task.title, { created: today(), source: `mission ${mission.id}, milestone ${m.n}`, mission: mission.id, milestone: String(m.n) }, [task.intent]);
 
 const PRIORITY = /🔥/;
 
 /** Write the whole plan into the tracker as items, in one commit, under its own group on the roadmap. */
-const writePlanToTracker = async (project: Project, mission: Mission, intro: string, trackerIndex: number): Promise<string> => {
-  const tracker = project.trackers[trackerIndex];
-  if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
+const writePlanToTracker = async (project: Project, mission: Mission, intro: string): Promise<string> => {
+  const tracker = project.trackers[mission.trackerIndex];
+  if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${mission.trackerIndex}`);
   let text = await readFile(tracker.path, "utf8");
-  const heading = parseTracker(text).sections.find((s) => PRIORITY.test(s.heading))?.heading;
-  if (!heading) throw new Error(`${tracker.label} has no 🔥 Priority section to plan into`);
+  const section = parseTracker(text).sections.find((s) => PRIORITY.test(s.heading));
+  if (!section) throw new Error(`${tracker.label} has no 🔥 Priority section to plan into`);
+  const { heading } = section;
   const group = `Mission: ${mission.name}`;
-  if (!parseTracker(text).sections.find((s) => s.heading === heading)?.groups.some((g) => g.name === group)) {
-    text = addGroup(text, heading, group);
-  }
+  if (!section.groups.some((g) => g.name === group)) text = addGroup(text, heading, group);
   text = addItem(text, heading, group, headerBlock(mission, intro));
   for (const m of mission.milestones) for (const task of m.tasks) text = addItem(text, heading, group, taskBlock(mission, m, task));
   await writeFile(tracker.path, text, "utf8");
@@ -379,7 +366,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   const parsed = parsePlan(text);
   if (parsed.problems.length) throw new Error(`the plan cannot be flown as written: ${parsed.problems.join("; ")}`);
   mission.milestones = parsed.milestones;
-  mission.planCommit = await writePlanToTracker(project, mission, parsed.intro, mission.trackerIndex);
+  mission.planCommit = await writePlanToTracker(project, mission, parsed.intro);
   await ensureBranch(mission.repo, mission.branch, "HEAD");
   await ensureWorktree(mission.repo, mission.integration, mission.branch, "HEAD");
   const formation = await createFormation(project.id, mission.name.slice(0, 40));
@@ -393,13 +380,6 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
 
 /* ---------- the flight ---------- */
 
-const spawnBackground = async (cwd: string, name: string, prompt: string, agent?: string): Promise<string> => {
-  const { stdout } = await run("claude", ["--bg", ...(agent ? ["--agent", agent] : []), "--name", name.slice(0, 60), "--permission-mode", "auto", prompt], { cwd });
-  const claudeId = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
-  if (!claudeId) throw new Error(`could not read the background session id from:\n${stdout}`);
-  return claudeId;
-};
-
 const wingmanPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings?: string): string => [
   `You are a Wingman on the mission "${mission.name}" in the project at ${project.path}. You own one task and nothing else.`,
   "",
@@ -411,14 +391,13 @@ const wingmanPrompt = (project: Project, mission: Mission, m: Milestone, task: M
   "",
   task.intent,
   "",
-  findings ? `A reviewer who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${findings}\n\nStart from the code that is already on your branch and fix what the findings name. Do not argue with the reviewer in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.` : "",
-  findings ? "" : "",
+  ...(findings ? [`A reviewer who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${findings}\n\nStart from the code that is already on your branch and fix what the findings name. Do not argue with the reviewer in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.`, ""] : []),
   "Read the repo's own rules before you write anything: its rulebook, its decision log and its design contract if it has them. Match the code around you.",
   "",
   "Commit your work in your worktree, in small commits with plain lowercase subjects. Do not write to the project's trackers; Maverick owns those for this mission. Do not open a pull request. Do not spawn other agents.",
   "",
   "When you are done, stop. A reviewer that is not you will check the work, so do not grade yourself in the commit messages: say what you did and what you could not verify.",
-].filter((l) => l !== "").join("\n");
+].join("\n");
 
 const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, file: string): string => [
   `You are the reviewer for one task on the mission "${mission.name}" in the project at ${project.path}. You did not write this code and you will not fix it.`,
@@ -457,6 +436,7 @@ const recordWingman = async (mission: Mission, task: MissionTask): Promise<void>
     started: task.started ?? new Date().toISOString(),
     project: mission.project,
     claudeId: task.claudeId,
+    mission: mission.id,
     ...(task.worktree ? { worktree: task.worktree } : {}),
   };
   await writeSession(config.sessionsDir, record);
@@ -464,6 +444,9 @@ const recordWingman = async (mission: Mission, task: MissionTask): Promise<void>
 
 /** Send every task in a milestone out at once: parallelism is narrow, inside a milestone only. */
 const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
+  // The mission branch does not move while a milestone goes out, so every task in it is cut
+  // from the same commit; resolving it once is also what makes the bases comparable.
+  const base = await revParse(mission.repo, mission.branch);
   for (const task of m.tasks) {
     if (task.status !== "pending") continue;
     try {
@@ -472,11 +455,12 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
       // `mission/x/m1-t1`, because the first is a ref file where the second wants a directory.
       task.branch = `${mission.branch}-${task.id}`;
       await ensureWorktree(mission.repo, task.worktree, task.branch, mission.branch);
-      task.base = (await run("git", ["-C", mission.repo, "rev-parse", mission.branch])).stdout.trim();
-      task.claudeId = await spawnBackground(task.worktree, `${mission.name} · ${task.title}`, wingmanPrompt(project, mission, m, task));
+      task.base = base;
+      task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanPrompt(project, mission, m, task));
       task.status = "flying";
       task.started = new Date().toISOString();
       task.attempts = 1;
+      agentCache.delete(project.path);
       await recordWingman(mission, task);
     } catch (err) {
       task.status = "handed-back";
@@ -492,7 +476,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
 /** Put a task back out with the reviewer's findings, in the worktree it already has. */
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
   const previous = task.claudeId;
-  task.claudeId = await spawnBackground(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanPrompt(project, mission, m, task, findings));
+  task.claudeId = await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanPrompt(project, mission, m, task, findings));
   task.sessionId = undefined;
   task.status = "flying";
   task.attempts += 1;
@@ -520,6 +504,17 @@ const isOver = (state: Map<string, string>, claudeId: string, since?: string): b
  */
 const sweeping = new Set<string>();
 
+/** `claude agents` is a subprocess and the page polls; well inside SETTLE_MS, so it changes nothing. */
+const AGENTS_TTL_MS = 20_000;
+const agentCache = new Map<string, { at: number; agents: Awaited<ReturnType<typeof backgroundAgents>> }>();
+const agentsFor = async (path: string): Promise<Awaited<ReturnType<typeof backgroundAgents>>> => {
+  const hit = agentCache.get(path);
+  if (hit && Date.now() - hit.at < AGENTS_TTL_MS) return hit.agents;
+  const agents = await backgroundAgents(path);
+  agentCache.set(path, { at: Date.now(), agents });
+  return agents;
+};
+
 export const sweepMissions = async (project: Project): Promise<void> => {
   if (sweeping.has(project.id)) return;
   sweeping.add(project.id);
@@ -533,24 +528,21 @@ export const sweepMissions = async (project: Project): Promise<void> => {
 const sweepOnce = async (project: Project): Promise<void> => {
   const missions = (await listMissions(project.id)).filter((m) => m.status === "flying");
   if (!missions.length) return;
-  const agents = await backgroundAgents(project.path);
-  const state = new Map(agents.map((a) => [a.id, a.state ?? ""]));
-  const uuid = new Map(agents.map((a) => [a.id, a.sessionId]));
+  const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
+  const state = new Map([...agents].map(([id, a]) => [id, a.state ?? ""]));
   for (const mission of missions) {
-    let changed = false;
     const waiting: string[] = [];
-    // The RIO only appears in Claude Code's session registry once its session has done
-    // something, which can be after the formation was made; keep offering it the lead seat.
-    await seatTheRio(mission).catch(() => undefined);
+    let seated = false;
     mission.trouble = undefined;
     for (const m of mission.milestones) {
       if (!m.dispatched || m.merged) continue;
       for (const task of m.tasks) {
-        // A session id only exists once the agent listing knows about it; the formation wants that one.
-        if (task.claudeId && !task.sessionId && uuid.has(task.claudeId)) {
-          task.sessionId = uuid.get(task.claudeId);
-          changed = true;
-          if (mission.formation) await updateFormation(mission.formation, { members: memberIds(mission) }).catch(() => undefined);
+        // A session id only exists once the agent listing knows about it; the formation wants
+        // that one. An agent can be listed without one, so read it rather than test for the key.
+        const sessionId = task.claudeId ? agents.get(task.claudeId)?.sessionId : undefined;
+        if (sessionId && !task.sessionId) {
+          task.sessionId = sessionId;
+          seated = true;
         }
         if (task.status === "flying" && task.claudeId && state.get(task.claudeId) === "blocked") {
           waiting.push(`${task.title} is waiting on you in its own session`);
@@ -559,30 +551,28 @@ const sweepOnce = async (project: Project): Promise<void> => {
           task.status = "built";
           task.ended = new Date().toISOString();
           task.commits = await commitsAhead(mission.repo, mission.branch, task.branch!).catch(() => []);
-          changed = true;
         }
         if (task.status === "built") {
           const file = reviewFile(mission, task, task.attempts);
           try {
-            const claudeId = await spawnBackground(project.path, `review · ${task.title}`, reviewPrompt(project, mission, m, task, file), "auditor");
+            const claudeId = await spawnBackgroundAgent(project.path, `review · ${task.title}`, reviewPrompt(project, mission, m, task, file), "auditor");
             task.review = { claudeId, file, started: new Date().toISOString() };
             task.status = "reviewing";
+            agentCache.delete(project.path);
             await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { audit: task.review });
           } catch (err) {
             task.status = "handed-back";
             task.note = `could not start the reviewer: ${(err as Error).message}`;
           }
-          changed = true;
         }
         if (task.status === "reviewing" && task.review) {
           const findings = await readFile(task.review.file, "utf8").catch(() => null);
-          const verdict = findings?.match(/^verdict:\s*(pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined;
-          if (!verdict) {
+          const verdict = findings ? verdictOf(findings) : undefined;
+          if (!verdict || verdict === "pending") {
             // The reviewer is gone and wrote nothing: that is a failed review, not a pass.
             if (isOver(state, task.review.claudeId, task.review.started)) {
               task.status = "handed-back";
               task.note = "the reviewer finished without writing a verdict";
-              changed = true;
             }
             continue;
           }
@@ -601,11 +591,9 @@ const sweepOnce = async (project: Project): Promise<void> => {
             task.status = "handed-back";
             task.note = `the reviewer said ${verdict} after ${task.attempts} attempts; this one is yours`;
           }
-          changed = true;
         }
       }
-      if (m.tasks.every((t) => t.status === "passed")) {
-        changed = true;
+      if (m.tasks.length && m.tasks.every((t) => t.status === "passed")) {
         for (const task of m.tasks) {
           if (!task.commits?.length) continue;
           const result = await mergeInto(mission.integration, task.branch!, `mission ${mission.id}: ${task.title}`);
@@ -630,11 +618,15 @@ const sweepOnce = async (project: Project): Promise<void> => {
       if (m.tasks.some((t) => t.status === "handed-back")) {
         mission.status = "blocked";
         mission.trouble = m.tasks.filter((t) => t.status === "handed-back").map((t) => `${t.title}: ${t.note ?? `reviewer said ${t.verdict}`}`).join(" · ");
-        changed = true;
       }
     }
     if (waiting.length && mission.status === "flying") mission.trouble = waiting.join(" · ");
-    if (changed || waiting.length) await writeMission(mission);
+    // One formation write per pass rather than one per task that gained a session id.
+    if (seated && mission.formation) await updateFormation(mission.formation, { members: memberIds(mission) }).catch(() => undefined);
+    // The RIO only reaches Claude Code's session registry once its session has done something,
+    // which can be well after the formation was made; keep offering it the lead seat.
+    await seatTheRio(mission).catch(() => undefined);
+    await writeMission(mission);
   }
 };
 
@@ -651,12 +643,11 @@ const seatTheRio = async (mission: Mission): Promise<void> => {
   if ((await listFormations(mission.project)).find((f) => f.id === mission.formation)?.lead) return;
   const pty = listTerminals().find((t) => t.id === mission.interview!.terminalId);
   if (!pty?.pid || pty.exitCode !== null) return;
-  for (const session of await readRegistrySessions()) {
-    if ((await parentChain(session.pid)).includes(pty.pid)) {
-      await updateFormation(mission.formation, { lead: session.sessionId }).catch(() => undefined);
-      return;
-    }
-  }
+  const sessions = await readRegistrySessions();
+  if (!sessions.length) return;
+  const parents = await parentMap();
+  const rio = sessions.find((s) => descendsFrom(parents, s.pid, pty.pid!));
+  if (rio) await updateFormation(mission.formation, { lead: rio.sessionId }).catch(() => undefined);
 };
 
 /* ---------- Cory's second and last gate ---------- */
@@ -669,7 +660,7 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
   if (!m || !task) throw new Error(`no task "${taskId}" on ${mission.name}`);
   if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
   const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
-  task.attempts = Math.max(0, MAX_ATTEMPTS - 1);
+  task.attempts = MAX_ATTEMPTS - 1;
   await handBack(project, mission, m, task, findings);
   task.note = undefined;
   mission.status = "flying";
@@ -698,22 +689,23 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   const mission = await missionOr404(project.id, id);
   const tracker = project.trackers[mission.trackerIndex];
   if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${mission.trackerIndex}`);
-  const tasks = mission.milestones.flatMap((m) => m.tasks);
-  const passed = new Set(tasks.filter((t) => t.status === "passed").map((t) => t.title));
+  const tasks = mission.milestones.flatMap((m) => m.tasks.map((t) => ({ milestone: m.n, task: t })));
+  const passed = new Set(tasks.filter(({ task }) => task.status === "passed").map(({ milestone, task }) => `${milestone}\u0000${task.title}`));
   // The mission's own row is done when every task under it is; leaving it open after the last
   // one ticks would leave a mission on the board that nothing is working.
-  const whole = tasks.length > 0 && tasks.every((t) => t.status === "passed");
-  const ticked: string[] = [];
-  // Re-find every item by its fields rather than by a stored line: other sessions move them.
-  for (;;) {
-    const text = await readFile(tracker.path, "utf8");
-    const item = parseTracker(text).sections
-      .flatMap((s) => s.groups.flatMap((g) => g.items))
-      .find((i) => i.fields.mission === mission.id && !i.checked && (passed.has(i.title) || (whole && i.fields.kind === "mission")));
-    if (!item) break;
-    await writeFile(tracker.path, applyEdit(text, item.start, item.firstLine, [item.firstLine.replace(/^- \[ \]/, "- [x]"), ...item.body.split("\n").slice(1)].join("\n")), "utf8");
-    ticked.push(item.title);
-  }
+  const whole = tasks.length > 0 && tasks.every(({ task }) => task.status === "passed");
+
+  // Found by its fields rather than by a line stored at approval, because other sessions move
+  // items between lanes while a mission flies. Read and written once, ticking from the bottom
+  // up so the earlier items' line numbers are still good when their turn comes.
+  let text = await readFile(tracker.path, "utf8");
+  const mine = parseTracker(text).sections
+    .flatMap((s) => s.groups.flatMap((g) => g.items))
+    .filter((i) => i.fields.mission === mission.id && !i.checked)
+    .filter((i) => (whole && i.fields.kind === "mission") || passed.has(`${i.fields.milestone ?? ""}\u0000${i.title}`));
+  for (const item of [...mine].sort((a, b) => b.start - a.start)) text = setChecked(text, item.start, item.firstLine, true);
+  const ticked = mine.map((i) => i.title);
+  if (ticked.length) await writeFile(tracker.path, text, "utf8");
   const commit = ticked.length ? await commitFile(tracker.path, `console: mission "${mission.name}" done (${ticked.length} items)`) : "no change";
   mission.status = "closed";
   mission.finished = mission.finished ?? new Date().toISOString();
@@ -722,19 +714,36 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
 };
 
 /** What the review gate reads: every task with its commits, its verdict and its findings. */
-export const missionView = async (project: Project, id: string): Promise<Mission & { cost: Cost; findings: Record<string, string>; diffstat: Record<string, string> }> => {
+/**
+ * What the review gate reads. A task that has passed will not change again — its range is
+ * frozen and its findings file is written once — so both are remembered against keys that
+ * cannot go stale. Without this the page's eight-second poll shells out to git once per task,
+ * forever, for a mission that finished hours ago.
+ */
+const frozen = new Map<string, string>();
+const remembered = async (key: string, read: () => Promise<string>, keep: boolean): Promise<string> => {
+  const hit = frozen.get(key);
+  if (hit !== undefined) return hit;
+  const value = await read();
+  if (keep) frozen.set(key, value);
+  return value;
+};
+
+export const missionView = async (project: Project, id: string): Promise<Mission & { findings: Record<string, string>; diffstat: Record<string, string> }> => {
   const mission = await missionOr404(project.id, id);
   const findings: Record<string, string> = {};
   const diffstat: Record<string, string> = {};
-  for (const task of mission.milestones.flatMap((m) => m.tasks)) {
+  const settled = (task: MissionTask) => task.status === "passed" || task.status === "handed-back";
+  await Promise.all(mission.milestones.flatMap((m) => m.tasks).map(async (task) => {
     if (task.review) {
-      const text = await readFile(task.review.file, "utf8").catch(() => null);
+      const text = await remembered(`findings:${task.review.file}`, () => readFile(task.review!.file, "utf8").catch(() => ""), settled(task));
       if (text) findings[task.id] = text;
     }
     if (task.branch) {
-      const { stdout } = await run("git", ["-C", mission.repo, "diff", "--stat", `${task.base ?? mission.branch}..${task.branch}`]).catch(() => ({ stdout: "" }));
-      if (stdout.trim()) diffstat[task.id] = stdout.trim();
+      const from = task.base ?? mission.branch;
+      const stat = await remembered(`diff:${mission.repo}:${from}..${task.branch}`, () => diffStat(mission.repo, from, task.branch!), settled(task) && Boolean(task.base));
+      if (stat) diffstat[task.id] = stat;
     }
-  }
-  return { ...mission, cost: costOf(mission.milestones), findings, diffstat };
+  }));
+  return { ...mission, findings, diffstat };
 };

@@ -135,7 +135,7 @@ export const runStep = async (project: Project, version: string, stepId: string)
   step.started = new Date().toISOString();
   step.notes = undefined;
   if (stepId === "audits") {
-    const records = (await readSessions(config.sessionsDir)).filter((r) => r.role === "develop" && (r.project === project.id || r.project === project.name) && r.claudeId && !r.audit) as SessionRecord[];
+    const records = (await readSessions(config.sessionsDir)).filter((r) => r.role === "develop" && (r.project === project.id || r.project === project.name) && r.claudeId && !r.audit && !r.mission) as SessionRecord[];
     const started: string[] = [];
     for (const r of records) {
       try {

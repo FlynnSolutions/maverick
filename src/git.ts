@@ -135,15 +135,6 @@ export const ensureWorktree = async (repoPath: string, path: string, branch: str
   await run("git", ["-C", repoPath, "worktree", "add", path, branch]);
 };
 
-/** Drop a worktree and the directory with it; a worktree that is already gone is not an error. */
-export const removeWorktree = async (repoPath: string, path: string): Promise<void> => {
-  try {
-    await run("git", ["-C", repoPath, "worktree", "remove", "--force", path]);
-  } catch (err) {
-    if (!/is not a working tree|No such file/i.test((err as { stderr?: string }).stderr ?? "")) throw err;
-  }
-};
-
 /** Commit subjects on `branch` that `base` does not have, oldest first. Empty means the branch did nothing. */
 export const commitsAhead = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
   const { stdout } = await run("git", ["-C", repoPath, "log", "--reverse", "--format=%h %s", `${base}..${branch}`]);
@@ -165,4 +156,26 @@ export const mergeInto = async (worktreePath: string, branch: string, message: s
   }
   const { stdout: sha } = await run("git", ["-C", worktreePath, "rev-parse", "--short", "HEAD"]);
   return { merged: true, sha: sha.trim() };
+};
+
+/** `<branch>` as a full sha, from the repo rather than from any worktree. */
+export const revParse = async (repoPath: string, rev: string): Promise<string> =>
+  (await run("git", ["-C", repoPath, "rev-parse", rev])).stdout.trim();
+
+/** `git diff --stat a..b`, empty when the range is empty or either end is missing. */
+export const diffStat = async (repoPath: string, from: string, to: string): Promise<string> => {
+  const { stdout } = await run("git", ["-C", repoPath, "diff", "--stat", `${from}..${to}`]).catch(() => ({ stdout: "" }));
+  return stdout.trim();
+};
+
+/**
+ * Start a background Claude session and return the id it prints. The only spawner that takes
+ * an `--agent`, so it is the one to promote if the three inline copies in server.ts, audits.ts
+ * and ships.ts are ever folded in.
+ */
+export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string): Promise<string> => {
+  const { stdout } = await run("claude", ["--bg", ...(agent ? ["--agent", agent] : []), "--name", name.slice(0, 60), "--permission-mode", "auto", prompt], { cwd });
+  const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
+  if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);
+  return id;
 };
