@@ -196,14 +196,14 @@ session, and a claude that inherits those markers stops saving its transcript.
 
 **Usage is a provider widget.** `web/providers/claude.js` owns everything Claude-specific
 about limits, so another provider can sit beside it with the same `mount(root, ctx)`
-shape. The baby pill shows the open 5-hour window (all models and Fable) with when it
-resets, and the rolling week; open it for per-family rows, load per hour for the last 24
-and per week for the last 8, and a Calibrate tab. The 5-hour window is reconstructed from
-the transcripts: it opens at the first message after the previous window lapsed, so the
-reset is known to within the hour. Claude Code does not store the plan's quota, so the
-widget shows load (output × 4 + input + cache writes + cache reads ÷ 10) until you press
-"this is the limit" the moment Claude reports a window used up; from then on that window
-reads as a percentage (limits saved to `usage-limits.json`).
+shape. The numbers are Claude's own: `src/claude-usage.ts` calls the endpoint behind Claude
+Code's `/usage` command with the CLI's OAuth token from the macOS keychain (read inside the
+server, never sent to the page), cached a minute. The pill shows the 5-hour window with its
+reset time, the week, and any per-model weekly scope, coloured by Claude's severity; the
+panel's Now tab lists each limit with "resets in", and the 5-hour and week tabs show what
+consumed them, load per hour and per week by model family from the transcripts (load is
+output × 4 + input + cache writes + cache reads ÷ 10). If the endpoint is unreachable the
+widget falls back to that load with a Calibrate tab (`usage-limits.json`).
 
 ## How a tracker is read
 

@@ -245,15 +245,48 @@ const calibrate = (cur, limits, onSave) => {
   return wrap;
 };
 
+/** "3h 56m" until an ISO time, or "" once passed. */
+const until = (iso) => {
+  if (!iso) return "";
+  const ms = Date.parse(iso) - Date.now();
+  if (ms <= 0) return "now";
+  const h = Math.floor(ms / HOUR);
+  const m = Math.round((ms % HOUR) / 60000);
+  return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : h ? `${h}h ${m}m` : `${m}m`;
+};
+const when = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay ? clock(d.getTime()) : d.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+};
+
+/** A limit row from Claude's own numbers: name, meter by severity, percent, reset. */
+const limitName = (l) => (l.kind === "session" ? "5-hour window" : l.kind === "weekly_all" ? "Weekly · all models" : l.scope?.model?.display_name ? `Weekly · ${l.scope.model.display_name}` : `Weekly · ${l.kind}`);
+const liveMeter = (l) => {
+  const tone = l.severity === "critical" || l.percent >= 90 ? "threat" : l.severity === "warning" || l.percent >= 70 ? "caution" : "";
+  return el("span", { class: `cu-meter ${tone}`, style: `--c:${l.kind === "session" ? "var(--ink)" : "var(--model-opus)"}`, title: `${l.percent}% used` }, el("i", { style: `width:${Math.min(100, l.percent)}%` }));
+};
+const liveRows = (limits) =>
+  el("div", { class: "cu-rows" }, ...limits.map((l) =>
+    el("div", { class: `cu-row${l.kind === "session" ? " all" : ""}` },
+      el("span", { class: "name" }, limitName(l)),
+      liveMeter(l),
+      el("span", { class: "pct" }, `${l.percent}%`),
+      el("span", { class: "nums" }, l.resets_at ? `resets in ${until(l.resets_at)} · ${when(l.resets_at)}` : "no reset scheduled"))));
+
 /**
  * Mount the widget. `ctx.api(path)` and `ctx.post(path, body)` are the page's fetch helpers.
- * Renders the baby widget into `root`; the full panel opens as a sheet under it.
+ * Renders the baby widget into `root`; the full panel opens as a sheet under it. Claude's own
+ * numbers lead; the transcript-derived load explains what is consuming them; the calibration
+ * proxy only appears when the endpoint cannot be reached.
  */
 export const mount = (root, ctx) => {
   let data = null;
+  let live = null;
   let limits = null;
   let open = false;
-  let tab = "five";
+  let tab = "now";
 
   const current = () => {
     const win = currentWindow(data.hourly);
@@ -261,66 +294,85 @@ export const mount = (root, ctx) => {
     for (const f of FAMILIES) five[f] = 0;
     return { five: win ?? five, win, week: windowLoad(data.hourly, 168) };
   };
+  const liveLimits = () => (live?.data?.limits ?? []).slice().sort((a, b) => (a.kind === "session" ? -1 : b.kind === "session" ? 1 : 0));
+
+  const pill = (children, title) =>
+    el("button", { type: "button", class: `cu-baby${open ? " open" : ""}`, "aria-expanded": open ? "true" : "false", "aria-label": title, title, onclick: () => { open = !open; paint(); } }, el("span", { class: "brand" }, "Claude"), ...children, el("span", { class: "chev" }, open ? "▴" : "▾"));
 
   const baby = () => {
+    const ls = liveLimits();
+    if (ls.length) {
+      const session = ls.find((l) => l.kind === "session");
+      const cells = ls.map((l) =>
+        el("span", { class: "cell" },
+          el("span", { class: "k" }, l.kind === "session" ? "5h" : l.kind === "weekly_all" ? "week" : l.scope?.model?.display_name ?? l.kind),
+          liveMeter(l),
+          el("span", { class: "v" }, `${l.percent}%`),
+          l === session && l.resets_at ? el("span", { class: "reset" }, `resets ${when(l.resets_at)}`) : null));
+      return pill(cells, `Claude usage from Claude: ${ls.map((l) => `${limitName(l)} ${l.percent}%${l.resets_at ? `, resets ${when(l.resets_at)}` : ""}`).join("; ")}`);
+    }
+    // Fallback: the transcript-derived load against your own calibration.
     const cur = current();
     const peak = peaks(data.hourly);
-    const five = baselineFor(limits, peak, "five", "all");
-    const week = baselineFor(limits, peak, "week", "all");
-    const fable = baselineFor(limits, peak, "five", "fable");
     const set = (win, f) => Boolean(limitFor(limits, peak, win, f));
-    const readout = `5-hour ${pctText(cur.five.all, five, set("five", "all"))}${cur.win ? ` (${cur.win.resetText})` : " (window clear)"}, Fable ${pctText(cur.five.fable, fable, set("five", "fable"))}, week ${pctText(cur.week.all, week, set("week", "all"))}`;
-    return el(
-      "button",
-      {
-        type: "button", class: `cu-baby${open ? " open" : ""}`, "aria-expanded": open ? "true" : "false",
-        "aria-label": `Claude usage: ${readout}${set("five", "all") ? "" : " (no limits set)"}`,
-        title: set("five", "all") ? "Claude usage against your limits. Click for the hourly and weekly picture." : "Claude usage against your highest windows so far (no limits set yet). Click for the hourly and weekly picture.",
-        onclick: () => { open = !open; paint(); },
-      },
-      el("span", { class: "brand" }, "Claude"),
+    const five = baselineFor(limits, peak, "five", "all");
+    return pill([
       el("span", { class: "cell" }, el("span", { class: "k" }, "5h"), set("five", "all") ? meter(cur.five.all, five, FAMILY_COLOUR.all, true) : null, el("span", { class: "v" }, pctText(cur.five.all, five, set("five", "all"))), el("span", { class: "reset" }, cur.win ? cur.win.resetText : "window clear")),
-      el("span", { class: "cell" }, el("span", { class: "k" }, "Fable"), set("five", "fable") ? meter(cur.five.fable, fable, FAMILY_COLOUR.fable, true) : null, el("span", { class: "v" }, pctText(cur.five.fable, fable, set("five", "fable")))),
-      el("span", { class: "cell" }, el("span", { class: "k" }, "week"), set("week", "all") ? meter(cur.week.all, week, FAMILY_COLOUR.all, true) : null, el("span", { class: "v" }, pctText(cur.week.all, week, set("week", "all")))),
-      el("span", { class: "chev" }, open ? "▴" : "▾"),
-    );
+      el("span", { class: "cell" }, el("span", { class: "k" }, "week"), el("span", { class: "v" }, fmt(cur.week.all))),
+      el("span", { class: "reset" }, live?.error ? "Claude's numbers unavailable" : "load only"),
+    ], `Claude usage (load from transcripts; Claude's own numbers unavailable${live?.error ? `: ${live.error}` : ""}). Click for details.`);
   };
 
   const panel = () => {
     const cur = current();
     const peak = peaks(data.hourly);
-    const isFive = tab === "five";
-    const tabs = el(
-      "div",
-      { class: "cu-tabs" },
-      el("button", { type: "button", class: isFive ? "on" : "", onclick: () => { tab = "five"; paint(); } }, "5-hour window"),
+    const ls = liveLimits();
+    const session = ls.find((l) => l.kind === "session");
+    const weekly = ls.find((l) => l.kind === "weekly_all");
+    const tabs = el("div", { class: "cu-tabs" },
+      el("button", { type: "button", class: tab === "now" ? "on" : "", onclick: () => { tab = "now"; paint(); } }, "Now"),
+      el("button", { type: "button", class: tab === "five" ? "on" : "", onclick: () => { tab = "five"; paint(); } }, "5-hour window"),
       el("button", { type: "button", class: tab === "week" ? "on" : "", onclick: () => { tab = "week"; paint(); } }, "This week"),
-      el("button", { type: "button", class: tab === "limits" ? "on" : "", onclick: () => { tab = "limits"; paint(); } }, "Calibrate"),
+      ls.length ? null : el("button", { type: "button", class: tab === "limits" ? "on" : "", onclick: () => { tab = "limits"; paint(); } }, "Calibrate"),
       el("span", { class: "spacer" }),
-      el("span", { class: "muted small mono" }, `scanned ${new Date(data.scannedAt).toLocaleTimeString()}`),
+      el("span", { class: "muted small mono" }, live?.fetchedAt && !live.error ? `Claude ${new Date(live.fetchedAt).toLocaleTimeString()} · load ${new Date(data.scannedAt).toLocaleTimeString()}` : `load ${new Date(data.scannedAt).toLocaleTimeString()}`),
     );
     const body = el("div", { class: "cu-body" });
-    if (tab === "limits") body.append(calibrate(cur, limits, async (win, f, value) => {
-      const next = { five: { ...(limits?.five ?? {}) }, week: { ...(limits?.week ?? {}) } };
-      if (value === null) delete next[win][f];
-      else next[win][f] = value;
-      limits = await ctx.post("/api/usage/limits", next);
-      paint();
-    }));
-    else if (isFive) {
+    if (tab === "now") {
+      if (ls.length) {
+        body.append(
+          el("p", { class: "cu-lede" }, `Claude's own numbers for your ${live.subscription ?? ""} plan: the same figures its /usage screen shows. The 5-hour window is a rolling session; the weekly limits roll over seven days, with the heavy model metered on its own.`),
+          liveRows(ls),
+        );
+        const rows = live.data?.seven_day_breakdown?.rows?.filter((r) => r.percent > 0) ?? [];
+        if (rows.length > 1) body.append(el("h4", {}, "Where this week went"), el("div", { class: "cu-legend" }, ...rows.map((r) => el("span", {}, `${r.display_name} ${r.percent}%`))));
+      } else {
+        body.append(el("p", { class: "cu-lede" }, `Claude's own numbers are unavailable${live?.error ? ` (${live.error})` : ""}. What follows is load read from the transcripts.`), rows("five", cur.five, limits, peak));
+      }
+    } else if (tab === "limits") {
+      body.append(calibrate(cur, limits, async (win, f, value) => {
+        const next = { five: { ...(limits?.five ?? {}) }, week: { ...(limits?.week ?? {}) } };
+        if (value === null) delete next[win][f];
+        else next[win][f] = value;
+        limits = await ctx.post("/api/usage/limits", next);
+        paint();
+      }));
+    } else if (tab === "five") {
       body.append(
-        el("p", { class: "cu-lede" }, `Claude's 5-hour window opens at your first message and ${cur.win ? `${cur.win.resetText.replace("resets", "closes")} (it opened around ${clock(cur.win.start)})` : "is not open right now: nothing has been sent since the last one lapsed"}. Fable and Opus draw it down fastest.${limitFor(limits, peak, "five", "all") ? "" : " No limit is set yet, so this is load, not a percentage: see Calibrate."}`),
-        rows("five", cur.five, limits, peak),
+        el("p", { class: "cu-lede" }, session
+          ? `${session.percent}% of the 5-hour window used; it resets in ${until(session.resets_at)} (${when(session.resets_at)}). Below, what has been consuming it: load per hour, by model family, from the transcripts.`
+          : `Claude's 5-hour window opens at your first message and ${cur.win ? `${cur.win.resetText.replace("resets", "closes")} (it opened around ${clock(cur.win.start)})` : "is not open right now"}. Load per hour, by model family.`),
         el("h4", {}, "Load per hour, last 24"),
-        hourChart(data.hourly, 24, limitFor(limits, peak, "five", "all") ? limitFor(limits, peak, "five", "all") / 5 : null),
+        hourChart(data.hourly, 24, null),
         legend(),
       );
     } else {
       body.append(
-        el("p", { class: "cu-lede" }, `Claude's weekly limit resets once a week at a time it keeps; Maverick cannot see that time, so this is the last 7 days rolling, then the last eight calendar weeks. Heavy models have their own, smaller allowance.${limitFor(limits, peak, "week", "all") ? "" : " No limit is set yet, so these are load, not percentages: see Calibrate."}`),
-        rows("week", cur.week, limits, peak),
+        el("p", { class: "cu-lede" }, weekly
+          ? `${weekly.percent}% of the week used; it resets in ${until(weekly.resets_at)} (${when(weekly.resets_at)}).${ls.filter((l) => l.kind === "weekly_scoped").map((l) => ` ${l.scope?.model?.display_name ?? "Scoped"}: ${l.percent}% of its own weekly allowance.`).join("")} Below, load per week by model family, from the transcripts.`
+          : "Claude's weekly limit resets once a week at a time it keeps. Load per week by model family, from the transcripts."),
         el("h4", {}, "Load per week, last 8"),
-        weekChart(data.weekly, limitFor(limits, peak, "week", "all")),
+        weekChart(data.weekly, null),
         legend(),
       );
     }
@@ -336,7 +388,7 @@ export const mount = (root, ctx) => {
   };
 
   const load_ = async () => {
-    [data, limits] = await Promise.all([ctx.api("/api/usage"), ctx.api("/api/usage/limits")]);
+    [data, live, limits] = await Promise.all([ctx.api("/api/usage"), ctx.api("/api/usage/live").catch((err) => ({ fetchedAt: new Date().toISOString(), error: err.message })), ctx.api("/api/usage/limits")]);
     paint();
   };
   paint();

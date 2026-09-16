@@ -24,6 +24,7 @@ import { usage } from "./src/usage.ts";
 import { readTranscript } from "./src/transcript-view.ts";
 import { backgroundAgents } from "./src/git.ts";
 import { focusApp, parentChain, processHome } from "./src/processes.ts";
+import { liveUsage } from "./src/claude-usage.ts";
 import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
@@ -321,6 +322,8 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     return;
   }
   if (method === "GET" && path === "/api/usage") return sendJson(res, 200, await usage(url.searchParams.has("refresh")));
+  // Claude's own view of the plan's windows, from the endpoint behind the CLI's /usage command.
+  if (method === "GET" && path === "/api/usage/live") return sendJson(res, 200, await liveUsage(url.searchParams.has("refresh")));
   // Plan limits are not stored anywhere by Claude Code; the widget keeps what Cory enters.
   if (path === "/api/usage/limits") {
     const file = join(config.projectsFile, "..", "usage-limits.json");
