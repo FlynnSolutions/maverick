@@ -672,7 +672,7 @@ export const mountCommandCenter = (root, ctx) => {
       status,
       name: el("h4", { class: "strip-name" }, m.name),
       state: MISSION_SAYS[m.status] ?? m.status,
-      note: m.trouble ? clip(m.trouble, 90) : null,
+      note: m.escalation ? clip(m.escalation, 90) : m.trouble ? clip(m.trouble, 90) : null,
       when: age(Date.parse(m.approved ?? m.created)),
       where: tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "),
       acts: [el("button", { type: "button", class: "act", title: "open this mission", onclick: openMission }, "open")],

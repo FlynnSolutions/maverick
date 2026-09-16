@@ -78,6 +78,8 @@ export interface Milestone {
   /** The merge commit per repo, since a milestone can land work in more than one. */
   mergeShas?: Record<string, string>;
   conflicts?: string[];
+  /** The Strike Lead sent in to reconcile a conflict. One per milestone; after that it is Cory's. */
+  resolve?: { claudeId: string; repo: string; branch: string; started: string; paths: string[] };
 }
 
 /** One repo a mission touches. A single-repo project has exactly one of these, labelled "root". */
@@ -120,6 +122,16 @@ export interface Mission {
   /** The commit that wrote the plan into that tracker. */
   planCommit?: string;
   milestones: Milestone[];
+  /** Bumped on every write. A write carrying a stale one is refused; see `writeMission`. */
+  rev?: number;
+  /** How many milestones this mission has had to reconcile. A plan whose tasks overlap shows up here. */
+  conflictsSeen?: number;
+  /**
+   * What the mission could not settle on its own, for a person and eventually for the CAG. A
+   * mission that keeps colliding is a planning problem, not a merge problem, and the level
+   * that owns the plan is the one that can fix it.
+   */
+  escalation?: string;
   /** Anything the sweep could not do, kept so the page can say it rather than swallow it. */
   trouble?: string;
 }
@@ -150,9 +162,32 @@ export const listMissions = async (projectId: string): Promise<Mission[]> => {
   return all.sort((a, b) => b.created.localeCompare(a.created));
 };
 
+/**
+ * The whole record is read, changed and written back, and the sweep holds its copy across
+ * minutes of `git merge` and `claude --bg`. Cory pressing a button in that window used to lose:
+ * the sweep would finish and write its stale copy over the abandon, leaving dead agents and a
+ * console insisting the mission was live.
+ *
+ * So every write carries the `rev` it was read at, and a write whose `rev` no longer matches
+ * disk is refused. The two sides then differ in what they do about it, deliberately:
+ *
+ * - a person's action retries against the fresh record, because they asked for it and it is a
+ *   handful of milliseconds' work to redo;
+ * - the sweep drops its pass entirely, because everything it does is idempotent and the next
+ *   pass sixty seconds later sees the truth. The machine yields to the person, always.
+ */
+export class StaleMissionError extends Error {}
+
 const writeMission = async (mission: Mission): Promise<Mission> => {
-  await mkdir(missionsDir(mission.project), { recursive: true });
-  await writeFile(missionPath(mission.project, mission.id), `${JSON.stringify(mission, null, 2)}\n`, "utf8");
+  const onDisk = await readMission(mission.project, mission.id);
+  if (onDisk && (onDisk.rev ?? 0) !== (mission.rev ?? 0)) {
+    throw new StaleMissionError(`${mission.name} changed underneath this write (rev ${mission.rev ?? 0}, disk ${onDisk.rev ?? 0})`);
+  }
+  const next = { ...mission, rev: (mission.rev ?? 0) + 1 };
+  await mkdir(missionsDir(next.project), { recursive: true });
+  await writeFile(missionPath(next.project, next.id), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  // The caller keeps working with the object it already holds, so it has to move with it.
+  mission.rev = next.rev;
   return mission;
 };
 
@@ -161,6 +196,28 @@ const missionOr404 = async (projectId: string, id: string): Promise<Mission> => 
   if (!mission) throw new Error(`no mission "${id}" in ${projectId}`);
   return mission;
 };
+
+/**
+ * One person-driven change to a mission: read it fresh, change it, write it. If the sweep wrote
+ * in between, the whole thing is done again against the new record rather than merged, because
+ * a retry here is cheap and a half-applied change is not.
+ */
+const changeMission = async <T>(projectId: string, id: string, change: (mission: Mission) => Promise<T> | T): Promise<T> => {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const mission = await missionOr404(projectId, id);
+    try {
+      const result = await change(mission);
+      await writeMission(mission);
+      return result;
+    } catch (err) {
+      if (!(err instanceof StaleMissionError) || attempt === 3) throw err;
+    }
+  }
+  throw new StaleMissionError(`${id} would not settle long enough to change; try again`);
+};
+
+/** Exposed for the store's tests, which need to write a deliberately stale copy. */
+export const __writeMissionForTest = writeMission;
 
 /* ---------- the plan, as the Strike Lead must write it ---------- */
 
@@ -512,6 +569,27 @@ const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: Mi
  * a hand-driven retry rewinds that, and a colliding path meant the sweep read the previous
  * RIO's "fail" the moment the new Wingman finished, before the new RIO had written a word.
  */
+/**
+ * A conflict is the Strike Lead's to answer, because a conflict is a fact about the plan it
+ * wrote: two tasks it put in one milestone touched the same lines. It goes into the repo's
+ * integration worktree, where the merge is already staged, and either finishes it or says it
+ * cannot. It never touches a base branch and it never resolves by discarding a side.
+ */
+const resolvePrompt = (project: Project, mission: Mission, m: Milestone, repo: MissionRepo, branch: string, paths: string[]): string => [
+  `You are the Strike Lead for the mission "${mission.name}" in the project at ${project.path}, and you are cleaning up after your own plan.`,
+  "",
+  `Milestone ${m.n} — ${m.title} — will not merge. Merging ${branch} into ${repo.branch} in the ${repo.label} repo conflicted on:`,
+  ...paths.map((f) => `  - ${f}`),
+  "",
+  `Work in ${repo.integration}, which is checked out on ${repo.branch}. Re-run the merge yourself (\`git merge --no-ff ${branch}\`), resolve every conflict, and commit it.`,
+  "",
+  "Both sides are work this mission asked for, so keep both behaviours. Do not resolve by taking one side wholesale, do not `git checkout --ours` or `--theirs` to make it go away, and do not revert either task's commits. If the two genuinely cannot coexist, abort the merge (`git merge --abort`), change nothing, and say so plainly: that is a fact about the plan and Cory needs it, not a guess.",
+  "",
+  `Do not touch ${repo.base} or any other repo. Do not push. Do not open a pull request. Do not spawn anything.`,
+  "",
+  "When the merge is committed, or when you have aborted it, stop.",
+].join("\n");
+
 const reviewFile = (mission: Mission, task: MissionTask): string =>
   join(missionsDir(mission.project), `${mission.id}-${task.id}-review${task.reviews ?? 1}.md`);
 
@@ -635,6 +713,9 @@ const sweepOnce = async (project: Project): Promise<void> => {
     for (const m of mission.milestones) {
       if (!m.dispatched || m.merged) continue;
       for (const task of m.tasks) {
+        // Between two expensive steps Cory may have pulled the brake; nothing more is spawned
+        // for a mission that is no longer flying, whatever this pass still believes.
+        if ((await readMission(mission.project, mission.id))?.status !== "flying") return;
         // A session id only exists once the agent listing knows about it; the formation wants
         // that one. An agent can be listed without one, so read it rather than test for the key.
         const sessionId = task.claudeId ? agents.get(task.claudeId)?.sessionId : undefined;
@@ -693,6 +774,26 @@ const sweepOnce = async (project: Project): Promise<void> => {
           }
         }
       }
+      // A Strike Lead sent in to reconcile a collision: wait for it, then look at the branch
+      // rather than at what it said about itself. Either the merge is committed or it is not.
+      if (m.resolve) {
+        if (!isOver(state, m.resolve.claudeId, m.resolve.started)) continue;
+        const repo = mission.repos.find((r) => r.label === m.resolve!.repo);
+        const settled = repo ? await commitsAhead(repo.path, m.resolve.branch, repo.branch).catch(() => []) : [];
+        if (settled.length) {
+          // The branch it was merging is now an ancestor of the mission branch: it landed.
+          m.mergeShas = { ...(m.mergeShas ?? {}), [m.resolve.repo]: await revParse(repo!.path, repo!.branch).then((sha) => sha.slice(0, 7)).catch(() => "merged") };
+          m.conflicts = undefined;
+          m.resolve = undefined;
+          mission.trouble = undefined;
+        } else {
+          mission.status = "blocked";
+          mission.trouble = `milestone ${m.n} collided in ${m.resolve.repo} and the Strike Lead could not reconcile it: ${(m.resolve.paths ?? []).join(", ")}. Both sides are work the plan asked for, so this is a question about the plan.`;
+          m.resolve = undefined;
+          await writeMission(mission).catch(() => undefined);
+          return;
+        }
+      }
       if (m.tasks.length && m.tasks.every((t) => t.status === "passed")) {
         // Each task lands on its own repo's mission branch: a milestone can span repos, and
         // a conflict in one must not leave another half-applied.
@@ -702,10 +803,30 @@ const sweepOnce = async (project: Project): Promise<void> => {
           const repo = missionRepo(mission, task);
           const result = await mergeInto(repo.integration, task.branch!, `mission ${mission.id}: ${task.title}`);
           if (!result.merged) {
-            m.conflicts = (result.conflicts ?? []).map((f) => `${repo.label}/${f}`);
-            mission.status = "blocked";
-            mission.trouble = `milestone ${m.n} will not merge into ${repo.label}: ${m.conflicts.join(", ") || "unknown conflict"}`;
-            await writeMission(mission);
+            const paths = result.conflicts ?? [];
+            m.conflicts = paths.map((f) => `${repo.label}/${f}`);
+            mission.conflictsSeen = (mission.conflictsSeen ?? 0) + 1;
+            // One attempt by the Strike Lead per milestone. A second is not more likely to work
+            // and a loop of agents on a collision is exactly what nobody asked for.
+            if (!m.resolve) {
+              try {
+                const claudeId = await spawnBackgroundAgent(repo.integration, `Strike Lead · resolve m${m.n}`, resolvePrompt(project, mission, m, repo, task.branch!, paths));
+                m.resolve = { claudeId, repo: repo.label, branch: task.branch!, started: new Date().toISOString(), paths: m.conflicts };
+                agentCache.delete(project.path);
+                mission.trouble = `milestone ${m.n} collided in ${repo.label}; the Strike Lead is reconciling it`;
+              } catch (err) {
+                mission.status = "blocked";
+                mission.trouble = `milestone ${m.n} will not merge into ${repo.label} and the Strike Lead could not be sent in: ${(err as Error).message}`;
+              }
+            } else {
+              mission.status = "blocked";
+              mission.trouble = `milestone ${m.n} still will not merge into ${repo.label} after the Strike Lead tried: ${m.conflicts.join(", ") || "unknown conflict"}`;
+            }
+            // Three collisions is a plan whose milestones overlap, which is a level up from here.
+            if ((mission.conflictsSeen ?? 0) >= 3) {
+              mission.escalation = `${mission.conflictsSeen} milestones of this mission have collided. That is the plan putting work that touches the same lines into one milestone, not a merge that needs redoing. The plan is the thing to change.`;
+            }
+            await writeMission(mission).catch(() => undefined);
             return;
           }
           if (result.sha) m.mergeShas[repo.label] = result.sha;
@@ -730,13 +851,19 @@ const sweepOnce = async (project: Project): Promise<void> => {
         mission.trouble = m.tasks.filter((t) => t.status === "handed-back").map((t) => `${t.title}: ${t.note ?? `the RIO said ${t.verdict}`}`).join(" · ");
       }
     }
+    // Everything above is idempotent, so losing this write costs one pass, not the work.
     if (waiting.length && mission.status === "flying") mission.trouble = waiting.join(" · ");
     // One formation write per pass rather than one per task that gained a session id.
     if (seated && mission.formation) await updateFormation(mission.formation, { members: memberIds(mission) }).catch(() => undefined);
     // The Strike Lead only reaches Claude Code's session registry once its session has done something,
     // which can be well after the formation was made; keep offering it the lead seat.
     await seatTheLead(mission).catch(() => undefined);
-    await writeMission(mission);
+    try {
+      await writeMission(mission);
+    } catch (err) {
+      if (!(err instanceof StaleMissionError)) throw err;
+      console.log(`mission sweep yielded ${mission.id} to a change made while it ran; the next pass picks it up`);
+    }
   }
 };
 
@@ -769,23 +896,25 @@ const seatTheLead = async (mission: Mission): Promise<void> => {
  * thing that costs twelve times a normal session has to be one call, not one per agent.
  */
 export const abandonMission = async (project: Project, id: string, stop: (claudeId: string) => Promise<void>): Promise<{ mission: Mission; stopped: string[] }> => {
-  const mission = await missionOr404(project.id, id);
-  const stopped: string[] = [];
-  for (const task of mission.milestones.flatMap((m) => m.tasks)) {
-    for (const live of [task.status === "flying" ? task.claudeId : undefined, task.status === "reviewing" ? task.review?.claudeId : undefined]) {
-      if (!live) continue;
-      await stop(live).then(() => stopped.push(live)).catch(() => undefined);
+  let stopped: string[] = [];
+  const mission = await changeMission(project.id, id, async (mission) => {
+    // Rebuilt per attempt: a retry against a fresher record must not count a session twice.
+    stopped = [];
+    for (const task of mission.milestones.flatMap((m) => m.tasks)) {
+      const live = task.status === "reviewing" ? task.review?.claudeId : task.status === "flying" ? task.claudeId : undefined;
+      if (live) await stop(live).then(() => stopped.push(live)).catch(() => undefined);
+      if (task.status === "flying" || task.status === "reviewing" || task.status === "built") {
+        task.status = "handed-back";
+        task.note = "stopped when the mission was abandoned";
+      }
     }
-    if (task.status === "flying" || task.status === "reviewing" || task.status === "built") {
-      task.status = "handed-back";
-      task.note = "stopped when the mission was abandoned";
-    }
-  }
-  mission.status = "abandoned";
-  mission.finished = mission.finished ?? new Date().toISOString();
-  // The branches and their worktrees are deliberately left: whatever was built is still there.
-  mission.trouble = `abandoned; ${stopped.length} session(s) stopped. The branches and worktrees are untouched.`;
-  return { mission: await writeMission(mission), stopped };
+    mission.status = "abandoned";
+    mission.finished = mission.finished ?? new Date().toISOString();
+    // The branches and their worktrees are deliberately left: whatever was built is still there.
+    mission.trouble = `abandoned; ${stopped.length} session(s) stopped. The branches and worktrees are untouched.`;
+    return mission;
+  });
+  return { mission, stopped };
 };
 
 /**
@@ -830,18 +959,18 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
 };
 
 /** Accept a task Cory has looked at himself, so a milestone its RIO failed can still merge. */
-export const acceptTask = async (project: Project, id: string, taskId: string, note: string): Promise<Mission> => {
-  const mission = await missionOr404(project.id, id);
-  const task = mission.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId);
-  if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
-  if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; accepting a task now would resurrect it`);
-  task.status = "passed";
-  task.note = `accepted by Cory over the RIO: ${note}`.trim();
-  if (task.claudeId) await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { decision: "accepted" });
-  mission.status = "flying";
-  mission.trouble = undefined;
-  return writeMission(mission);
-};
+export const acceptTask = async (project: Project, id: string, taskId: string, note: string): Promise<Mission> =>
+  changeMission(project.id, id, async (mission) => {
+    const task = mission.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId);
+    if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+    if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; accepting a task now would resurrect it`);
+    task.status = "passed";
+    task.note = `accepted by Cory over the RIO: ${note}`.trim();
+    if (task.claudeId) await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { decision: "accepted" });
+    mission.status = "flying";
+    mission.trouble = undefined;
+    return mission;
+  });
 
 /**
  * Close the mission: tick every passed task's item in the tracker, in one commit, and hand the

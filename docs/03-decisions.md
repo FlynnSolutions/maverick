@@ -194,3 +194,32 @@ onto a base ([M8](#m8--maverick-merges-a-mission-into-its-own-branch-never-into-
 
 **Consequence:** a repo the plan does not name gets no branch, which matters when a project holds
 eleven of them and a mission touches three.
+
+## M11 — The sweep yields to the person, and a collision is the Strike Lead's to answer ✅ built
+
+**Every write carries the revision it was read at.** The sweep holds its copy of a mission
+across minutes of `git merge` and `claude --bg`; a write whose revision no longer matches disk
+is refused. A person's action retries against the fresh record, because they asked for it. The
+sweep drops its pass, because everything it does is idempotent and the next pass sixty seconds
+later sees the truth.
+
+**Safety-load-bearing:** without this, pressing *stop this mission* during a sweep lost. The
+sweep would finish and write its stale copy back: agents dead, console insisting the mission was
+flying, and ninety seconds later a RIO spawned onto a half-written branch. A brake that does not
+hold is worse than no brake, because it is believed. There is a test that reproduces it.
+
+**Rejected: holding a lock for the whole pass.** A sweep's pass is minutes long, so the brake
+would block behind the thing it is meant to stop.
+
+**A merge conflict goes to the Strike Lead, once.** A conflict is a fact about the plan — two
+tasks the lead put in one milestone touched the same lines — so the lead reconciles it in the
+integration worktree, keeping both behaviours or aborting and saying why. It never resolves by
+taking a side, never touches a base branch, and the sweep judges it by the branch rather than by
+what it said about itself. One attempt per milestone: a second is no likelier to work, and a
+loop of agents on a collision is nobody's idea of progress.
+
+**Three collisions in one mission stops being a merge problem.** It is a plan putting
+overlapping work into one milestone, which is a level above the mission. It is recorded as an
+escalation on the record and drawn as such, for Cory now and for the **CAG** when that exists
+([M9](#m9--the-levels-take-the-carriers-own-names--decided)): the level that owns the plan is
+the one that can fix it.
