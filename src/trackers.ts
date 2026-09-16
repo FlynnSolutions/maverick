@@ -9,7 +9,7 @@
 export type ColumnId = "priority" | "in-progress" | "backlog" | "shipped";
 
 /** Structured lines an item may carry, as `  - key: value` under its bullet. */
-export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by"] as const;
+export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by", "mission", "milestone"] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
 export interface Item {
@@ -272,6 +272,28 @@ export const addGroup = (text: string, heading: string, name: string): string =>
   while (at > section.start + 1 && (isBlank(lines[at - 1]) || lines[at - 1].trim() === "---")) at -= 1;
   const out = [...lines];
   out.splice(at, 0, "", `### ${name}`, "");
+  return out.join("\n");
+};
+
+/**
+ * Insert a new item at the end of a group. A mission writes its plan this way: every task is
+ * an ordinary item, so the board, the drag and every other session read it without knowing
+ * what a mission is. The caller supplies the whole block, bullet line first.
+ */
+export const addItem = (text: string, heading: string, group: string, block: string): string => {
+  const lines = text.split("\n");
+  const section = parseTracker(text).sections.find((s) => s.heading === heading);
+  if (!section) throw new Error(`no section headed "${heading}"`);
+  const body = block.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n");
+  if (!isBullet(body[0])) throw new Error("the first line must be a bullet (\"- [ ] ...\")");
+  const found = section.groups.find((g) => g.name === group);
+  const insertAt = found?.items.length ? found.items[found.items.length - 1].end : groupBodyStart(lines, section, group);
+  const out = [...lines];
+  const above = insertAt > 0 ? out[insertAt - 1] : "";
+  const below = insertAt < out.length ? out[insertAt] : "";
+  const needsBlankBefore = insertAt > 0 && !isBlank(above);
+  const needsBlankAfter = below.startsWith("#") || below.trim() === "---";
+  out.splice(insertAt, 0, ...(needsBlankBefore ? [""] : []), ...body, ...(needsBlankAfter ? [""] : []));
   return out.join("\n");
 };
 
