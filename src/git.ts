@@ -205,3 +205,26 @@ export const openPullRequest = async (repoPath: string, head: string, base: stri
 export const pushBranch = async (repoPath: string, branch: string): Promise<void> => {
   await run("git", ["-C", repoPath, "push", "--set-upstream", "origin", branch]);
 };
+
+/**
+ * Advance `base` to `branch` on the remote, for a repo whose own process says its work lands
+ * there directly rather than through review. Deliberately narrow:
+ *
+ * - it only ever runs for a repo that opted in by name in the project's own `maverick.json`;
+ * - it refuses unless `branch` already contains every commit on `origin/<base>`, so it can
+ *   only ever fast-forward;
+ * - it never passes `--force` or `--force-with-lease`, so the remote refuses anything else
+ *   regardless of what this thinks;
+ * - a base that has moved is reported and left alone, because reconciling it is a person's
+ *   job, not a sweep's.
+ */
+export const pushFastForward = async (repoPath: string, branch: string, base: string): Promise<string> => {
+  await run("git", ["-C", repoPath, "fetch", "origin", base]);
+  const { stdout: behind } = await run("git", ["-C", repoPath, "rev-list", "--count", `${branch}..origin/${base}`]);
+  if (Number(behind.trim()) > 0) {
+    throw new Error(`${base} is ${behind.trim()} commit(s) ahead of ${branch} in ${repoPath}, so this would not be a fast-forward. Rebase it yourself; nothing here will force it.`);
+  }
+  await run("git", ["-C", repoPath, "push", "origin", `${branch}:${base}`]);
+  const { stdout: sha } = await run("git", ["-C", repoPath, "rev-parse", "--short", branch]);
+  return sha.trim();
+};

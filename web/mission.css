@@ -79,3 +79,14 @@
 .mv-repo { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-faint); margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--panel); }
 .mv-repos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .mv-repos a, .mv-repos span { font-family: var(--mono); font-size: 12px; }
+
+/* What happens to each repo when it is done. The one that reaches a shared branch on its own
+   is drawn as a caution, because it is the only thing here that acts without a second pair of
+   eyes and it must not read like the other two. */
+.mv-lands { display: grid; gap: 6px; margin-top: 12px; }
+.mv-land { display: grid; grid-template-columns: minmax(0, 160px) minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 6px 10px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); }
+.mv-land .r { font-family: var(--mono); font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.mv-land .l { font-size: 12.5px; color: var(--ink-soft); }
+.mv-land.push { box-shadow: inset 0 0 0 1px var(--caution); }
+.mv-land.push .l { color: var(--caution); }
+.mv-warn { margin: 8px 0 0; font-size: 12.5px; color: var(--caution); max-width: 74ch; }

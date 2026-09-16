@@ -14,12 +14,22 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-/** What a finished mission does with its work. */
-export type Landing = "merge" | "pr";
+/**
+ * What a finished mission does with its work.
+ * - `merge` leaves it on the repo's own mission branch, for a person to take from there.
+ * - `pr` pushes the branch and opens a pull request against the base, and merges nothing.
+ * - `push` advances the base to it. Only ever for a repo whose own process already says so,
+ *   and only ever as a per-repo override: Realtime's `contracts` is the shared source of truth
+ *   between its two services and is meant to be on `main` before either starts, while those
+ *   services are under an absolute never-self-merge rule.
+ */
+export type Landing = "merge" | "pr" | "push";
 
 export interface RepoConfig {
   /** The branch a task's work is cut from and lands against. Defaults to the repo's current HEAD branch. */
   base?: string;
+  /** Overrides the mission's landing for this repo alone. See `Landing`. */
+  land?: Landing;
   /** Skip this repo when a mission does not name it. Purely documentation; the plan decides. */
   note?: string;
 }
@@ -45,7 +55,7 @@ export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   implicit: true,
 };
 
-const isLanding = (v: unknown): v is Landing => v === "merge" || v === "pr";
+const isLanding = (v: unknown): v is Landing => v === "merge" || v === "pr" || v === "push";
 
 export const missionConfigFor = async (projectPath: string): Promise<MissionConfig> => {
   let raw: { missions?: Partial<MissionConfig> };

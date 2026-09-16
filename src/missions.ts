@@ -22,7 +22,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { backgroundAgents, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
+import { backgroundAgents, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, pushFastForward, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
 import { slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -88,6 +88,8 @@ export interface MissionRepo {
   branch: string;
   /** A worktree on `branch`, where this repo's milestones are merged together. */
   integration: string;
+  /** What lands this repo. Usually the mission's, but a repo may override it (see `Landing`). */
+  land: Landing;
   /** Set when the mission has landed this repo: a merge sha, or the pull request url. */
   landed?: string;
 }
@@ -256,7 +258,7 @@ export const costOf = (milestones: Milestone[]): Cost => {
 /* ---------- the Strike Lead's interview ---------- */
 
 /** Every repo a mission could touch, with the base branch each one lands against. */
-export const repoChoices = async (project: Project, cfg: MissionConfig): Promise<Array<{ label: string; path: string; base: string }>> => {
+export const repoChoices = async (project: Project, cfg: MissionConfig): Promise<Array<{ label: string; path: string; base: string; land: Landing }>> => {
   const found = await reposUnder(project.path);
   if (!found.length) throw new Error(`${project.name} holds no git repository; a mission needs at least one`);
   return Promise.all(found.map(async (r) => ({
@@ -264,6 +266,7 @@ export const repoChoices = async (project: Project, cfg: MissionConfig): Promise
     // What the project says, else whatever that repo is actually on: a multi-repo project
     // rarely shares one base (contracts on main, services on develop).
     base: cfg.repos[r.label]?.base ?? (await currentBranch(r.path)),
+    land: cfg.repos[r.label]?.land ?? cfg.land,
   })));
 };
 
@@ -273,7 +276,7 @@ const missionRepo = (mission: Mission, task: MissionTask): MissionRepo => {
   return repo;
 };
 
-const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string }>, land: Landing): string => [
+const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
   `You are the Strike Lead for a mission in the project at ${project.path}. A strike lead plans the package, briefs it and sends it; it does not fly every jet in it. Your entire job in this session is the interview and the plan.`,
   "",
   `Cory opened this mission with one line: "${mission.brief}"`,
@@ -303,9 +306,11 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
       ].join("\n")
     : `This project is one git repository, so a task's \`repo\` line is optional; everything lands against ${repos[0]?.base ?? "its current branch"}.`,
   "",
-  land === "pr"
-    ? "This project's own rules forbid merging, so the mission ends by opening one pull request per repo and stopping. Plan for that: the work has to stand up as a reviewable pull request, not just as a green branch."
-    : "A milestone that passes is merged onto the mission's own branch, never onto the base.",
+  [
+    "What happens to the work when a repo is done, which the project decides per repo:",
+    ...repos.map((r) => `  - ${r.label}: ${r.land === "pr" ? `a pull request against ${r.base}, merged by nobody but Cory` : r.land === "push" ? `${r.base} is advanced to it and pushed, because this repo's own process says its work lands there directly` : `left on the mission branch for Cory to take from there`}`),
+    "Plan for that. Work that ends in a pull request has to stand up as a reviewable one, not just as a green branch.",
+  ].join("\n"),
   "",
   "You may read anything and run anything read-only. You may not edit product code, create branches or worktrees, spawn any agent, or touch the trackers: the plan document is the only file you write. Maverick writes the plan into the tracker and dispatches the Wingmen itself, and only after Cory has approved it in the console.",
   "",
@@ -355,7 +360,7 @@ export const reopenInterview = async (project: Project, id: string): Promise<Ter
 };
 
 /** Read the plan the Strike Lead wrote, without committing to it. This is what the gate shows. */
-export const previewPlan = async (project: Project, id: string): Promise<{ found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost }> => {
+export const previewPlan = async (project: Project, id: string): Promise<{ found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost; repos?: Array<{ label: string; base: string; land: Landing }> }> => {
   const mission = await missionOr404(project.id, id);
   let text: string;
   try {
@@ -365,13 +370,16 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
     return { found: false };
   }
   const cfg = await missionConfigFor(project.path);
-  const parsed = parsePlan(text, (await repoChoices(project, cfg)).map((r) => r.label));
+  const choices = await repoChoices(project, cfg);
+  const parsed = parsePlan(text, choices.map((r) => r.label));
   if (!parsed.problems.length && mission.status === "interviewing") {
     mission.status = "planned";
     mission.milestones = parsed.milestones;
     await writeMission(mission);
   }
-  return { found: true, text, parsed, cost: costOf(parsed.milestones) };
+  // Only the repos the plan names, so the gate shows what this mission will actually touch.
+  const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
+  return { found: true, text, parsed, cost: costOf(parsed.milestones), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })) };
 };
 
 /* ---------- the blessing, and the tracker write ---------- */
@@ -435,6 +443,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
     base: r.base,
     branch: `${cfg.branchPrefix}${mission.id}`,
     integration: join(project.path, cfg.worktrees, `${mission.id}-integration-${r.label}`),
+    land: r.land,
   }));
   mission.planCommit = await writePlanToTracker(project, mission, parsed.intro);
   for (const repo of mission.repos) {
@@ -696,7 +705,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
         m.merged = new Date().toISOString();
         // A repo with nothing left to do gets its pull request now rather than at the close, so
         // an earlier repo can be reviewed and merged while the later ones are still flying.
-        if (mission.land === "pr") {
+        if (mission.repos.some((r) => r.land !== "merge")) {
           try {
             await landTheWork(mission, true);
           } catch (err) {
@@ -790,10 +799,10 @@ export const acceptTask = async (project: Project, id: string, taskId: string, n
  * self-merge (Realtime's `CLAUDE.md` says exactly that) must not have a tool merge for it.
  */
 const landTheWork = async (mission: Mission, onlyFinished = false): Promise<string[]> => {
-  if (mission.land !== "pr") return [];
   const opened: string[] = [];
   const all = mission.milestones.flatMap((m) => m.tasks);
   for (const repo of mission.repos) {
+    if (repo.land === "merge") continue;
     if (repo.landed) {
       opened.push(repo.landed);
       continue;
@@ -803,6 +812,11 @@ const landTheWork = async (mission: Mission, onlyFinished = false): Promise<stri
     if (onlyFinished && mine.some((t) => t.status !== "passed")) continue;
     const tasks = mine.filter((t) => t.status === "passed");
     if (!tasks.length) continue;
+    if (repo.land === "push") {
+      repo.landed = `${repo.base}@${await pushFastForward(repo.path, repo.branch, repo.base)}`;
+      opened.push(repo.landed);
+      continue;
+    }
     await pushBranch(repo.path, repo.branch);
     const body = [
       `Mission **${mission.name}**, planned and flown from Maverick.`,

@@ -177,10 +177,21 @@ one. The same argument covers the branch prefix and the base branch.
 shares a base. Realtime's contracts sits on `main` while its services sit on `develop`, so a
 single base would cut half the work from the wrong commit.
 
-**Safety-load-bearing: `land: "pr"`.** Realtime's `CLAUDE.md` says never self-merge, absolutely
-and without exception. A mission there ends by pushing each repo's branch and opening a pull
-request against its base, and stops. `merge` stays the default, and even it only ever merges onto
-the mission's own branch, never onto a base ([M8](#m8--maverick-merges-a-mission-into-its-own-branch-never-into-main--built)).
+**Safety-load-bearing: landing is per repo, and `push` is opt-in by name.** Realtime's
+`CLAUDE.md` says never self-merge, absolutely and without exception, so its services end at a
+pull request and stop. Its `contracts` repo is the opposite case and its own session prompt says
+so: contracts is the one source of truth between the two services and is meant to be on `main`
+before either starts. So `land` is resolved per repo, `push` exists for that case, and a repo
+only gets it by being named in the project's own `maverick.json`.
+
+`push` is deliberately the narrowest thing that works: it fast-forwards only, refuses when the
+base has moved rather than reconciling it, and never passes `--force` or `--force-with-lease`,
+so the remote's own protections decide. The gate draws it as a caution and names the repo and
+branch before Cory approves, because it is the only path here that reaches a shared branch
+without a second pair of eyes.
+
+`merge` stays the default, and even it only ever merges onto the mission's own branch, never
+onto a base ([M8](#m8--maverick-merges-a-mission-into-its-own-branch-never-into-main--built)).
 
 **Consequence:** a repo the plan does not name gets no branch, which matters when a project holds
 eleven of them and a mission touches three.

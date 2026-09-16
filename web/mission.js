@@ -151,6 +151,28 @@ const renderNav = () => {
   nav.replaceChildren(...items);
 };
 
+const LANDS = {
+  merge: (base) => `stays on the mission branch; nothing touches ${base}`,
+  pr: (base) => `a pull request against ${base}, merged by you`,
+  push: (base) => `${base} is advanced to it and pushed`,
+};
+
+/**
+ * What happens to each repo when it is done. `push` is the one that reaches a shared branch
+ * without a person, so it is named loudly here rather than buried in a config file.
+ */
+const reposBand = (repos) => {
+  if (!repos.length) return null;
+  const pushed = repos.filter((r) => r.land === "push");
+  return el("div", { class: "mv-lands" },
+    ...repos.map((r) => el("div", { class: `mv-land ${r.land}` },
+      el("span", { class: "r" }, r.label),
+      el("span", { class: "l" }, LANDS[r.land]?.(r.base) ?? r.land))),
+    pushed.length
+      ? el("p", { class: "mv-warn" }, `${pushed.map((r) => `${r.label} → ${r.base}`).join(", ")}: this one lands on a shared branch without another pair of eyes. It is only ever fast-forwarded, never forced, and it is set in this project's own maverick.json.`)
+      : null);
+};
+
 const costBand = (cost) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "repos"), el("span", { class: "v" }, String(cost.repos ?? 1))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "milestones"), el("span", { class: "v" }, String(cost.milestones))),
@@ -181,6 +203,7 @@ const renderPlan = () => {
     } else {
       gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
         costBand(doc.cost),
+        reposBand(doc.repos ?? []),
         el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
         el("div", { class: "gate-actions" },
           btn("approve and fly", async () => {
@@ -277,7 +300,8 @@ const renderReview = () => {
   const passed = tasks.filter((t) => t.status === "passed");
   const ready = mission.status === "review";
   const closed = mission.status === "closed";
-  const byPr = mission.land === "pr";
+  const byPr = (mission.repos ?? []).some((r) => r.land === "pr");
+  const landsAnywhere = (mission.repos ?? []).some((r) => r.land !== "merge");
   show(
     el("div", { class: "detail-head" }, el("h1", {}, "What the mission built"), el("span", { class: `verdict ${mission.status}` }, mission.status)),
     el("div", { class: "detail-meta" },
@@ -294,12 +318,16 @@ const renderReview = () => {
               ? `Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks the tracker and opens one pull request per repo against its base. It stops there. This project forbids a tool merging, so the merge is yours.`
               : `Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks each passed item in the tracker and hands the branches on; Maverick does not merge a mission to a base, the ship does.`)
           : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
-      (mission.repos ?? []).some((r) => r.landed) ? el("div", { class: "mv-repos" }, el("span", { class: "muted" }, "pull requests:"), ...(mission.repos ?? []).filter((r) => r.landed).map((r) => el("a", { href: r.landed, target: "_blank" }, `${r.label} ↗`))) : null,
+      (mission.repos ?? []).some((r) => r.landed) ? el("div", { class: "mv-repos" }, el("span", { class: "muted" }, "landed:"),
+        ...(mission.repos ?? []).filter((r) => r.landed).map((r) => (r.landed.startsWith("http")
+          ? el("a", { href: r.landed, target: "_blank" }, `${r.label} ↗`)
+          : el("span", { title: `pushed to ${r.base}` }, `${r.label} · ${r.landed}`)))) : null,
       ready ? el("div", { class: "gate-actions" },
-        btn(byPr ? "close it and open the pull requests" : "close the mission and tick its items", async () => {
-          const what = byPr
-            ? `This pushes ${(mission.repos ?? []).length} branch(es) and opens a pull request for each, against its own base. It merges nothing.`
-            : `The mission branches are left for the ship.`;
+        btn(landsAnywhere ? "close it and land the work" : "close the mission and tick its items", async () => {
+          const lands = (mission.repos ?? []).filter((r) => r.land !== "merge");
+          const what = lands.length
+            ? `Then, per repo: ${lands.map((r) => `${r.label} ${r.land === "push" ? `pushed to ${r.base}` : `a pull request against ${r.base}`}`).join(", ")}.`
+            : "The mission branches are left for the ship.";
           if (!window.confirm(`Close "${mission.name}"?\n\nThis ticks ${passed.length} item(s) in the tracker in one commit. ${what}`)) return;
           await act("close", {}, byPr ? "closed; pull requests opened" : "mission closed; its items are ticked");
         }, "primary"),

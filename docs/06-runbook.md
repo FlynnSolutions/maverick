@@ -82,8 +82,14 @@ first is what the tooling was usually written to stop.
 |---|---|---|
 | `worktrees` | `.claude/worktrees` | where task and integration worktrees go, relative to the project |
 | `branchPrefix` | `mission/` | a task's branch is `<prefix><mission>-<task>` |
-| `land` | `merge` | `merge` leaves the work on each repo's mission branch; `pr` pushes and opens one pull request per repo against its base, and merges nothing |
+| `land` | `merge` | the default for every repo: `merge` leaves the work on that repo's mission branch, `pr` pushes and opens a pull request against its base, `push` fast-forwards the base to it |
 | `repos.<dir>.base` | that repo's current branch | what its work is cut from and lands against |
+| `repos.<dir>.land` | the mission's `land` | overrides it for that repo alone |
+
+`push` reaches a shared branch without review, so it is opt-in per repo and never inherited
+from the mission. It fast-forwards or it refuses; it never forces. The approval gate names
+every repo that has it before you approve. Realtime's shape is `land: "pr"` with
+`contracts: { "land": "push" }`, which is that project's own process written down.
 
 Everything is optional. A repo the plan never names gets no branch, however many the project has.
 
