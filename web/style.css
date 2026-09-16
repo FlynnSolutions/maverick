@@ -561,8 +561,23 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .formation .rack > h4 button { height: 24px; font-size: 11.5px; }
 .lead-rack > h4 { color: var(--accent-hot); }
 .lead-rack .strip { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent); }
-.forms-foot { margin-top: 6px; }
+.forms-foot { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.forms-foot .spacer { flex: 1; }
 .forms-foot button:hover { color: var(--threat); }
+
+/* ---------- moving a strip between racks ----------
+   A controller picks a paper flight strip out of one rack and puts it in another, so the strip
+   takes the grab cursor and the racks it could land in are what light up. Nothing is added to
+   the strip's own row, which is already six columns dense. */
+.strip[draggable="true"] { cursor: grab; }
+.strip[draggable="true"]:active { cursor: grabbing; }
+/* An outline, never a ring or padding: a landing zone must not move the page it is drawn on. */
+.forms button.drop-on { background: var(--accent-dim); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.rack.drop-on { outline: 1px dashed var(--accent); outline-offset: 6px; }
+/* While a strip is in the air the tabs stop being quiet, so the targets are readable mid-drag. */
+body.dragging-strip .forms button { color: var(--ink-soft); }
+/* A slot held for a session that has not registered yet: present, and plainly not flying. */
+.strip.starting .strip-name { color: var(--ink-faint); font-style: italic; }
 .pick-menu .pick-row { width: 100%; text-align: left; border: 0; background: transparent; box-shadow: none; height: auto; }
 .pick-menu .pick-row i { font-style: normal; }
 .tab-menu { width: 190px; padding: 6px; }

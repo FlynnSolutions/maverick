@@ -88,6 +88,10 @@ export const mountCommandCenter = (root, ctx) => {
   let editing = false; // a rename is open: the repaint would tear the input out mid-word
   let formations = [];
   let activeFormation = new URLSearchParams(location.search).get("formation");
+  // A strip is the paper flight strip a controller picks up and moves to another rack. The tabs
+  // are the racks, so drag and drop is one rule: a strip dropped on a tab flies there. Inside a
+  // formation the lead slot and the flight are two more racks, which is promote and demote.
+  let dragging = null; // { sessionId, from: formation id or null for the rack, title }
 
   /* ---------- panels ---------- */
 
@@ -150,7 +154,11 @@ export const mountCommandCenter = (root, ctx) => {
   const renameButton = (s, nameEl) =>
     el("button", { type: "button", class: "ghost act", title: `rename "${s.title}"`, onclick: () => {
       const input = el("input", { type: "text", class: "strip-rename", value: s.title, "aria-label": `rename ${s.title}` });
-      const restore = () => { editing = false; input.replaceWith(nameEl); };
+      // A draggable ancestor swallows text selection inside the input, so the strip puts its
+      // handle down while the name is being typed.
+      const host = nameEl.closest(".strip");
+      host?.setAttribute("draggable", "false");
+      const restore = () => { editing = false; host?.setAttribute("draggable", "true"); input.replaceWith(nameEl); };
       const commit = async () => {
         if (!input.isConnected) return; // already restored, by Escape or by the blur that follows it
         const name = input.value.trim();
@@ -217,10 +225,23 @@ export const mountCommandCenter = (root, ctx) => {
   /** One session as a flight progress strip. `full` carries the last exchange under the line. */
   const strip = (s, record, full = false, band = "") => {
     const name = el("h4", { class: "strip-name" }, s.title);
+    const inFormation = formations.find((x) => x.id === activeFormation) ?? null;
     return el("article", {
       class: `strip ${s.status}${finished(s.status) ? " finished" : ""}${full ? " full" : ""}`,
       tabindex: "0",
       title: s.title,
+      // A session with no id has nothing a formation could hold on to, so it stays put.
+      draggable: s.sessionId ? "true" : "false",
+      ondragstart: (e) => {
+        dragging = { sessionId: s.sessionId, from: activeFormation, title: s.title };
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", s.sessionId);
+        document.body.classList.add("dragging-strip");
+      },
+      ondragend: endDrag,
+      // Inside a formation the same moves the drags make are on the strip, for a pointer that
+      // would rather click and for the keyboard's own menu key.
+      oncontextmenu: inFormation && s.sessionId ? (e) => { e.preventDefault(); stripMenu(inFormation, s, e.clientX, e.clientY); } : null,
       onclick: (e) => { if (!e.target.closest("button, input")) openFull(s); },
       onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFull(s); } },
     },
@@ -292,9 +313,84 @@ export const mountCommandCenter = (root, ctx) => {
 
   /* ---------- formations: a lead and its flight, as tabs ---------- */
 
-  const saveFormation = async (id, patch) => {
+  /** PATCH without repainting: a move across two formations is two writes and one paint. */
+  const patchFormation = async (id, patch) => {
     const next = await api(`/api/formations/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
     formations = formations.map((f) => (f.id === id ? next : f));
+    return next;
+  };
+
+  const saveFormation = async (id, patch) => {
+    await patchFormation(id, patch);
+    paint();
+  };
+
+  const endDrag = () => {
+    dragging = null;
+    document.body.classList.remove("dragging-strip");
+    for (const n of document.querySelectorAll(".drop-on")) n.classList.remove("drop-on");
+  };
+
+  /** Wire a node as somewhere a strip in the air can land. `accepts` decides; `land` moves it. */
+  const dropZone = (node, accepts, land) => {
+    node.addEventListener("dragover", (e) => {
+      if (!dragging || !accepts(dragging)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      node.classList.add("drop-on");
+    });
+    // Crossing into a child fires dragleave on the parent, and the ring would flicker off.
+    node.addEventListener("dragleave", (e) => { if (!node.contains(e.relatedTarget)) node.classList.remove("drop-on"); });
+    node.addEventListener("drop", (e) => {
+      node.classList.remove("drop-on");
+      if (!dragging || !accepts(dragging)) return;
+      e.preventDefault();
+      const d = dragging;
+      endDrag();
+      land(d);
+    });
+    return node;
+  };
+
+  const leaveFormation = (f, sessionId) =>
+    patchFormation(f.id, f.lead === sessionId ? { lead: null } : { members: f.members.filter((m) => m !== sessionId) });
+
+  /**
+   * A strip dropped on a tab flies to that rack: it leaves whichever formation it was in and
+   * joins the one it landed on. Dropping on "Rack" is the same move with nothing to join, which
+   * is how a session is taken out of a formation.
+   */
+  const moveTo = async (d, toId) => {
+    try {
+      const from = d.from ? formations.find((f) => f.id === d.from) : null;
+      if (from) await leaveFormation(from, d.sessionId);
+      const to = toId ? formations.find((f) => f.id === toId) : null;
+      if (to) await patchFormation(to.id, { members: [...to.members, d.sessionId] });
+      setStatus(to ? `${d.title} joined ${to.name}` : `${d.title} left ${from?.name ?? "the formation"}`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+    paint();
+  };
+
+  /** Promote to lead. Whoever was leading drops into the flight, so the roster is unchanged. */
+  const promote = async (f, sessionId) => {
+    try {
+      await patchFormation(f.id, { lead: sessionId, members: [...f.members.filter((m) => m !== sessionId), ...(f.lead && f.lead !== sessionId ? [f.lead] : [])] });
+      setStatus(`${f.name} has a new lead`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+    paint();
+  };
+
+  const demote = async (f, sessionId) => {
+    try {
+      await patchFormation(f.id, { lead: null, members: [...f.members, sessionId] });
+      setStatus(`${f.name} is flying without a lead`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
     paint();
   };
 
@@ -315,21 +411,35 @@ export const mountCommandCenter = (root, ctx) => {
     if (name && name !== f.name) saveFormation(f.id, { name });
   };
 
-  /** Right-click a formation tab. Closing a tab should not need a trip into the formation. */
-  const tabMenu = (f, x, y) => {
+  /** A little menu at the pointer: `[label, run, class]` a row. */
+  const popMenu = (label, x, y, rows) => {
     document.querySelector(".tab-menu")?.remove();
-    const menu = el("div", { class: "menu tab-menu", role: "dialog", "aria-label": `${f.name} formation` },
-      el("button", { type: "button", class: "pick-row", onclick: () => { menu.remove(); renameFormation(f); } }, el("b", {}, "Rename…")),
-      el("button", { type: "button", class: "pick-row danger", onclick: () => { menu.remove(); disband(f); } }, el("b", {}, "Disband")));
+    const menu = el("div", { class: "menu tab-menu", role: "dialog", "aria-label": label },
+      ...rows.map(([caption, run, cls]) =>
+        el("button", { type: "button", class: `pick-row${cls ? ` ${cls}` : ""}`, onclick: () => { menu.remove(); run(); } }, el("b", {}, caption))));
     menu.style.top = `${y + 4}px`;
     menu.style.left = `${x}px`;
     document.body.append(menu);
     window.setTimeout(() => document.addEventListener("click", function once() { menu.remove(); document.removeEventListener("click", once); }), 0);
   };
 
+  /** Right-click a formation tab. Closing a tab should not need a trip into the formation. */
+  const tabMenu = (f, x, y) =>
+    popMenu(`${f.name} formation`, x, y, [["Rename…", () => renameFormation(f)], ["Disband", () => disband(f), "danger"]]);
+
+  /** Right-click a strip inside a formation: the drags, for anyone who would rather click. */
+  const stripMenu = (f, s, x, y) =>
+    popMenu(`${s.title} in ${f.name}`, x, y, [
+      f.lead === s.sessionId
+        ? ["Drop into the flight", () => demote(f, s.sessionId)]
+        : ["Promote to lead", () => promote(f, s.sessionId)],
+      [`Remove from ${f.name}`, () => moveTo({ sessionId: s.sessionId, from: f.id, title: s.title }, null), "danger"],
+    ]);
+
   const formationTabs = () => {
     const tab = (id, label, count, f) =>
-      el("button", { type: "button", class: activeFormation === id ? "on" : "", title: f ? `${f.name} · right-click for rename and disband` : "every session in this project",
+      dropZone(el("button", { type: "button", class: activeFormation === id ? "on" : "",
+        title: f ? `${f.name} · drop a strip here to bring it into the flight · right-click for rename and disband` : "every session in this project · drop a strip here to take it out of its formation",
         oncontextmenu: f ? (e) => { e.preventDefault(); tabMenu(f, e.clientX, e.clientY); } : null,
         onclick: () => {
         activeFormation = id;
@@ -337,10 +447,12 @@ export const mountCommandCenter = (root, ctx) => {
         if (id) u.searchParams.set("formation", id); else u.searchParams.delete("formation");
         history.replaceState({}, "", u);
         paint();
-      } }, label, count != null ? el("b", {}, String(count)) : null);
+      } }, label, count != null ? el("b", {}, String(count)) : null),
+      // The rack you came from is not somewhere to land.
+      (d) => d.from !== id, (d) => moveTo(d, id));
     return el("div", { class: "forms" },
       tab(null, "Rack", mySessions().length),
-      ...formations.map((f) => tab(f.id, f.name, (f.lead ? 1 : 0) + f.members.length, f)),
+      ...formations.map((f) => tab(f.id, f.name, slots(f), f)),
       el("button", { type: "button", class: "new", title: "new formation", onclick: async () => {
         const f = await api("/api/formations?project=" + encodeURIComponent(ctx.projectId), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
         formations = [...formations, f];
@@ -365,28 +477,83 @@ export const mountCommandCenter = (root, ctx) => {
     }), 0);
   };
 
+  /** Everything the formation is holding: its lead, its flight, and the slots still starting. */
+  const slots = (f) => (f.lead ? 1 : 0) + f.members.length + (f.pending?.length ?? 0);
+
+  /** A slot held for a session that is still starting: the strip is drawn, waiting for its session. */
+  const startingSlot = (p) =>
+    el("article", { class: "strip ghost starting", title: `${p.title} is starting in a terminal of its own; it takes this slot as Claude Code registers it` },
+      stripLine({
+        status: "busy",
+        band: "working",
+        name: el("h4", { class: "strip-name" }, p.title),
+        state: "starting",
+        when: "",
+        where: "waiting for it to register",
+      }));
+
+  /**
+   * Start a claude straight into this formation, so the flight grows in one step instead of
+   * two. The slot is held by the pty it starts in and fills itself the moment Claude Code
+   * registers the session, which is also what wires the strip's `open` to this same terminal.
+   * It inherits the lead's working directory when that is inside the project, so a flight works
+   * one tree. The callsign (the lead is 1) names the slot while it is starting and titles its
+   * terminal; the session itself keeps whatever title Claude Code derives, which says more about
+   * the work than a position does.
+   */
+  const newSessionButton = (f, as) => {
+    const title = `${f.name} ${as === "lead" ? 1 : slots(f) + 1}`;
+    return el("button", { type: "button", class: "ghost", title: `start a new claude in this formation as ${title}`, onclick: async (e) => {
+      e.stopPropagation();
+      const leader = f.lead ? mySessions().find((s) => s.sessionId === f.lead) : null;
+      const path = all.projects.find((p) => p.id === ctx.projectId)?.path;
+      const inside = leader?.cwd && path && (leader.cwd === path || leader.cwd.startsWith(`${path}/`));
+      try {
+        const { formation } = await post(`/api/formations/${f.id}/sessions`, { project: ctx.projectId, title, as, ...(inside ? { cwd: leader.cwd } : {}) });
+        formations = formations.map((x) => (x.id === formation.id ? formation : x));
+        setStatus(`${title} is starting; it takes its slot as it registers`);
+        paint();
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    } }, "new session");
+  };
+
   const formationView = (f) => {
     const byId = new Map(mySessions().filter((s) => s.sessionId).map((s) => [s.sessionId, s]));
     const lead = f.lead ? byId.get(f.lead) : null;
     const flight = f.members.map((id) => byId.get(id)).filter(Boolean);
     const gone = (f.lead && !lead ? 1 : 0) + f.members.length - flight.length;
+    const holding = f.pending ?? [];
+    const starting = (as) => holding.filter((p) => p.as === as);
     return el("section", { class: "cc-project formation" },
-      el("section", { class: "rack lead-rack" },
+      // Drop a strip on the lead slot to put it in front; the lead it replaces joins the flight.
+      dropZone(el("section", { class: "rack lead-rack" },
         el("h4", {}, jetSvg("jet-glyph band"), el("span", {}, "Oversight"),
           el("span", { class: "spacer" }),
-          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { lead: s.sessionId }), "Who is the lead?"); } }, lead ? "change lead" : "assign a lead")),
+          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { lead: s.sessionId }), "Who is the lead?"); } }, lead ? "change lead" : "assign a lead"),
+          lead || starting("lead").length ? null : newSessionButton(f, "lead")),
         lead
           ? el("div", { class: "rack-strips" }, strip(lead, model.byClaudeId.get(lead.claudeId), true, "working"))
-          : el("p", { class: "muted small cc-empty" }, "No lead yet. The lead is the session that orchestrates; the flight reports into it.")),
-      el("section", { class: "rack" },
+          : starting("lead").length
+            ? el("div", { class: "rack-strips" }, ...starting("lead").map(startingSlot))
+            : el("p", { class: "muted small cc-empty" }, "No lead yet. The lead is the session that orchestrates; the flight reports into it. Drop a strip here to put one in front.")),
+        (d) => d.from === f.id && d.sessionId !== f.lead, (d) => promote(f, d.sessionId)),
+      // Drop the lead back into the flight to stand it down.
+      dropZone(el("section", { class: "rack" },
         el("h4", {}, el("span", {}, "Flight"), el("span", { class: "n" }, String(flight.length)),
           el("span", { class: "spacer" }),
-          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { members: [...f.members, s.sessionId] }), "Add to the flight"); } }, "add a session")),
-        flight.length
-          ? el("div", { class: "rack-strips" }, ...flight.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "working")))
-          : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet.")),
+          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { members: [...f.members, s.sessionId] }), "Add to the flight"); } }, "add a session"),
+          newSessionButton(f, "member")),
+        flight.length || starting("member").length
+          ? el("div", { class: "rack-strips" }, ...flight.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "working")), ...starting("member").map(startingSlot))
+          : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet. Drop a strip here, or start one.")),
+        (d) => d.from === f.id && d.sessionId === f.lead, (d) => demote(f, d.sessionId)),
       gone ? el("p", { class: "muted small cc-empty" }, `${gone} session${gone === 1 ? " is" : "s are"} no longer running; the formation keeps the slot.`) : null,
+      // One closing row, not two stray lines: how the strips move, then the way out.
       el("div", { class: "forms-foot" },
+        el("span", { class: "muted small" }, "Drag a strip onto another tab to move it, or onto Rack to take it out."),
+        el("span", { class: "spacer" }),
         el("button", { type: "button", class: "ghost", onclick: () => disband(f) }, "disband this formation")));
   };
 

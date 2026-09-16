@@ -115,6 +115,28 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   beside the Rack. A formation is one **lead**, the session that orchestrates, and its **flight**,
   one to twenty sessions under it, drawn with the same strips as everywhere else. The active
   formation is in the URL, so one can be pulled into its own window or desktop.
+- **A strip moves between racks, and that is the whole of drag and drop.** A controller lifts a
+  paper flight strip out of one rack and puts it in another, so the tabs are the racks: drop a
+  strip on a formation tab and it joins that flight, drop it on `Rack` and it leaves the
+  formation it was in. Inside a formation the lead slot and the flight are two more racks, which
+  is promote and demote. One rule, no second gesture. The strip advertises it with the grab
+  cursor alone (its row is already six columns dense and has no pixels to spare for a handle);
+  what actually announces the move is the *targets* lighting up the moment a strip is in the air.
+  A landing zone is an `outline` with an offset, never a ring or padding, so highlighting a rack
+  cannot move the page it is drawn on. Every drag also has a click path, on the strip's own
+  right-click menu, because a drag is unreachable without a pointer.
+- **A rename puts the drag handle down.** A `draggable` ancestor swallows text selection inside
+  an input, so `.strip-rename` clears `draggable` on the strip while the name is being typed and
+  restores it on commit or Escape. Without this the rename field looks focusable and will not
+  select.
+- **A slot can be held for a session that does not exist yet.** Starting a claude into a
+  formation gives the formation a `pending` entry keyed by the *pty*, because that is the only
+  handle that exists before a session id does; it fills itself the moment Claude Code registers
+  a session in that terminal, and drops if the pty dies without ever registering. The held slot
+  draws as the same strip on the same grid, marked `starting`, for the same reason a slot whose
+  session is gone says so rather than vanishing. The callsign (`Alpha 2`) names the *slot* and
+  titles its terminal; the session keeps the title Claude Code derives, which says more about
+  the work than a position does.
 - **A tab's own actions live on the tab.** Right-click a formation to rename or disband it;
   closing one should not need a trip inside it first. Disbanding asks, because the grouping is
   the only thing lost and it is not recoverable.

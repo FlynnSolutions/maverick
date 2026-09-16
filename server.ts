@@ -30,7 +30,7 @@ import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
 import { readSessions, sessionsForProject, type SessionRecord } from "./src/sessions.ts";
-import { createFormation, deleteFormation, listFormations, updateFormation } from "./src/formations.ts";
+import { addPending, createFormation, deleteFormation, listFormations, resolvePending, updateFormation } from "./src/formations.ts";
 import { readNames, setName } from "./src/names.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
 import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
@@ -254,6 +254,21 @@ const spawnPrompt = (project: Project, title: string, body: string, trackerPath:
     `When the loop closes, update that item in the tracker (mark it done or record the handoff) and commit the tracker file alone.`,
   ].join("\n");
 
+/**
+ * Which of Maverick's own ptys each registry session is running inside, keyed by session id.
+ * A session whose ancestry includes one of our pty bridges lives in a terminal the console
+ * owns: it can be typed into directly, and a formation that started it recognises it here.
+ */
+const terminalsBySession = async (registry: { pid: number; sessionId: string }[]): Promise<Map<string, string>> => {
+  const bridges = new Map(listTerminals().filter((t) => t.pid && t.exitCode === null).map((t) => [t.pid as number, t.id]));
+  if (!bridges.size) return new Map();
+  const found = await Promise.all(registry.map(async (s) => {
+    const id = (await parentChain(s.pid)).map((pid) => bridges.get(pid)).find(Boolean);
+    return id ? ([s.sessionId, id] as const) : null;
+  }));
+  return new Map(found.filter(Boolean) as (readonly [string, string])[]);
+};
+
 const openTerminalFor = async (body: OpenTerminalBody) => {
   const project = await projectById(body.project);
   const size = { cols: body.cols ?? 120, rows: body.rows ?? 36 };
@@ -345,11 +360,9 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (method === "GET" && path === "/api/sessions/all") {
     const projects = await readProjects();
     const registry = await readRegistrySessions();
-    // A session whose ancestry includes one of our pty bridges lives in Maverick's dock: it can be typed into directly.
-    const bridges = new Map(listTerminals().filter((t) => t.pid && t.exitCode === null).map((t) => [t.pid as number, t.id]));
+    const inTerminal = await terminalsBySession(registry);
     const enriched = await Promise.all(registry.map(async (s) => {
-      const chain = bridges.size ? await parentChain(s.pid) : [];
-      const terminalId = chain.map((pid) => bridges.get(pid)).find(Boolean);
+      const terminalId = inTerminal.get(s.sessionId);
       return { ...s, ...(await processHome(s.pid)), ...(await glance(s.cwd, s.sessionId)), ...(terminalId ? { terminalId } : {}) };
     }));
     const bg = (await Promise.all(projects.map((p) => backgroundAgents(p.path).catch(() => [])))).flat();
@@ -549,7 +562,15 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
   // Formations: Cory's groupings of sessions, one lead and its flight.
   if (path === "/api/formations") {
-    if (method === "GET") return sendJson(res, 200, await listFormations((await requireProject(url)).id));
+    if (method === "GET") {
+      const mine = await listFormations((await requireProject(url)).id);
+      // A slot held for a starting session settles here, on the read that is already polling.
+      const registry = await readRegistrySessions();
+      const inTerminal = await terminalsBySession(registry);
+      const sessionByTerminal = new Map([...inTerminal].map(([sessionId, terminal]) => [terminal, sessionId]));
+      const live = new Set(listTerminals().filter((t) => t.exitCode === null).map((t) => t.id));
+      return sendJson(res, 200, await resolvePending(mine, sessionByTerminal, live));
+    }
     if (method === "POST") {
       const body = await readJson<{ name?: string }>(req);
       return sendJson(res, 200, await createFormation((await requireProject(url)).id, body.name));
@@ -560,6 +581,14 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const [, id] = formationMatch;
     if (method === "PATCH") return sendJson(res, 200, await updateFormation(id, await readJson(req)));
     if (method === "DELETE") { await deleteFormation(id); return sendJson(res, 200, { ok: true }); }
+  }
+  // Start a claude straight into a formation: it holds the slot until the session registers.
+  const formationSessions = path.match(/^\/api\/formations\/([A-Za-z0-9-]+)\/sessions$/);
+  if (formationSessions && method === "POST") {
+    const body = await readJson<{ project: string; title: string; as: "lead" | "member"; cwd?: string }>(req);
+    const terminal = await openTerminalFor({ project: body.project, kind: "new", title: body.title, cwd: body.cwd });
+    const formation = await addPending(formationSessions[1], { terminal: terminal.id, as: body.as, title: body.title });
+    return sendJson(res, 200, { terminal, formation });
   }
 
   // Rename a session: Maverick's own name for it, kept beside the CLI's read-only registry.
