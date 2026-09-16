@@ -363,7 +363,12 @@ const renderMilestone = (m) => {
       m.merged ? el("span", {}, `merged ${fmtTime(m.merged)}${merges(m) ? ` · ${merges(m)}` : ""}`) : null),
     mission.escalation ? el("section", { class: "panel mv-gate" }, el("h2", {}, "This is a question about the plan"),
       el("p", { class: "mv-warn" }, mission.escalation)) : null,
-    mission.trouble ? el("section", { class: "panel" }, el("h2", {}, "Needs you"), el("p", { class: "mv-plan" }, mission.trouble)) : null,
+    mission.trouble ? el("section", { class: "panel" }, el("h2", {}, "Needs you"), el("p", { class: "mv-plan" }, mission.trouble),
+      /could not land|still could not land/.test(mission.trouble)
+        ? el("div", { class: "gate-actions" },
+            btn("try landing it again", () => act("land", {}, "landing again"), "primary"),
+            el("span", { class: "muted small" }, "rebase the branch it named first; nothing here will force it"))
+        : null) : null,
     m.resolve ? el("section", { class: "panel" },
       el("h2", {}, "The Strike Lead is reconciling it", el("span", { class: "spacer" }), el("span", { class: "muted small mono" }, `session ${m.resolve.claudeId}`)),
       el("p", { class: "mv-plan" }, `Two tasks in this milestone touched the same lines in ${m.resolve.repo}: ${(m.resolve.paths ?? []).join(", ")}. The Strike Lead wrote the plan that put them together, so it is finishing the merge in the integration worktree. It keeps both behaviours or it aborts and says why; it never takes one side to make the conflict go away.`)) : null,

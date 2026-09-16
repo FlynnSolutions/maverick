@@ -20,7 +20,7 @@ import { addProject, chooseFolder, projectById, readProjects, removeProject, typ
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees } from "./src/missions.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees } from "./src/missions.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
@@ -550,7 +550,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, { mission, terminal });
     }
   }
-  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy))?$/);
+  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land))?$/);
   if (missionAction) {
     const project = await requireProject(url);
     const [, id, action] = missionAction;
@@ -572,6 +572,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       }));
     }
     if (method === "POST" && action === "tidy") return sendJson(res, 200, { removed: await tidyWorktrees(project, id) });
+    if (method === "POST" && action === "land") return sendJson(res, 200, await landAgain(project, id));
   }
   const missionTask = path.match(/^\/api\/missions\/([a-z0-9-]+)\/tasks\/([a-z0-9-]+)\/(retry|accept)$/);
   if (method === "POST" && missionTask) {

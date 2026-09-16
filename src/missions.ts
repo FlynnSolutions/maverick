@@ -838,7 +838,16 @@ const sweepOnce = async (project: Project): Promise<void> => {
         // an earlier repo can be reviewed and merged while the later ones are still flying.
         if (mission.repos.some((r) => r.land !== "merge")) {
           const { failed } = await landTheWork(mission);
-          if (failed.length) mission.trouble = `could not land: ${failed.join(" · ")}`;
+          if (failed.length) {
+            // The next milestone is very often the one that consumes what this one just made:
+            // a contract package pushed to its base, a service that reads it. Sending its
+            // Wingmen out against a base that never received the push would have them build
+            // against the old thing and look correct doing it. It waits for a person instead.
+            mission.status = "blocked";
+            mission.trouble = `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`;
+            await writeMission(mission).catch(() => undefined);
+            return;
+          }
         }
         const next = mission.milestones.find((x) => x.n > m.n && !x.dispatched);
         if (next) await dispatch(project, mission, next);
@@ -941,6 +950,34 @@ export const tidyWorktrees = async (project: Project, id: string): Promise<strin
   // The record stops pointing at directories that are no longer there.
   if (gone.length) await writeMission(mission);
   return gone;
+};
+
+/**
+ * Try the outstanding landings again. A `push` refuses when its base has moved, which is a
+ * person's job to reconcile, and until now that left the mission blocked with no way back in.
+ * Once the rebase is done, this picks it up from where it stopped.
+ */
+export const landAgain = async (project: Project, id: string): Promise<{ mission: Mission; landed: string[]; failed: string[] }> => {
+  let landed: string[] = [];
+  let failed: string[] = [];
+  const mission = await changeMission(project.id, id, async (mission) => {
+    if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; there is nothing left to land`);
+    ({ landed, failed } = await landTheWork(mission));
+    if (failed.length) {
+      mission.trouble = `still could not land: ${failed.join(" · ")}`;
+    } else if (!landed.length) {
+      // Nothing landed and nothing failed: every repo either has work still moving or has
+      // already landed. Saying "recovered" here would be a lie that puts the mission back in
+      // the air on the strength of having done nothing.
+      throw new Error(`nothing was waiting to land on ${mission.name}: every repo either still has work in the air or has already landed`);
+    } else {
+      mission.trouble = undefined;
+      // Back in the air: the sweep picks up the milestone that was waiting behind the landing.
+      mission.status = mission.milestones.every((x) => x.merged) ? "review" : "flying";
+    }
+    return mission;
+  });
+  return { mission, landed, failed };
 };
 
 /** Put a blocked task back in the air after Cory has had a look, with one more attempt. */
