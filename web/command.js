@@ -12,7 +12,18 @@ import { icon } from "./icons.js";
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5 };
 const HOUR = 3600000;
-const finished = (s) => /^(done|exited|stopped|blocked)$/.test(s ?? "");
+/**
+ * A session that has ended. `blocked` is deliberately not here: it is running and stopped at a
+ * prompt, which is the loudest thing on the page, not the quietest. Counting it as finished put
+ * the same session in "Needs you" and in "Background · done" at once, because those two filters
+ * run independently over one list, and painted a lock lamp on a strip marked finished.
+ */
+const finished = (s) => /^(done|exited|stopped)$/.test(s ?? "");
+/**
+ * The agent's own word about itself, which outranks the registry's read of its process: it has
+ * ended, or it is stopped at a prompt. Neither is something a live pid can show.
+ */
+const trustAgent = (s) => finished(s) || s === "blocked";
 
 const age = (ms) => {
   if (!ms) return "";
@@ -59,7 +70,7 @@ const assemble = (all) => {
     const merged = {
       ...(twin ?? {}),
       key: `bg:${a.id}`, kind: "background", claudeId: a.id, sessionId: a.sessionId, cwd: a.cwd, project: a.project ?? twin?.project ?? record?.project,
-      title: named(a.sessionId, record?.loop, twin?.title, a.name, a.id), status: finished(a.state) ? a.state : twin?.status ?? a.state ?? "running", at: twin?.at ?? a.startedAt, record,
+      title: named(a.sessionId, record?.loop, twin?.title, a.name, a.id), status: trustAgent(a.state) ? a.state : twin?.status ?? a.state ?? "running", at: twin?.at ?? a.startedAt, record,
       lastPrompt: a.lastPrompt ?? twin?.lastPrompt, lastReply: a.lastReply ?? twin?.lastReply,
     };
     if (twin) sessions.splice(sessions.indexOf(twin), 1, merged);
@@ -83,12 +94,15 @@ export const mountCommandCenter = (root, ctx) => {
   const DAY = 86400000;
   let all = null;
   let model = null;
-  let full = null; // { session, offset, events, timer, scroller, list }
   let timer = null;
   let editing = false; // a rename is open: the repaint would tear the input out mid-word
   let formations = [];
   let missions = [];
   let activeFormation = new URLSearchParams(location.search).get("formation");
+  // A strip is the paper flight strip a controller picks up and moves to another rack. The tabs
+  // are the racks, so drag and drop is one rule: a strip dropped on a tab flies there. Inside a
+  // formation the lead slot and the flight are two more racks, which is promote and demote.
+  let dragging = null; // { sessionId, from: formation id or null for the rack, title }
 
   /* ---------- panels ---------- */
 
@@ -151,7 +165,11 @@ export const mountCommandCenter = (root, ctx) => {
   const renameButton = (s, nameEl) =>
     el("button", { type: "button", class: "ghost act", title: `rename "${s.title}"`, onclick: () => {
       const input = el("input", { type: "text", class: "strip-rename", value: s.title, "aria-label": `rename ${s.title}` });
-      const restore = () => { editing = false; input.replaceWith(nameEl); };
+      // A draggable ancestor swallows text selection inside the input, so the strip puts its
+      // handle down while the name is being typed.
+      const host = nameEl.closest(".strip");
+      host?.setAttribute("draggable", "false");
+      const restore = () => { editing = false; host?.setAttribute("draggable", "true"); input.replaceWith(nameEl); };
       const commit = async () => {
         if (!input.isConnected) return; // already restored, by Escape or by the blur that follows it
         const name = input.value.trim();
@@ -206,29 +224,50 @@ export const mountCommandCenter = (root, ctx) => {
    * through here, so the two can never drift out of alignment with each other. An action slot
    * is always emitted: a missing verb would slide the rest into the wrong column.
    */
-  const stripLine = ({ status, band, name, chips = [], state, note, when, up, where, acts = [] }) =>
+  const stripLine = ({ status, band, name, lead = null, chips = [], state, note, when, up, where, acts = [] }) =>
     el("div", { class: "strip-line" },
       lamp(status, band),
-      el("div", { class: "strip-id" }, name, ...chips),
+      el("div", { class: "strip-id" }, lead, name, ...chips),
       el("span", { class: "strip-state", title: [state, note].filter(Boolean).join(" · ") }, el("b", {}, state), note ? el("i", {}, note) : null),
       el("span", { class: "strip-when", title: [when, up].filter(Boolean).join(" · ") }, when, up ? el("i", {}, up) : null),
       el("span", { class: "strip-where", title: where }, where),
       el("div", { class: "strip-acts" }, ...acts));
 
-  /** One session as a flight progress strip. `full` carries the last exchange under the line. */
-  const strip = (s, record, full = false, band = "") => {
+  /** One session as a flight progress strip. `wide` carries the last exchange under the line. */
+  const strip = (s, record, wide = false, band = "") => {
     const name = el("h4", { class: "strip-name" }, s.title);
-    return el("article", {
-      class: `strip ${s.status}${finished(s.status) ? " finished" : ""}${full ? " full" : ""}`,
+    const inFormation = formations.find((x) => x.id === activeFormation) ?? null;
+    // Inside a formation a strip opens where it sits, so several run at once. In the rack it
+    // still goes full screen: sixteen strips have no room to hold a conversation open.
+    const expandable = Boolean(inFormation) && Boolean(s.sessionId);
+    const isOpen = expandable && opened.has(s.key);
+    const openIt = () => (expandable ? toggleOpen(s.key) : openFull(s));
+    const node = el("article", {
+      class: `strip ${s.status}${finished(s.status) ? " finished" : ""}${wide ? " full" : ""}${isOpen ? " open" : ""}`,
       tabindex: "0",
       title: s.title,
-      onclick: (e) => { if (!e.target.closest("button, input")) openFull(s); },
-      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFull(s); } },
+      // A session with no id has nothing a formation could hold on to, so it stays put.
+      draggable: s.sessionId ? "true" : "false",
+      ondragstart: (e) => {
+        dragging = { sessionId: s.sessionId, from: activeFormation, title: s.title };
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", s.sessionId);
+        document.body.classList.add("dragging-strip");
+      },
+      ondragend: endDrag,
+      // Inside a formation the same moves the drags make are on the strip, for a pointer that
+      // would rather click and for the keyboard's own menu key.
+      oncontextmenu: inFormation && s.sessionId ? (e) => { e.preventDefault(); stripMenu(inFormation, s, e.clientX, e.clientY); } : null,
+      onclick: (e) => { if (!e.target.closest("button, input, .cc-pane")) openIt(); },
+      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openIt(); } },
     },
     stripLine({
       status: s.status,
       band,
       name,
+      lead: expandable
+        ? el("button", { type: "button", class: "strip-turn", "aria-label": isOpen ? `collapse ${s.title}` : `open ${s.title} here`, "aria-expanded": String(isOpen), title: isOpen ? "collapse back to the strip" : "open this session here, beside the others", onclick: (e) => { e.stopPropagation(); openIt(); } }, icon("chevron"))
+        : null,
       chips: [roleChip(record), auditChip(record)],
       state: s.status,
       note: s.waitingFor,
@@ -237,7 +276,20 @@ export const mountCommandCenter = (root, ctx) => {
       where: whereText(s, true),
       acts: [s.sessionId ? renameButton(s, name) : disabledRename(), terminalButton(s), endButton(s, "ghost act end")],
     }),
-    full ? say(s) : null);
+    // An open strip shows the conversation itself; the one-line excerpt would only repeat it.
+    isOpen ? null : wide ? say(s) : null);
+    if (isOpen) node.append(paneFor(s).node);
+    return node;
+  };
+
+  /** The pane a strip holds open, made once and kept while the strip stays open. */
+  const paneFor = (session) => {
+    const open = panes.get(session.key);
+    if (open?.inline) {
+      open.session = session;
+      return open;
+    }
+    return makePane(session, { inline: true });
   };
 
   /** A record whose session is gone: the strip stays in the rack, greyed, carrying its handoff. */
@@ -293,9 +345,84 @@ export const mountCommandCenter = (root, ctx) => {
 
   /* ---------- formations: a lead and its flight, as tabs ---------- */
 
-  const saveFormation = async (id, patch) => {
+  /** PATCH without repainting: a move across two formations is two writes and one paint. */
+  const patchFormation = async (id, patch) => {
     const next = await api(`/api/formations/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
     formations = formations.map((f) => (f.id === id ? next : f));
+    return next;
+  };
+
+  const saveFormation = async (id, patch) => {
+    await patchFormation(id, patch);
+    paint();
+  };
+
+  const endDrag = () => {
+    dragging = null;
+    document.body.classList.remove("dragging-strip");
+    for (const n of document.querySelectorAll(".drop-on")) n.classList.remove("drop-on");
+  };
+
+  /** Wire a node as somewhere a strip in the air can land. `accepts` decides; `land` moves it. */
+  const dropZone = (node, accepts, land) => {
+    node.addEventListener("dragover", (e) => {
+      if (!dragging || !accepts(dragging)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      node.classList.add("drop-on");
+    });
+    // Crossing into a child fires dragleave on the parent, and the ring would flicker off.
+    node.addEventListener("dragleave", (e) => { if (!node.contains(e.relatedTarget)) node.classList.remove("drop-on"); });
+    node.addEventListener("drop", (e) => {
+      node.classList.remove("drop-on");
+      if (!dragging || !accepts(dragging)) return;
+      e.preventDefault();
+      const d = dragging;
+      endDrag();
+      land(d);
+    });
+    return node;
+  };
+
+  const leaveFormation = (f, sessionId) =>
+    patchFormation(f.id, f.lead === sessionId ? { lead: null } : { members: f.members.filter((m) => m !== sessionId) });
+
+  /**
+   * A strip dropped on a tab flies to that rack: it leaves whichever formation it was in and
+   * joins the one it landed on. Dropping on "Rack" is the same move with nothing to join, which
+   * is how a session is taken out of a formation.
+   */
+  const moveTo = async (d, toId) => {
+    try {
+      const from = d.from ? formations.find((f) => f.id === d.from) : null;
+      if (from) await leaveFormation(from, d.sessionId);
+      const to = toId ? formations.find((f) => f.id === toId) : null;
+      if (to) await patchFormation(to.id, { members: [...to.members, d.sessionId] });
+      setStatus(to ? `${d.title} joined ${to.name}` : `${d.title} left ${from?.name ?? "the formation"}`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+    paint();
+  };
+
+  /** Promote to lead. Whoever was leading drops into the flight, so the roster is unchanged. */
+  const promote = async (f, sessionId) => {
+    try {
+      await patchFormation(f.id, { lead: sessionId, members: [...f.members.filter((m) => m !== sessionId), ...(f.lead && f.lead !== sessionId ? [f.lead] : [])] });
+      setStatus(`${f.name} has a new lead`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+    paint();
+  };
+
+  const demote = async (f, sessionId) => {
+    try {
+      await patchFormation(f.id, { lead: null, members: [...f.members, sessionId] });
+      setStatus(`${f.name} is flying without a lead`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
     paint();
   };
 
@@ -316,21 +443,35 @@ export const mountCommandCenter = (root, ctx) => {
     if (name && name !== f.name) saveFormation(f.id, { name });
   };
 
-  /** Right-click a formation tab. Closing a tab should not need a trip into the formation. */
-  const tabMenu = (f, x, y) => {
+  /** A little menu at the pointer: `[label, run, class]` a row. */
+  const popMenu = (label, x, y, rows) => {
     document.querySelector(".tab-menu")?.remove();
-    const menu = el("div", { class: "menu tab-menu", role: "dialog", "aria-label": `${f.name} formation` },
-      el("button", { type: "button", class: "pick-row", onclick: () => { menu.remove(); renameFormation(f); } }, el("b", {}, "Rename…")),
-      el("button", { type: "button", class: "pick-row danger", onclick: () => { menu.remove(); disband(f); } }, el("b", {}, "Disband")));
+    const menu = el("div", { class: "menu tab-menu", role: "dialog", "aria-label": label },
+      ...rows.map(([caption, run, cls]) =>
+        el("button", { type: "button", class: `pick-row${cls ? ` ${cls}` : ""}`, onclick: () => { menu.remove(); run(); } }, el("b", {}, caption))));
     menu.style.top = `${y + 4}px`;
     menu.style.left = `${x}px`;
     document.body.append(menu);
     window.setTimeout(() => document.addEventListener("click", function once() { menu.remove(); document.removeEventListener("click", once); }), 0);
   };
 
+  /** Right-click a formation tab. Closing a tab should not need a trip into the formation. */
+  const tabMenu = (f, x, y) =>
+    popMenu(`${f.name} formation`, x, y, [["Rename…", () => renameFormation(f)], ["Disband", () => disband(f), "danger"]]);
+
+  /** Right-click a strip inside a formation: the drags, for anyone who would rather click. */
+  const stripMenu = (f, s, x, y) =>
+    popMenu(`${s.title} in ${f.name}`, x, y, [
+      f.lead === s.sessionId
+        ? ["Drop into the flight", () => demote(f, s.sessionId)]
+        : ["Promote to lead", () => promote(f, s.sessionId)],
+      [`Remove from ${f.name}`, () => moveTo({ sessionId: s.sessionId, from: f.id, title: s.title }, null), "danger"],
+    ]);
+
   const formationTabs = () => {
     const tab = (id, label, count, f) =>
-      el("button", { type: "button", class: activeFormation === id ? "on" : "", title: f ? `${f.name} · right-click for rename and disband` : "every session in this project",
+      dropZone(el("button", { type: "button", class: activeFormation === id ? "on" : "",
+        title: f ? `${f.name} · drop a strip here to bring it into the flight · right-click for rename and disband` : "every session in this project · drop a strip here to take it out of its formation",
         oncontextmenu: f ? (e) => { e.preventDefault(); tabMenu(f, e.clientX, e.clientY); } : null,
         onclick: () => {
         activeFormation = id;
@@ -338,10 +479,12 @@ export const mountCommandCenter = (root, ctx) => {
         if (id) u.searchParams.set("formation", id); else u.searchParams.delete("formation");
         history.replaceState({}, "", u);
         paint();
-      } }, label, count != null ? el("b", {}, String(count)) : null);
+      } }, label, count != null ? el("b", {}, String(count)) : null),
+      // The rack you came from is not somewhere to land.
+      (d) => d.from !== id, (d) => moveTo(d, id));
     return el("div", { class: "forms" },
       tab(null, "Rack", mySessions().length),
-      ...formations.map((f) => tab(f.id, f.name, (f.lead ? 1 : 0) + f.members.length, f)),
+      ...formations.map((f) => tab(f.id, f.name, slots(f), f)),
       el("button", { type: "button", class: "new", title: "new formation", onclick: async () => {
         const f = await api("/api/formations?project=" + encodeURIComponent(ctx.projectId), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
         formations = [...formations, f];
@@ -366,28 +509,87 @@ export const mountCommandCenter = (root, ctx) => {
     }), 0);
   };
 
+  /** Everything the formation is holding: its lead, its flight, and the slots still starting. */
+  const slots = (f) => (f.lead ? 1 : 0) + f.members.length + (f.pending?.length ?? 0);
+
+  /** A slot held for a session that is still starting: the strip is drawn, waiting for its session. */
+  const startingSlot = (p) =>
+    el("article", { class: "strip ghost starting", title: `${p.title} is starting in a terminal of its own; it takes this slot as Claude Code registers it` },
+      stripLine({
+        status: "busy",
+        band: "working",
+        name: el("h4", { class: "strip-name" }, p.title),
+        state: "starting",
+        when: "",
+        where: "waiting for it to register",
+      }));
+
+  /**
+   * Start a claude straight into this formation, so the flight grows in one step instead of
+   * two. The slot is held by the pty it starts in and fills itself the moment Claude Code
+   * registers the session, which is also what wires the strip's `open` to this same terminal.
+   * It inherits the lead's working directory when that is inside the project, so a flight works
+   * one tree. The callsign (the lead is 1) names the slot while it is starting and titles its
+   * terminal; the session itself keeps whatever title Claude Code derives, which says more about
+   * the work than a position does.
+   */
+  const newSessionButton = (f, as) => {
+    const title = `${f.name} ${as === "lead" ? 1 : slots(f) + 1}`;
+    return el("button", { type: "button", class: "ghost", title: `start a new claude in this formation as ${title}`, onclick: async (e) => {
+      e.stopPropagation();
+      const leader = f.lead ? mySessions().find((s) => s.sessionId === f.lead) : null;
+      const path = all.projects.find((p) => p.id === ctx.projectId)?.path;
+      const inside = leader?.cwd && path && (leader.cwd === path || leader.cwd.startsWith(`${path}/`));
+      try {
+        const { formation } = await post(`/api/formations/${f.id}/sessions`, { project: ctx.projectId, title, as, ...(inside ? { cwd: leader.cwd } : {}) });
+        formations = formations.map((x) => (x.id === formation.id ? formation : x));
+        setStatus(`${title} is starting; it takes its slot as it registers`);
+        paint();
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    } }, "new session");
+  };
+
   const formationView = (f) => {
     const byId = new Map(mySessions().filter((s) => s.sessionId).map((s) => [s.sessionId, s]));
     const lead = f.lead ? byId.get(f.lead) : null;
     const flight = f.members.map((id) => byId.get(id)).filter(Boolean);
     const gone = (f.lead && !lead ? 1 : 0) + f.members.length - flight.length;
-    return el("section", { class: "cc-project formation" },
-      el("section", { class: "rack lead-rack" },
+    const holding = f.pending ?? [];
+    const starting = (as) => holding.filter((p) => p.as === as);
+    // Once the lead is open it takes a column of its own and the flight becomes the rail beside
+    // it: that is the whole point of a formation, typing to the one that orchestrates while the
+    // rest stay in sight. Closed, the lead is a single line and a column would be empty space.
+    const leadOpen = Boolean(lead && opened.has(lead.key));
+    return el("section", { class: `cc-project formation${leadOpen ? " with-lead" : ""}` },
+      // Drop a strip on the lead slot to put it in front; the lead it replaces joins the flight.
+      dropZone(el("section", { class: "rack lead-rack" },
         el("h4", {}, jetSvg("jet-glyph band"), el("span", {}, "Oversight"),
           el("span", { class: "spacer" }),
-          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { lead: s.sessionId }), "Who is the lead?"); } }, lead ? "change lead" : "assign a lead")),
+          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { lead: s.sessionId }), "Who is the lead?"); } }, lead ? "change lead" : "assign a lead"),
+          lead || starting("lead").length ? null : newSessionButton(f, "lead")),
         lead
           ? el("div", { class: "rack-strips" }, strip(lead, model.byClaudeId.get(lead.claudeId), true, "working"))
-          : el("p", { class: "muted small cc-empty" }, "No lead yet. The lead is the session that orchestrates; the flight reports into it.")),
-      el("section", { class: "rack" },
+          : starting("lead").length
+            ? el("div", { class: "rack-strips" }, ...starting("lead").map(startingSlot))
+            : el("p", { class: "muted small cc-empty" }, "No lead yet. The lead is the session that orchestrates; the flight reports into it. Drop a strip here to put one in front.")),
+        (d) => d.from === f.id && d.sessionId !== f.lead, (d) => promote(f, d.sessionId)),
+      // Drop the lead back into the flight to stand it down.
+      dropZone(el("section", { class: "rack" },
         el("h4", {}, el("span", {}, "Flight"), el("span", { class: "n" }, String(flight.length)),
           el("span", { class: "spacer" }),
-          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { members: [...f.members, s.sessionId] }), "Add to the flight"); } }, "add a session")),
-        flight.length
-          ? el("div", { class: "rack-strips" }, ...flight.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "working")))
-          : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet.")),
+          el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { members: [...f.members, s.sessionId] }), "Add to the flight"); } }, "add a session"),
+          newSessionButton(f, "member")),
+        flight.length || starting("member").length
+          ? el("div", { class: `rack-strips${flight.filter((x) => opened.has(x.key)).length > 1 ? " grid" : ""}` }, ...flight.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "working")), ...starting("member").map(startingSlot))
+          : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet. Drop a strip here, or start one.")),
+        (d) => d.from === f.id && d.sessionId === f.lead, (d) => demote(f, d.sessionId)),
       gone ? el("p", { class: "muted small cc-empty" }, `${gone} session${gone === 1 ? " is" : "s are"} no longer running; the formation keeps the slot.`) : null,
+      // One closing row, not two stray lines: how the strips move, then the way out.
       el("div", { class: "forms-foot" },
+        el("span", { class: "muted small" }, "Drag a strip onto another tab to move it, or onto Rack to take it out."),
+        el("span", { class: "spacer" }),
         el("button", { type: "button", class: "ghost", onclick: () => disband(f) }, "disband this formation")));
   };
 
@@ -521,10 +723,28 @@ export const mountCommandCenter = (root, ctx) => {
     const section = active ? formationView(active) : projectSection(proj, mine);
     const sections = section ? [section] : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
     root.replaceChildren(...sections);
-    if (full) paintFullHead();
+    // Every open pane's head carries live state (lamp, status, timing), so they follow the model.
+    for (const p of panes.values()) {
+      paintHead(p);
+      // A session stopped at a prompt is the one moment you certainly want its controls, so an
+      // open pane reaches for them itself rather than making you ask twice. Only where we own
+      // the pty: resuming a session that lives in someone else's terminal would start a second
+      // claude on it, which is not a thing to do behind the pilot's back.
+      const wants = WANTS_YOU.test(p.session.status ?? "");
+      if (p.inline && !p.stickPane && wants && ownPty(p.session)) takeTheStick(p);
+      // The registry knowing it is waiting is the dependable signal; the grid holds the question.
+      if (wants && p.stickTerm) catchPrompt(p);
+      if (!wants && p.promptCard) clearPrompt(p);
+    }
+    // A repaint rebuilds the racks, so a pane whose strip is no longer drawn has nothing to
+    // live in: the session keeps running, the pane does not. Its terminal is detached, not ended.
+    for (const p of [...panes.values()]) if (p.inline && !p.node.isConnected) destroyPane(p);
+    refitAll();
   };
-
-  /* ---------- full screen conversation ---------- */
+  /* ---------- the session pane: one conversation, in a strip or full screen ----------
+     One implementation, two hosts. A pane owns a session's transcript, its composer and, when
+     you take the stick, its terminal. Full screen is a pane in an overlay; a formation expands
+     a pane inside the strip it belongs to, which is how several run at once. */
 
   const chip = (t) => el("span", { class: "tool-chip", title: t.gloss }, el("b", {}, t.name), t.gloss ? text(` ${clip(t.gloss, 64)}`) : null);
 
@@ -567,60 +787,110 @@ export const mountCommandCenter = (root, ctx) => {
     return nodes;
   };
 
-  const paintFullHead = () => {
-    if (!full) return;
-    const live = model.sessions.find((s) => s.key === full.session.key) ?? full.session;
-    full.session = live;
-    full.head.replaceChildren(
-      el("button", { type: "button", class: "ghost back", onclick: closeFull }, "← all sessions"),
-      lamp(live.status),
-      el("h2", { title: live.title }, full.title ?? live.title),
-      el("span", { class: "meta" }, el("span", { class: "k" }, live.status), live.waitingFor ? el("span", {}, live.waitingFor) : null, el("span", {}, whereText(live)), el("span", { class: "mono" }, live.sessionId.slice(0, 8))),
-      el("span", { class: "spacer" }),
-      endButton(live, "ghost end-long", true),
-      full?.stickPane ? null : el("button", { type: "button", class: "primary", onclick: () => takeTheStick(live) }, "Take the stick"),
-      // Top right is where every interface puts dismiss, so that is all it may do here.
-      el("button", { type: "button", class: "ghost icon-btn dismiss", "aria-label": "close this view; the session keeps running", title: "close this view; the session keeps running", onclick: closeFull }, icon("close")),
-    );
+  /** Every pane alive on the page, by session key. A strip's pane and the overlay's are the same thing. */
+  const panes = new Map();
+  let full = null; // the pane that is full screen, if one is
+
+  const liveSession = (p) => model?.sessions.find((s) => s.key === p.key) ?? p.session;
+
+  /** The two states that want the pilot; the lamp draws them as a reticle for the same reason. */
+  const WANTS_YOU = /^(waiting|blocked)$/;
+
+  /** A session we can type into: one of our own ptys, or a background agent we can attach to. */
+  const ownPty = (s) => Boolean(s.terminalId) || s.kind === "background";
+
+  const paintHead = (p) => {
+    const s = (p.session = liveSession(p));
+    const stick = p.stickPane
+      ? el("button", { type: "button", class: "ghost", title: "put the terminal away and read the conversation", onclick: () => dropTheStick(p) }, "back to the conversation")
+      : el("button", { type: "button", class: p.inline ? "ghost" : "primary", title: "type into this session's own terminal", onclick: () => takeTheStick(p) }, "Take the stick");
+    // Top right is where every interface puts dismiss, so that is all it may do here.
+    const dismiss = el("button", { type: "button", class: "ghost icon-btn dismiss", "aria-label": p.inline ? "collapse this session back to its strip" : "close this view; the session keeps running", title: p.inline ? "collapse back to the strip; the session keeps running" : "close this view; the session keeps running", onclick: () => (p.inline ? collapse(p.key) : closeFull()) }, icon("close"));
+    // Inline, the strip line directly above already names the session, its state, its timing,
+    // where it lives and the three verbs. Repeating all of that would be a second header saying
+    // what the first one said, so the pane keeps only what the strip has no column for.
+    const parts = p.inline
+      ? [el("span", { class: "spacer" }), stick, dismiss]
+      : [
+          el("button", { type: "button", class: "ghost back", onclick: () => closeFull() }, "← all sessions"),
+          lamp(s.status),
+          el("h2", { title: s.title }, p.title ?? s.title),
+          el("span", { class: "meta" }, el("span", { class: "k" }, s.status), s.waitingFor ? el("span", {}, s.waitingFor) : null, el("span", {}, whereText(s)), el("span", { class: "mono" }, s.sessionId.slice(0, 8))),
+          el("span", { class: "spacer" }),
+          endButton(s, "ghost end-long", true),
+          stick,
+          dismiss,
+        ];
+    // replaceChildren does not drop nulls the way el() does: one would be painted as "null".
+    p.head.replaceChildren(...parts.filter(Boolean));
   };
 
-  const pullTranscript = async () => {
-    if (!full || full.busy) return; // one read in flight at a time, or the first (widening) read is appended twice
-    const f = full;
-    f.busy = true;
+  /**
+   * The transcript, pushed rather than asked for. Claude Code writes a line per message block as
+   * it goes, so a reply lands here within a beat of being written instead of on the next poll.
+   * If the stream cannot be opened the pane falls back to asking, because a pane that shows
+   * nothing is worse than one that is a couple of seconds behind.
+   */
+  const openTranscriptStream = (p) => {
+    const q = `cwd=${encodeURIComponent(p.session.cwd)}&session=${encodeURIComponent(p.session.sessionId)}&from=0`;
+    try {
+      const src = new EventSource(`/api/transcript/stream?${q}`);
+      src.onmessage = (e) => {
+        if (p.dead) return;
+        try {
+          applyPage(p, JSON.parse(e.data));
+        } catch {
+          /* a half-written frame: the next one carries the same events */
+        }
+      };
+      src.onerror = () => {
+        // EventSource reconnects on its own; a run of failures means falling back to polling.
+        if (p.dead || p.timer) return;
+        p.timer = window.setInterval(() => pullTranscript(p).catch(() => {}), 2500);
+      };
+      p.stream = src;
+    } catch {
+      p.timer = window.setInterval(() => pullTranscript(p).catch(() => {}), 2500);
+      pullTranscript(p).catch(() => {});
+    }
+  };
+
+  /** Fold one page of events into the pane, wherever it came from. */
+  const applyPage = (p, page) => {
+    if (page.title && !p.title) {
+      p.title = page.title;
+      paintHead(p);
+    }
+    p.offset = page.offset;
+    if (!page.events.length) return;
+    const nearBottom = p.scroller.scrollHeight - p.scroller.scrollTop - p.scroller.clientHeight < NEAR_BOTTOM;
+    // Re-render from the last unfinished fold so consecutive tool turns keep merging.
+    p.events.push(...page.events);
+    p.list.replaceChildren(...turnNodes(p.events));
+    if (p.list.childElementCount === 0) p.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
+    if (nearBottom || p.first) p.scroller.scrollTop = p.scroller.scrollHeight;
+    p.first = false;
+  };
+
+  const pullTranscript = async (p) => {
+    if (p.busy || p.dead) return; // one read in flight at a time, or the first (widening) read is appended twice
+    p.busy = true;
     let page;
     try {
-      page = await api(`/api/transcript?cwd=${encodeURIComponent(f.session.cwd)}&session=${encodeURIComponent(f.session.sessionId)}&from=${f.offset}`);
+      page = await api(`/api/transcript?cwd=${encodeURIComponent(p.session.cwd)}&session=${encodeURIComponent(p.session.sessionId)}&from=${p.offset}`);
     } finally {
-      f.busy = false;
+      p.busy = false;
     }
-    if (full !== f) return;
-    if (page.title && !f.title) {
-      f.title = page.title;
-      paintFullHead();
-    }
-    if (!page.events.length) {
-      f.offset = page.offset;
-      return;
-    }
-    const nearBottom = f.scroller.scrollHeight - f.scroller.scrollTop - f.scroller.clientHeight < NEAR_BOTTOM;
-    // Re-render from the last unfinished fold so consecutive tool turns keep merging.
-    f.events.push(...page.events);
-    f.offset = page.offset;
-    f.list.replaceChildren(...turnNodes(f.events));
-    if (f.list.childElementCount === 0) f.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
-    if (nearBottom || f.first) f.scroller.scrollTop = f.scroller.scrollHeight;
-    f.first = false;
+    if (p.dead) return;
+    applyPage(p, page);
   };
 
-  /** Typing into the session. A background session gets a real composer over a headless attach; a terminal's session cannot be reached. */
-  const paintComposer = () => {
-    const f = full;
-    if (!f) return;
-    const s = f.session;
-    const peer = s.kind !== "background" && !s.terminalId; // lives in another terminal: reached over its messaging socket
+  /** Typing into the session. A background session gets a real composer over a headless attach; a terminal's session is reached over its messaging socket. */
+  const paintComposer = (p) => {
+    const s = p.session;
+    const peer = s.kind !== "background" && !s.terminalId; // lives in another terminal
     if (finished(s.status)) {
-      f.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
+      p.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
       return;
     }
     const area = el("textarea", { rows: "2", placeholder: peer ? `Message this session in ${s.app ?? "its terminal"}. It arrives as a peer message; Enter sends.` : "Message this session. Enter sends, Shift+Enter for a new line, drop files to attach." });
@@ -633,8 +903,8 @@ export const mountCommandCenter = (root, ctx) => {
           // Another terminal's session: Claude Code's messaging socket, the channel sessions use for each other.
           await post(`/api/sessions/${s.pid}/message`, { text: body });
         } else {
-          // A session living in Maverick's dock is typed into through its own pty; a background one through a headless attach.
-          const target = s.terminalId ?? (f.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title })).id;
+          // A session living in one of Maverick's ptys is typed into through it; a background one through a headless attach.
+          const target = s.terminalId ?? (p.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title })).id;
           await sendInput(target, body);
           await new Promise((r) => window.setTimeout(r, 180)); // a burst ending in Enter reads as a paste; a beat later it submits
           await sendInput(target, "\r");
@@ -649,96 +919,438 @@ export const mountCommandCenter = (root, ctx) => {
       }
     };
     area.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
-    acceptDrops(f.composer, (paths) => {
+    acceptDrops(p.composer, (paths) => {
       area.value = `${area.value}${area.value && !area.value.endsWith(" ") ? " " : ""}${paths.join(" ")} `;
       area.focus();
     });
-    f.composer.replaceChildren(
+    p.composer.replaceChildren(
       el("div", { class: "row" }, area, el("button", { type: "button", class: "primary", onclick: send }, "Send")),
       el("div", { class: "hint" },
         el("span", {}, peer
           ? `Lives in ${s.app ?? "a terminal"}${s.tty ? ` on ${s.tty}` : ""} · sent over its session socket, so Claude reads it as a peer's request under that session's permissions`
-          : `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in Maverick's dock" : ""}`),
+          : `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in one of Maverick's terminals" : ""}`),
         peer && s.app && s.pid ? el("button", { type: "button", class: "ghost", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
         null),
     );
   };
 
+  /* ---------- the terminal, wearing the interface ----------
+     A real emulator is not negotiable: Claude Code drives the alternate screen, addresses the
+     cursor and wants raw keys, so the arrows, Ctrl+C and its own permission menus only work if
+     something speaks the protocol. What is negotiable is that it look like a terminal. */
+
+  /** Resolve a token to a real colour. Tokens are `color-mix()` as often as hex, so ask the browser. */
+  const cssColor = (token, probe = el("span")) => {
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const value = getComputedStyle(probe).color;
+    probe.remove();
+    return value;
+  };
+
   /**
-   * The terminal, inside the session's own view. This is what the dock used to be: a pane over
-   * live content was the confusing part, so it lives where the session already is.
+   * The 16 ANSI slots, repainted in the instrument palette. Anything the session colours through
+   * them adopts the project's accent rather than a stock red or green.
    */
-  const takeTheStick = async (session) => {
-    if (!full || full.stickPane) return;
-    const pane = el("div", { class: "cc-stick" }, el("div", { class: "cc-stick-head" },
-      el("span", { class: "k" }, "terminal"),
-      el("span", { class: "t" }, session.title),
-      el("span", { class: "spacer" }),
-      el("button", { type: "button", class: "ghost icon-btn", "aria-label": "detach the terminal; the session keeps running", title: "detach; the session keeps running", onclick: dropTheStick }, icon("close"))));
+  const termLook = () => ({
+    fontFamily: "JetBrains Mono, Menlo, monospace",
+    fontSize: 12.5,
+    lineHeight: 1.55,
+    letterSpacing: 0.2,
+    cursorBlink: true,
+    cursorStyle: "bar",
+    cursorWidth: 2,
+    scrollback: 5000,
+    allowTransparency: true,
+    theme: {
+      background: "rgba(0,0,0,0)", // the pane's own surface shows through; no black gutter
+      foreground: cssColor("--ink"),
+      cursor: cssColor("--accent"),
+      cursorAccent: cssColor("--panel"),
+      selectionBackground: cssColor("--accent-dim"),
+      black: cssColor("--carbon"),
+      red: cssColor("--threat"),
+      green: cssColor("--hud"),
+      yellow: cssColor("--caution"),
+      blue: cssColor("--accent"),
+      magenta: cssColor("--accent-hot"),
+      cyan: cssColor("--accent-hot"),
+      white: cssColor("--ink-soft"),
+      brightBlack: cssColor("--ink-ghost"),
+      brightRed: cssColor("--threat"),
+      brightGreen: cssColor("--hud"),
+      brightYellow: cssColor("--caution"),
+      brightBlue: cssColor("--accent-hot"),
+      brightMagenta: cssColor("--accent-hot"),
+      brightCyan: cssColor("--accent-hot"),
+      brightWhite: cssColor("--ink"),
+    },
+  });
+
+  const rgbTriplet = (css) => (css.match(/\d+/g) ?? ["0", "0", "0"]).slice(0, 3).join(";");
+
+  /**
+   * Claude Code writes its own colours as truecolor (`38;2;r;g;b`), which walks straight past the
+   * palette above: measured against a live pty, its orange arrives as a hardcoded #d77757 no
+   * theme can reach. So the handful it hardcodes are substituted in the stream on the way to the
+   * renderer. Anything not in the table passes through untouched, which is the safe direction: a
+   * colour we have not seen keeps its own value rather than turning into the wrong one.
+   */
+  const CLAUDE_INK = {
+    "215;119;87": "--accent",    // #d77757, the one it signs everything with
+    "255;193;7": "--caution",    // #ffc107
+    "136;136;136": "--ink-faint", // #888888
+    "153;153;153": "--ink-faint", // #999999
+  };
+
+  const skinTable = () => new Map(Object.entries(CLAUDE_INK).map(([from, token]) => [from, rgbTriplet(cssColor(token))]));
+
+  const reskin = (chunk, table) =>
+    chunk.replace(/([34]8;2;)(\d+;\d+;\d+)/g, (whole, lead, rgb) => (table.has(rgb) ? lead + table.get(rgb) : whole));
+
+  /* ---------- answering a permission prompt without reading a terminal ----------
+     Claude Code asks for permission in its TUI, and the question is painted character by
+     character across cursor moves, so the raw stream cannot be searched for it: "Do you want"
+     never appears contiguously in the bytes. Two things make this tractable anyway. It announces
+     itself with a structured desktop notification, which *is* contiguous. And xterm has already
+     done the emulation, so the finished question and its options can be read off its buffer
+     rather than re-derived. */
+
+  /** `ESC ] 99 ; …p=body;Claude needs your permission BEL`, the notification it emits when it asks. */
+  const WANTS_PERMISSION = /\x1b\]99;[^\x07\x1b]*p=body;([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+
+  /**
+   * The tail of the buffer, by its own length. Three windows were wrong before this one. A range
+   * around the *cursor* misses everything, because a full-screen TUI parks its cursor in the
+   * input line rather than near the question. The viewport alone is not enough either. And
+   * viewport arithmetic (`viewportY + rows`) is wrong outright: in a short pane `term.rows` is
+   * smaller than the rows xterm still has rendered, so the window ended one line past the
+   * question and cut off two of its three choices. The buffer knows how long it is; ask it.
+   */
+  const RECENT = 120;
+  const screenLines = (term) => {
+    const b = term.buffer.active;
+    const lines = [];
+    for (let i = Math.max(0, b.length - RECENT); i < b.length; i += 1) lines.push(b.getLine(i)?.translateToString(true) ?? "");
+    return lines;
+  };
+
+  /**
+   * The question and its numbered choices, off the rendered grid. Read from the bottom up,
+   * because a long session has asked before and only the last one is live.
+   */
+  const readPrompt = (term) => {
+    const lines = screenLines(term);
+    const at = lines.findLastIndex((l) => /^\s*(?:[❯>]\s*)?Do you want\b.*\?\s*$/.test(l));
+    if (at < 0) return null;
+    const options = [];
+    for (let i = at + 1; i < lines.length; i += 1) {
+      const m = lines[i].match(/^\s*[❯>]?\s*(\d+)\.\s+(\S.*?)\s*$/);
+      if (m) options.push({ key: m[1], label: m[2] });
+      else if (options.length && lines[i].trim() && !/^\s*(Esc|Tab)\b/.test(lines[i])) break;
+    }
+    return options.length ? { question: lines[at].replace(/^\s*[❯>]\s*/, "").trim(), options } : null;
+  };
+
+  /**
+   * The same question, as this interface asks things. The terminal stays mounted underneath and
+   * keeps working, because the card is a shortcut for the keystroke rather than a replacement
+   * for it: anything this cannot parse is still answerable in the terminal itself.
+   */
+  const showPrompt = (p, ask) => {
+    p.promptCard?.remove();
+    const card = el("div", { class: "cc-ask", role: "group", "aria-label": "Claude needs your permission" },
+      el("p", { class: "cc-ask-q" }, ask.question),
+      el("div", { class: "cc-ask-opts" }, ...ask.options.map((o, i) =>
+        el("button", {
+          type: "button",
+          class: i === 0 ? "primary" : "ghost",
+          title: o.label,
+          onclick: async () => {
+            card.classList.add("sent");
+            try {
+              await sendInput(p.stickTerm.id, `${o.key}\r`);
+            } catch (err) {
+              setStatus(err.message, true);
+            }
+            clearPrompt(p);
+          },
+        }, clip(o.label, 58)))),
+      el("p", { class: "cc-ask-foot" }, "answered in the session's own terminal, below"));
+    p.promptCard = card;
+    p.body.insertBefore(card, p.body.firstChild);
+    refitAll();
+  };
+
+  const clearPrompt = (p) => {
+    p.promptCard?.remove();
+    p.promptCard = null;
+    p.asking = false;
+    refitAll();
+  };
+
+  /** After it announces, the box takes a beat to finish painting, so look a moment later. */
+  const catchPrompt = (p) => {
+    if (!p.stickTerm || p.promptCard) return;
+    window.clearTimeout(p.catchTimer);
+    p.catchTimer = window.setTimeout(() => {
+      if (!p.stickTerm || p.dead || p.promptCard) return;
+      const ask = readPrompt(p.stickTerm.term);
+      if (ask) showPrompt(p, ask);
+    }, 300);
+  };
+
+  /**
+   * The terminal, inside the pane the session already occupies. This is what the dock used to
+   * be: a pane over live content was the confusing part, so it lives where the session is.
+   */
+  /**
+   * A terminal needs room to be a terminal. Claude Code lays its permission box out for the size
+   * it has been given, and in a 14-row pane it simply does not draw it: the question was not
+   * merely off-screen, it was absent from the buffer. So taking the stick claims enough height
+   * for the session's own UI to exist, and gives it back on the way out.
+   */
+  const STICK_MIN = 560;
+
+  const takeTheStick = async (p) => {
+    if (p.stickPane) return;
+    const session = p.session;
+    if (p.inline) {
+      const was = p.node.getBoundingClientRect().height;
+      if (was < STICK_MIN) {
+        p.grewFrom = was;
+        p.node.style.height = `${STICK_MIN}px`;
+      }
+    }
+    const pane = el("div", { class: "cc-stick" });
     const host = el("div", { class: "term" });
     pane.append(host);
-    full.overlay.insertBefore(pane, full.composer);
-    full.stickPane = pane;
+    p.body.replaceChildren(pane);
+    p.stickPane = pane;
+    paintHead(p);
     try {
       const info = session.terminalId
         ? (await api("/api/terminals")).find((t) => t.id === session.terminalId)
-        : (full.stick ??= await createTerminal(dockFor(session)));
+        : (p.stick ??= await createTerminal(dockFor(session)));
       if (!info) throw new Error("that terminal is gone");
-      const term = new window.Terminal({ fontFamily: "JetBrains Mono, Menlo, monospace", fontSize: 12.5, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: { background: "#0a0c0f", foreground: "#e8ecf1" } });
+      const term = new window.Terminal(termLook());
       const fit = new window.FitAddon.FitAddon();
       term.loadAddon(fit);
       term.open(host);
       fit.fit();
       const src = new EventSource(`/api/terminals/${info.id}/stream`);
-      src.onmessage = (e) => term.write(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)));
+      // Decoded as a stream, because a multi-byte character can land across two chunks.
+      const decoder = new TextDecoder();
+      const table = skinTable();
+      src.onmessage = (e) => {
+        const chunk = decoder.decode(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)), { stream: true });
+        // The notification is the fast path, scanned across a rolling tail because a sequence can
+        // land split over two frames, which is exactly how this failed the first time. It is only
+        // ever an accelerator: the registry saying the session is waiting is the real trigger.
+        const scan = (p.tail ?? "") + chunk;
+        p.tail = scan.slice(-256);
+        WANTS_PERMISSION.lastIndex = 0;
+        for (const m of scan.matchAll(WANTS_PERMISSION)) if (/permission/i.test(m[1])) p.asking = true;
+        term.write(reskin(chunk, table), () => {
+          // Read the grid only once xterm has finished applying this chunk to it.
+          if (!p.promptCard) catchPrompt(p);
+          else if (!readPrompt(term)) clearPrompt(p);
+        });
+      };
       src.addEventListener("exit", () => { term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n"); src.close(); });
       term.onData((d) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: d, keepalive: true }).catch(() => {}));
       term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
       acceptDrops(host, (paths) => sendInput(info.id, `${paths.join(" ")} `));
-      full.stickTerm = { term, fit, src, id: info.id };
+      p.stickTerm = { term, fit, src, id: info.id };
+      catchPrompt(p); // it may already have been asking before this pane existed
       term.focus();
-      paintFullHead();
     } catch (err) {
       pane.append(el("p", { class: "muted small" }, err.message));
     }
   };
 
-  const dropTheStick = () => {
-    if (!full?.stickPane) return;
-    full.stickTerm?.src.close();
-    full.stickTerm?.term.dispose();
-    full.stickPane.remove();
-    full.stickPane = null;
-    full.stickTerm = null;
-    paintFullHead();
+  const dropTheStick = (p) => {
+    if (!p.stickPane) return;
+    if (p.grewFrom) {
+      p.node.style.height = `${p.grewFrom}px`;
+      p.grewFrom = null;
+    }
+    p.stickTerm?.src.close();
+    p.stickTerm?.term.dispose();
+    p.stickPane.remove();
+    p.stickPane = null;
+    p.stickTerm = null;
+    p.body.replaceChildren(p.scroller, p.composer);
+    paintHead(p);
   };
 
-  const openFull = (session, opts = {}) => {
-    closeFull();
+  /**
+   * xterm measures its own box, so every visible terminal is refit and its pty resized whenever
+   * the layout moves: a pane opening beside it, one closing, the columns changing. Inside a
+   * requestAnimationFrame, or the new geometry has not landed yet and it fits to the old one.
+   */
+  let refitSoon = null;
+  const refitAll = () => {
+    // One gesture can move the layout twice: closing a pane narrows the page, and losing the
+    // scrollbar it needed widens it again a beat later. Fitting to each posts the pty two
+    // resizes and a full-screen TUI repaints on both, so wait for it to settle and fit once.
+    if (refitSoon) window.clearTimeout(refitSoon);
+    refitSoon = window.setTimeout(() => {
+      refitSoon = null;
+      doRefit();
+    }, 90);
+  };
+
+  const doRefit = () => {
+    window.requestAnimationFrame(() => {
+      for (const p of panes.values()) {
+        if (!p.stickTerm || !p.node.isConnected) continue;
+        try {
+          // Fit only when the grid it would land on actually differs. Two fits in a frame send
+          // the pty two resizes, and a full-screen TUI repaints on each: measured, widening a
+          // pane posted 206 columns and then 207, which is one flicker for nothing.
+          const want = p.stickTerm.fit.proposeDimensions();
+          const { term } = p.stickTerm;
+          if (!want || (want.cols === term.cols && want.rows === term.rows)) continue;
+          p.stickTerm.fit.fit();
+        } catch {
+          /* a pane mid-teardown has no box to measure */
+        }
+      }
+    });
+  };
+
+  /** Heights are a per-viewer convenience, so they live in this browser rather than the URL. */
+  const HEIGHTS = "mv.paneHeights";
+  const readHeights = () => {
+    try {
+      return JSON.parse(localStorage.getItem(HEIGHTS) ?? "{}");
+    } catch {
+      return {}; // private window, blocked storage: the default height is a fine answer
+    }
+  };
+  const rememberHeight = (key, px) => {
+    try {
+      localStorage.setItem(HEIGHTS, JSON.stringify({ ...readHeights(), [key]: Math.round(px) }));
+    } catch {
+      /* nothing to remember it with */
+    }
+  };
+
+  const MIN_PANE = 180;
+
+  /**
+   * Drag the bottom edge to size a pane. A drawn bar rather than CSS `resize`, which brings the
+   * browser's own grip and does not persist. The terminal inside refits as the edge moves, so it
+   * follows the drag rather than snapping once it is let go.
+   */
+  const resizeHandle = (p) => {
+    const bar = el("div", { class: "cc-pane-grip", role: "separator", "aria-label": "drag to resize this session", "aria-orientation": "horizontal", tabindex: "0" });
+    bar.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      bar.setPointerCapture(e.pointerId);
+      const startY = e.clientY;
+      const startH = p.node.getBoundingClientRect().height;
+      const move = (ev) => {
+        const h = Math.max(MIN_PANE, startH + (ev.clientY - startY));
+        p.node.style.height = `${h}px`;
+        refitAll();
+      };
+      const up = (ev) => {
+        bar.releasePointerCapture(ev.pointerId);
+        bar.removeEventListener("pointermove", move);
+        bar.removeEventListener("pointerup", up);
+        rememberHeight(p.key, p.node.getBoundingClientRect().height);
+        refitAll();
+      };
+      bar.addEventListener("pointermove", move);
+      bar.addEventListener("pointerup", up);
+    });
+    // The keyboard gets the same control, because a drag is unreachable without a pointer.
+    bar.addEventListener("keydown", (e) => {
+      const step = e.key === "ArrowDown" ? 40 : e.key === "ArrowUp" ? -40 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const h = Math.max(MIN_PANE, p.node.getBoundingClientRect().height + step);
+      p.node.style.height = `${h}px`;
+      rememberHeight(p.key, h);
+      refitAll();
+    });
+    return bar;
+  };
+
+  /** Build a pane for a session. `inline` panes live in a strip; the other kind is full screen. */
+  const makePane = (session, { inline }) => {
     const head = el("header", { class: "cc-full-head" });
     const list = el("div", { class: "cc-conv" });
     const scroller = el("div", { class: "cc-full-body" }, list);
     const composer = el("div", { class: "cc-composer" });
-    const overlay = el("section", { class: "cc-full", role: "dialog", "aria-label": session.title }, head, scroller, composer);
-    full = { session, offset: 0, events: [], head, list, scroller, composer, overlay, first: true };
-    document.body.append(overlay);
-    document.body.classList.add("cc-full-open");
-    paintFullHead();
-    paintComposer();
+    const body = el("div", { class: "cc-pane-body" }, scroller, composer);
+    const node = el("section", { class: `cc-pane${inline ? " inline" : " cc-full"}`, role: inline ? "group" : "dialog", "aria-label": session.title }, head, body);
+    const p = { key: session.key, session, inline, head, list, scroller, composer, body, node, offset: 0, events: [], first: true };
+    if (inline) {
+      const saved = readHeights()[p.key];
+      if (saved) node.style.height = `${Math.max(MIN_PANE, saved)}px`;
+      node.append(resizeHandle(p));
+    }
+    panes.set(p.key, p);
+    paintHead(p);
+    paintComposer(p);
     list.append(el("p", { class: "muted cc-empty" }, "reading the transcript…"));
-    pullTranscript().catch((err) => list.replaceChildren(el("p", { class: "muted cc-empty" }, err.message)));
-    full.timer = window.setInterval(() => pullTranscript().catch(() => {}), 2500);
+    openTranscriptStream(p);
+    return p;
+  };
+
+  const destroyPane = (p) => {
+    p.dead = true;
+    p.stream?.close();
+    window.clearInterval(p.timer);
+    p.stickTerm?.src.close();
+    p.stickTerm?.term.dispose();
+    // A terminal this pane opened for itself is detached, never ended: the session runs on.
+    if (p.stick) fetch(`/api/terminals/${p.stick.id}`, { method: "DELETE" }).catch(() => {});
+    p.node.remove();
+    panes.delete(p.key);
+  };
+
+  /* ---------- expanded strips: several sessions at once, in their own rack ---------- */
+
+  /** Which strips are expanded, in the URL beside `formation`, so a layout survives a reload. */
+  const readOpen = () => new Set((new URLSearchParams(location.search).get("open") ?? "").split(",").filter(Boolean));
+  let opened = readOpen();
+
+  const writeOpen = () => {
+    const u = new URL(location.href);
+    if (opened.size) u.searchParams.set("open", [...opened].join(","));
+    else u.searchParams.delete("open");
+    history.replaceState({}, "", u);
+  };
+
+  const expand = (key) => { opened.add(key); writeOpen(); paint(); };
+  const collapse = (key) => {
+    opened.delete(key);
+    writeOpen();
+    const p = panes.get(key);
+    if (p?.inline) destroyPane(p);
+    paint();
+  };
+  const toggleOpen = (key) => (opened.has(key) ? collapse(key) : expand(key));
+
+  /* ---------- full screen ---------- */
+
+  const openFull = (session, opts = {}) => {
+    closeFull();
+    full = makePane(session, { inline: false });
+    document.body.append(full.node);
+    document.body.classList.add("cc-full-open");
     history.pushState({ ccFull: session.key }, "", location.href);
-    if (opts.stick) takeTheStick(session);
+    if (opts.stick) takeTheStick(full);
   };
 
   const closeFull = () => {
     if (!full) return;
-    window.clearInterval(full.timer);
-    full.stickTerm?.src.close();
-    full.stickTerm?.term.dispose();
-    if (full.stick) fetch(`/api/terminals/${full.stick.id}`, { method: "DELETE" }).catch(() => {}); // detach; the session keeps running
-    full.overlay.remove();
+    destroyPane(full);
     document.body.classList.remove("cc-full-open");
     full = null;
   };

@@ -54,6 +54,14 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **A state colour belongs to one state.** `@keyframes arc` hardcoded `--hud`, so a *working*
   session pulsed in the colour a *finished* one is painted. A keyframe that sets colour is a
   second place a state is defined; keep the colour on the class and the motion in the keyframe.
+- **A state belongs to one rack, and the lamp is the tie-breaker.** The racks filter one list
+  independently, so a state named by two of them draws the same session twice. `blocked` was
+  counted as finished *and* claimed by "Needs you", so one session sat in both "Needs you" and
+  "Background · done", wearing a lock lamp on a strip marked `finished`. Blocked is running and
+  stopped at a prompt: it is the loudest thing on the page, never the quietest. When a predicate
+  and a lamp disagree about a state, the lamp is right, because it is what the pilot actually
+  reads at 14px. Keep "has ended" and "the agent's own word outranks the registry" as two
+  predicates; they overlap but they are not the same question.
 - **The lamp is an engine, or a reticle.** Running states are an afterburner nozzle drawn off a
   photograph: a serrated petal rim (a *ring* with the teeth cut into its inner edge, never a
   filled star, which reads as a sun), a banded throat, and an iris whose area opens with heat.
@@ -115,9 +123,96 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   beside the Rack. A formation is one **lead**, the session that orchestrates, and its **flight**,
   one to twenty sessions under it, drawn with the same strips as everywhere else. The active
   formation is in the URL, so one can be pulled into its own window or desktop.
+- **A strip moves between racks, and that is the whole of drag and drop.** A controller lifts a
+  paper flight strip out of one rack and puts it in another, so the tabs are the racks: drop a
+  strip on a formation tab and it joins that flight, drop it on `Rack` and it leaves the
+  formation it was in. Inside a formation the lead slot and the flight are two more racks, which
+  is promote and demote. One rule, no second gesture. The strip advertises it with the grab
+  cursor alone (its row is already six columns dense and has no pixels to spare for a handle);
+  what actually announces the move is the *targets* lighting up the moment a strip is in the air.
+  A landing zone is an `outline` with an offset, never a ring or padding, so highlighting a rack
+  cannot move the page it is drawn on. Every drag also has a click path, on the strip's own
+  right-click menu, because a drag is unreachable without a pointer.
+- **A rename puts the drag handle down.** A `draggable` ancestor swallows text selection inside
+  an input, so `.strip-rename` clears `draggable` on the strip while the name is being typed and
+  restores it on commit or Escape. Without this the rename field looks focusable and will not
+  select.
+- **A slot can be held for a session that does not exist yet.** Starting a claude into a
+  formation gives the formation a `pending` entry keyed by the *pty*, because that is the only
+  handle that exists before a session id does; it fills itself the moment Claude Code registers
+  a session in that terminal, and drops if the pty dies without ever registering. The held slot
+  draws as the same strip on the same grid, marked `starting`, for the same reason a slot whose
+  session is gone says so rather than vanishing. The callsign (`Alpha 2`) names the *slot* and
+  titles its terminal; the session keeps the title Claude Code derives, which says more about
+  the work than a position does.
 - **A tab's own actions live on the tab.** Right-click a formation to rename or disband it;
   closing one should not need a trip inside it first. Disbanding asks, because the grouping is
   the only thing lost and it is not recoverable.
+- **A session opens where it sits, and several can be open at once.** Full screen answers "show
+  me this one" and nothing else: it covers the formation, so the moment you type into the lead
+  you lose the flight. Inside a formation a strip expands in place instead. The strip stays in
+  its rack and gets taller, its line becoming the pane's header, the body below carrying the
+  conversation and composer, or the terminal once you take the stick. The open set lives in the
+  URL beside `formation`, so a layout survives a reload and can be pulled into its own window.
+  Past one open strip the rack becomes two columns, and a *collapsed* strip still spans the full
+  row, because it is still a line: only the open ones share. In a column the strip drops its
+  `where`, which is the one thing its own pane header repeats.
+- **The lead takes a column once it is open, and the flight becomes the rail beside it.** A
+  formation is one session you are driving and several you are watching, so an open lead sits
+  left and the flight stands to its right: you type to the one that orchestrates while the rest
+  stay in sight. Closed, the lead is a single line and a column of its own is empty deck, so the
+  stacked layout stands. Neither column fits the six-column line (it wants 881px), and the cell
+  that pays is the **name**: at 919px it was squeezed to 24px and the lead had no title at all.
+  So each column drops what it can spare rather than letting the name starve, and a fixed column
+  is given the width the thing in it actually is: a 152px slot for a 198px action group put the
+  last verb off the page.
+- **A pane is sized by a drawn bar, and it remembers.** CSS `resize` brings the browser's own
+  grip, sits only in the corner, and forgets. The grip is a 9px bar across the bottom edge with
+  the terminal refitting as it moves, arrow keys doing the same job for a keyboard, and the
+  height kept in `localStorage` per session, because a height is a per-viewer convenience rather
+  than something the URL should carry.
+- **The transcript is pushed, not polled.** Claude Code appends a line per message block as it
+  goes, so the data was always live; what lagged was the page asking every 2.5 seconds. The
+  server watches the file and writes events to an `EventSource` as they land: measured, 1-2ms
+  from write to delivery. `fs.watch` can miss an event, so a slow interval sits behind it, and a
+  stream that will not open falls back to polling, because a pane a couple of seconds behind
+  beats a pane showing nothing.
+- **The pane header says only what the strip has no column for.** Inline it is one row: take the
+  stick, and dismiss. The strip line directly above already carries the name, state, timing,
+  place and the three verbs, and a second header repeating them was the defect, not the design.
+  Note that `replaceChildren` does not drop nulls the way `el()` does; one painted the word
+  "null" into every pane head.
+- **A permission question is asked in this interface, not read out of a terminal.** When a
+  session stops at a prompt, its open pane reaches for the stick itself and draws the question
+  with a button per choice; clicking one writes the digit to the pty. It is a shortcut for the
+  keystroke, never a replacement: the terminal stays mounted underneath, so anything the parser
+  misses is still answerable there. Four things had to be learned to make it work, all of them
+  from measurement rather than reasoning. **The raw stream cannot be searched for the question**:
+  a TUI paints it character by character across cursor moves, so "Do you want" never appears
+  contiguously in the bytes. Its OSC 99 desktop notification *does*, and is a useful accelerator,
+  but only that: the registry reporting `waiting` with `waitingFor: "permission prompt"` is the
+  dependable trigger. **The finished question is read off xterm's buffer**, because the emulator
+  has already done the work. **Window that buffer by its own length**, not by the cursor (a TUI
+  parks it in the input line) and not by `viewportY + rows` (in a short pane `term.rows` is
+  smaller than what is still rendered, which cut two of three choices off). And **a terminal needs
+  room to be a terminal**: in a 14-row pane Claude Code does not draw the box at all, so the
+  question was absent from the buffer rather than merely off-screen. Taking the stick claims a
+  minimum height and hands it back on the way out.
+- **Every choice is a button, so every choice looks like one.** A ghost with no edge, sitting
+  next to the primary, read as prose rather than as something to click. The wording is clipped at
+  58 characters with the whole of it in the title, because Claude Code's second option is
+  routinely a paragraph carrying two merged choices.
+- **A terminal wears this interface, and a real emulator is not negotiable.** Claude Code drives
+  the alternate screen, addresses the cursor and wants raw keys, so the arrows, Ctrl+C and its
+  own permission menus only work through something that speaks the protocol; re-rendering its
+  output as components would lose exactly that. What is negotiable is the look. xterm paints
+  transparent over the pane's own `--panel`, in JetBrains Mono with a line height you can read, a
+  bar cursor in `--accent`, a seam ring and the thin `--cold` scrollbar, with the 16 ANSI slots
+  repainted in the instrument palette. That last part is not enough on its own: measured against
+  a live pty, Claude Code writes its own colours as **truecolor** (`38;2;r;g;b`), which walks
+  straight past any theme, so the handful it hardcodes (its orange is `#d77757`) are substituted
+  in the stream on the way to the renderer. Anything not in that table passes through untouched,
+  which is the safe direction: an unseen colour keeps its own value rather than becoming a wrong one.
 - **The terminal lives inside the session it belongs to.** "Take the stick" mounts it in the
   session's own full-screen view rather than in a panel over the page; detaching leaves the
   session running. A formation holds session ids, not sessions: sessions come and go, the

@@ -8,6 +8,7 @@
  */
 import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { watch, type FSWatcher } from "node:fs";
 import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,7 +23,7 @@ import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type 
 import { abandonMission, acceptTask, approveMission, closeMission, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees } from "./src/missions.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
-import { readTranscript } from "./src/transcript-view.ts";
+import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
 import { backgroundAgents } from "./src/git.ts";
 import { focusApp, parentChain, processHome } from "./src/processes.ts";
 import { liveUsage } from "./src/claude-usage.ts";
@@ -31,7 +32,7 @@ import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
 import { readSessions, sessionsForProject, writeSession, type SessionRecord } from "./src/sessions.ts";
-import { createFormation, deleteFormation, listFormations, updateFormation } from "./src/formations.ts";
+import { addPending, createFormation, deleteFormation, listFormations, resolvePending, updateFormation } from "./src/formations.ts";
 import { readNames, setName } from "./src/names.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
 import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
@@ -242,6 +243,21 @@ const spawnPrompt = (project: Project, title: string, body: string, trackerPath:
     `When the loop closes, update that item in the tracker (mark it done or record the handoff) and commit the tracker file alone.`,
   ].join("\n");
 
+/**
+ * Which of Maverick's own ptys each registry session is running inside, keyed by session id.
+ * A session whose ancestry includes one of our pty bridges lives in a terminal the console
+ * owns: it can be typed into directly, and a formation that started it recognises it here.
+ */
+const terminalsBySession = async (registry: { pid: number; sessionId: string }[]): Promise<Map<string, string>> => {
+  const bridges = new Map(listTerminals().filter((t) => t.pid && t.exitCode === null).map((t) => [t.pid as number, t.id]));
+  if (!bridges.size) return new Map();
+  const found = await Promise.all(registry.map(async (s) => {
+    const id = (await parentChain(s.pid)).map((pid) => bridges.get(pid)).find(Boolean);
+    return id ? ([s.sessionId, id] as const) : null;
+  }));
+  return new Map(found.filter(Boolean) as (readonly [string, string])[]);
+};
+
 const openTerminalFor = async (body: OpenTerminalBody) => {
   const project = await projectById(body.project);
   const size = { cols: body.cols ?? 120, rows: body.rows ?? 36 };
@@ -333,11 +349,9 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (method === "GET" && path === "/api/sessions/all") {
     const projects = await readProjects();
     const registry = await readRegistrySessions();
-    // A session whose ancestry includes one of our pty bridges lives in Maverick's dock: it can be typed into directly.
-    const bridges = new Map(listTerminals().filter((t) => t.pid && t.exitCode === null).map((t) => [t.pid as number, t.id]));
+    const inTerminal = await terminalsBySession(registry);
     const enriched = await Promise.all(registry.map(async (s) => {
-      const chain = bridges.size ? await parentChain(s.pid) : [];
-      const terminalId = chain.map((pid) => bridges.get(pid)).find(Boolean);
+      const terminalId = inTerminal.get(s.sessionId);
       return { ...s, ...(await processHome(s.pid)), ...(await glance(s.cwd, s.sessionId)), ...(terminalId ? { terminalId } : {}) };
     }));
     const bg = (await Promise.all(projects.map((p) => backgroundAgents(p.path).catch(() => [])))).flat();
@@ -361,6 +375,47 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const sessionId = url.searchParams.get("session");
     if (!cwd || !sessionId) throw new Error("transcript needs cwd and session");
     return sendJson(res, 200, await readTranscript(cwd, sessionId, Number(url.searchParams.get("from") ?? 0)));
+  }
+  /**
+   * The same transcript, pushed instead of asked for. Claude Code appends a line per message
+   * block as it goes, so the data was always live; what lagged was the page asking every 2.5
+   * seconds. The file is watched and new events go out as they land, with a slow interval behind
+   * it because fs.watch can miss an event and a pane that silently stops updating is worse than
+   * a poll. The response is the same shape the polling endpoint returns.
+   */
+  if (method === "GET" && path === "/api/transcript/stream") {
+    const cwd = url.searchParams.get("cwd");
+    const sessionId = url.searchParams.get("session");
+    if (!cwd || !sessionId) throw new Error("transcript stream needs cwd and session");
+    let offset = Number(url.searchParams.get("from") ?? 0);
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    let sending = false;
+    const flush = async () => {
+      if (sending || res.writableEnded) return;
+      sending = true;
+      try {
+        const page = await readTranscript(cwd, sessionId, offset);
+        offset = page.offset;
+        if (page.events.length || page.title) res.write(`data: ${JSON.stringify(page)}\n\n`);
+      } catch {
+        /* the file may not exist yet; the next tick tries again */
+      } finally {
+        sending = false;
+      }
+    };
+    let watcher: FSWatcher | null = null;
+    try {
+      watcher = watch(transcriptPath(cwd, sessionId), () => void flush());
+    } catch {
+      /* no file to watch yet: the interval carries it */
+    }
+    const backstop = setInterval(() => void flush(), 2500);
+    void flush();
+    req.on("close", () => {
+      clearInterval(backstop);
+      watcher?.close();
+    });
+    return;
   }
   if (method === "GET" && path === "/api/workspace") {
     const lan = lanAddress();
@@ -581,7 +636,17 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
   // Formations: Cory's groupings of sessions, one lead and its flight.
   if (path === "/api/formations") {
-    if (method === "GET") return sendJson(res, 200, await listFormations((await requireProject(url)).id));
+    if (method === "GET") {
+      const mine = await listFormations((await requireProject(url)).id);
+      // A slot held for a starting session settles here, on the read that is already polling.
+      // Nothing held means nothing to match, and this is polled every ten seconds: the walk
+      // over every session's ancestry does not run unless a slot is actually waiting on it.
+      if (!mine.some((f) => f.pending?.length)) return sendJson(res, 200, mine);
+      const inTerminal = await terminalsBySession(await readRegistrySessions());
+      const sessionByTerminal = new Map([...inTerminal].map(([sessionId, terminal]) => [terminal, sessionId]));
+      const live = new Set(listTerminals().filter((t) => t.exitCode === null).map((t) => t.id));
+      return sendJson(res, 200, await resolvePending(mine, sessionByTerminal, live));
+    }
     if (method === "POST") {
       const body = await readJson<{ name?: string }>(req);
       return sendJson(res, 200, await createFormation((await requireProject(url)).id, body.name));
@@ -592,6 +657,14 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const [, id] = formationMatch;
     if (method === "PATCH") return sendJson(res, 200, await updateFormation(id, await readJson(req)));
     if (method === "DELETE") { await deleteFormation(id); return sendJson(res, 200, { ok: true }); }
+  }
+  // Start a claude straight into a formation: it holds the slot until the session registers.
+  const formationSessions = path.match(/^\/api\/formations\/([A-Za-z0-9-]+)\/sessions$/);
+  if (formationSessions && method === "POST") {
+    const body = await readJson<{ project: string; title: string; as: "lead" | "member"; cwd?: string }>(req);
+    const terminal = await openTerminalFor({ project: body.project, kind: "new", title: body.title, cwd: body.cwd });
+    const formation = await addPending(formationSessions[1], { terminal: terminal.id, as: body.as, title: body.title });
+    return sendJson(res, 200, { terminal, formation });
   }
 
   // Rename a session: Maverick's own name for it, kept beside the CLI's read-only registry.
