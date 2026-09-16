@@ -97,8 +97,18 @@ const askEnd = (done, label) => ask(done
 
 const api = async (path, init) => {
   const res = await fetch(path, init);
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error ?? `${res.status} on ${path}`);
+  // A failure does not always answer in JSON: a route that is not there answers 405 with an
+  // empty body, and parsing that first reported "Unexpected end of JSON input", which names
+  // neither the status nor the path. The status is the thing worth saying.
+  const raw = await res.text();
+  let body;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    if (res.ok) throw new Error(`${path} answered ${res.status} with something that is not JSON`);
+    body = null;
+  }
+  if (!res.ok) throw new Error(body?.error ?? `${res.status} ${res.statusText} on ${path}`);
   return body;
 };
 const post = (path, body) =>
