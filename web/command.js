@@ -79,7 +79,7 @@ const assemble = (all) => {
 };
 
 export const mountCommandCenter = (root, ctx) => {
-  const { el, text, api, post, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops, setStatus } = ctx;
+  const { el, text, api, post, ask, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops, setStatus } = ctx;
   const DAY = 86400000;
   let all = null;
   let model = null;
@@ -302,9 +302,36 @@ export const mountCommandCenter = (root, ctx) => {
   const mySessions = () => model.sessions.filter((s) => s.project === ctx.projectId);
   const addable = (f) => mySessions().filter((s) => s.sessionId && s.sessionId !== f.lead && !f.members.includes(s.sessionId));
 
+  const disband = async (f) => {
+    if (!(await askEnd(true, `formation ${f.name}`))) return;
+    await api(`/api/formations/${f.id}`, { method: "DELETE" });
+    formations = formations.filter((x) => x.id !== f.id);
+    if (activeFormation === f.id) activeFormation = null;
+    paint();
+  };
+
+  const renameFormation = async (f) => {
+    const name = await ask({ title: `Rename ${f.name}`, body: "Callsigns are easier to hold than numbers, but it is your formation.", confirm: "rename", field: { value: f.name, placeholder: "callsign" } });
+    if (name && name !== f.name) saveFormation(f.id, { name });
+  };
+
+  /** Right-click a formation tab. Closing a tab should not need a trip into the formation. */
+  const tabMenu = (f, x, y) => {
+    document.querySelector(".tab-menu")?.remove();
+    const menu = el("div", { class: "menu tab-menu", role: "dialog", "aria-label": `${f.name} formation` },
+      el("button", { type: "button", class: "pick-row", onclick: () => { menu.remove(); renameFormation(f); } }, el("b", {}, "Rename…")),
+      el("button", { type: "button", class: "pick-row danger", onclick: () => { menu.remove(); disband(f); } }, el("b", {}, "Disband")));
+    menu.style.top = `${y + 4}px`;
+    menu.style.left = `${x}px`;
+    document.body.append(menu);
+    window.setTimeout(() => document.addEventListener("click", function once() { menu.remove(); document.removeEventListener("click", once); }), 0);
+  };
+
   const formationTabs = () => {
-    const tab = (id, label, count) =>
-      el("button", { type: "button", class: activeFormation === id ? "on" : "", onclick: () => {
+    const tab = (id, label, count, f) =>
+      el("button", { type: "button", class: activeFormation === id ? "on" : "", title: f ? `${f.name} · right-click for rename and disband` : "every session in this project",
+        oncontextmenu: f ? (e) => { e.preventDefault(); tabMenu(f, e.clientX, e.clientY); } : null,
+        onclick: () => {
         activeFormation = id;
         const u = new URL(location.href);
         if (id) u.searchParams.set("formation", id); else u.searchParams.delete("formation");
@@ -313,7 +340,7 @@ export const mountCommandCenter = (root, ctx) => {
       } }, label, count != null ? el("b", {}, String(count)) : null);
     return el("div", { class: "forms" },
       tab(null, "Rack", mySessions().length),
-      ...formations.map((f) => tab(f.id, f.name, (f.lead ? 1 : 0) + f.members.length)),
+      ...formations.map((f) => tab(f.id, f.name, (f.lead ? 1 : 0) + f.members.length, f)),
       el("button", { type: "button", class: "new", title: "new formation", onclick: async () => {
         const f = await api("/api/formations?project=" + encodeURIComponent(ctx.projectId), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
         formations = [...formations, f];
@@ -360,13 +387,7 @@ export const mountCommandCenter = (root, ctx) => {
           : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet.")),
       gone ? el("p", { class: "muted small cc-empty" }, `${gone} session${gone === 1 ? " is" : "s are"} no longer running; the formation keeps the slot.`) : null,
       el("div", { class: "forms-foot" },
-        el("button", { type: "button", class: "ghost", onclick: async () => {
-          if (!(await askEnd(true, `formation ${f.name}`))) return;
-          await api(`/api/formations/${f.id}`, { method: "DELETE" });
-          formations = formations.filter((x) => x.id !== f.id);
-          activeFormation = null;
-          paint();
-        } }, "disband this formation")));
+        el("button", { type: "button", class: "ghost", onclick: () => disband(f) }, "disband this formation")));
   };
 
   const rack = (name, sessions, cls = "", full = false) =>

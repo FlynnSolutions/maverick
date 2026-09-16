@@ -1279,7 +1279,7 @@ const renderWorkspace = async () => {
   const center = el("div", { class: "cc" });
   wrap.append(center);
   claudeUsage.mount(usageRoot, { api, post });
-  commandCenter = mountCommandCenter(center, { el, text, api, post, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops, setStatus, projectId, project, filterRoot });
+  commandCenter = mountCommandCenter(center, { el, text, api, post, ask, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops, setStatus, projectId, project, filterRoot });
   return wrap;
 };
 

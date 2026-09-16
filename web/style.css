@@ -565,6 +565,9 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .forms-foot button:hover { color: var(--threat); }
 .pick-menu .pick-row { width: 100%; text-align: left; border: 0; background: transparent; box-shadow: none; height: auto; }
 .pick-menu .pick-row i { font-style: normal; }
+.tab-menu { width: 190px; padding: 6px; }
+.tab-menu .pick-row { width: 100%; justify-content: flex-start; border: 0; background: transparent; box-shadow: none; height: 32px; }
+.tab-menu .pick-row.danger b { color: var(--threat); }
 
 /* Reduce motion quiets the ambient pulses and entrances; the action effects stay. */
 @media (prefers-reduced-motion: reduce) {

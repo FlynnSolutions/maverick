@@ -115,6 +115,9 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   beside the Rack. A formation is one **lead**, the session that orchestrates, and its **flight**,
   one to twenty sessions under it, drawn with the same strips as everywhere else. The active
   formation is in the URL, so one can be pulled into its own window or desktop.
+- **A tab's own actions live on the tab.** Right-click a formation to rename or disband it;
+  closing one should not need a trip inside it first. Disbanding asks, because the grouping is
+  the only thing lost and it is not recoverable.
 - **The terminal lives inside the session it belongs to.** "Take the stick" mounts it in the
   session's own full-screen view rather than in a panel over the page; detaching leaves the
   session running. A formation holds session ids, not sessions: sessions come and go, the
