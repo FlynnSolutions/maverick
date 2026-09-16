@@ -914,6 +914,8 @@ body.ask-open { overflow: hidden; }
 
 .project.workspace-view { grid-template-columns: minmax(0, 1fr); }
 .project.workspace-view .dispatch { display: none; }
+/* No rail on the workspace, so nothing to separate from: the edge goes with it. */
+.project.workspace-view::before { display: none; }
 .workspace { max-width: none; }
 .ws-title { font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: 0.04em; }
 .workspace h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 22px 0 8px; }
