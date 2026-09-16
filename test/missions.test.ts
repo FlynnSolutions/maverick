@@ -125,11 +125,11 @@ _done when: the scope pair is on main in contracts and pushed._
 _done when: the backfill dry-run reports counts for every environment._
 
 - [ ] **Scope key on Message and Notification**
-  - repo: RTMFG-backend
+  - repo: orbit-api
   Add scopeType, scopeId and the stored scopeKey with a byScope index.
 
 - [ ] **The backfill**
-  - repo: RTMFG-backend
+  - repo: orbit-api
   Write the migration and dry-run it.
 
 ## Milestone 3 — the client
@@ -137,16 +137,16 @@ _done when: the backfill dry-run reports counts for every environment._
 _done when: the dock reads the scope key and the E2E suite is green._
 
 - [ ] **Read the scope key**
-  - repo: RTMFG-frontend
+  - repo: orbit-web
   Point MessagingConversation at the new key.
 `;
 
-const REPOS = ["root", "contracts", "RTMFG-backend", "RTMFG-frontend"];
+const REPOS = ["root", "contracts", "orbit-api", "orbit-web"];
 
 test("a task names the repo it works in, and the plan carries the order across them", () => {
   const plan = parsePlan(MULTI, REPOS);
   assert.equal(plan.problems.length, 0, plan.problems.join("; "));
-  assert.deepEqual(plan.milestones.map((m) => m.tasks.map((t) => t.repo)), [["contracts"], ["RTMFG-backend", "RTMFG-backend"], ["RTMFG-frontend"]]);
+  assert.deepEqual(plan.milestones.map((m) => m.tasks.map((t) => t.repo)), [["contracts"], ["orbit-api", "orbit-api"], ["orbit-web"]]);
   // Two tasks in one milestone share a repo, so they are parallel inside it; the repos that
   // must land in order are in different milestones, which is what makes that order hold.
   const cost = costOf(plan.milestones);
@@ -159,10 +159,10 @@ test("a multi-repo project refuses a plan whose task does not say where it works
 });
 
 test("a task naming a repo the project does not have is refused, and the message lists the real ones", () => {
-  const plan = parsePlan(MULTI.replace("- repo: contracts", "- repo: RTMFG-backendd"), REPOS);
+  const plan = parsePlan(MULTI.replace("- repo: contracts", "- repo: orbit-apid"), REPOS);
   const problem = plan.problems.find((p) => /is not one of/.test(p));
   assert.ok(problem, plan.problems.join("; "));
-  assert.match(problem, /RTMFG-backend, RTMFG-frontend/);
+  assert.match(problem, /orbit-api, orbit-web/);
 });
 
 test("a single-repo project may leave the repo line off, and every task gets that repo", () => {

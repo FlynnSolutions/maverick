@@ -264,7 +264,7 @@ export const repoChoices = async (project: Project, cfg: MissionConfig): Promise
   return Promise.all(found.map(async (r) => ({
     ...r,
     // What the project says, else whatever that repo is actually on: a multi-repo project
-    // rarely shares one base (contracts on main, services on develop).
+    // rarely shares one base (a contract package on main, the services on develop).
     base: cfg.repos[r.label]?.base ?? (await currentBranch(r.path)),
     land: cfg.repos[r.label]?.land ?? cfg.land,
   })));

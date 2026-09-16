@@ -167,21 +167,20 @@ repo's work is cut from, and whether it ends in a merge or a pull request
 ([`06-runbook.md`](./06-runbook.md)). A task names its repo with a `repo:` field, so one mission
 can span several and the order they land in is carried by the milestones.
 
-**Rejected: Maverick's own layout everywhere.** **Why:** Realtime's `claude/scripts/worktree.sh`
-exists, and its header says why, because two contradictory worktree conventions already collided
-there once and the docs lost to the commands. A tool that reads other people's systems
+**Rejected: Maverick's own layout everywhere.** **Why:** A project on this machine carries a `worktree.sh` whose own
+header says it exists because two contradictory worktree conventions collided there once and
+the docs lost to the commands. A tool that reads other people's systems
 (`01-architecture.md`) does not get to add a third naming scheme to a repo that has settled on
 one. The same argument covers the branch prefix and the base branch.
 
 **Rejected: one branch per mission across all repos.** **Why:** a multi-repo project rarely
-shares a base. Realtime's contracts sits on `main` while its services sit on `develop`, so a
-single base would cut half the work from the wrong commit.
+shares a base. A contract package may sit on `main` while the services consuming it sit on
+`develop`, so a single base would cut half the work from the wrong commit.
 
-**Safety-load-bearing: landing is per repo, and `push` is opt-in by name.** Realtime's
-`CLAUDE.md` says never self-merge, absolutely and without exception, so its services end at a
-pull request and stop. Its `contracts` repo is the opposite case and its own session prompt says
-so: contracts is the one source of truth between the two services and is meant to be on `main`
-before either starts. So `land` is resolved per repo, `push` exists for that case, and a repo
+**Safety-load-bearing: landing is per repo, and `push` is opt-in by name.** A project here says never self-merge, absolutely and without
+exception, so its services end at a pull request and stop. Its contract package is the opposite
+case: it is the one source of truth between those services and is meant to be on `main` before
+either starts. So `land` is resolved per repo, `push` exists for that case, and a repo
 only gets it by being named in the project's own `maverick.json`.
 
 `push` is deliberately the narrowest thing that works: it fast-forwards only, refuses when the

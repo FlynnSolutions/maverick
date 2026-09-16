@@ -64,15 +64,15 @@ first is what the tooling was usually written to stop.
 
 ```json
 {
-  "callsign": "Realtime",
+  "callsign": "Orbit",
   "missions": {
     "worktrees": "worktrees",
     "branchPrefix": "feature/",
     "land": "pr",
     "repos": {
       "contracts": { "base": "main" },
-      "RTMFG-backend": { "base": "develop" },
-      "RTMFG-frontend": { "base": "develop" }
+      "orbit-api": { "base": "develop" },
+      "orbit-web": { "base": "develop" }
     }
   }
 }
@@ -88,7 +88,8 @@ first is what the tooling was usually written to stop.
 
 `push` reaches a shared branch without review, so it is opt-in per repo and never inherited
 from the mission. It fast-forwards or it refuses; it never forces. The approval gate names
-every repo that has it before you approve. Realtime's shape is `land: "pr"` with
+every repo that has it before you approve. A project whose services may not be self-merged but whose contract package lands directly
+is `land: "pr"` with
 `contracts: { "land": "push" }`, which is that project's own process written down.
 
 Everything is optional. A repo the plan never names gets no branch, however many the project has.

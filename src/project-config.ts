@@ -2,9 +2,9 @@
  * What a project tells Maverick about how to fly a mission in it, from its own `maverick.json`.
  *
  * This exists because a project that already has worktree tooling has it for a reason.
- * Realtime's `claude/scripts/worktree.sh` says in its own header that it was written because
- * two contradictory naming conventions collided; Maverick inventing a third would be that
- * mistake a second time. So the layout, the branch names, the base branch per repo and what
+ * A project on this machine carries a `worktree.sh` whose own header says it was written
+ * because two contradictory naming conventions collided; Maverick inventing a third would be
+ * that mistake a second time. So the layout, the branch names, the base branch per repo and what
  * "done" does with the work are the project's to declare, and Maverick's defaults apply only
  * to a project that declares nothing.
  *
@@ -19,9 +19,9 @@ import { join } from "node:path";
  * - `merge` leaves it on the repo's own mission branch, for a person to take from there.
  * - `pr` pushes the branch and opens a pull request against the base, and merges nothing.
  * - `push` advances the base to it. Only ever for a repo whose own process already says so,
- *   and only ever as a per-repo override: Realtime's `contracts` is the shared source of truth
- *   between its two services and is meant to be on `main` before either starts, while those
- *   services are under an absolute never-self-merge rule.
+ *   and only ever as a per-repo override: a contract package that is the shared source of
+ *   truth between two services, and is meant to be on `main` before either of them starts,
+ *   while those services themselves sit under an absolute never-self-merge rule.
  */
 export type Landing = "merge" | "pr" | "push";
 
