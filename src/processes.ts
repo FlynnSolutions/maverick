@@ -32,6 +32,11 @@ const appName = (comm: string): string | undefined => {
   return base;
 };
 
+/** Bring a terminal app to the front; the tab inside it is not scriptable, so the caller names the tty. */
+export const focusApp = async (app: string): Promise<void> => {
+  await run("osascript", ["-e", `tell application "${app.replace(/"/g, "")}" to activate`]);
+};
+
 export const processHome = async (pid: number): Promise<ProcessHome> => {
   const self = await psLine(pid);
   if (!self) return {};

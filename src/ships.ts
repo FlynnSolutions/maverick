@@ -218,7 +218,8 @@ export const sweepShips = async (project: Project): Promise<void> => {
       const rp = reportPath(project.id, ship.version, step.id);
       try {
         step.report = await readFile(rp, "utf8");
-        step.status = "done";
+        // The walkthrough step is done when the human has been through the document, not when the agent built it.
+        step.status = step.id === "walkthrough" ? "finished" : "done";
       } catch {
         step.status = "finished";
       }

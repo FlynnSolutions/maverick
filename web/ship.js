@@ -212,7 +212,9 @@ const walkthroughPanel = (step) => {
     lastSaved = fingerprint;
     step.walkthrough = summary;
     try {
-      await post(stepUrl(step, ""), { walkthrough: summary });
+      const complete = summary.total > 0 && summary.answered >= summary.total && step.status === "finished";
+      await post(stepUrl(step, ""), { walkthrough: summary, ...(complete ? { status: "done" } : {}) });
+      if (complete) { step.status = "done"; setStatus("walkthrough complete: step marked done"); }
     } catch (err) {
       setStatus(`${err.message} (walkthrough progress will save after the server restarts)`, true);
     }
@@ -293,7 +295,7 @@ const renderStep = (step) => {
   const detail = $("#detail");
   const head = el("div", { class: "detail-head" },
     el("h1", {}, step.title),
-    el("span", { class: `verdict ${step.status}` }, step.status),
+    el("span", { class: `verdict ${step.status}` }, step.status === "finished" ? (step.id === "walkthrough" ? `in progress · ${step.walkthrough ? `${step.walkthrough.answered} of ${step.walkthrough.total} cases` : "your walkthrough"}` : "in progress · your part remains") : step.status),
     step.status === "running" ? el("span", { class: `agent-state ${agentStates.get(step.claudeId) ?? ""}` }, agentStates.get(step.claudeId) === "blocked" ? "waiting for your input" : agentStates.get(step.claudeId) ?? "starting") : null,
     el("span", { class: "actions" },
       step.status === "pending" || step.status === "failed" ? btn(step.id === "audits" ? "run audits" : "run", () => stepCall(step, "run"), "primary") : null,

@@ -76,7 +76,7 @@
 
 .walkthrough-panel h2 a { color: var(--accent-hot); text-decoration: none; }
 .wt-progress { margin: 0 0 10px; }
-.runway.small { height: 8px; }
+.wt-progress .runway.small { height: 8px; }
 .pillars { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .pillar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 8px 10px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); }
 .pillar.complete { box-shadow: inset 0 0 0 1px rgba(141, 255, 176, 0.4); }

@@ -179,18 +179,29 @@ one line. A panel carries the status lamp, where the session lives, and the last
 read from its transcript (`/api/transcript`, polled incrementally): your prompts as
 panels, Claude's replies as rendered markdown, runs of tool calls folded into one line of
 chips, harness injections (task notifications, reminders) folded as system events.
-**Open in dock** / **Take the stick** mounts the real terminal for typing; **close** /
-**stop** end the process from the full-screen head. Design decisions for this surface are
-recorded in `.ui-design/system.md`.
+A background session gets a composer at the bottom (Enter sends, over a headless attach;
+drop a file to attach its path) and **Take the stick** for the real terminal; a session
+that lives in another terminal says so, since Maverick cannot type into it yet (Claude
+Code's per-session socket would allow it and needs a permission decision). **close** /
+**stop** end a process from the full-screen head, and stale idle panels (a day or more)
+carry a close button. Files dropped on any dock terminal are saved under the console's
+home (`drops/`) and their paths typed. Design decisions for this surface are recorded in
+`.ui-design/system.md`.
+
+Terminals start `claude` with every `CLAUDE*` variable stripped and
+`CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`: Maverick is often launched from inside a Claude
+session, and a claude that inherits those markers stops saving its transcript.
 
 **Usage is a provider widget.** `web/providers/claude.js` owns everything Claude-specific
 about limits, so another provider can sit beside it with the same `mount(root, ctx)`
-shape. The baby pill shows the rolling 5-hour window (all models and Fable) and the
-rolling week; open it for per-family meters (Fable, Opus, Sonnet, Haiku), load per hour
-for the last 24 and per week for the last 8, and a Limits tab. Claude Code does not store
-the plan's quota, so the meters read against your highest window so far until you enter
-a limit (saved to `usage-limits.json`); the unit is a load proxy, output × 4 + input +
-cache writes + cache reads ÷ 10, and the ratio is what matters.
+shape. The baby pill shows the open 5-hour window (all models and Fable) with when it
+resets, and the rolling week; open it for per-family rows, load per hour for the last 24
+and per week for the last 8, and a Calibrate tab. The 5-hour window is reconstructed from
+the transcripts: it opens at the first message after the previous window lapsed, so the
+reset is known to within the hour. Claude Code does not store the plan's quota, so the
+widget shows load (output × 4 + input + cache writes + cache reads ÷ 10) until you press
+"this is the limit" the moment Claude reports a window used up; from then on that window
+reads as a percentage (limits saved to `usage-limits.json`).
 
 ## How a tracker is read
 

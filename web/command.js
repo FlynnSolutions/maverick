@@ -73,7 +73,8 @@ const assemble = (all) => {
 };
 
 export const mountCommandCenter = (root, ctx) => {
-  const { el, text, api, post, openTerminal, setStatus } = ctx;
+  const { el, text, api, post, openTerminal, createTerminal, sendInput, acceptDrops, setStatus } = ctx;
+  const DAY = 86400000;
   let all = null;
   let model = null;
   let projectFilter = "all";
@@ -100,9 +101,9 @@ export const mountCommandCenter = (root, ctx) => {
 
   const dockFor = (s) => (s.kind === "background" ? { kind: "attach", id: s.claudeId, title: s.title } : { kind: "resume", sessionId: s.sessionId, title: s.title });
 
-  const endButton = (s) =>
+  const endButton = (s, cls = "danger") =>
     s.kind === "background"
-      ? el("button", { type: "button", class: "danger", onclick: async (e) => {
+      ? el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
           const done = finished(s.status);
           if (!confirm(done ? `Remove background session ${s.claudeId} from the list? Its transcript stays on disk.` : `Stop background session ${s.claudeId}? Its conversation is kept.`)) return;
@@ -114,7 +115,7 @@ export const mountCommandCenter = (root, ctx) => {
           }
           window.setTimeout(load, 1200);
         } }, finished(s.status) ? "remove" : "stop")
-      : el("button", { type: "button", class: "danger", onclick: async (e) => {
+      : el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
           if (!confirm(`Close "${s.title}"?\n\nThis ends the Claude process in ${s.app ?? "its terminal"} (${s.tty ?? "no tty"}). The conversation stays on disk and can be resumed later.`)) return;
           try {
@@ -128,11 +129,11 @@ export const mountCommandCenter = (root, ctx) => {
 
   const dockButton = (s) => el("button", { type: "button", class: "ghost dock", title: "open the terminal in the dock", onclick: (e) => { e.stopPropagation(); openTerminal(dockFor(s)); } }, "dock");
 
-  const panel = (s, record, compact = false) =>
+  const panel = (s, record, compact = false, endable = false) =>
     el(
       "article",
       { class: `cc-panel ${s.status}${finished(s.status) ? " finished" : ""}${compact ? " compact" : ""}`, tabindex: "0", title: s.title, onclick: () => openFull(s), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFull(s); } } },
-      el("header", {}, lamp(s.status), el("h4", {}, s.title), roleChip(record), auditChip(record), dockButton(s)),
+      el("header", {}, lamp(s.status), el("h4", {}, s.title), roleChip(record), auditChip(record), dockButton(s), endable ? endButton(s, "ghost end") : null),
       el("div", { class: "meta" }, el("span", { class: "k" }, s.status), s.waitingFor ? el("span", { class: "k soft" }, s.waitingFor) : null, el("span", {}, age(s.at)), s.elapsed ? el("span", {}, `up ${s.elapsed}`) : null, el("span", { class: "where" }, whereText(s))),
       compact
         ? null
@@ -188,11 +189,11 @@ export const mountCommandCenter = (root, ctx) => {
     );
   };
 
-  const band = (name, sessions, cls = "", compact = false) =>
+  const band = (name, sessions, cls = "", compact = false, endable = false) =>
     sessions.length
       ? el("section", { class: `cc-band ${cls}` },
           el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(sessions.length))),
-          el("div", { class: "cc-grid" }, ...sessions.map((s) => panel(s, s.record ?? model.byClaudeId.get(s.claudeId), compact))))
+          el("div", { class: "cc-grid" }, ...sessions.map((s) => panel(s, s.record ?? model.byClaudeId.get(s.claudeId), compact, endable))))
       : null;
 
   const projectSection = (proj, sessions) => {
@@ -214,6 +215,9 @@ export const mountCommandCenter = (root, ctx) => {
     const working = loose.filter(is("busy", "running"));
     const done = loose.filter((s) => finished(s.status));
     const idle = loose.filter((s) => !needs.includes(s) && !working.includes(s) && !done.includes(s));
+    // Idle within a day is a session you are between turns on; older is a tab you have probably moved on from.
+    const stale = idle.filter((s) => s.at && Date.now() - s.at > DAY);
+    const fresh = idle.filter((s) => !stale.includes(s));
     const busy = sessions.filter(is("busy", "running")).length;
     const waiting = sessions.filter(is("waiting", "blocked")).length;
     return el(
@@ -223,8 +227,9 @@ export const mountCommandCenter = (root, ctx) => {
       band("Needs you", needs, "needs"),
       ...formations,
       band("Working", working, "working"),
-      band("Idle", idle, "idle", true),
-      band("Finished", done, "done", true),
+      band("Idle", fresh, "idle", true),
+      band("Stale · idle over a day", stale, "stale", true, true),
+      band("Background · done", done, "done", true),
       closed.length ? el("ul", { class: "cc-closed" }, ...closed) : null,
       !sessions.length && !formations.length ? el("p", { class: "muted small cc-empty" }, "nothing running here") : null,
     );
@@ -343,16 +348,64 @@ export const mountCommandCenter = (root, ctx) => {
     f.first = false;
   };
 
+  /** Typing into the session. A background session gets a real composer over a headless attach; a terminal's session cannot be reached. */
+  const paintComposer = () => {
+    const f = full;
+    if (!f) return;
+    const s = f.session;
+    if (s.kind !== "background") {
+      f.composer.replaceChildren(el("div", { class: "notice" },
+        el("span", {}, `This session is live in ${s.app ?? "a terminal"}${s.tty ? ` on ${s.tty}` : ""}. Maverick cannot type into another terminal's session yet; Claude Code's per-session socket would allow it and needs a permission that has not been granted.`),
+        s.app && s.pid ? el("button", { type: "button", class: "primary", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
+        el("button", { type: "button", class: "ghost", title: "starts a second claude process on this conversation, in the dock", onclick: () => openTerminal(dockFor(s)) }, "resume a copy in the dock")));
+      return;
+    }
+    if (finished(s.status)) {
+      f.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
+      return;
+    }
+    const area = el("textarea", { rows: "2", placeholder: "Message this session. Enter sends, Shift+Enter for a new line, drop files to attach." });
+    const send = async () => {
+      const body = area.value.trim();
+      if (!body) return;
+      area.disabled = true;
+      try {
+        f.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title });
+        await sendInput(f.stick.id, body);
+        await new Promise((r) => window.setTimeout(r, 180)); // a burst ending in Enter reads as a paste; a beat later it submits
+        await sendInput(f.stick.id, "\r");
+        area.value = "";
+        setStatus("sent");
+      } catch (err) {
+        setStatus(err.message, true);
+      } finally {
+        area.disabled = false;
+        area.focus();
+      }
+    };
+    area.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+    acceptDrops(f.composer, (paths) => {
+      area.value = `${area.value}${area.value && !area.value.endsWith(" ") ? " " : ""}${paths.join(" ")} `;
+      area.focus();
+    });
+    f.composer.replaceChildren(
+      el("div", { class: "row" }, area, el("button", { type: "button", class: "primary", onclick: send }, "Send")),
+      el("div", { class: "hint" }, el("span", {}, "Enter sends · Shift+Enter for a new line · drop a file to attach its path"), el("button", { type: "button", class: "ghost", onclick: () => openTerminal(dockFor(s)) }, "take the stick")),
+    );
+  };
+
   const openFull = (session) => {
     closeFull();
     const head = el("header", { class: "cc-full-head" });
     const list = el("div", { class: "cc-conv" });
     const scroller = el("div", { class: "cc-full-body" }, list);
-    const overlay = el("section", { class: "cc-full", role: "dialog", "aria-label": session.title }, head, scroller);
-    full = { session, offset: 0, events: [], head, list, scroller, overlay, first: true };
+    const composer = el("div", { class: "cc-composer" });
+    const overlay = el("section", { class: "cc-full", role: "dialog", "aria-label": session.title }, head, scroller, composer);
+    full = { session, offset: 0, events: [], head, list, scroller, composer, overlay, first: true };
     document.body.append(overlay);
     document.body.classList.add("cc-full-open");
     paintFullHead();
+    paintComposer();
     list.append(el("p", { class: "muted cc-empty" }, "reading the transcript…"));
     pullTranscript().catch((err) => list.replaceChildren(el("p", { class: "muted cc-empty" }, err.message)));
     full.timer = window.setInterval(() => pullTranscript().catch(() => {}), 2500);
@@ -362,6 +415,7 @@ export const mountCommandCenter = (root, ctx) => {
   const closeFull = () => {
     if (!full) return;
     window.clearInterval(full.timer);
+    if (full.stick) fetch(`/api/terminals/${full.stick.id}`, { method: "DELETE" }).catch(() => {}); // detach; the session keeps running
     full.overlay.remove();
     document.body.classList.remove("cc-full-open");
     full = null;

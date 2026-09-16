@@ -43,11 +43,24 @@ const info = (t: Terminal): TerminalInfo => ({
 
 export const listTerminals = (): TerminalInfo[] => [...terminals.values()].map(info);
 
+/**
+ * The environment a terminal's claude starts with. Maverick is often launched from inside a
+ * Claude session, and a claude that inherits that session's markers believes it is a child:
+ * it stops saving its transcript (so the command center and usage cannot see it) and skips
+ * Remote Control. Every CLAUDE* variable goes; persistence is forced on.
+ */
+const cleanEnv = (): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) if (!/^CLAUDE/.test(k)) env[k] = v;
+  env.CLAUDE_CODE_FORCE_SESSION_PERSISTENCE = "1";
+  return env;
+};
+
 export const openTerminal = (title: string, command: string[], cwd: string, cols = 120, rows = 36): TerminalInfo => {
   const id = randomUUID().slice(0, 8);
   const child = spawn("python3", [ptyHelper, String(cols), String(rows), ...command], {
     cwd,
-    env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", LANG: process.env.LANG ?? "en_US.UTF-8" },
+    env: { ...cleanEnv(), TERM: "xterm-256color", COLORTERM: "truecolor", LANG: process.env.LANG ?? "en_US.UTF-8" },
   });
   const terminal: Terminal = {
     id, title, command, cwd, startedAt: new Date().toISOString(), exitCode: null,

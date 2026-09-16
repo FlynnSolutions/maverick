@@ -23,7 +23,7 @@ import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript } from "./src/transcript-view.ts";
 import { backgroundAgents } from "./src/git.ts";
-import { processHome } from "./src/processes.ts";
+import { focusApp, processHome } from "./src/processes.ts";
 import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
@@ -518,6 +518,14 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       throw err;
     }
   }
+  // Bring the terminal app a session lives in to the front (the tab itself is not scriptable).
+  if (method === "POST" && /^\/api\/sessions\/\d+\/focus$/.test(path)) {
+    const pid = Number(path.split("/")[3]);
+    const app = (await readRegistrySessions()).some((s) => s.pid === pid) ? (await processHome(pid)).app : undefined;
+    if (!app) throw new Error(`pid ${pid} is not a Claude session in a known terminal app`);
+    await focusApp(app);
+    return sendJson(res, 200, { ok: true, app });
+  }
   if (method === "POST" && /^\/api\/sessions\/\d+\/close$/.test(path)) {
     const pid = Number(path.split("/")[3]);
     const project = await requireProject(url);
@@ -529,6 +537,15 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (method === "GET" && path === "/api/terminals") return sendJson(res, 200, listTerminals());
   if (method === "POST" && path === "/api/terminals") return sendJson(res, 200, await openTerminalFor(await readJson<OpenTerminalBody>(req)));
+  // A file dropped on a terminal or a composer: saved under the console's home, its path is what gets typed.
+  if (method === "POST" && path === "/api/drop") {
+    const name = (url.searchParams.get("name") ?? "file").replace(/[^\w.\-]+/g, "_").slice(0, 120) || "file";
+    const dir = join(dirname(config.projectsFile), "drops");
+    await mkdir(dir, { recursive: true });
+    const file = join(dir, `${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}-${name}`);
+    await writeFile(file, await readBodyBytes(req));
+    return sendJson(res, 200, { path: file });
+  }
   if (termMatch) {
     const [, id, action] = termMatch;
     if (method === "GET" && action === "stream") return subscribe(id, res);

@@ -421,7 +421,7 @@ const loadBoard = async () => {
         ? [renderCalendar(trackers)]
         : view === "workspace"
           ? [await renderWorkspace()]
-          : [el("section", { class: "board-releases" }, el("h3", { class: "strip-title" }, "Releases"), renderReleases(trackers)), ...trackers.map(renderBoard)]),
+          : [releasesSection(trackers), ...trackers.map(renderBoard)]),
     );
     for (const b of document.querySelectorAll("#view-toggle button")) b.classList.toggle("active", b.dataset.view === view);
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
@@ -561,10 +561,25 @@ const openDrawer = (trackerIndex, item) => {
         setStatus(err.message, true);
       }
     });
+    const flipped = item.body.replace(/^- (\[( |x)\] )?/i, item.checked ? "- [ ] " : "- [x] ");
     actions.replaceChildren(
       item.checked ? null : btn("spawn", () => { const parent = supervisor.value || undefined; closeDrawer(); spawnOnItem(item, null, parent); }, "primary"),
       item.checked ? null : supervisor,
       el("span", { class: "spacer" }),
+      btn(item.checked ? "reopen" : "mark done", () => saveBody(flipped, item.checked ? "reopening" : "marking done"), item.checked ? "" : "primary"),
+      btn("remove", async () => {
+        const reason = prompt("Why is this leaving the tracker? It moves to the Removed section with the date and this reason.", "");
+        if (!reason?.trim()) return;
+        setStatus("removing");
+        try {
+          const { commit } = await post("/api/remove", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, reason: reason.trim() });
+          setStatus(`committed ${commit}`);
+          closeDrawer();
+          await loadBoard();
+        } catch (err) {
+          setStatus(err.message, true);
+        }
+      }, "danger"),
       btn("edit markdown", () => { editing = true; edit(); }),
       btn("close", closeDrawer),
     );
@@ -604,7 +619,7 @@ const openDrawer = (trackerIndex, item) => {
       "aside",
       { class: "drawer", role: "dialog", "aria-label": item.title },
       el("div", { class: "drawer-head" }, head, btn("×", closeDrawer, "ghost")),
-      el("div", { class: "drawer-meta" }, ...tagChips(item), dueChip(item), el("span", { class: "spacer" }), el("span", { class: "muted mono" }, `line ${item.start + 1}${item.checked ? " · checked" : ""}`)),
+      el("div", { class: "drawer-meta" }, ...tagChips(item), dueChip(item), el("span", { class: "spacer" }), el("span", { class: "muted mono" }, `line ${item.start + 1} · ${item.checked ? "done" : "open"}`)),
       body,
       el("div", { class: "drawer-foot" }, actions),
     ),
@@ -893,6 +908,23 @@ const openSlotDrawer = (slot, trackers) => {
       el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, el("span", { class: "spacer" }), btn("close", closeDrawer)))),
   );
   document.addEventListener("keydown", onDrawerKey);
+};
+
+/** The releases strip with a fold, remembered like the sessions rail. */
+const releasesSection = (trackers) => {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem("console.releases") === "collapsed"; } catch {}
+  const section = el("section", { class: `board-releases${collapsed ? " collapsed" : ""}` });
+  const fold = btn(collapsed ? "▸" : "▾", () => {
+    collapsed = !collapsed;
+    section.classList.toggle("collapsed", collapsed);
+    fold.textContent = collapsed ? "▸" : "▾";
+    fold.title = collapsed ? "show releases" : "hide releases";
+    try { localStorage.setItem("console.releases", collapsed ? "collapsed" : "open"); } catch {}
+  }, "ghost fold");
+  fold.title = collapsed ? "show releases" : "hide releases";
+  section.append(el("h3", { class: "strip-title releases-fold" }, fold, text("Releases")), renderReleases(trackers));
+  return section;
 };
 
 const renderReleases = (trackers) => {
@@ -1187,7 +1219,7 @@ const renderWorkspace = async () => {
   const center = el("div", { class: "cc" });
   wrap.append(center);
   claudeUsage.mount(usageRoot, { api, post });
-  commandCenter = mountCommandCenter(center, { el, text, api, post, openTerminal, setStatus, projectId, project });
+  commandCenter = mountCommandCenter(center, { el, text, api, post, openTerminal, createTerminal, sendInput, acceptDrops, setStatus, projectId, project });
   return wrap;
 };
 
@@ -1444,6 +1476,7 @@ const mountTerminal = (info) => {
   const container = el("div", { class: "term" });
   $("#dock-body").append(container);
   term.open(container);
+  acceptDrops(container, (paths) => sendInput(info.id, `${paths.join(" ")} `));
 
   const tab = el(
     "button",
@@ -1470,10 +1503,43 @@ const mountTerminal = (info) => {
   activate(info.id);
 };
 
+/** A pty without a view: the command center's composer types into one of these. */
+const createTerminal = (opts) => post("/api/terminals", { project: projectId, ...opts, ...termSize() });
+const sendInput = (id, data) => fetch(`/api/terminals/${id}/input`, { method: "POST", body: data, keepalive: true });
+/** A dropped file is saved under the console's home and its path is what gets typed. */
+const uploadDrop = async (file) => {
+  const res = await fetch(`/api/drop?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? `${res.status} uploading ${file.name}`);
+  return body.path;
+};
+const quotePath = (p) => (/\s/.test(p) ? `"${p}"` : p);
+const acceptDrops = (host, onPaths) => {
+  host.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault();
+    host.classList.add("dropping");
+  });
+  host.addEventListener("dragleave", () => host.classList.remove("dropping"));
+  host.addEventListener("drop", async (e) => {
+    host.classList.remove("dropping");
+    if (!e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    try {
+      const paths = [];
+      for (const f of e.dataTransfer.files) paths.push(await uploadDrop(f));
+      onPaths(paths.map(quotePath));
+      setStatus(`${paths.length} file${paths.length === 1 ? "" : "s"} attached`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  });
+};
+
 const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent }) => {
   setStatus(`opening ${title ?? kind}`);
   try {
-    const info = await post("/api/terminals", { project: projectId, kind, id, sessionId, title, prompt, cwd, parent, ...termSize() });
+    const info = await createTerminal({ kind, id, sessionId, title, prompt, cwd, parent });
     mountTerminal(info);
     setStatus(`terminal ${info.id}: ${info.command.join(" ")}`);
     if (kind === "spawn") loadRail(true);
@@ -1505,7 +1571,7 @@ const applyTheme = (theme) => {
     document.head.append(el("link", { rel: "stylesheet", "data-font": theme.font, href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
   }
   const brand = $(".brand");
-  brand.replaceChildren(...[text("Maverick"), theme.callsign ? el("span", { class: "callsign" }, theme.callsign) : null].filter(Boolean));
+  brand.replaceChildren(text("Maverick")); // the project's name is the switcher beside it
 };
 
 /* ---------- boot ---------- */
