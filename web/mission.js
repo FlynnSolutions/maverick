@@ -20,6 +20,8 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 const text = (s) => document.createTextNode(s);
+/** replaceChildren stringifies a null into the word "null"; el() filters. Everything goes through here. */
+const show = (...nodes) => $("#detail").replaceChildren(...nodes.filter((n) => n !== null && n !== undefined && n !== false));
 const btn = (label, onclick, cls = "") => el("button", { type: "button", class: cls, onclick }, label);
 const api = async (path, init) => {
   const res = await fetch(path, init);
@@ -219,7 +221,7 @@ const renderPlan = () => {
       host.replaceChildren(el("p", { class: "mv-empty" }, "No RIO session is attached. Start one above."));
     }
   }
-  $("#detail").replaceChildren(...blocks);
+  show(...blocks);
 };
 
 /* ---------- a milestone in flight ---------- */
@@ -252,7 +254,7 @@ const taskRow = (task) => {
 
 const renderMilestone = (m) => {
   const tasks = tasksOf(m);
-  $("#detail").replaceChildren(
+  show(
     el("div", { class: "detail-head" },
       el("h1", {}, `Milestone ${m.n} — ${m.title}`),
       el("span", { class: `verdict ${milestoneState(m)}` }, m.merged ? "merged" : m.dispatched ? "flying" : "not sent yet")),
@@ -273,7 +275,7 @@ const renderReview = () => {
   const passed = tasks.filter((t) => t.status === "passed");
   const ready = mission.status === "review";
   const closed = mission.status === "closed";
-  $("#detail").replaceChildren(
+  show(
     el("div", { class: "detail-head" }, el("h1", {}, "What the mission built"), el("span", { class: `verdict ${mission.status}` }, mission.status)),
     el("div", { class: "detail-meta" },
       el("span", {}, `${passed.length} of ${tasks.length} tasks passed`),
