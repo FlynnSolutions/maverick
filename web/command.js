@@ -953,7 +953,7 @@ export const mountCommandCenter = (root, ctx) => {
       black: cssColor("--carbon"),
       red: cssColor("--threat"),
       green: cssColor("--hud"),
-      yellow: cssColor("--caution"),
+      yellow: cssColor("--warn"),
       blue: cssColor("--accent"),
       magenta: cssColor("--accent-hot"),
       cyan: cssColor("--accent-hot"),
@@ -961,7 +961,7 @@ export const mountCommandCenter = (root, ctx) => {
       brightBlack: cssColor("--ink-ghost"),
       brightRed: cssColor("--threat"),
       brightGreen: cssColor("--hud"),
-      brightYellow: cssColor("--caution"),
+      brightYellow: cssColor("--gold"),
       brightBlue: cssColor("--accent-hot"),
       brightMagenta: cssColor("--accent-hot"),
       brightCyan: cssColor("--accent-hot"),
@@ -970,6 +970,71 @@ export const mountCommandCenter = (root, ctx) => {
   });
 
   const rgbTriplet = (css) => (css.match(/\d+/g) ?? ["0", "0", "0"]).slice(0, 3).join(";");
+  const rgbOf = (css) => (css.match(/\d+/g) ?? ["0", "0", "0"]).slice(0, 3).map(Number);
+
+  /** The xterm-256 palette's own arithmetic: a 6×6×6 cube, then a 24-step grey ramp. */
+  const xterm256 = (n) => {
+    if (n < 16) return null; // the theme already owns these
+    if (n > 231) { const v = 8 + (n - 232) * 10; return [v, v, v]; }
+    const i = n - 16;
+    const step = [0, 95, 135, 175, 215, 255];
+    return [step[Math.floor(i / 36) % 6], step[Math.floor(i / 6) % 6], step[i % 6]];
+  };
+
+  const LIN = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const lum = ([r, g, b]) => 0.2126 * LIN(r) + 0.7152 * LIN(g) + 0.0722 * LIN(b);
+
+  /** Hue in degrees, and how saturated it is. A colour under ~0.2 saturation is read as grey. */
+  const hueOf = ([r, g, b]) => {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    if (!d) return { h: 0, sat: 0 };
+    const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return { h: h * 60, sat: max ? d / max : 0 };
+  };
+
+  /**
+   * 256-colour, folded onto the sixteen this interface actually has.
+   *
+   * The theme covers slots 0-15 and nothing else: an index above that is drawn from xterm's own
+   * stock palette, which no theme reaches, so a tool reaching for 256-colour punched straight
+   * through the skin. Rather than leave that hole, each index is resolved to its real rgb and
+   * snapped to whichever of our sixteen it is nearest. It costs fidelity, and a gradient will
+   * band, but that trade was already made when the sixteen were repainted in the instrument
+   * palette: a terminal here should read as one surface, not as two.
+   */
+  const HUES = [
+    [20, "red"], [50, "yellow"], [80, "yellow"], [160, "green"],
+    [200, "cyan"], [260, "blue"], [330, "magenta"], [361, "red"],
+  ];
+
+  const paletteFold = (theme) => {
+    const rgb = (k) => rgbOf(theme[k]);
+    // Grey belongs to a ramp, ordered by how far it stands off this pane's own ground.
+    const ground = lum(rgbOf(theme.background === "rgba(0,0,0,0)" ? cssColor("--panel") : theme.background));
+    const neutrals = ["black", "brightBlack", "white", "brightWhite"]
+      .map((k) => rgb(k))
+      .sort((a, b) => Math.abs(lum(a) - ground) - Math.abs(lum(b) - ground));
+    const fold = new Map();
+    for (let n = 16; n < 256; n += 1) {
+      const c = xterm256(n);
+      const { h, sat } = hueOf(c);
+      let pick;
+      if (sat < 0.2) {
+        // xterm's palette assumes a black ground, so a dark grey there means "dim". Ours is
+        // whichever of our neutrals stands off our ground by as little, which holds in both themes.
+        const dim = lum(c); // 0 = dimmest against black, 1 = brightest
+        pick = neutrals[Math.min(neutrals.length - 1, Math.round(dim * (neutrals.length - 1)))];
+      } else {
+        const name = HUES.find(([deg]) => h < deg)[1];
+        // The brighter half of the cube gets the bright slot, so contrast inside a hue survives.
+        pick = rgb(lum(c) > 0.32 ? `bright${name[0].toUpperCase()}${name.slice(1)}` : name);
+      }
+      fold.set(String(n), pick.join(";"));
+    }
+    return fold;
+  };
 
   /**
    * Claude Code writes its own colours as truecolor (`38;2;r;g;b`), which walks straight past the
@@ -985,10 +1050,20 @@ export const mountCommandCenter = (root, ctx) => {
     "153;153;153": "--ink-faint", // #999999
   };
 
-  const skinTable = () => new Map(Object.entries(CLAUDE_INK).map(([from, token]) => [from, rgbTriplet(cssColor(token))]));
+  const skinTable = (theme) => ({
+    direct: new Map(Object.entries(CLAUDE_INK).map(([from, token]) => [from, rgbTriplet(cssColor(token))])),
+    fold: paletteFold(theme),
+  });
 
+  /**
+   * Truecolor the session hardcoded, swapped for ours; 256-colour above slot 15, snapped to the
+   * nearest of ours and rewritten as truecolor so xterm draws our value rather than its own.
+   * Anything unrecognised passes through, which is the safe direction.
+   */
   const reskin = (chunk, table) =>
-    chunk.replace(/([34]8;2;)(\d+;\d+;\d+)/g, (whole, lead, rgb) => (table.has(rgb) ? lead + table.get(rgb) : whole));
+    chunk
+      .replace(/([34]8;2;)(\d+;\d+;\d+)/g, (whole, lead, rgb) => (table.direct.has(rgb) ? lead + table.direct.get(rgb) : whole))
+      .replace(/([34]8);5;(\d+)/g, (whole, lead, n) => (table.fold.has(n) ? `${lead};2;${table.fold.get(n)}` : whole));
 
   /* ---------- answering a permission prompt without reading a terminal ----------
      Claude Code asks for permission in its TUI, and the question is painted character by
@@ -1210,7 +1285,8 @@ export const mountCommandCenter = (root, ctx) => {
         ? (await api("/api/terminals")).find((t) => t.id === session.terminalId)
         : (p.stick ??= await createTerminal(dockFor(session)));
       if (!info) throw new Error("that terminal is gone");
-      const term = new window.Terminal(termLook());
+      const look = termLook();
+      const term = new window.Terminal(look);
       const fit = new window.FitAddon.FitAddon();
       term.loadAddon(fit);
       term.open(host);
@@ -1218,7 +1294,7 @@ export const mountCommandCenter = (root, ctx) => {
       const src = new EventSource(`/api/terminals/${info.id}/stream`);
       // Decoded as a stream, because a multi-byte character can land across two chunks.
       const decoder = new TextDecoder();
-      const table = skinTable();
+      const table = skinTable(look.theme);
       src.onmessage = (e) => {
         const chunk = decoder.decode(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)), { stream: true });
         // The notification is the fast path, scanned across a rolling tail because a sequence can

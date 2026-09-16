@@ -203,6 +203,19 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   next to the primary, read as prose rather than as something to click. The wording is clipped at
   58 characters with the whole of it in the title, because Claude Code's second option is
   routinely a paragraph carrying two merged choices.
+- **The skin has to cover 256-colour, or it does not cover a shell.** The xterm theme owns slots
+  0-15 and nothing else; an index above that is drawn from xterm's own stock palette, which no
+  theme reaches, so any tool reaching for 256-colour punches straight through. Every index is
+  therefore resolved to its real rgb and folded onto one of our sixteen. **Fold by hue, not by
+  RGB distance**: nearest-rgb looks reasonable and inverts in light mode, where our `black` slot
+  is a light grey, so a saturated orange landed on near-black and a warning stopped looking like
+  one. Saturated colour goes by hue and picks the bright slot above ~0.32 luminance so contrast
+  inside a hue survives; grey goes by how far it stands off *this pane's* ground, which makes a
+  dim grey recede in both themes rather than only in the one it was designed against.
+- **`--caution` and `--threat` are the same red** (`#b0272c` light, `#ec666a` dark), which
+  contradicts "a state colour belongs to one state" two bullets up. Anything needing a warm
+  warning has to reach for `--warn` or `--gold` instead; the terminal's yellow slot does. Left as
+  found, because separating them restyles every needs-you rack and that is a decision, not a fix.
 - **A shell is a strip like everything else.** Every pty Maverick opened used to exec `claude`,
   so there was nowhere to run `git status` without a Claude in front of it. A shell has no
   registry session behind it, so it is keyed by its pty (`term:<id>`) rather than a session id,
@@ -267,6 +280,10 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   the window and never gets out of the way; it is 36px. The turned heading gets a `min-height`
   matching the longest label, so a row of collapsed lanes reads as one band and no heading wraps
   inside a short column.
+- **A token defined as itself is defined as nothing.** `--ok`, `--warn`, `--gold` and `--info`
+  were written `--ok: var(--ok);` in the dark block, so in dark mode they resolved to nothing at
+  all and every use of them fell back. Dark now carries its own values, the way the rest of this
+  bullet already required.
 - **Every colour a surface uses is a token, or light mode inherits the dark one's hard-coded
   darks.** The bar (`--bar`), the lamp's machined metal (`--metal`, `--metal-edge`, `--metal-lip`,
   the `--cold-*` set), the release tile (`--tile`), the stat wells (`--inset`), every lift shadow
