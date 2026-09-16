@@ -9,7 +9,7 @@
 export type ColumnId = "priority" | "in-progress" | "backlog" | "shipped";
 
 /** Structured lines an item may carry, as `  - key: value` under its bullet. */
-export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by"] as const;
+export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by", "mission", "milestone", "repo"] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
 export interface Item {
@@ -194,6 +194,30 @@ export interface MoveRequest {
 export class StaleMoveError extends Error {}
 
 /**
+ * Put `block` into `lines` at `insertAt`, with the one blank line the neighbourhood needs.
+ * `tight` is the difference between the two callers and is deliberate: a moved item sits
+ * flush against the bullet above it, while a newly written one gets a line of its own,
+ * because that is how the trackers in this workspace are actually written.
+ */
+const spliceBlock = (lines: string[], insertAt: number, block: string[], tight: boolean): string => {
+  const above = insertAt > 0 ? lines[insertAt - 1] : "";
+  const below = insertAt < lines.length ? lines[insertAt] : "";
+  const needsBefore = insertAt > 0 && !isBlank(above) && (!tight || (!isBullet(above) && !isContinuation(above)));
+  const needsAfter = below.startsWith("#") || below.trim() === "---";
+  const out = [...lines];
+  out.splice(insertAt, 0, ...(needsBefore ? [""] : []), ...block, ...(needsAfter ? [""] : []));
+  return out.join("\n");
+};
+
+/** Tick or untick an item's bullet, leaving everything else in its block alone. */
+export const setChecked = (text: string, itemStart: number, itemFirstLine: string, done: boolean): string => {
+  const lines = text.split("\n");
+  if (lines[itemStart] !== itemFirstLine) throw new StaleMoveError(`line ${itemStart} is no longer "${itemFirstLine.slice(0, 60)}"; reload`);
+  lines[itemStart] = itemFirstLine.replace(/^- \[[ x]\]/i, done ? "- [x]" : "- [ ]");
+  return lines.join("\n");
+};
+
+/**
  * Returns the new file text with the item relocated. Throws StaleMoveError when the
  * file no longer has that bullet at that line, so the caller reloads instead of guessing.
  */
@@ -232,15 +256,7 @@ export const applyMove = (text: string, move: MoveRequest): string => {
     insertAt = groupBodyStart(remaining, section, move.targetGroup);
   }
 
-  const out = [...remaining];
-  // Adjacent bullets are fine markdown; only a heading or note line directly above needs a
-  // blank between it and the block, so a move never introduces spacing the file did not have.
-  const above = insertAt > 0 ? out[insertAt - 1] : "";
-  const below = insertAt < out.length ? out[insertAt] : "";
-  const needsBlankBefore = insertAt > 0 && !isBlank(above) && !isBullet(above) && !isContinuation(above);
-  const needsBlankAfter = below.startsWith("#") || below.trim() === "---";
-  out.splice(insertAt, 0, ...(needsBlankBefore ? [""] : []), ...block, ...(needsBlankAfter ? [""] : []));
-  return out.join("\n");
+  return spliceBlock(remaining, insertAt, block, true);
 };
 
 /**
@@ -273,6 +289,29 @@ export const addGroup = (text: string, heading: string, name: string): string =>
   const out = [...lines];
   out.splice(at, 0, "", `### ${name}`, "");
   return out.join("\n");
+};
+
+/**
+ * Insert a new item at the end of a group. A mission writes its plan this way: every task is
+ * an ordinary item, so the board, the drag and every other session read it without knowing
+ * what a mission is. The caller supplies the whole block, bullet line first.
+ */
+export const addItem = (text: string, heading: string, group: string, block: string): string => {
+  const lines = text.split("\n");
+  const section = parseTracker(text).sections.find((s) => s.heading === heading);
+  if (!section) throw new Error(`no section headed "${heading}"`);
+  const body = block.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n");
+  if (!isBullet(body[0])) throw new Error("the first line must be a bullet (\"- [ ] ...\")");
+  const found = section.groups.find((g) => g.name === group);
+  let insertAt = found?.items.length ? found.items[found.items.length - 1].end : groupBodyStart(lines, section, group);
+  const out = [...lines];
+  // Landing after a fresh `### ` heading can leave the file's own blank line touching the
+  // heading's; one blank between things is the shape every other writer here produces.
+  while (insertAt > 1 && isBlank(out[insertAt - 1]) && isBlank(out[insertAt - 2])) {
+    out.splice(insertAt - 1, 1);
+    insertAt -= 1;
+  }
+  return spliceBlock(out, insertAt, body, false);
 };
 
 /**

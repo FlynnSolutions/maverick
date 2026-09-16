@@ -42,7 +42,7 @@
 .nav-step .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-step .lamp { width: 8px; height: 8px; }
 .nav-step.done .t, .nav-step.skipped .t { color: var(--ink-soft); }
-.nav-step .verdict { height: 20px; font-size: 10.5px; padding: 0 6px; }
+.nav-step .verdict { height: 20px; font-size: 11px; padding: 0 6px; }
 .ship-nav h3 { font-family: var(--display); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 12px 0 2px; }
 
 .ship-detail { min-width: 0; display: flex; flex-direction: column; gap: 14px; }

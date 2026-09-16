@@ -52,7 +52,8 @@
   --cold-hot: #2f3844; --cold-mid: #2a323c; --cold-deep: #222933; --cold-rim: #39424a;
   /* These were written as `var(--ok)` and so on, which is a token referring to itself: in dark
      mode they resolved to nothing at all and anything using them fell back. Dark needs its own
-     values, the way every other surface colour here does. */
+     values, the way every other surface colour here does. Both branches found this
+     independently; these are the tuned ones, from the same pass that made caution amber. */
   --ok: #6ecf95;
   --warn: #e0a84a;
   --gold: #d8b25f;
@@ -568,7 +569,7 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .forms button.on b { color: var(--accent-hot); }
 .forms .new { width: 28px; padding: 0; justify-content: center; }
 .forms .new .icon { width: 14px; height: 14px; }
-.formation .rack > h4 .spacer { flex: 1; }
+.formation .rack > h4 .spacer, .rack.missions > h4 .spacer { flex: 1; }
 .formation .rack > h4 button { height: 24px; font-size: 11.5px; }
 .lead-rack > h4 { color: var(--accent-hot); }
 .lead-rack .strip { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent); }
@@ -824,10 +825,10 @@ body.ask-open { overflow: hidden; }
 
 .supervisor { appearance: none; height: 28px; padding: 0 26px 0 10px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink-soft); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .verdict { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; background: var(--panel); color: var(--ink-faint); }
-.verdict.pending { color: var(--accent-hot); background: var(--accent-dim); }
-.verdict.pass { color: var(--ok); background: rgba(80, 200, 120, 0.16); }
-.verdict.mixed { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
-.verdict.fail { color: var(--threat); background: var(--threat-dim); }
+.verdict.pending, .verdict.flying, .verdict.reviewing { color: var(--accent-hot); background: var(--accent-dim); }
+.verdict.pass, .verdict.passed { color: var(--ok); background: rgba(80, 200, 120, 0.16); }
+.verdict.mixed, .verdict.built { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
+.verdict.fail, .verdict.handed-back, .verdict.blocked { color: var(--threat); background: var(--threat-dim); }
 .verdict.rejected { text-decoration: line-through; opacity: 0.7; }
 .row .actions .verdict { align-self: center; }
 
@@ -1247,7 +1248,7 @@ body.ask-open { overflow: hidden; }
 .strip-name { margin: 0; min-width: 0; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .strip-id .role { margin: 0; flex: 0 0 auto; }
 .strip-state { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.strip-state b { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+.strip-state b { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; flex: 0 0 auto; }
 .strip-state i { font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--caution); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .strip-when, .strip-where { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .strip-when i { font-style: normal; color: var(--ink-faint); }

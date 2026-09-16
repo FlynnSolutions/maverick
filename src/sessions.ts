@@ -2,7 +2,7 @@
  * Session records: one JSON file per Claude session under ~/.claude/console-sessions, written by
  * bin/session-open and bin/session-close. The console draws the tree from `parent`.
  */
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export type SessionRole = "driver" | "develop" | "audit" | "plan";
@@ -28,6 +28,12 @@ export interface SessionRecord {
   audit?: { claudeId: string; started: string; file: string };
   /** Cory's call on the audit findings. */
   decision?: "accepted" | "rejected";
+  /** Which repo of a multi-repo project this session works in, by its directory name. */
+  repo?: string;
+  /** The mission that owns this session, if one does. A mission reviews its own work, so the
+   *  ship must not audit it a second time (`src/ships.ts`). Set at dispatch, not when a
+   *  verdict exists, so there is no window in which the session looks unowned. */
+  mission?: string;
 }
 
 export const readSessions = async (dir: string): Promise<SessionRecord[]> => {
@@ -44,6 +50,23 @@ export const readSessions = async (dir: string): Promise<SessionRecord[]> => {
       .map(async (n) => JSON.parse(await readFile(join(dir, n), "utf8")) as SessionRecord),
   );
   return records.sort((a, b) => b.started.localeCompare(a.started));
+};
+
+export const writeSession = async (dir: string, record: SessionRecord): Promise<SessionRecord> => {
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${record.id}.json`), `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  return record;
+};
+
+/** Patch one record in place, creating nothing: a session the console never recorded is not an error. */
+export const patchSession = async (dir: string, id: string, patch: Partial<SessionRecord>): Promise<void> => {
+  const file = join(dir, `${id}.json`);
+  try {
+    const record = JSON.parse(await readFile(file, "utf8")) as SessionRecord;
+    await writeFile(file, `${JSON.stringify({ ...record, ...patch }, null, 2)}\n`, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
 };
 
 export const sessionsForProject = async (dir: string, projectId: string, projectName: string): Promise<SessionRecord[]> =>

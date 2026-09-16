@@ -1,0 +1,100 @@
+/* The mission page. It borrows the ship page's frame (nav left, detail right) because a
+   mission and a ship are the same shape of thing: a saved run you come back to. What it adds
+   is the gate, which has to be loud enough that approving is a decision and not a click. */
+
+.mv-band {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--seam-soft);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--seam-soft);
+}
+.mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; gap: 2px; }
+.mv-band .k { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.mv-band .v { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* The gate. One surface, lifted, and the cost above the verb rather than beneath it. */
+.mv-gate { background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
+/* A lifted surface is brighter, so its secondary text comes up a step to stay readable on it. */
+.mv-gate h2 { color: var(--ink-soft); }
+.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 70ch; margin: 0 0 10px; }
+.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 70ch; margin: 10px 0 0; }
+.mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--threat); font-size: 13px; }
+.mv-problems li { margin: 2px 0; }
+
+/* A milestone's tasks: the strip's columns, at the strip's density, in the page's own frame. */
+.mv-task {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: var(--radius-s);
+  background: var(--carbon);
+  box-shadow: inset 0 0 0 1px var(--seam-soft);
+  margin-bottom: 8px;
+}
+.mv-task .lamp { width: 14px; height: 14px; }
+.mv-task .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cold); justify-self: center; }
+.mv-task .dot.passed { background: var(--ok); }
+.mv-task .dot.pending { background: var(--cold); }
+.mv-task .dot.handed-back { background: var(--threat); }
+.mv-task .t { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-task .mv-acts { display: flex; gap: 6px; }
+.mv-task .meta { grid-column: 2 / -1; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+.mv-task .note { grid-column: 2 / -1; font-size: 12.5px; color: var(--caution); }
+.mv-task details { grid-column: 2 / -1; }
+.mv-task details summary { cursor: pointer; }
+.mv-task pre.diffstat { grid-column: 2 / -1; margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); background: transparent; box-shadow: none; padding: 0; white-space: pre-wrap; }
+
+/* The live states, the good one and the bad one are the badge's own, in style.css. What is
+   left here is the quiet end of the mission's vocabulary: nothing has happened to these yet,
+   and `pending` must not borrow the accent, which is the colour of something running. */
+.verdict.interviewing, .verdict.planned, .verdict.pending, .verdict.review, .verdict.closed { color: var(--ink-soft); background: var(--panel); }
+
+/* The interview is a conversation, so it gets a real terminal inside the mission's own view. */
+/* The terminal's dark is a well inside the panel, never the panel itself: a control that
+   inherits the page's ink must not land on a hard-coded dark surface in light mode. */
+.mv-interview .mv-term-well { background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
+.mv-interview .term { height: 46vh; min-height: 320px; }
+
+.mv-plan { max-width: 78ch; }
+.mv-milestone { margin-bottom: 18px; }
+.mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
+.mv-milestone > .done { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 10px; }
+.mv-empty { color: var(--ink-faint); font-size: 13px; }
+
+/* The plan is the thing being approved, so it is read in full: a title and its prose, not a
+   row clipped to one line. A gate you cannot read the terms of is not a gate. */
+.mv-plan-task { padding: 10px 12px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); margin-bottom: 8px; }
+.mv-plan-task h4 { font-family: var(--display); font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
+.mv-plan-task p { margin: 0; font-size: 13px; color: var(--ink-soft); white-space: pre-wrap; max-width: 78ch; }
+.mv-interview .mv-empty { padding: 14px; }
+
+/* Which repo a task lands in. A multi-repo project plans across several, and the order they
+   land in is the whole point of the milestones, so the repo reads on the task and not once. */
+.mv-repo { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-faint); margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--panel); }
+.mv-repos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.mv-repos a, .mv-repos span { font-family: var(--mono); font-size: 12px; }
+
+/* What happens to each repo when it is done. The one that reaches a shared branch on its own
+   is drawn as a caution, because it is the only thing here that acts without a second pair of
+   eyes and it must not read like the other two. */
+.mv-lands { display: grid; gap: 6px; margin-top: 12px; }
+.mv-land { display: grid; grid-template-columns: minmax(0, 160px) minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 6px 10px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); }
+.mv-land .r { font-family: var(--mono); font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.mv-land .l { font-size: 12.5px; color: var(--ink-soft); }
+.mv-land.push { box-shadow: inset 0 0 0 1px var(--caution); }
+.mv-land.push .l { color: var(--caution); }
+/* The caution colour loses contrast on the gate's lifted surface, and this is the one line on
+   the page that must not be skimmed. It gets the deck's own darker surface to sit on and a
+   caution ring, rather than a lighter shade of warning on a brighter panel. */
+.mv-warn { margin: 10px 0 0; padding: 8px 12px; font-size: 12.5px; color: var(--caution); max-width: 74ch; background: var(--carbon); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--caution); }
+
+/* A session's screen inside the task it belongs to. The row is a grid, so the well spans it. */
+.mv-task .mv-term-well { grid-column: 1 / -1; margin-top: 8px; background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
+.mv-task .mv-term-well .term { height: 34vh; min-height: 260px; }
+.detail-head .actions .danger { color: var(--threat); }
