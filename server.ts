@@ -23,7 +23,7 @@ import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript } from "./src/transcript-view.ts";
 import { backgroundAgents } from "./src/git.ts";
-import { focusApp, processHome } from "./src/processes.ts";
+import { focusApp, parentChain, processHome } from "./src/processes.ts";
 import { glance } from "./src/transcript.ts";
 import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
@@ -339,7 +339,13 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (method === "GET" && path === "/api/sessions/all") {
     const projects = await readProjects();
     const registry = await readRegistrySessions();
-    const enriched = await Promise.all(registry.map(async (s) => ({ ...s, ...(await processHome(s.pid)), ...(await glance(s.cwd, s.sessionId)) })));
+    // A session whose ancestry includes one of our pty bridges lives in Maverick's dock: it can be typed into directly.
+    const bridges = new Map(listTerminals().filter((t) => t.pid && t.exitCode === null).map((t) => [t.pid as number, t.id]));
+    const enriched = await Promise.all(registry.map(async (s) => {
+      const chain = bridges.size ? await parentChain(s.pid) : [];
+      const terminalId = chain.map((pid) => bridges.get(pid)).find(Boolean);
+      return { ...s, ...(await processHome(s.pid)), ...(await glance(s.cwd, s.sessionId)), ...(terminalId ? { terminalId } : {}) };
+    }));
     const bg = (await Promise.all(projects.map((p) => backgroundAgents(p.path).catch(() => [])))).flat();
     const seen = new Set<string>();
     const agents = bg.filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));

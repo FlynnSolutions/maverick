@@ -1219,7 +1219,7 @@ const renderWorkspace = async () => {
   const center = el("div", { class: "cc" });
   wrap.append(center);
   claudeUsage.mount(usageRoot, { api, post });
-  commandCenter = mountCommandCenter(center, { el, text, api, post, openTerminal, createTerminal, sendInput, acceptDrops, setStatus, projectId, project });
+  commandCenter = mountCommandCenter(center, { el, text, api, post, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus, projectId, project });
   return wrap;
 };
 
@@ -1534,6 +1534,18 @@ const acceptDrops = (host, onPaths) => {
       setStatus(err.message, true);
     }
   });
+};
+
+/** Show a pty the server already has: the dock tab if this page mounted it, otherwise mount it now (its earlier output is not replayed). */
+const mountExisting = async (id) => {
+  if (dockTerminals.has(id)) {
+    $("#dock").hidden = false;
+    activate(id);
+    return;
+  }
+  const info = (await api("/api/terminals")).find((t) => t.id === id);
+  if (!info) return setStatus(`terminal ${id} is gone`, true);
+  mountTerminal(info);
 };
 
 const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent }) => {

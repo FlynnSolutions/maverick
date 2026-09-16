@@ -21,6 +21,8 @@ export interface TerminalInfo {
   cwd: string;
   startedAt: string;
   exitCode: number | null;
+  /** The pty bridge's pid; the claude inside is its descendant, which is how a registry session is matched to its dock terminal. */
+  pid?: number;
 }
 
 interface Terminal extends TerminalInfo {
@@ -35,6 +37,7 @@ const terminals = new Map<string, Terminal>();
 const info = (t: Terminal): TerminalInfo => ({
   id: t.id,
   title: t.title,
+  pid: t.child.pid,
   command: t.command,
   cwd: t.cwd,
   startedAt: t.startedAt,

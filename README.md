@@ -179,9 +179,11 @@ one line. A panel carries the status lamp, where the session lives, and the last
 read from its transcript (`/api/transcript`, polled incrementally): your prompts as
 panels, Claude's replies as rendered markdown, runs of tool calls folded into one line of
 chips, harness injections (task notifications, reminders) folded as system events.
-A background session gets a composer at the bottom (Enter sends, over a headless attach;
-drop a file to attach its path) and **Take the stick** for the real terminal; a session
-that lives in another terminal says so, since Maverick cannot type into it yet (Claude
+A session started from Maverick's own dock (**New session**, a spawn, a worktree) is fully
+live here: the command center matches the registry entry to its pty through the process
+tree, the composer types straight into it (Enter sends; drop a file to attach its path)
+and **take the stick** jumps to its dock tab. A background session gets the same composer
+over a headless attach. A session that lives in another terminal says so, since Maverick cannot type into it yet (Claude
 Code's per-session socket would allow it and needs a permission decision). **close** /
 **stop** end a process from the full-screen head, and stale idle panels (a day or more)
 carry a close button. Files dropped on any dock terminal are saved under the console's

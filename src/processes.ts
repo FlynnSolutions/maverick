@@ -32,6 +32,19 @@ const appName = (comm: string): string | undefined => {
   return base;
 };
 
+/** The pids above `pid`, nearest first, up to `depth` levels. */
+export const parentChain = async (pid: number, depth = 5): Promise<number[]> => {
+  const chain: number[] = [];
+  let current = pid;
+  for (let i = 0; i < depth; i += 1) {
+    const line = await psLine(current);
+    if (!line || line.ppid <= 1) break;
+    chain.push(line.ppid);
+    current = line.ppid;
+  }
+  return chain;
+};
+
 /** Bring a terminal app to the front; the tab inside it is not scriptable, so the caller names the tty. */
 export const focusApp = async (app: string): Promise<void> => {
   await run("osascript", ["-e", `tell application "${app.replace(/"/g, "")}" to activate`]);

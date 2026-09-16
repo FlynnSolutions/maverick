@@ -41,8 +41,8 @@ const assemble = (all) => {
   for (const s of all.interactive) {
     sessions.push({
       key: `pid:${s.pid}`, kind: "interactive", pid: s.pid, sessionId: s.sessionId, cwd: s.cwd, project: s.project,
-      title: s.title ?? s.name ?? `pid ${s.pid}`, status: s.status ?? "idle", waitingFor: s.waitingFor, app: s.app, tty: s.tty,
-      elapsed: s.elapsed, at: s.updatedAt ?? s.startedAt, lastPrompt: s.lastPrompt, lastReply: s.lastReply,
+      title: s.title ?? s.name ?? `pid ${s.pid}`, status: s.status ?? "idle", waitingFor: s.waitingFor, app: s.terminalId ? "Maverick" : s.app, tty: s.tty,
+      elapsed: s.elapsed, at: s.updatedAt ?? s.startedAt, lastPrompt: s.lastPrompt, lastReply: s.lastReply, terminalId: s.terminalId,
     });
   }
   for (const s of sessions) bySessionId.set(s.sessionId, s);
@@ -73,7 +73,7 @@ const assemble = (all) => {
 };
 
 export const mountCommandCenter = (root, ctx) => {
-  const { el, text, api, post, openTerminal, createTerminal, sendInput, acceptDrops, setStatus } = ctx;
+  const { el, text, api, post, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus } = ctx;
   const DAY = 86400000;
   let all = null;
   let model = null;
@@ -127,7 +127,7 @@ export const mountCommandCenter = (root, ctx) => {
           window.setTimeout(load, 1500);
         } }, "close");
 
-  const dockButton = (s) => el("button", { type: "button", class: "ghost dock", title: "open the terminal in the dock", onclick: (e) => { e.stopPropagation(); openTerminal(dockFor(s)); } }, "dock");
+  const dockButton = (s) => el("button", { type: "button", class: "ghost dock", title: s.terminalId ? "show its dock terminal" : "open the terminal in the dock", onclick: (e) => { e.stopPropagation(); if (s.terminalId) mountExisting(s.terminalId); else openTerminal(dockFor(s)); } }, "dock");
 
   const panel = (s, record, compact = false, endable = false) =>
     el(
@@ -353,7 +353,7 @@ export const mountCommandCenter = (root, ctx) => {
     const f = full;
     if (!f) return;
     const s = f.session;
-    if (s.kind !== "background") {
+    if (s.kind !== "background" && !s.terminalId) {
       f.composer.replaceChildren(el("div", { class: "notice" },
         el("span", {}, `This session is live in ${s.app ?? "a terminal"}${s.tty ? ` on ${s.tty}` : ""}. Maverick cannot type into another terminal's session yet; Claude Code's per-session socket would allow it and needs a permission that has not been granted.`),
         s.app && s.pid ? el("button", { type: "button", class: "primary", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
@@ -370,10 +370,11 @@ export const mountCommandCenter = (root, ctx) => {
       if (!body) return;
       area.disabled = true;
       try {
-        f.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title });
-        await sendInput(f.stick.id, body);
+        // A session living in Maverick's dock is typed into through its own pty; a background one through a headless attach.
+        const target = s.terminalId ?? (f.stick ??= await createTerminal({ kind: "attach", id: s.claudeId, title: s.title })).id;
+        await sendInput(target, body);
         await new Promise((r) => window.setTimeout(r, 180)); // a burst ending in Enter reads as a paste; a beat later it submits
-        await sendInput(f.stick.id, "\r");
+        await sendInput(target, "\r");
         area.value = "";
         setStatus("sent");
       } catch (err) {
@@ -390,7 +391,7 @@ export const mountCommandCenter = (root, ctx) => {
     });
     f.composer.replaceChildren(
       el("div", { class: "row" }, area, el("button", { type: "button", class: "primary", onclick: send }, "Send")),
-      el("div", { class: "hint" }, el("span", {}, "Enter sends · Shift+Enter for a new line · drop a file to attach its path"), el("button", { type: "button", class: "ghost", onclick: () => openTerminal(dockFor(s)) }, "take the stick")),
+      el("div", { class: "hint" }, el("span", {}, `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in Maverick's dock" : ""}`), el("button", { type: "button", class: "ghost", onclick: () => (s.terminalId ? mountExisting(s.terminalId) : openTerminal(dockFor(s))) }, "take the stick")),
     );
   };
 
