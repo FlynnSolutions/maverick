@@ -6,6 +6,7 @@
 
 import { render as renderMd } from "./markdown.js";
 import { jetSvg } from "./jet.js";
+import { lamp } from "./lamp.js";
 import { icon } from "./icons.js";
 
 const NEAR_BOTTOM = 80;
@@ -78,7 +79,7 @@ const assemble = (all) => {
 };
 
 export const mountCommandCenter = (root, ctx) => {
-  const { el, text, api, post, askClose, askEnd, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus } = ctx;
+  const { el, text, api, post, askClose, askEnd, loading, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus } = ctx;
   const DAY = 86400000;
   let all = null;
   let model = null;
@@ -89,7 +90,7 @@ export const mountCommandCenter = (root, ctx) => {
 
   /* ---------- panels ---------- */
 
-  const lamp = (status) => el("span", { class: `lamp ${status ?? ""}`, title: status ?? "" });
+
 
   const roleChip = (record) => (record ? el("span", { class: "role" }, record.role) : null);
 
@@ -202,9 +203,9 @@ export const mountCommandCenter = (root, ctx) => {
    * through here, so the two can never drift out of alignment with each other. An action slot
    * is always emitted: a missing verb would slide the rest into the wrong column.
    */
-  const stripLine = ({ status, name, chips = [], state, note, when, up, where, acts = [] }) =>
+  const stripLine = ({ status, band, name, chips = [], state, note, when, up, where, acts = [] }) =>
     el("div", { class: "strip-line" },
-      lamp(status),
+      lamp(status, band),
       el("div", { class: "strip-id" }, name, ...chips),
       el("span", { class: "strip-state", title: [state, note].filter(Boolean).join(" · ") }, el("b", {}, state), note ? el("i", {}, note) : null),
       el("span", { class: "strip-when", title: [when, up].filter(Boolean).join(" · ") }, when, up ? el("i", {}, up) : null),
@@ -212,7 +213,7 @@ export const mountCommandCenter = (root, ctx) => {
       el("div", { class: "strip-acts" }, ...acts));
 
   /** One session as a flight progress strip. `full` carries the last exchange under the line. */
-  const strip = (s, record, full = false) => {
+  const strip = (s, record, full = false, band = "") => {
     const name = el("h4", { class: "strip-name" }, s.title);
     return el("article", {
       class: `strip ${s.status}${finished(s.status) ? " finished" : ""}${full ? " full" : ""}`,
@@ -223,6 +224,7 @@ export const mountCommandCenter = (root, ctx) => {
     },
     stripLine({
       status: s.status,
+      band,
       name,
       chips: [roleChip(record), auditChip(record)],
       state: s.status,
@@ -239,7 +241,8 @@ export const mountCommandCenter = (root, ctx) => {
   const ghost = (record) =>
     el("article", { class: `strip ghost ${record.status}`, title: record.loop },
       stripLine({
-        status: null,
+        status: "stopped",
+        band: "stale",
         name: el("h4", { class: "strip-name" }, record.loop),
         chips: [roleChip(record), auditChip(record)],
         state: record.status,
@@ -267,7 +270,7 @@ export const mountCommandCenter = (root, ctx) => {
       const s = sessionForRecord(c);
       if (s) {
         used.add(s.key);
-        wings.append(strip(s, c, true));
+        wings.append(strip(s, c, true, "working"));
       } else wings.append(ghost(c));
     }
     if (!children.length) wings.append(el("p", { class: "muted small cc-empty" }, "no task sessions under this lead yet: pick it when you spawn from a card"));
@@ -289,7 +292,7 @@ export const mountCommandCenter = (root, ctx) => {
     sessions.length
       ? el("section", { class: `rack ${cls}` },
           el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(sessions.length))),
-          el("div", { class: "rack-strips" }, ...sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full))))
+          el("div", { class: "rack-strips" }, ...sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, cls))))
       : null;
 
   const projectSection = (proj, sessions) => {
@@ -536,13 +539,19 @@ export const mountCommandCenter = (root, ctx) => {
 
   /* ---------- data ---------- */
 
+  let firstLoad = true;
   const load = async () => {
+    // Rebuilding every session record takes over a second; the jet flies while it does.
+    const stop = firstLoad ? loading?.() : null;
     try {
       all = await api("/api/sessions/all");
       paint();
     } catch (err) {
       // refresh lives in the page head, so it survives this.
       root.replaceChildren(el("p", { class: "muted cc-empty" }, `sessions unavailable: ${err.message}`));
+    } finally {
+      firstLoad = false;
+      stop?.();
     }
   };
   root.replaceChildren(el("p", { class: "muted cc-empty" }, "reading sessions…"));

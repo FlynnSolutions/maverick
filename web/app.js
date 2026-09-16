@@ -2,7 +2,7 @@
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
 // selects it, no parameter shows the picker.
 import { jetSvg } from "./jet.js";
-import { strike, scheduleWeather, missile, flares, flyby } from "./afterburner.js";
+import { strike, loading, missile, flares, flyby } from "./afterburner.js";
 import { mountCommandCenter } from "./command.js";
 import { icon } from "./icons.js";
 import * as claudeUsage from "./providers/claude.js";
@@ -1278,7 +1278,7 @@ const renderWorkspace = async () => {
   const center = el("div", { class: "cc" });
   wrap.append(center);
   claudeUsage.mount(usageRoot, { api, post });
-  commandCenter = mountCommandCenter(center, { el, text, api, post, askClose, askEnd, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus, projectId, project, filterRoot });
+  commandCenter = mountCommandCenter(center, { el, text, api, post, askClose, askEnd, loading, openTerminal, createTerminal, mountExisting, sendInput, acceptDrops, setStatus, projectId, project, filterRoot });
   return wrap;
 };
 
@@ -1695,6 +1695,21 @@ const boot = async () => {
   $("#project").hidden = false;
   $("#reload").hidden = false;
   $("#new-session").hidden = false;
+  // Dark by default, light when the system says so, and an explicit choice outranks both.
+  // Named setMode, not applyTheme: that name already belongs to the project's own palette.
+  const setMode = (m) => {
+    if (m) document.documentElement.setAttribute("data-theme", m);
+    else document.documentElement.removeAttribute("data-theme");
+  };
+  try { setMode(localStorage.getItem("mv.theme")); } catch {}
+  const themeBtn = el("button", { type: "button", class: "ghost icon-btn", "aria-label": "switch light and dark", title: "switch light and dark",
+    onclick: () => {
+      const next = getComputedStyle(document.body).colorScheme.trim() === "light" ? "dark" : "light";
+      try { localStorage.setItem("mv.theme", next); } catch {}
+      setMode(next);
+    } }, icon("theme"));
+  $("#reload").before(themeBtn);
+
   const reload = $("#reload");
   reload.classList.add("ghost", "icon-btn");
   reload.setAttribute("aria-label", "refresh the board");
@@ -1744,7 +1759,6 @@ const boot = async () => {
       if (item) openDrawer(tracker.index, item);
     }
   }
-  scheduleWeather();
   // `?nodock=1` leaves open terminals unmounted: a live event stream keeps a headless screenshot from ever settling.
   if (!new URLSearchParams(location.search).has("nodock")) {
     const existing = await api("/api/terminals");

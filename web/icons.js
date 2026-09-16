@@ -6,6 +6,8 @@ const NS = "http://www.w3.org/2000/svg";
 const PATHS = {
   /** Dismiss: two strokes crossing. Never used for anything that ends a process. */
   close: ["M4.5 4.5 L11.5 11.5", "M11.5 4.5 L4.5 11.5"],
+  /** Theme: a disc split light and dark. */
+  theme: ["M8 2.2a5.8 5.8 0 1 0 0 11.6a5.8 5.8 0 1 0 0-11.6", "M8 2.2 L8 13.8"],
   /** Refresh: an open circle with an arrowhead closing it. */
   refresh: ["M11.6 4.4 A5 5 0 1 0 13 8", "M8.6 4.1 L11.9 4.5 L11.5 1.2"],
 };

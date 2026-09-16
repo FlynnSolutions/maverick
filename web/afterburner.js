@@ -1,4 +1,5 @@
-// Top Gun, not thunderstorms. Three effects, all transform/opacity: a jet flyby with a
+// Top Gun, not thunderstorms. Every effect is transform and opacity only. The jet appears
+// when something is happening, never on a timer: a flyby you did not cause is just weather.
 // contrail across the top of the screen (big actions), a missile launched from an element
 // toward the dock (spawning a session), and a spread of flares off an element (a drop that
 // committed). Ambient: a distant contrail now and then. Reduce-motion silences the ambient
@@ -128,11 +129,37 @@ export const strike = (target) => {
   flyby({ duration: 1100 });
 };
 
-/** A high, slow contrail now and then. */
-export const scheduleWeather = () => {
-  const tick = () => {
-    if (document.visibilityState === "visible" && !reduced() && Math.random() < 0.5) flyby({ y: rand(20, 60), duration: 2600 });
-    window.setTimeout(tick, 40_000 + Math.random() * 80_000);
+/**
+ * A big jet crossing while something loads, looping until you stop it. Replaces the ambient
+ * flyby: the jet now only appears when it means something, which is the whole point of it.
+ * `stop()` lets the current pass finish rather than cutting it dead.
+ */
+export const loading = ({ y = 0.42, scale = 3.4, duration = 2200 } = {}) => {
+  if (reduced()) return () => {};
+  const host = svgLayer("fx loading");
+  let live = true;
+  let timer = 0;
+  const pass = () => {
+    if (!host.isConnected) return;
+    const py = window.innerHeight * y;
+    const jet = document.createElementNS(NS, "g");
+    jet.setAttribute("class", "jet big");
+    const burner = document.createElementNS(NS, "ellipse");
+    burner.setAttribute("class", "burner");
+    burner.setAttribute("cx", "-7"); burner.setAttribute("cy", "10");
+    burner.setAttribute("rx", "12"); burner.setAttribute("ry", "3");
+    jet.append(burner, ...jetPaths());
+    jet.style.setProperty("--y", `${py}px`);
+    jet.style.setProperty("--dur", `${duration}ms`);
+    jet.style.setProperty("--scale", String(scale));
+    host.append(jet);
+    window.setTimeout(() => jet.remove(), duration + 200);
+    timer = window.setTimeout(() => { if (live) pass(); }, duration * 0.82);
   };
-  window.setTimeout(tick, 20_000);
+  pass();
+  return () => {
+    live = false;
+    window.clearTimeout(timer);
+    window.setTimeout(() => host.remove(), duration + 300);
+  };
 };

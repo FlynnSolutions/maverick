@@ -5,10 +5,12 @@ Hold to these; extend rather than reinvent.
 
 ## Direction and feel
 
-A carbon flight deck. The project being flown supplies the accent (`--accent`, `--accent-hot`),
-the display face (`--display`) and a callsign, via `<project>/maverick.json`; everything else is
-gunmetal, steel and HUD signal colours. Quiet structure, signal where something needs the
-pilot. Top Gun without costume: the jet appears where a lead or a warning is, not as decoration.
+A flight deck, in Navy colours off the airframe: gull greys and silver, insignia red and blue,
+white for the lifted surface. Two modes, dark (a real dark grey, `--carbon: #14171a`, not the
+near-black this started on) and light (`#e4e7e9` deck, white panels); an explicit choice is
+remembered in `mv.theme`, otherwise the system decides. The project being flown supplies the
+accent and display face via `<project>/maverick.json`. Top Gun without costume: the jet appears
+when something is happening, never on a timer, because a flyby you did not cause is weather.
 
 ## Tokens (world names)
 
@@ -52,6 +54,22 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **A state colour belongs to one state.** `@keyframes arc` hardcoded `--hud`, so a *working*
   session pulsed in the colour a *finished* one is painted. A keyframe that sets colour is a
   second place a state is defined; keep the colour on the class and the motion in the keyframe.
+- **The lamp is an engine, or a reticle.** Running states are an afterburner nozzle drawn off a
+  photograph: a serrated petal rim (a *ring* with the teeth cut into its inner edge, never a
+  filled star, which reads as a sun), a banded throat, and an iris whose area opens with heat.
+  Everything reads one property, `--bloom`, 0 cold to 1 afterburner. The petals flutter while
+  the engine is lit and the core flickers on a deliberately uneven cadence, because a clean
+  pulse reads as a notification dot rather than combustion.
+- **The two states that want the pilot are a targeting reticle, not a lamp.** Blocked is a lock:
+  brackets closed on the target, a filled pip, and a burst of flicker once every five seconds
+  rather than a steady blink. Your-turn is acquiring: brackets held open with the ring sweeping
+  inside them. A different *form*, so a blocked session can never be mistaken for a busy one at
+  14px. Rotate the ring, not the brackets, and set `transform-box: view-box` or it spins about
+  its own bounding box and wobbles.
+- **The airframe is traced, never drawn.** `web/jet.js` is an F-14A generated from a photograph:
+  sky cut, the mask's own border followed pixel by pixel, simplified, then the interior quantised
+  into four tone bands and each region traced as its own contour. 43 paths. Regenerate it from
+  the reference; do not hand-edit coordinates, which is what produced three bad jets before this.
 - **Session strip** (`.strip`) — the signature. Air traffic control keeps one paper progress
   strip per flight in a rack, ordered by urgency and annotated by hand; a session is a flight.
   The line is a grid of fixed columns (`8px · name 1fr · 180px state · 148px timing · 230px

@@ -3,30 +3,34 @@
    Only transform and opacity move. */
 
 :root {
-  --carbon: #0a0c0f;
-  --gunmetal: #10141a;
-  --steel: #161c24;
-  --panel: #1e2630;
-  --panel-lifted: #273140;
-  --seam: rgba(170, 190, 215, 0.09);
-  --seam-soft: rgba(170, 190, 215, 0.05);
-  --seam-strong: rgba(170, 190, 215, 0.2);
-  --ink: #e8ecf1;
-  --ink-soft: #aeb8c6;
-  --ink-faint: #8290a6;
-  --ink-ghost: #5f6b82;
-  --accent: #ff7a1a;
-  --accent-hot: #ffb36b;
+  /* Navy off the airframe: gull greys and silver, insignia red and blue, white. The dark mode
+     is a real dark grey rather than the near-black this ran on before. */
+  --carbon: #14171a;
+  --gunmetal: #1b1e21;
+  --steel: #24282c;
+  --panel: #2d3237;
+  --panel-lifted: #373d43;
+  --seam: rgba(170, 186, 204, 0.11);
+  --seam-soft: rgba(170, 186, 204, 0.06);
+  --seam-strong: rgba(170, 186, 204, 0.22);
+  --ink: #e9ecee;
+  --ink-soft: #aeb6bc;
+  --ink-faint: #8d98a1;
+  --ink-ghost: #69737b;
+  --accent: #7fa6e8;
+  --accent-hot: #a8c4f0;
   --accent-core: #ffffff;
   --accent-dim: color-mix(in srgb, var(--accent) 18%, transparent);
   --accent-glow: color-mix(in srgb, var(--accent) 45%, transparent);
-  --hud: #8dffb0;
-  --hud-dim: rgba(141, 255, 176, 0.16);
-  --caution: #ffd166;
-  --caution-dim: rgba(255, 209, 102, 0.16);
-  --threat: #ff4d5e;
-  --threat-dim: rgba(255, 77, 94, 0.18);
-  --cold: #3a4454;
+  --hud: #7fd8a0;
+  --hud-dim: rgba(127, 216, 160, 0.16);
+  /* What wants the pilot is insignia red now, and it is a reticle rather than a lamp. */
+  --caution: #ec666a;
+  --caution-dim: rgba(236, 102, 106, 0.18);
+  --threat: #ec666a;
+  --threat-dim: rgba(236, 102, 106, 0.18);
+  --cold: #545c62;
+  --silver: #9ba2a8;
   --unit: 4px;
   --radius-s: 4px;
   --radius-m: 6px;
@@ -35,7 +39,65 @@
   --sans: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
   --dock-h: 44vh;
+  /* The deck's own gradient, so the page background is not two hard-coded darks. */
+  --deck-top: #0d1117;
+  --deck-grain: 0.045;
   color-scheme: dark;
+}
+
+/* Light: gull grey deck, white lifted. Explicit choice wins; otherwise follow the system. */
+:root[data-theme="light"] {
+  --carbon: #e4e7e9;
+  --gunmetal: #edeff1;
+  --steel: #f2f4f5;
+  --panel: #f8f9fa;
+  --panel-lifted: #ffffff;
+  --seam: rgba(24, 32, 42, 0.14);
+  --seam-soft: rgba(24, 32, 42, 0.08);
+  --seam-strong: rgba(24, 32, 42, 0.24);
+  --ink: #1a2026;
+  --ink-soft: #48525b;
+  --ink-faint: #59636d;
+  --ink-ghost: #8a939b;
+  --accent: #1e3a6e;
+  --accent-hot: #2b5296;
+  --hud: #2f7d51;
+  --caution: #b0272c;
+  --caution-dim: rgba(176, 39, 44, 0.14);
+  --threat: #b0272c;
+  --threat-dim: rgba(176, 39, 44, 0.14);
+  --cold: #9ba2a8;
+  --deck-top: #f4f6f7;
+  --deck-grain: 0.03;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --carbon: #e4e7e9;
+    --gunmetal: #edeff1;
+    --steel: #f2f4f5;
+    --panel: #f8f9fa;
+    --panel-lifted: #ffffff;
+    --seam: rgba(24, 32, 42, 0.14);
+    --seam-soft: rgba(24, 32, 42, 0.08);
+    --seam-strong: rgba(24, 32, 42, 0.24);
+    --ink: #1a2026;
+    --ink-soft: #48525b;
+    --ink-faint: #59636d;
+    --ink-ghost: #8a939b;
+    --accent: #1e3a6e;
+    --accent-hot: #2b5296;
+    --hud: #2f7d51;
+    --caution: #b0272c;
+    --caution-dim: rgba(176, 39, 44, 0.14);
+    --threat: #b0272c;
+    --threat-dim: rgba(176, 39, 44, 0.14);
+    --cold: #9ba2a8;
+    --deck-top: #f4f6f7;
+    --deck-grain: 0.03;
+    color-scheme: light;
+}
 }
 
 * { box-sizing: border-box; }
@@ -49,7 +111,7 @@ body {
   color: var(--ink);
   background:
     radial-gradient(1400px 500px at 50% 112%, var(--accent-dim), transparent 62%),
-    linear-gradient(180deg, #0d1117 0%, var(--carbon) 40%),
+    linear-gradient(180deg, var(--deck-top) 0%, var(--carbon) 40%),
     var(--carbon);
   background-attachment: fixed;
   display: flex;
@@ -62,7 +124,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.045;
+  opacity: var(--deck-grain);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   z-index: 0;
 }
@@ -343,27 +405,56 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .dispatch a { text-decoration: none; }
 .dispatch a:hover { text-decoration: underline; }
 
-/* Charge: the status indicator. */
-.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold); position: relative; }
-.row.busy .lamp, .row.running .lamp, .dock-tab .lamp {
-  background: var(--accent-hot);
-  box-shadow: 0 0 6px var(--accent), 0 0 14px var(--accent-glow);
-  animation: arc 1.4s ease-in-out infinite;
-}
-.row.waiting .lamp, .row.blocked .lamp {
-  background: var(--caution);
-  box-shadow: 0 0 8px var(--caution), 0 0 18px var(--caution-dim);
-  animation: flicker 2.8s steps(1, end) infinite;
-}
-.row.idle .lamp { background: var(--cold); box-shadow: inset 0 0 0 1px var(--seam-strong); }
-.row.shell .lamp { background: var(--ink-faint); }
-.row.closed .lamp, .row.handed-off .lamp, .dock-tab.exited .lamp { background: var(--ink-ghost); box-shadow: none; animation: none; }
-/* Working, so it pulses in the project's accent. It used to pulse in --hud, which is the
-   colour a *finished* session is painted: a running session wore the done lamp's glow. */
-@keyframes arc {
-  0%, 100% { box-shadow: 0 0 6px var(--accent), 0 0 14px var(--accent-glow); transform: scale(1); }
-  50% { box-shadow: 0 0 10px var(--accent), 0 0 26px var(--accent-glow); transform: scale(1.15); }
-}
+/* The session lamp: a running engine, or a targeting reticle for the two states that want
+   the pilot. Colours sampled off the afterburner photograph; everything reads --bloom. */
+/* The airframe: a traced F-14, body plus four tone bands. One rule paints it everywhere. */
+.jet-glyph .body { fill: var(--jet-skin, var(--ink-soft)); }
+.jet-glyph .detail { fill: var(--jet-skin, var(--ink-soft)); }
+.jet-glyph .t3 { fill: color-mix(in srgb, var(--jet-skin, var(--ink-soft)) 84%, #000); }
+.jet-glyph .t2 { fill: color-mix(in srgb, var(--jet-skin, var(--ink-soft)) 68%, #000); }
+.jet-glyph .t1 { fill: color-mix(in srgb, var(--jet-skin, var(--ink-soft)) 48%, #000); }
+.jet-glyph .t0 { fill: color-mix(in srgb, var(--jet-skin, var(--ink-soft)) 30%, #000); }
+.cc-lead .jet-glyph.lead { --jet-skin: var(--accent-hot); }
+.rack .jet-glyph.band { --jet-skin: var(--caution); }
+.ship-progress .runway .jet-glyph, .wt-progress .runway .jet-glyph { --jet-skin: #e9ecee; }
+
+.lamp { width: 14px; height: 14px; display: block; flex: 0 0 auto; overflow: visible; }
+.lamp .case  { fill: #23282b; stroke: #39424a; stroke-width: 0.7; }
+.lamp .lip   { fill: none; stroke: #4a545e; stroke-width: 0.8; }
+.lamp .tooth { fill: var(--rim); }
+.lamp .throat{ fill: var(--deep); r: calc(5px + var(--bloom) * 3.2px); }
+.lamp .band  { fill: var(--mid); r: calc(3.4px + var(--bloom) * 2.8px); }
+.lamp .core  { fill: var(--hot); r: calc(1.4px + var(--bloom) * 2.4px); }
+
+.lamp.burn.cold { --hot:#2f3844; --mid:#2a323c; --deep:#222933; --rim:#39424a; --bloom:0;   --flutter:0s;   --flick:0s; }
+.lamp.burn.done { --hot:#7fd8a0; --mid:#478f66; --deep:#26382e; --rim:#3f5a49; --bloom:.28; --flutter:0s;   --flick:0s; }
+.lamp.burn.warm { --hot:#d8802e; --mid:#a85c1c; --deep:#5e3210; --rim:#7a4a1e; --bloom:.5;  --flutter:2.9s; --flick:3.2s; }
+.lamp.burn.work { --hot:#ffe0b0; --mid:#ff9a2b; --deep:#c05a12; --rim:#ffb54d; --bloom:1;   --flutter:.85s; --flick:.32s; }
+.lamp.burn.work .core, .lamp.burn.work .tooth { filter: drop-shadow(0 0 2px #ff8a1e) drop-shadow(0 0 5px rgba(255,138,30,.65)); }
+.lamp.burn.warm .core { filter: drop-shadow(0 0 1.5px rgba(216,128,46,.8)); }
+.lamp.burn.done .core { filter: drop-shadow(0 0 1.5px rgba(127,216,160,.6)); }
+/* The petals never sit still while the engine is lit. */
+.lamp .iris { animation: flutter var(--flutter, 0s) ease-in-out infinite; transform-box: view-box; transform-origin: 16px 16px; }
+.lamp .core { animation: flick var(--flick, 0s) steps(1, end) infinite; }
+
+/* Reticle: strokes, never fills, so it cannot read as another lamp. */
+.lamp .ret { fill: none; stroke: var(--ret); stroke-width: 1.4; stroke-linecap: square; }
+.lamp .ret.thin { stroke-width: 1; opacity: .85; }
+.lamp .ring { fill: none; stroke: var(--ret); stroke-width: 1; opacity: .6; stroke-dasharray: 3 3.4; }
+.lamp .pip { fill: var(--ret); }
+.lamp .pip.hollow { fill: none; stroke: var(--ret); stroke-width: 1.2; }
+.lamp.lock { --ret: var(--caution); }
+.lamp.acquire { --ret: var(--ink-soft); }
+.lamp.lock .lock { animation: lockburst 5.2s steps(1, end) infinite; filter: drop-shadow(0 0 2px var(--caution-dim)); }
+.lamp.acquire .sweep { animation: spin 5.5s linear infinite; transform-box: view-box; transform-origin: 16px 16px; }
+
+@keyframes flutter { 0%,100%{transform:scale(1)} 17%{transform:scale(1.06)} 29%{transform:scale(.965)} 44%{transform:scale(1.035)} 58%{transform:scale(.99)} 71%{transform:scale(1.05)} 86%{transform:scale(.975)} }
+/* Uneven on purpose: a clean pulse reads as a notification dot, not combustion. */
+@keyframes flick { 0%,100%{opacity:1} 9%{opacity:.72} 13%{opacity:1} 28%{opacity:.88} 33%{opacity:.97} 51%{opacity:.68} 56%{opacity:1} 74%{opacity:.85} 79%{opacity:1} 91%{opacity:.78} 95%{opacity:1} }
+/* Rarely, then a burst: a lock that blinks steadily is a notification badge. */
+@keyframes lockburst { 0%,70%{opacity:1} 72%{opacity:.2} 74%{opacity:1} 76%{opacity:.2} 78%{opacity:1} 80%{opacity:.25} 82%{opacity:1} 100%{opacity:1} }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 @keyframes flicker {
   0%, 100% { opacity: 1; } 6% { opacity: 0.35; } 9% { opacity: 1; } 14% { opacity: 0.6; } 17% { opacity: 1; }
   52% { opacity: 1; } 54% { opacity: 0.3; } 56% { opacity: 1; }
@@ -403,7 +494,7 @@ body.docked .dispatch { max-height: calc(100vh - 62px - 16px - var(--dock-h)); }
 .dock-tab button:active { transform: none; }
 .dock-tab .name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 0 6px 0 10px; border-radius: var(--radius-s) 0 0 0; }
 .dock-tab .name .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dock-tab .lamp { width: 6px; height: 6px; flex: 0 0 auto; }
+.dock-tab .lamp { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--accent-hot); }
 .dock-tab .close { width: 28px; flex: 0 0 auto; color: var(--ink-faint); font-size: 16px; line-height: 1; border-left: 1px solid var(--seam-soft); border-radius: 0 var(--radius-s) 0 0; }
 .dock-tab.active .close { color: var(--ink-soft); }
 .dock-tab .close:hover { color: var(--threat); background: var(--panel); }
@@ -670,7 +761,7 @@ body.ask-open { overflow: hidden; }
 .ship-step-head .spacer { flex: 1; }
 .ship-step-head .actions { display: flex; gap: 4px; }
 .ship-step-head .actions button { height: 22px; padding: 0 8px; font-size: 11px; }
-.ship-step .lamp.busy { background: var(--accent-hot); box-shadow: 0 0 6px var(--accent), 0 0 14px var(--accent-glow); animation: arc 1.4s ease-in-out infinite; }
+.ship-step .lamp.busy { background: var(--accent-hot); box-shadow: 0 0 6px var(--accent), 0 0 14px var(--accent-glow); }
 .verdict.running { color: var(--accent-hot); background: var(--accent-dim); }
 .verdict.finished { color: #f2d25b; background: rgba(242, 210, 91, 0.16); }
 .verdict.done { color: #7fe0a0; background: rgba(80, 200, 120, 0.16); }
@@ -751,14 +842,21 @@ body.ask-open { overflow: hidden; }
 /* ---------- flight effects ---------- */
 
 .fx { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: visible; }
-.fx .contrail { fill: none; stroke: rgba(232, 236, 241, 0.55); stroke-width: 1.6; stroke-linecap: round; filter: blur(0.6px); animation: contrail-draw var(--dur, 1400ms) linear forwards, contrail-fade 1200ms ease-out var(--dur, 1400ms) forwards; }
+.fx .contrail { fill: none; stroke: color-mix(in srgb, var(--ink-soft) 55%, transparent); stroke-width: 1.6; stroke-linecap: round; filter: blur(0.6px); animation: contrail-draw var(--dur, 1400ms) linear forwards, contrail-fade 1200ms ease-out var(--dur, 1400ms) forwards; }
 @keyframes contrail-draw { to { stroke-dashoffset: 0; } }
 @keyframes contrail-fade { to { opacity: 0; } }
 .fx .jet { transform: translate(-60px, var(--y)); animation: jet-cross var(--dur, 1400ms) cubic-bezier(0.3, 0, 0.7, 1) forwards; }
-.fx .jet .body { fill: #e8ecf1; }
-.fx .jet .detail { fill: #6f7d92; }
+.fx .jet { width: 74px; height: 74px; }
+.fx .jet .body, .fx .jet .detail { fill: var(--ink-soft); }
+.fx .jet .t3 { fill: color-mix(in srgb, var(--ink-soft) 84%, var(--carbon)); }
+.fx .jet .t2 { fill: color-mix(in srgb, var(--ink-soft) 66%, var(--carbon)); }
+.fx .jet .t1 { fill: color-mix(in srgb, var(--ink-soft) 46%, var(--carbon)); }
+.fx .jet .t0 { fill: color-mix(in srgb, var(--ink-soft) 28%, var(--carbon)); }
+/* The loading pass is bigger, slower and dimmer than a one-off flyby. */
+.fx.loading .jet.big { transform: translate(-220px, var(--y)) scale(var(--scale, 3)); opacity: .45; animation: jet-cross-big var(--dur, 2200ms) linear forwards; }
 .fx .jet .burner { fill: var(--accent-hot); filter: blur(2px); animation: burner 90ms steps(2) infinite; }
 @keyframes jet-cross { to { transform: translate(calc(100vw + 80px), var(--y)); } }
+@keyframes jet-cross-big { to { transform: translate(calc(100vw + 300px), var(--y)) scale(var(--scale, 3)); } }
 @keyframes burner { from { opacity: 0.95; rx: 9px; } to { opacity: 0.6; rx: 12px; } }
 .fx .missile-trail { fill: none; stroke: rgba(232, 236, 241, 0.7); stroke-width: 2; stroke-linecap: round; filter: blur(0.8px); }
 .fx .missile-head { fill: var(--accent-core); filter: drop-shadow(0 0 6px var(--accent-hot)); }
@@ -879,9 +977,7 @@ body.ask-open { overflow: hidden; }
 .ship-progress .runway, .wt-progress .runway { position: relative; flex: 1; height: 10px; border-radius: 5px; background: var(--panel); overflow: visible; }
 .ship-progress .runway .fill, .wt-progress .runway .fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent), var(--accent-hot)); box-shadow: 0 0 12px var(--accent-glow); transition: width 900ms cubic-bezier(0.2, 0.8, 0.3, 1); }
 .ship-progress .runway .jet-marker, .wt-progress .runway .jet-marker { position: absolute; top: 50%; width: 38px; height: 16px; transform: translate(-8px, -50%); transition: left 900ms cubic-bezier(0.2, 0.8, 0.3, 1); filter: drop-shadow(0 0 6px var(--accent-glow)); }
-.ship-progress .runway .jet-glyph, .wt-progress .runway .jet-glyph { width: 38px; height: 16px; display: block; }
-.ship-progress .runway .jet-glyph .body, .wt-progress .runway .jet-glyph .body { fill: #e8ecf1; }
-.ship-progress .runway .jet-glyph .detail, .wt-progress .runway .jet-glyph .detail { fill: #5c6a80; }
+.ship-progress .runway .jet-glyph, .wt-progress .runway .jet-glyph { width: 38px; height: 38px; display: block; }
 @keyframes taxi { from { left: 0; } }
 .ship-progress .runway .jet-marker, .wt-progress .runway .jet-marker { animation: taxi 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
 .ship-progress .runway .fill, .wt-progress .runway .fill { animation: taxi-fill 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
@@ -998,9 +1094,7 @@ body.ask-open { overflow: hidden; }
 .cc-formation { position: relative; display: flex; flex-direction: column; gap: 12px; padding-left: 22px; }
 .cc-formation::before { content: ""; position: absolute; left: 9px; top: 30px; bottom: 30px; border-left: 1px solid var(--seam-strong); }
 .cc-lead { display: flex; align-items: center; gap: 10px; margin-left: -22px; font-size: 13px; flex-wrap: wrap; min-height: 30px; }
-.cc-lead .jet-glyph.lead { width: 32px; height: 13px; flex: 0 0 auto; }
-.cc-lead .jet-glyph.lead .body { fill: var(--accent-hot); }
-.cc-lead .jet-glyph.lead .detail { fill: var(--carbon); }
+.cc-lead .jet-glyph.lead { width: 30px; height: 30px; flex: 0 0 auto; }
 .cc-lead .role { margin: 0; }
 .cc-lead b { font-family: var(--display); font-size: 15px; font-weight: 600; }
 .cc-lead .sub { font-family: var(--mono); font-size: 11.5px; color: color-mix(in srgb, var(--accent-hot) 55%, var(--ink-faint)); }
@@ -1010,7 +1104,7 @@ body.ask-open { overflow: hidden; }
 .cc-closed-row { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: 12.5px; color: var(--ink-soft); }
 .cc-closed-row .role { margin: 0; color: var(--ink-faint); }
 .cc-closed-row .sub { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cc-closed-row .lamp { background: var(--ink-ghost); flex: 0 0 auto; }
+.cc-closed-row .lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-ghost); flex: 0 0 auto; }
 
 /* ---------- the rack: one session per flight progress strip ----------
    Fixed columns are the point: the lamp, state, timing and the three verbs share an x down
@@ -1024,9 +1118,7 @@ body.ask-open { overflow: hidden; }
 .rack.stale > h4, .rack.done > h4 { color: var(--ink-faint); }
 /* Your move, but nothing is blocked on it: brighter than the quiet racks, no signal colour. */
 .rack.action > h4 { color: var(--ink); }
-.rack .jet-glyph.band { width: 26px; height: 11px; }
-.rack .jet-glyph.band .body { fill: var(--caution); }
-.rack .jet-glyph.band .detail { fill: var(--carbon); }
+.rack .jet-glyph.band { width: 24px; height: 24px; }
 .rack-strips { display: flex; flex-direction: column; gap: 3px; }
 
 .strip {
@@ -1046,7 +1138,7 @@ body.ask-open { overflow: hidden; }
 /* The one grid every strip shares. Columns hold their width; only the name flexes. */
 .strip-line {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) 180px 175px minmax(230px, 0.5fr) 198px;
+  grid-template-columns: 14px minmax(0, 1fr) 180px 175px minmax(230px, 0.5fr) 198px;
   align-items: center;
   gap: 14px;
   min-height: 40px;
@@ -1079,7 +1171,7 @@ body.ask-open { overflow: hidden; }
 .strip-rename:focus-visible { box-shadow: 0 0 0 3px var(--accent-dim); }
 
 /* What the session last said, under the line, aligned to the name column. */
-.strip-say { display: flex; flex-direction: column; gap: 5px; padding: 0 14px 11px 36px; }
+.strip-say { display: flex; flex-direction: column; gap: 5px; padding: 0 14px 11px 42px; }
 .strip-say p { margin: 0; max-width: 78ch; display: flex; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.5; }
 .strip-say .who { flex: 0 0 auto; width: 46px; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .strip-say .you { color: var(--ink-soft); }
@@ -1099,20 +1191,18 @@ body.ask-open { overflow: hidden; }
 /* The lifted surface is brighter, so its secondary text rises with it: still the readable
    floor, and the row that matters reads louder than the ones that do not. */
 .rack.needs .strip-state b, .rack.needs .strip-when, .rack.needs .strip-when i, .rack.needs .strip-where, .rack.needs .strip-acts .act, .rack.needs .strip-say .who { color: var(--ink-soft); }
+/* The reticle carries the red; the word saying *why* it is blocked is the brightest text here. */
+.rack.needs .strip-state i { color: var(--ink); }
 .strip.finished .strip-name, .strip.ghost .strip-name { color: var(--ink-faint); font-weight: 400; }
 
-.strip .lamp.busy, .strip .lamp.running, .cc-full-head .lamp.busy, .cc-full-head .lamp.running { background: var(--accent-hot); box-shadow: 0 0 6px var(--accent), 0 0 14px var(--accent-glow); animation: arc 1.4s ease-in-out infinite; }
-.strip .lamp.waiting, .strip .lamp.blocked, .cc-full-head .lamp.waiting, .cc-full-head .lamp.blocked { background: var(--caution); box-shadow: 0 0 8px var(--caution), 0 0 18px var(--caution-dim); animation: flicker 2.8s steps(1, end) infinite; }
-.strip .lamp.idle, .cc-full-head .lamp.idle { background: var(--cold); box-shadow: inset 0 0 0 1px var(--seam-strong); }
-.strip .lamp.done, .cc-full-head .lamp.done { background: var(--hud); }
 
 /* The rack narrows by dropping columns, not by wrapping them. */
 @media (max-width: 1240px) {
-  .strip-line { grid-template-columns: 8px minmax(0, 1fr) 180px 175px 198px; }
+  .strip-line { grid-template-columns: 14px minmax(0, 1fr) 180px 175px 198px; }
   .strip-where { display: none; }
 }
 @media (max-width: 960px) {
-  .strip-line { grid-template-columns: 8px minmax(0, 1fr) 160px 198px; }
+  .strip-line { grid-template-columns: 14px minmax(0, 1fr) 160px 198px; }
   .strip-state { display: none; }
 }
 
@@ -1190,7 +1280,7 @@ input, textarea { caret-color: var(--accent); }
   .cc-full-head h2 { max-width: 100%; white-space: normal; }
   /* Phone keeps what the rack is sorted by (state, recency) and puts the verbs beside the
      state on their own row: name, then when, then state and verbs sharing the last line. */
-  .strip-line { grid-template-columns: 8px minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 12px; }
+  .strip-line { grid-template-columns: 14px minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 12px; }
   .strip-id, .strip-when { grid-column: 2 / span 2; }
   .strip-when { display: block; }
   .strip-state { display: flex; grid-column: 2; grid-row: 3; align-self: center; }
