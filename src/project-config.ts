@@ -36,10 +36,16 @@ export interface RepoConfig {
 
 export interface MissionConfig {
   /**
-   * The Claude Code agent a Wingman runs as, by name. M5 is explicit that a level's boundary
-   * is enforced by its allowed-tools list and not by its prompt, and without this a Wingman
-   * runs with every tool and auto-approval, held only by prose. The agent belongs to the
-   * project being flown, since that is where the boundary has to be true.
+   * The Claude Code agent a Wingman runs as, by name.
+   *
+   * Not a fence. A Wingman has to run the repo's tests and builds, so it needs `Bash`, and
+   * `Bash` is `git push`; it is also allowed subagents, because a search across a large repo
+   * is exactly what they are for. What the agent carries instead is *focus*: own one task,
+   * do not widen it, do not touch another repo, never push or merge, and never grade your own
+   * work. M5 wants a level's boundary in its tool list, and for the level that writes code
+   * that is only partly possible — the honest version is in that entry.
+   *
+   * Without one, a Wingman gets the mission's prompt and nothing else standing behind it.
    */
   wingmanAgent?: string;
   /** The agent a RIO runs as. `auditor` by convention: it reads and judges, it never fixes. */

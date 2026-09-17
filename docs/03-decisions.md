@@ -72,11 +72,17 @@ takes one item, in a worktree, and writes code.
 not by its prompt. An agent asked politely not to change something will change it the first time
 the change looks small.
 
-**Where that stands for a Wingman, 2026-09-16:** a project names the agent in `maverick.json`
-(`missions.wingmanAgent`) and Maverick runs Wingmen as it. With none named a Wingman still gets
-every tool and auto-approval inside its worktree, held by prose, which is the thing this entry
-warns about. The approval gate says which of the two is about to happen rather than leaving it
-to be discovered.
+**Where that stands for a Wingman, 2026-09-16.** The tool list does not do this job at the level
+that writes code, and saying it does would be the comfortable answer rather than the true one.
+A Wingman must run the repo's tests and builds, so it needs `Bash`; `Bash` is also `git push`,
+`git merge` and `gh pr create`. It is deliberately allowed subagents too, since a search across
+a large repo is what they are for. So its boundary is **focus, and focus is prose**: own one
+task, do not widen it, do not touch another repo, never push or merge, never grade your own
+work. `missions.wingmanAgent` names an agent carrying those standing orders so every mission
+prompt does not have to repeat them, and the approval gate says whether one is set.
+
+The level where the tool list *is* the boundary is the **CAG**, which writes plan documents and
+never needs `Bash` at all. That is the one to enforce properly when it is built.
 
 **Status:** the orchestrator is built; see [M7](#m7--a-missions-plan-is-tracker-items-and-membership-is-a-field--built).
 The project level is still designed only. **The names in this entry were superseded on

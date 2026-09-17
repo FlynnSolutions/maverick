@@ -258,8 +258,8 @@ const renderPlan = () => {
         costBand(doc.cost),
         reposBand(doc.repos ?? []),
         doc.wingmanAgent
-          ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, so what it may touch is that agent's tool list rather than a paragraph asking it nicely.`)
-          : el("p", { class: "mv-warn" }, "Each Wingman runs with every tool and auto-approval, held inside its worktree by its prompt alone. Give this project a wingmanAgent in maverick.json and the boundary becomes that agent's tool list instead, which is what the decision log asks for."),
+          ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, which carries its standing orders: own one task, do not widen it, never push or merge, never grade its own work.`)
+          : el("p", { class: "mv-warn" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
         el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
         el("div", { class: "gate-actions" },
           btn("approve and fly", async () => {
