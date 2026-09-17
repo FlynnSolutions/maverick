@@ -27,9 +27,13 @@ export interface TerminalInfo {
   agentId?: string;
   /** What is running in it. A "shell" has no Claude session behind it and is its own thing. */
   kind?: string;
+  /** Whether the app inside asked for bracketed paste; surfaced so it can be checked. */
+  bracketed?: boolean;
 }
 
 interface Terminal extends TerminalInfo {
+  /** The app inside asked for bracketed paste (`ESC[?2004h`), so a paste can be marked as one. */
+  bracketed: boolean;
   child: ChildProcessWithoutNullStreams;
   scrollback: Buffer[];
   scrollbackBytes: number;
@@ -48,6 +52,7 @@ const info = (t: Terminal): TerminalInfo => ({
   exitCode: t.exitCode,
   agentId: t.agentId,
   kind: t.kind,
+  bracketed: t.bracketed,
 });
 
 export const listTerminals = (): TerminalInfo[] => [...terminals.values()].map(info);
@@ -73,11 +78,15 @@ export const openTerminal = (title: string, command: string[], cwd: string, cols
   });
   const terminal: Terminal = {
     id, title, command, cwd, startedAt: new Date().toISOString(), exitCode: null, agentId, kind,
-    child, scrollback: [], scrollbackBytes: 0, subscribers: new Set(),
+    bracketed: false, child, scrollback: [], scrollbackBytes: 0, subscribers: new Set(),
   };
   terminals.set(id, terminal);
 
   const broadcast = (chunk: Buffer) => {
+    // The app says whether it wants pastes marked. Claude Code does; a plain shell may not.
+    // ESC [ ? 2 0 0 4 is seven bytes, so the h/l that follows sits at +7, not +8.
+    const mode = chunk.lastIndexOf("\x1b[?2004");
+    if (mode >= 0) terminal.bracketed = chunk[mode + 7] === 0x68; // 'h' on, 'l' off
     terminal.scrollback.push(chunk);
     terminal.scrollbackBytes += chunk.length;
     while (terminal.scrollbackBytes > SCROLLBACK_BYTES && terminal.scrollback.length > 1) {
@@ -123,10 +132,42 @@ export const subscribe = (id: string, res: ServerResponse): void => {
   res.on("close", () => t.subscribers.delete(res));
 };
 
-export const writeInput = (id: string, data: Buffer): void => {
+const PASTE_CHUNK = 512;
+const PASTE_PAUSE_MS = 4;
+/** Anything longer than a keystroke or two is a paste, not typing. */
+const PASTE_FLOOR = 64;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Write to the pty, pacing anything paste-sized.
+ *
+ * Handing a long paste over in one write does not work, and looping the write does not fix it
+ * either: the bytes reach the tty faster than the program reads them, the line discipline throws
+ * the excess away and beeps. Pasting 5,000 characters into a session produced nineteen of those
+ * beeps and the session saw a fraction of it. So it goes in slices with a beat between them,
+ * which is what a terminal emulator does. Where the app asked for bracketed paste it is marked
+ * as a paste too, so newlines inside it read as text rather than as a run of submits.
+ */
+export const writeInput = async (id: string, data: Buffer): Promise<void> => {
   const t = get(id);
   if (t.exitCode !== null) throw new Error(`terminal "${id}" has exited`);
-  t.child.stdin.write(data);
+  const paste = data.length > PASTE_FLOOR;
+  const body = paste && t.bracketed
+    ? Buffer.concat([Buffer.from("\x1b[200~"), data, Buffer.from("\x1b[201~")])
+    : data;
+  if (!paste) {
+    t.child.stdin.write(body);
+    return;
+  }
+  for (let at = 0; at < body.length; at += PASTE_CHUNK) {
+    if (t.exitCode !== null) return;
+    const slice = body.subarray(at, at + PASTE_CHUNK);
+    if (!t.child.stdin.write(slice)) {
+      await new Promise<void>((done) => t.child.stdin.once("drain", () => done()));
+    }
+    await sleep(PASTE_PAUSE_MS);
+  }
 };
 
 export const resize = (id: string, cols: number, rows: number): void => {

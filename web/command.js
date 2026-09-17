@@ -913,12 +913,20 @@ export const mountCommandCenter = (root, ctx) => {
     }
     p.offset = page.offset;
     if (!page.events.length) return;
-    const nearBottom = p.scroller.scrollHeight - p.scroller.scrollTop - p.scroller.clientHeight < NEAR_BOTTOM;
+    const view = p.scroller;
+    // Reading further up is a position worth keeping. Replacing the list empties it for an
+    // instant, which clamps scrollTop to zero, and nothing ever put it back: every new message
+    // block threw you to the very top of the conversation. Streaming made it constant, because
+    // blocks now land every second or so rather than every poll.
+    const following = view.scrollHeight - view.scrollTop - view.clientHeight < NEAR_BOTTOM;
+    const held = view.scrollTop;
     // Re-render from the last unfinished fold so consecutive tool turns keep merging.
     p.events.push(...page.events);
     p.list.replaceChildren(...turnNodes(p.events));
     if (p.list.childElementCount === 0) p.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
-    if (nearBottom || p.first) p.scroller.scrollTop = p.scroller.scrollHeight;
+    // New turns land below, so everything above the held offset is unchanged and it still points
+    // at what you were reading.
+    view.scrollTop = following || p.first ? view.scrollHeight : held;
     p.first = false;
   };
 

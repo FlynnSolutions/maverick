@@ -708,7 +708,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const [, id, action] = termMatch;
     if (method === "GET" && action === "stream") return subscribe(id, res);
     if (method === "POST" && action === "input") {
-      writeInput(id, await readBodyBytes(req));
+      await writeInput(id, await readBodyBytes(req));
       return sendJson(res, 200, { ok: true });
     }
     if (method === "POST" && action === "resize") {

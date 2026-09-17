@@ -43,17 +43,34 @@ def main(argv: list[str]) -> int:
     stdout_fd = sys.stdout.fileno()
     pending = b""
 
+    def write_all(fd: int, data: bytes) -> None:
+        """Write every byte.
+
+        os.write returns how many bytes it actually took and does not loop. A pty's buffer is
+        typically a kilobyte or so, so a long paste was handed over once, written in part, and
+        the rest dropped on the floor with nothing to show for it.
+        """
+        while data:
+            try:
+                written = os.write(fd, data)
+            except BlockingIOError:
+                select.select([], [fd], [])
+                continue
+            if written <= 0:
+                return
+            data = data[written:]
+
     def forward_input(data: bytes) -> None:
         nonlocal pending
         pending += data
         while True:
             start = pending.find(RESIZE_PREFIX)
             if start < 0:
-                os.write(master_fd, pending)
+                write_all(master_fd, pending)
                 pending = b""
                 return
             if start > 0:
-                os.write(master_fd, pending[:start])
+                write_all(master_fd, pending[:start])
                 pending = pending[start:]
             end = pending.find(RESIZE_END)
             if end < 0:
@@ -77,7 +94,7 @@ def main(argv: list[str]) -> int:
                     break  # child closed the terminal
                 if not chunk:
                     break
-                os.write(stdout_fd, chunk)
+                write_all(stdout_fd, chunk)
             if stdin_fd in ready:
                 chunk = os.read(stdin_fd, 65536)
                 if not chunk:
