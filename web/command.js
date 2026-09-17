@@ -476,9 +476,27 @@ export const mountCommandCenter = (root, ctx) => {
     window.setTimeout(() => document.addEventListener("click", function once() { menu.remove(); document.removeEventListener("click", once); }), 0);
   };
 
+  /**
+   * A formation in a window of its own, with the page's navigation left behind. Sized to a
+   * working pane rather than a browser default, because the point of it is room.
+   */
+  const popOut = (f) => {
+    const u = new URL(location.href);
+    u.searchParams.set("view", "workspace");
+    u.searchParams.set("formation", f.id);
+    u.searchParams.set("bare", "1");
+    const win = window.open(u.toString(), `maverick-${f.id}`, "width=1280,height=900");
+    if (win) win.focus();
+    else setStatus("the browser blocked the pop-out; allow pop-ups for localhost", true);
+  };
+
   /** Right-click a formation tab. Closing a tab should not need a trip into the formation. */
   const tabMenu = (f, x, y) =>
-    popMenu(`${f.name} formation`, x, y, [["Rename…", () => renameFormation(f)], ["Disband", () => disband(f), "danger"]]);
+    popMenu(`${f.name} formation`, x, y, [
+      ["Open in its own window", () => popOut(f)],
+      ["Rename…", () => renameFormation(f)],
+      ["Disband", () => disband(f), "danger"],
+    ]);
 
   /** Right-click a strip inside a formation: the drags, for anyone who would rather click. */
   const stripMenu = (f, s, x, y) =>
@@ -492,7 +510,7 @@ export const mountCommandCenter = (root, ctx) => {
   const formationTabs = () => {
     const tab = (id, label, count, f) =>
       dropZone(el("button", { type: "button", class: activeFormation === id ? "on" : "",
-        title: f ? `${f.name} · drop a strip here to bring it into the flight · right-click for rename and disband` : "every session in this project · drop a strip here to take it out of its formation",
+        title: f ? `${f.name} · drop a strip here to bring it into the flight · right-click to pop out, rename or disband` : "every session in this project · drop a strip here to take it out of its formation",
         oncontextmenu: f ? (e) => { e.preventDefault(); tabMenu(f, e.clientX, e.clientY); } : null,
         onclick: () => {
         activeFormation = id;
@@ -622,9 +640,9 @@ export const mountCommandCenter = (root, ctx) => {
           : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet. Drop a strip here, or start one.")),
         (d) => d.from === f.id && d.sessionId === f.lead, (d) => demote(f, d.sessionId)),
       gone ? el("p", { class: "muted small cc-empty" }, `${gone} session${gone === 1 ? " is" : "s are"} no longer running; the formation keeps the slot.`) : null,
-      // One closing row, not two stray lines: how the strips move, then the way out.
+      // No instructions here. Dragging a strip is learned the first time and the line was then
+      // permanent furniture at the bottom of every formation; the tab titles still say it.
       el("div", { class: "forms-foot" },
-        el("span", { class: "muted small" }, "Drag a strip onto another tab to move it, or onto Rack to take it out."),
         el("span", { class: "spacer" }),
         el("button", { type: "button", class: "ghost", onclick: () => disband(f) }, "disband this formation")));
   };
@@ -951,7 +969,14 @@ export const mountCommandCenter = (root, ctx) => {
       p.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
       return;
     }
-    const area = el("textarea", { rows: "2", placeholder: peer ? `Message this session in ${s.app ?? "its terminal"}. It arrives as a peer message; Enter sends.` : "Message this session. Enter sends, Shift+Enter for a new line, drop files to attach." });
+    const area = el("textarea", { rows: "1", placeholder: peer ? `Message this session in ${s.app ?? "its terminal"}. It arrives as a peer message; Enter sends.` : "Message this session. Enter sends, Shift+Enter for a new line, drop files to attach." });
+    // One line until there is more than one line to show. Measuring beats guessing at rows:
+    // reset the height first or it only ever ratchets upwards as you delete.
+    const grow = () => {
+      area.style.height = "auto";
+      area.style.height = `${Math.min(area.scrollHeight, Math.round(window.innerHeight * 0.4))}px`;
+    };
+    area.addEventListener("input", grow);
     const send = async () => {
       const body = area.value.trim();
       if (!body) return;
@@ -968,6 +993,7 @@ export const mountCommandCenter = (root, ctx) => {
           await sendInput(target, "\r");
         }
         area.value = "";
+        grow();
         setStatus("sent");
       } catch (err) {
         setStatus(err.message, true);
@@ -979,6 +1005,7 @@ export const mountCommandCenter = (root, ctx) => {
     area.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
     acceptDrops(p.composer, (paths) => {
       area.value = `${area.value}${area.value && !area.value.endsWith(" ") ? " " : ""}${paths.join(" ")} `;
+      grow();
       area.focus();
     });
     p.composer.replaceChildren(
@@ -990,6 +1017,7 @@ export const mountCommandCenter = (root, ctx) => {
         peer && s.app && s.pid ? el("button", { type: "button", class: "ghost", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
         null),
     );
+    grow();
   };
 
   /* ---------- the terminal, wearing the interface ----------

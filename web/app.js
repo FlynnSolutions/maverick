@@ -703,6 +703,10 @@ let view = "board";
 try { view = ["calendar", "workspace"].includes(localStorage.getItem("console.view")) ? localStorage.getItem("console.view") : "board"; } catch {}
 const viewParam = new URLSearchParams(location.search).get("view");
 if (viewParam === "calendar" || viewParam === "workspace") view = viewParam;
+// A pop-out window is already pinned to what it is showing, so it drops the navigation: the
+// bar, the page title, the tab row and the instruments. Set before first paint, not after,
+// or the chrome flashes in and out on the way.
+if (new URLSearchParams(location.search).get("bare") === "1") document.body.classList.add("bare");
 
 const eventsFor = (trackers) => {
   const events = [];

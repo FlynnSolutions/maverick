@@ -1428,13 +1428,16 @@ input, textarea { caret-color: var(--accent); }
 
 body.cc-full-open { overflow: hidden; }
 .cc-composer { display: flex; flex-direction: column; gap: 6px; padding: 10px 16px 12px; border-top: 1px solid var(--seam); background: var(--gunmetal); }
-.cc-composer .row { display: flex; gap: 8px; align-items: flex-end; max-width: 680px; width: 100%; margin: 0 auto; }
-.cc-composer textarea { flex: 1; min-height: 44px; max-height: 40vh; resize: vertical; padding: 10px 12px; border-radius: var(--radius-m); border: 1px solid var(--seam); background: var(--carbon); color: var(--ink); font: 13.5px/1.45 var(--sans); }
+/* The composer spans its pane. A 680px measure is right for reading prose and wrong for a
+   text field: in a pane it left most of the width empty and the box floating in the middle. */
+.cc-composer .row { display: flex; gap: 8px; align-items: flex-end; width: 100%; }
+/* One line to start, grown by script as you type; no manual resize handle to fight with. */
+.cc-composer textarea { flex: 1; min-height: 38px; max-height: 40vh; resize: none; overflow-y: auto; padding: 9px 12px; border-radius: var(--radius-m); border: 1px solid var(--seam); background: var(--carbon); color: var(--ink); font: 13.5px/1.45 var(--sans); }
 .cc-composer textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.cc-composer .hint { max-width: 680px; width: 100%; margin: 0 auto; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.cc-composer .hint { width: 100%; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .cc-composer .hint .att { color: var(--accent-hot); }
 .cc-composer.dropping textarea { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.cc-composer .notice { max-width: 680px; width: 100%; margin: 0 auto; font-size: 13px; color: var(--ink-soft); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-height: 44px; }
+.cc-composer .notice { width: 100%; font-size: 13px; color: var(--ink-soft); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-height: 44px; }
 .term.dropping { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .cu-cal { display: flex; flex-direction: column; gap: 10px; }
@@ -1561,3 +1564,22 @@ body.cc-full-open { overflow: hidden; }
 .cc-find button { height: 26px; font-size: 11.5px; }
 /* A selection has to be visible against the pane, not against xterm's assumed black. */
 .cc-stick .term .xterm-selection div { background: var(--accent-dim) !important; }
+
+
+/* ---------- pop-out: the formation and nothing else ----------
+   Opened with &bare=1, which is what a pop-out window carries. The bar, the page title, the tab
+   row and the instruments are all navigation, and a window pinned to one formation has already
+   navigated: what is left is the rack headings and the strips. */
+body.bare > .bar,
+body.bare .ws-head { display: none; }
+body.bare .workspace { padding-top: 10px; }
+body.bare :root { padding-top: 0; }
+/* The rack headings stay, because Oversight and Flight are what you are reading. Their buttons
+   are page furniture and go with the rest of it. */
+body.bare .formation .rack > h4 button,
+body.bare .forms-foot { display: none; }
+body.bare .cc-pane.inline { height: min(78vh, 900px); }
+/* The keyboard hint under the composer is a thing you read once. In a window opened to work in,
+   it is another line of furniture at the bottom. */
+body.bare .cc-composer .hint { display: none; }
+body.bare .cc-composer { padding-bottom: 10px; }

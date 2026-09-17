@@ -167,6 +167,19 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   So each column drops what it can spare rather than letting the name starve, and a fixed column
   is given the width the thing in it actually is: a 152px slot for a 198px action group put the
   last verb off the page.
+- **A window opened onto one formation has already navigated.** `&bare=1` drops the bar, the
+  page title, the tab row, the instruments, the rack headings' buttons and the composer's
+  keyboard hint, leaving the Oversight and Flight headings, the strips and the panes. Right-click
+  a formation tab to open it that way. The class goes on before first paint, not after, or the
+  chrome flashes in and then out.
+- **A text field is not prose and does not take a measure.** The composer carried the 680px
+  reading measure the conversation uses, which left most of a pane empty with the box floating in
+  the middle of it. It spans its pane, starts at one line, and grows by measuring `scrollHeight`
+  rather than counting rows; reset the height to `auto` first or it only ever ratchets upward as
+  you delete.
+- **Instructions are furniture once they have been read.** "Drag a strip onto another tab to move
+  it" sat at the bottom of every formation forever to teach a gesture that is learned the first
+  time it works. The tab titles still say it, where it is wanted at the moment of hesitating.
 - **A pane is sized by a drawn bar, and it remembers.** CSS `resize` brings the browser's own
   grip, sits only in the corner, and forgets. The grip is a 9px bar across the bottom edge with
   the terminal refitting as it moves, arrow keys doing the same job for a keyboard, and the
