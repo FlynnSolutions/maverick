@@ -167,6 +167,13 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   So each column drops what it can spare rather than letting the name starve, and a fixed column
   is given the width the thing in it actually is: a 152px slot for a 198px action group put the
   last verb off the page.
+- **A window opened to work in must land you in the work.** The pop-out carried the formation but
+  no open set, so it arrived on collapsed strips; with the chrome gone there was also nothing left
+  to say that a strip expands, and the window had nowhere to type in it at all. Bare opens the
+  lead (or the first of the flight) and puts the caret in its field. Re-assert that focus on every
+  paint, not once: a repaint detaches and re-appends the pane, which blurs whatever was in it, so
+  a one-shot focus survives until the first poll and no longer. Only when nothing else holds
+  focus, so it never takes the caret off what you are doing.
 - **A window opened onto one formation has already navigated.** `&bare=1` drops the bar, the
   page title, the tab row, the instruments, the rack headings' buttons and the composer's
   keyboard hint, leaving the Oversight and Flight headings, the strips and the panes. Right-click

@@ -615,6 +615,17 @@ export const mountCommandCenter = (root, ctx) => {
     // Once the lead is open it takes a column of its own and the flight becomes the rail beside
     // it: that is the whole point of a formation, typing to the one that orchestrates while the
     // rest stay in sight. Closed, the lead is a single line and a column would be empty space.
+    // A window opened onto one formation has come here to work, not to browse a list. With the
+    // page's chrome gone there is also nothing left to tell you a strip expands, so landing on
+    // two collapsed lines means landing with nowhere to type. Open the lead, or the first of the
+    // flight if there is no lead.
+    if (bare && !opened.size) {
+      const first = lead ?? flight[0];
+      if (first) {
+        opened.add(first.key);
+        writeOpen();
+      }
+    }
     const leadOpen = Boolean(lead && opened.has(lead.key));
     return el("section", { class: `cc-project formation${leadOpen ? " with-lead" : ""}` },
       // Drop a strip on the lead slot to put it in front; the lead it replaces joins the flight.
@@ -797,6 +808,19 @@ export const mountCommandCenter = (root, ctx) => {
     // A repaint rebuilds the racks, so a pane whose strip is no longer drawn has nothing to
     // live in: the session keeps running, the pane does not. Its terminal is detached, not ended.
     for (const p of [...panes.values()]) if (p.inline && !p.node.isConnected) destroyPane(p);
+    // In a window opened to work in, the caret belongs in the field without being asked for.
+    // Here rather than in paintComposer, which runs before the pane is attached to anything.
+    // Re-asserted on every paint rather than once: a repaint detaches and re-appends the pane,
+    // which blurs whatever was in it, so a one-shot focus survives until the first poll and no
+    // longer. Only when nothing else holds focus, so it never takes the caret off you.
+    const idle = !document.activeElement || document.activeElement === document.body;
+    if (bare && idle) {
+      for (const p of panes.values()) {
+        if (!p.inline || p.stickPane) continue;
+        p.composer.querySelector("textarea")?.focus();
+        break;
+      }
+    }
     refitAll();
   };
   /* ---------- the session pane: one conversation, in a strip or full screen ----------
@@ -1582,6 +1606,7 @@ export const mountCommandCenter = (root, ctx) => {
   /* ---------- expanded strips: several sessions at once, in their own rack ---------- */
 
   /** Which strips are expanded, in the URL beside `formation`, so a layout survives a reload. */
+  const bare = new URLSearchParams(location.search).get("bare") === "1";
   const readOpen = () => new Set((new URLSearchParams(location.search).get("open") ?? "").split(",").filter(Boolean));
   let opened = readOpen();
 
