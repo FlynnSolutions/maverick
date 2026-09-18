@@ -1441,10 +1441,11 @@ export const mountCommandCenter = (root, ctx) => {
       };
       src.addEventListener("exit", () => { term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n"); src.close(); });
       term.onData((d) => fetch(`/api/terminals/${info.id}/input`, { method: "POST", body: d, keepalive: true }).catch(() => {}));
-      term.onResize(({ cols, rows }) => post(`/api/terminals/${info.id}/resize`, { cols, rows }).catch(() => {}));
+      term.onResize(() => syncPty(p));
       acceptDrops(host, (paths) => sendInput(info.id, `${paths.join(" ")} `));
       bindKeys(p, term, info.id);
-      p.stickTerm = { term, fit, src, id: info.id };
+      p.stickTerm = { term, fit, src, id: info.id, sent: null };
+      syncPty(p); // the pty was opened at a default size; it is this pane's size that counts
       catchPrompt(p); // it may already have been asking before this pane existed
       term.focus();
     } catch (err) {
@@ -1490,13 +1491,15 @@ export const mountCommandCenter = (root, ctx) => {
       for (const p of panes.values()) {
         if (!p.stickTerm || !p.node.isConnected) continue;
         try {
-          // Fit only when the grid it would land on actually differs. Two fits in a frame send
-          // the pty two resizes, and a full-screen TUI repaints on each: measured, widening a
-          // pane posted 206 columns and then 207, which is one flicker for nothing.
+          // Compare against what the *pty* was last told, never against xterm's own size. Those
+          // are two different numbers and they drift: a resize is only posted from `onResize`,
+          // which fires when a fit changes xterm, so a post that fails leaves the pty on its old
+          // width with xterm already "correct" and nothing willing to fit again. The program then
+          // wraps to a width the renderer does not have and overwrites its own lines.
           const want = p.stickTerm.fit.proposeDimensions();
-          const { term } = p.stickTerm;
-          if (!want || (want.cols === term.cols && want.rows === term.rows)) continue;
-          p.stickTerm.fit.fit();
+          const sent = p.stickTerm.sent;
+          if (want && (!sent || want.cols !== sent.cols || want.rows !== sent.rows)) p.stickTerm.fit.fit();
+          syncPty(p);
         } catch {
           /* a pane mid-teardown has no box to measure */
         }
@@ -1562,6 +1565,22 @@ export const mountCommandCenter = (root, ctx) => {
       refitAll();
     });
     return bar;
+  };
+
+  /**
+   * Tell the pty the size the renderer is actually using, and remember having done so. The only
+   * thing that keeps the two in agreement, since a dropped resize used to go unnoticed.
+   */
+  const syncPty = (p) => {
+    const st = p.stickTerm;
+    if (!st?.term.cols) return;
+    const { cols, rows } = st.term;
+    if (st.sent && st.sent.cols === cols && st.sent.rows === rows) return;
+    st.sent = { cols, rows };
+    post(`/api/terminals/${st.id}/resize`, { cols, rows }).catch(() => {
+      // Forget it, so the next paint tries again rather than trusting a size that never landed.
+      if (p.stickTerm === st) st.sent = null;
+    });
   };
 
   /** Build a pane for a session. `inline` panes live in a strip; the other kind is full screen. */
