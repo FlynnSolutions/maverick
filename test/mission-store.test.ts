@@ -17,6 +17,7 @@ mkdirSync(join(dir, "missions", "p"), { recursive: true });
 const { StaleMissionError, __writeMissionForTest, abandonMission, closeMission, needsWalking, readMission, recordWalkthrough, walkthroughState } = await import("../src/missions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
+const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
 const read = async (id: string) => JSON.parse(await readFile(file(id), "utf8"));
 const seed = async (id: string) => {
   const m = {
@@ -35,7 +36,7 @@ test("abandoning a mission wins against a sweep that read it first", async () =>
   const sweepCopy = JSON.parse(JSON.stringify(seeded));
 
   const stopped: string[] = [];
-  await abandonMission({ id: "p", name: "P", path: "/tmp", trackers: [] } as never, "brake", async (id: string) => { stopped.push(id); });
+  await abandonMission(project, "brake", async (id: string) => { stopped.push(id); });
 
   assert.deepEqual(stopped, ["aaa"], "the live session was stopped");
   assert.equal((await read("brake")).status, "abandoned");
@@ -83,12 +84,11 @@ test("a mission does not close until every milestone that changed something has 
   m.milestones[0].tasks[0].status = "passed";
   (m.milestones[0].tasks[0] as { commits?: string[] }).commits = ["abc one commit"];
   await writeFile(file("walk"), JSON.stringify(m), "utf8");
-  const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
 
   await assert.rejects(() => closeMission(project, "walk"), /not walked yet: milestone 1 \(none\)/, "the gate names the milestone and why");
   assert.equal((await read("walk")).status, "review", "and nothing was ticked or landed");
 
-  await assert.rejects(() => recordWalkthrough(project, "walk", 1, { progress: { key: "k", total: 3, answered: 1, verdicts: {}, updatedAt: "2026-01-02T00:00:00Z" } }), /no walkthrough document/, "progress needs a document to be progress in");
+  await assert.rejects(() => recordWalkthrough(project, "walk", 1, { progress: { total: 3, answered: 1, verdicts: {}, updatedAt: "2026-01-02T00:00:00Z" } }), /no walkthrough document/, "progress needs a document to be progress in");
   await assert.rejects(() => recordWalkthrough(project, "walk", 1, { waive: { note: "   " } }), /say why/, "a waiver without a reason is refused");
 
   await recordWalkthrough(project, "walk", 1, { waive: { note: "walked it by hand on the branch" } });
@@ -105,10 +105,9 @@ test("a milestone that changed nothing has nothing to walk, and progress through
   assert.equal(needsWalking((await readMission("p", "nothing"))!.milestones[0]), false);
 
   const w = await seed("counted");
-  (w.milestones[0] as { walkthrough?: unknown }).walkthrough = { repo: "root", started: "2026-01-02T00:00:00Z", ended: "2026-01-02T00:10:00Z", doc: "deliverables/testing/counted-m1-walkthrough.html" };
+  (w.milestones[0] as { walkthrough?: unknown }).walkthrough = { started: "2026-01-02T00:00:00Z", doc: "deliverables/testing/counted-m1-walkthrough.html" };
   await writeFile(file("counted"), JSON.stringify(w), "utf8");
-  const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
   assert.equal(walkthroughState((await readMission("p", "counted"))!.milestones[0]), "walking");
-  await recordWalkthrough(project, "counted", 1, { progress: { key: "k", total: 2, answered: 2, verdicts: { a: "pass", b: "fail" }, updatedAt: "2026-01-02T00:20:00Z" } });
+  await recordWalkthrough(project, "counted", 1, { progress: { total: 2, answered: 2, verdicts: { a: "pass", b: "fail" }, updatedAt: "2026-01-02T00:20:00Z" } });
   assert.equal(walkthroughState((await readMission("p", "counted"))!.milestones[0]), "walked", "every case answered is walked, whatever the verdicts were; the verdicts are for the person");
 });

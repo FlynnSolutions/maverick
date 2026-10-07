@@ -37,7 +37,7 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `repos[]`, `land`, `formation`, `milestones[]` |
 | `MissionRepo` | `src/missions.ts` | within the mission | `label`, `path`, `base`, `branch`, `integration`, `landed` |
 | `Milestone` | `src/missions.ts` | within the mission | `n`, `title`, `done`, `tasks[]`, `merged`, `mergeShas`, `walkthrough` |
-| `MilestoneWalkthrough` | `src/missions.ts` | within the milestone | `repo`, `claudeId`, `doc`, `progress`, `failed`, `waived` |
+| `MilestoneWalkthrough` | `src/missions.ts` | within the milestone | `claudeId`, `doc`, `progress`, `failed`, `waived` |
 | `MissionTask` | `src/missions.ts` | within the milestone | `repo`, `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict` |
 | release labels | `src/releases.ts` | `session-console/releases.json` | the two planned slots' names and deploy dates only |
 

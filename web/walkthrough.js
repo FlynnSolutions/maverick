@@ -4,10 +4,19 @@
 // are given, and hands each change to the caller to save. The ship and a mission's milestone
 // both host one; the gate each hangs on it is theirs.
 
-let timer = null;
+/** The test walkthrough among a step's documents, the same test the server applies. */
+export const WALKTHROUGH_DOC = /deliverables\/testing\/.*walkthrough.*\.html$/;
 
-/** A page repainting must stop the previous panel's clock, or two of them save over each other. */
-export const stopWalkthrough = () => { window.clearInterval(timer); timer = null; };
+let timer = null;
+let onStorage = null;
+
+/** A page repainting must stop the previous panel's clock and its storage listener, or two of them save over each other. */
+export const stopWalkthrough = () => {
+  window.clearInterval(timer);
+  timer = null;
+  if (onStorage) window.removeEventListener("storage", onStorage);
+  onStorage = null;
+};
 
 /**
  * `el` is the page's own element helper; every page carries one and this module has none.
@@ -67,8 +76,9 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, onSave }) => {
       count.textContent = `could not read the document: ${err.message}`;
     }
   });
-  window.addEventListener("storage", save);
-  window.clearInterval(timer);
+  stopWalkthrough();
+  onStorage = save;
+  window.addEventListener("storage", onStorage);
   timer = window.setInterval(save, 4000);
 
   return el("section", { class: "panel walkthrough-panel" },

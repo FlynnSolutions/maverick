@@ -29,7 +29,7 @@ import { createFormation, listFormations, updateFormation } from "./formations.t
 import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
-import { documentsSince } from "./ships.ts";
+import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { addGroup, addItem, parseTracker, setChecked } from "./trackers.ts";
 
@@ -70,9 +70,9 @@ export interface MissionTask {
 
 /** Progress through the hosted walkthrough document, saved from the page as it is worked. */
 export interface WalkthroughProgress {
-  key: string;
   total: number;
   answered: number;
+  /** Case id -> what the person said. The gate counts answers; the verdicts are the person's record of what they found. */
   verdicts: Record<string, string>;
   updatedAt: string;
 }
@@ -81,14 +81,12 @@ export interface WalkthroughProgress {
  * The milestone's walkthrough: the same gate the ship has, one level down. A session builds the
  * document in the integration worktree once the milestone has merged; the milestone is walked
  * when a person has answered every case in it, and the mission does not land until every
- * milestone that changed anything has been walked.
+ * milestone that changed anything has been walked. Shaped like `resolve`: a milestone-level
+ * record of one agent, settled by what it left on the branch rather than by what it said.
  */
 export interface MilestoneWalkthrough {
-  /** Which repo's integration worktree the document was built in. */
-  repo: string;
   claudeId?: string;
-  started: string;
-  ended?: string;
+  started?: string;
   /** The document, relative to the project, once the session has written it. */
   doc?: string;
   progress?: WalkthroughProgress;
@@ -99,6 +97,11 @@ export interface MilestoneWalkthrough {
 }
 
 export type WalkthroughState = "none" | "building" | "failed" | "walking" | "walked" | "waived";
+
+/** What the page is told about a milestone's walkthrough, derived here so the page and the gate cannot disagree. */
+export interface WalkView { state: WalkthroughState; needed: boolean }
+
+export interface WalkthroughPatch { progress?: WalkthroughProgress; waive?: { note: string } }
 
 export interface Milestone {
   n: number;
@@ -646,8 +649,6 @@ const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, rep
   `Commit the document in ${repo.integration} with a plain lowercase subject. Do not change any other file, do not touch the trackers, do not push, do not open a pull request, do not spawn other agents. When the document is committed, stop.`,
 ].join("\n");
 
-const WALKTHROUGH_DOC = /deliverables\/testing\/.*walkthrough.*\.html$/;
-
 const walkthroughFile = (mission: Mission, m: Milestone): string => join("deliverables", "testing", `${mission.id}-m${m.n}-walkthrough.html`);
 
 export const walkthroughState = (m: Milestone): WalkthroughState => {
@@ -663,18 +664,24 @@ export const walkthroughState = (m: Milestone): WalkthroughState => {
 export const needsWalking = (m: Milestone): boolean =>
   m.tasks.some((t) => t.commits?.length) && !["walked", "waived"].includes(walkthroughState(m));
 
+/** The repo a milestone's walkthrough is built in: the one it landed in, which for one repo is the only one. */
+const walkRepo = (mission: Mission, m: Milestone): MissionRepo | undefined => mission.repos.find((r) => m.mergeShas?.[r.label]) ?? mission.repos[0];
+
+/** A builder still out: it was sent and has neither left a document nor been found to have failed. */
+const building = (m: Milestone): boolean => Boolean(m.walkthrough?.claudeId && !m.walkthrough.doc && !m.walkthrough.failed);
+
 /** Sent the moment a milestone has merged, into the integration worktree of the repo it landed in. */
 const commissionWalkthrough = async (project: Project, mission: Mission, m: Milestone): Promise<void> => {
   if (!m.tasks.some((t) => t.commits?.length)) return;
-  const repo = mission.repos.find((r) => m.mergeShas?.[r.label]) ?? mission.repos[0];
+  const repo = walkRepo(mission, m);
   if (!repo) return;
   const started = new Date().toISOString();
   try {
     const claudeId = await spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m)));
-    m.walkthrough = { repo: repo.label, claudeId, started };
+    m.walkthrough = { claudeId, started };
     agentCache.delete(project.path);
   } catch (err) {
-    m.walkthrough = { repo: repo.label, started, ended: started, failed: `could not start the walkthrough builder: ${(err as Error).message}` };
+    m.walkthrough = { started, failed: `could not start the walkthrough builder: ${(err as Error).message}` };
   }
 };
 
@@ -683,12 +690,11 @@ const settleWalkthroughs = async (project: Project, mission: Mission, state: Map
   let changed = false;
   for (const m of mission.milestones) {
     const w = m.walkthrough;
-    if (!w?.claudeId || w.ended || !isOver(state, w.claudeId, w.started)) continue;
-    const repo = mission.repos.find((r) => r.label === w.repo);
-    w.ended = new Date().toISOString();
-    const docs = repo ? (await documentsSince(repo.integration, w.started)).filter((d) => WALKTHROUGH_DOC.test(d)) : [];
-    if (repo && docs.length) w.doc = relative(project.path, join(repo.integration, docs[0]));
-    else w.failed = "the session finished without writing a walkthrough document";
+    if (!building(m) || !isOver(state, w!.claudeId!, w!.started)) continue;
+    const repo = walkRepo(mission, m);
+    const doc = repo && (await documentsSince(repo.integration, w!.started ?? "")).find((d) => WALKTHROUGH_DOC.test(d));
+    if (doc) w!.doc = relative(project.path, join(repo.integration, doc));
+    else w!.failed = "the session finished without writing a walkthrough document";
     changed = true;
   }
   return changed;
@@ -807,8 +813,8 @@ export const sweepMissions = async (project: Project): Promise<void> => {
 };
 
 const sweepOnce = async (project: Project): Promise<void> => {
-  // A mission at the review gate is no longer flying, but its last walkthrough may still be being written.
-  const missions = (await listMissions(project.id)).filter((m) => m.status === "flying" || m.status === "review");
+  // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough being written.
+  const missions = (await listMissions(project.id)).filter((m) => m.status === "flying" || m.milestones.some(building));
   if (!missions.length) return;
   const cfg = await missionConfigFor(project.path);
   const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
@@ -1217,13 +1223,13 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
 };
 
 /** The page saving where the person has got to in a milestone's walkthrough, or waiving it. */
-export const recordWalkthrough = async (project: Project, id: string, n: number, patch: { progress?: WalkthroughProgress; waive?: { note: string } }): Promise<Mission> =>
+export const recordWalkthrough = async (project: Project, id: string, n: number, patch: WalkthroughPatch): Promise<Mission> =>
   changeMission(project.id, id, (mission) => {
     const m = mission.milestones.find((x) => x.n === n);
     if (!m) throw new Error(`no milestone ${n} in ${mission.name}`);
     if (patch.waive) {
       if (!patch.waive.note.trim()) throw new Error("say why the walkthrough is being waived; it is kept on the milestone");
-      m.walkthrough = { ...(m.walkthrough ?? { repo: mission.repos[0]?.label ?? "root", started: new Date().toISOString() }), waived: { note: patch.waive.note.trim(), at: new Date().toISOString() } };
+      m.walkthrough = { ...m.walkthrough, waived: { note: patch.waive.note.trim(), at: new Date().toISOString() } };
     } else if (patch.progress) {
       if (!m.walkthrough?.doc) throw new Error(`milestone ${n} has no walkthrough document to record progress in`);
       m.walkthrough.progress = patch.progress;
@@ -1246,10 +1252,11 @@ const remembered = async (key: string, read: () => Promise<string>, keep: boolea
   return value;
 };
 
-export const missionView = async (project: Project, id: string): Promise<Mission & { findings: Record<string, string>; diffstat: Record<string, string> }> => {
+export const missionView = async (project: Project, id: string): Promise<Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView> }> => {
   const mission = await missionOr404(project.id, id);
   const findings: Record<string, string> = {};
   const diffstat: Record<string, string> = {};
+  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const settled = (task: MissionTask) => task.status === "passed" || task.status === "handed-back";
   await Promise.all(mission.milestones.flatMap((m) => m.tasks).map(async (task) => {
     if (task.review) {
@@ -1264,5 +1271,5 @@ export const missionView = async (project: Project, id: string): Promise<Mission
       if (stat) diffstat[task.id] = stat;
     }
   }));
-  return { ...mission, findings, diffstat };
+  return { ...mission, findings, diffstat, walk };
 };

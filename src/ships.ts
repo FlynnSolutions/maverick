@@ -184,6 +184,9 @@ export const updateStep = async (project: Project, version: string, stepId: stri
   return step;
 };
 
+/** The test walkthrough among a step's documents: the one the console hosts and reads answers from. */
+export const WALKTHROUGH_DOC = /deliverables\/testing\/.*walkthrough.*\.html$/;
+
 /** Review documents written since a step started, under the folders the doc skills use, relative to `root`. */
 export const documentsSince = async (root: string, sinceIso: string): Promise<string[]> => {
   const since = new Date(sinceIso).getTime();

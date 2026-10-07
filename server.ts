@@ -20,7 +20,7 @@ import { addProject, chooseFolder, projectById, readProjects, removeProject, typ
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, recordWalkthrough, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees, type WalkthroughProgress } from "./src/missions.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, recordWalkthrough, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
@@ -577,8 +577,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   const missionWalk = path.match(/^\/api\/missions\/([a-z0-9-]+)\/milestones\/(\d+)\/walkthrough$/);
   if (method === "POST" && missionWalk) {
     const project = await requireProject(url);
-    const body = await readJson<{ progress?: WalkthroughProgress; waive?: { note: string } }>(req);
-    return sendJson(res, 200, await recordWalkthrough(project, missionWalk[1], Number(missionWalk[2]), body));
+    return sendJson(res, 200, await recordWalkthrough(project, missionWalk[1], Number(missionWalk[2]), await readJson<WalkthroughPatch>(req)));
   }
   const missionTask = path.match(/^\/api\/missions\/([a-z0-9-]+)\/tasks\/([a-z0-9-]+)\/(retry|accept)$/);
   if (method === "POST" && missionTask) {

@@ -4,7 +4,7 @@
 
 import { jetSvg } from "./jet.js";
 import { render as renderMarkdown } from "./markdown.js";
-import { stopWalkthrough, walkthroughPanel } from "./walkthrough.js";
+import { WALKTHROUGH_DOC, stopWalkthrough, walkthroughPanel } from "./walkthrough.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -169,8 +169,6 @@ const stepCall = async (step, action, body) => {
 
 
 /* ---------- the walkthrough step hosts its document; the step is done when the person is through it ---------- */
-
-const WALKTHROUGH_DOC = /deliverables\/testing\/.*walkthrough.*\.html$/;
 
 const stepWalkthrough = (step) => {
   const doc = (step.artifacts ?? []).find((a) => WALKTHROUGH_DOC.test(a));
