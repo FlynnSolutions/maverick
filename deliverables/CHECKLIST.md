@@ -75,6 +75,33 @@ format: checklist
   mission across more than one repo, and human-style QA driving the real UI (Playwright is a
   dependency, so it is a decision rather than a step).
 
+- [ ] `[ENG]` `[L]` **Brainstorm, breakdown, plan: the phases before an item reaches the board**
+  - created: 2026-10-06
+  - source: Cory, 2026-10-06
+  - kind: feature
+  Three phases sit in front of the checklist today and only the last is formal. **Brainstorm**: one
+  conversation, many ideas, no structure, written as one dated markdown doc per conversation at
+  `deliverables/brainstorms/<date>-<topic>.md`. This is the CAG's first real job (decisions M5,
+  M9), and the one level whose tool boundary is enforceable by the tool list: Read and Write under
+  `deliverables/`, edit the tracker, no `Bash`. Session role `plan` already exists for the record.
+  **Breakdown**: a step that reads one brainstorm doc and proposes items, each with a title, `kind`,
+  `size`, and a call of *plan now* or *backlog*. On approval it writes them into the tracker with
+  the insert-into-group path missions already use: planned items carry
+  `plan: deliverables/plans/<slug>.md` and land in Priority; the rest land in Backlog under a `###`
+  group named after the brainstorm. A feature that is mission-sized is handed to a Strike Lead
+  interview rather than planned twice. **The rule**: Priority and In Progress require a `plan:`
+  field that resolves to a real file; Backlog does not. *Planned* means the field is present and
+  the file exists, not a `status:` word, because a path is verifiable and a word is a claim. The
+  board shows an *unplanned* badge on any roadmap or in-progress item missing one, offers a
+  *plan it* verb that opens a plan session, and the drawer refuses to spawn a Wingman on an
+  unplanned item. Backlog stays free-form, organised by theme groups, which the parser already
+  reads in any lane. This formalises what is already half there: the `plan` field, the *note
+  only, not scoped* marker on six backlog items, and Realtime's `deliverables/plans/`. No new
+  store; every artifact is markdown in the repo (M1).
+  **Decided by Cory 2026-10-06:** one dated brainstorm file per conversation, not a rolling
+  `IDEAS.md`, since a running file gets edited by agents and drifts; and *planned* is the
+  presence of a resolving `plan:` field, not a new status value.
+
 ### Readiness at the door
 
 - [ ] `[ENG]` `[M]` **Score a project when it is imported, and offer to fix it**
@@ -128,6 +155,98 @@ _Nothing. Move an item here only when its session starts._
   shape. Every competitor runs Codex alongside Claude; Maverick reading only one runtime is a
   ceiling, not a position.
   - created: 2026-09-16
+
+- [~] `[ENG]` `[L]` **Planned and recurring ship days on the calendar.** The calendar today only
+  plots item deadlines (`due:`) and releases already computed from the changelog. It cannot hold a
+  *future* ship. Add a ship day as its own event: pick a date on the calendar, and set a recurrence
+  (weekly, every other week, whatever cadence the operator picks) so the next ones are already
+  there. Needs the interface (place one, set the cadence, move one, cancel one) and the backing
+  record. **Decided by Cory 2026-09-17:** a schedule is the first thing the markdown trackers
+  genuinely cannot hold, so it earns a new named exception, a ship dates tracker and schedule under
+  `~/.claude/session-console/`. Still not a database. Notify on the morning of: "ship day". Other
+  recurring notifications should hang off the same mechanism.
+  **Why, from Cory 2026-09-17, mid-ship:** three weeks between ships and the pile of untested
+  changes is the part that hurts. Testing is the tedious step and there is no removing it, but a
+  weekly or biweekly cadence keeps each batch small enough to stomach. The cadence is the product
+  feature; the calendar is where it becomes visible.
+  **What it sets up (not now):** once a ship day is a scheduled event, work can fire *on* it.
+  Auto-generate the session review for the batch when ship day arrives, and so on. Reason enough to
+  model it as a real scheduled event rather than a reminder string.
+  **Built 2026-09-18 on `feat/ship-schedule`:** `src/ship-schedule.ts` (the cadence, one-offs,
+  skips, moves and shipped history, keyed to the day the cadence generated so a pushed-back day
+  still knows where it was meant to be), three `/api/ship-schedule` routes, ship days on the
+  calendar with drag-to-move and a drawer, the cadence control, and the ship-day banner above
+  every view. Ten tests in `test/ship-schedule.test.ts`; verified in the browser against a seeded
+  schedule. **Left open:** an OS-level notification, which a browser tab cannot do when it is
+  closed, so it properly belongs to the Electron shell.
+  - created: 2026-09-17
+  - source: Cory, 2026-09-17, while shipping Realtime
+  - kind: feature
+  - status: built on `feat/ship-schedule`, not merged
+
+- [ ] `[ENG]` `[S]` **Gamify the ship.** _Note only, not scoped._ Marking a ship complete should
+  feel like something: "mission complete", with a plane getting up into the sky. Pushing a ship day
+  back is the opposite: mission failed, the plane crashes and burns. Fits the callsign language the
+  console already speaks (Maverick, Wingman, Strike Lead) and gives the cadence above teeth, since
+  a slipped ship day should cost something visible. Open: what the animation actually is, and
+  whether anything is tracked across ships (a streak) or it is purely per-event.
+  - created: 2026-09-17
+  - source: Cory, 2026-09-17
+  - kind: feature
+
+- [ ] `[ENG]` `[M]` **Fire an overnight build session from Maverick.** _Note only, not scoped._
+  Tonight's run (2026-10-06) was set up by hand in a terminal: a queue of checklist items in
+  priority order, a stop line (push and open draft PRs, never merge), and `caffeinate` to keep
+  the machine awake. All of that is a form Maverick could show: pick the items, pick the stop
+  line, press go, read the PRs in the morning. The Strike Lead already dispatches background
+  agents; this is the same dispatch pointed at a queue instead of a plan, and the morning read is
+  the session review that already exists.
+  - created: 2026-10-06
+  - source: Cory, 2026-10-06, going to bed
+  - kind: feature
+
+- [ ] `[ENG]` `[M]` **A gated walkthrough on every mission task, the way the ship has one.** _Note
+  only, not scoped._ The ship page already hosts a walkthrough document inside a step and marks the
+  step done only when the human has been through it (`src/ships.ts`, the `walkthrough` step). The
+  `/develop` skill now produces the same kind of walkthrough per feature. A mission is a pile of
+  smaller PRs under one Strike Lead, and today a task goes `built → reviewing → passed` on the
+  RIO's verdict alone; nobody walks it. Give each task (or each milestone, to be decided) the same
+  hosted walkthrough and the same gate: the task is not `passed` until the walkthrough is answered,
+  and the mission page shows where each one stands. Reuse the ship page's walkthrough panel and the
+  `walkthrough` record on the step rather than inventing a second shape. Open: whether the Wingman
+  writes the walkthrough as part of its task or the Strike Lead commissions it after the RIO passes;
+  and per task vs. per milestone (per milestone matches "validation at every milestone" above).
+  - created: 2026-09-24
+  - source: Cory, 2026-09-24
+  - kind: feature
+
+- [ ] `[ENG]` `[M]` **One response format from every agent, parsed and shown as sections.** _Note
+  only, not scoped; the section list is still being decided._ Every reply Maverick reads back from
+  an agent should arrive in one fixed, parseable shape, and the console should render it as
+  labelled sections you can scan and skip rather than as a wall of prose. Sections named so far:
+  **what changed**, **decisions** (the call, what it was chosen over, how it is set up, briefly),
+  and a **TL;DR at the very bottom**. Candidates to settle: **verified** (what was actually run and
+  what was not), **open** (questions, assumptions, blockers), **next**. Four to five short blocks,
+  not an essay. Enforced where Maverick already writes the prompt (Wingman, RIO, Strike Lead, ship
+  steps) and rendered by the transcript view, which already splits replies into events
+  (`src/transcript-view.ts`). Sits underneath the event timeline item below: a structured reply is
+  the last event of a turn.
+  - created: 2026-09-24
+  - source: Cory, 2026-09-24
+  - kind: feature
+
+- [ ] `[ENG]` `[M]` **The live stream as a timeline of events that stand out, with a running
+  clock.** _Note only, not scoped._ Watching a session today is watching Claude Code's own stream:
+  everything scrolls past at the same weight. Wanted: a broader, simplified view of the same
+  transcript where the things that matter are distinct events you can spot at a glance, a decision,
+  a change to a file, a test run and its result, a question waiting on you, and each running thing
+  shows a live timer for how long it has been going. Quick to review after the fact for exactly
+  what happened, without reading the whole transcript. `src/transcript-view.ts` already turns the
+  jsonl into events; this is the classification and the UI on top. Pairs with the response format
+  above.
+  - created: 2026-09-24
+  - source: Cory, 2026-09-24
+  - kind: feature
 
 ## ✅ Recently shipped, pending release
 

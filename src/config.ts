@@ -21,6 +21,8 @@ export const config = {
   namesFile: join(consoleHome, "session-names.json"),
   /** Groups of sessions flying one job together (see src/formations.ts). */
   formationsFile: join(consoleHome, "formations.json"),
+  /** When each project means to ship, and how often (see src/ship-schedule.ts). */
+  shipScheduleFile: join(consoleHome, "ship-schedule.json"),
   /** Our per-session records (role, loop, parent, handoff). */
   sessionsDir: process.env.SESSION_CONSOLE_SESSIONS ?? join(home, ".claude", "console-sessions"),
   /** Claude Code's own live-session registry. Read-only; the CLI owns it. */

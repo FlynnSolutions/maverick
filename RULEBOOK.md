@@ -15,7 +15,8 @@ under it, the releases, and the ship. Owned by Flynn Solutions. **Public and MIT
   no store of its own for anything a tracker can hold. If the console and the file disagree, the
   file wins. Do not add a database.
 - **The exceptions are named and small**: `~/.claude/session-console/` (project registry, release
-  labels, access key, usage cache) and `~/.claude/console-sessions/` (session and ship records).
+  labels, ship schedule, access key, usage cache) and `~/.claude/console-sessions/` (session and
+  ship records).
   Anything new that wants to live there needs a reason that isn't "it was easier".
 - **No dependencies, no build step.** Node 22.18+ runs the TypeScript directly; `web/` is plain
   HTML/CSS/JS talking only to `/api/*`. A new dependency is a decision, not a convenience.

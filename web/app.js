@@ -480,9 +480,11 @@ const loadBoard = async () => {
     if ($("#status").textContent === "loading") { $("#status").textContent = ""; $("#status").classList.remove("loading"); }
     // The workspace does not need releases (a GitHub round trip); the board and calendar do.
     if (!releasesData && view !== "workspace") releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
-    ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
+    // Every view carries the ship-day banner, so the schedule is not calendar-only.
+    [ships, shipDays] = await Promise.all([api(`/api/ships?project=${encodeURIComponent(projectId)}`), api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`)]);
     $("#project").classList.toggle("workspace-view", view === "workspace");
     $("#boards").replaceChildren(
+      ...shipDayBanner(trackers),
       ...(view === "calendar"
         ? [renderCalendar(trackers)]
         : view === "workspace"
@@ -738,16 +740,18 @@ const setDeployDate = async (tracker, section, group, date) => {
   setStatus(`committed ${commit}`);
 };
 
-const draggableItem = (node, tracker, item, section) => {
+const draggable = (node, payload) => {
   node.draggable = true;
   node.addEventListener("dragstart", (e) => {
-    calDrag = { type: "item", tracker, item, section };
+    calDrag = payload;
     node.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
   });
   node.addEventListener("dragend", () => { node.classList.remove("dragging"); calDrag = null; });
   return node;
 };
+const draggableItem = (node, tracker, item, section) => draggable(node, { type: "item", tracker, item, section });
+const draggableShip = (node, occ) => draggable(node, { type: "ship", occ });
 
 const dropZone = (node, accepts, onDrop) => {
   node.addEventListener("dragover", (e) => {
@@ -774,6 +778,8 @@ const dropZone = (node, accepts, onDrop) => {
 };
 
 let releasesData = null;
+/** { schedule, occurrences } from /api/ship-schedule, for the calendar and the ship-day banner. */
+let shipDays = null;
 
 const isFeatureItem = (i) => i.fields.kind === "feature" || i.tags.some((t) => t.toLowerCase() === "feature");
 const isBugItem = (i) => i.fields.kind === "bug" || i.tags.some((t) => t.toLowerCase() === "bug");
@@ -901,7 +907,7 @@ const slotCard = (slot, trackers) => {
   const existing = slot.key === "next" ? shipFor(slot.label.replace(/^v/, "")) : null;
   const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
   card.append(el("div", { class: "cta-slot" },
-    slot.key === "next" ? btn(label, (e) => { e.stopPropagation(); flyby(); window.setTimeout(() => { location.href = `/ship.html?project=${encodeURIComponent(projectId)}&version=${encodeURIComponent(slot.label.replace(/^v/, ""))}`; }, 350); }, "primary") : el("span", { class: "muted small" }, "drop cards here to plan")));
+    slot.key === "next" ? btn(label, (e) => { e.stopPropagation(); startTheShip(slot.label.replace(/^v/, "")); }, "primary") : el("span", { class: "muted small" }, "drop cards here to plan")));
   card.addEventListener("dragover", (e) => { if (!acceptsAnyItemDrag()) return; e.preventDefault(); card.classList.add("over"); });
   card.addEventListener("dragleave", () => card.classList.remove("over"));
   card.addEventListener("drop", async (e) => {
@@ -1006,12 +1012,149 @@ const renderReleases = (trackers) => {
   return strip;
 };
 
+/* ---------- ship days ---------- */
+
+/** "shipped" | "now" (today) | "missed" (past and unmarked) | "" for a future one. */
+const shipDayState = (occ) => {
+  const t = today();
+  return occ.shipped ? "shipped" : occ.date === t ? "now" : occ.date < t ? "missed" : "";
+};
+
+const cadenceWords = (c) => {
+  if (!c) return "no cadence";
+  const weekday = new Date(`${c.anchor}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "long", timeZone: "UTC" });
+  return c.everyWeeks === 1 ? `every ${weekday}` : `every ${c.everyWeeks} weeks on ${weekday}`;
+};
+
+const setShipDay = async (action, date, opts = {}) => {
+  setStatus(action === "move" ? `moving ship day to ${fmtDate(opts.to, true)}` : `${action} ship day ${fmtDate(date, true)}`);
+  await post("/api/ship-schedule/day", { project: projectId, action, date, ...opts });
+  setStatus("");
+  await loadBoard();
+};
+
+/** The version the next ship would carry, bare (no leading v), for the wizard and the record. */
+const nextVersionBare = (trackers) => planningSlots(trackers).next.label.replace(/^v/, "");
+
+const startTheShip = (version) => {
+  flyby();
+  window.setTimeout(() => { location.href = `/ship.html?project=${encodeURIComponent(projectId)}&version=${encodeURIComponent(version)}`; }, 350);
+};
+
+const openShipDayDrawer = (occ, trackers) => {
+  const root = $("#drawer-root");
+  const version = nextVersionBare(trackers);
+  const list = el("div", { class: "release-list" });
+  const state = shipDayState(occ);
+  if (occ.shipped) {
+    list.append(el("div", { class: "due-row" },
+      el("span", { class: "badge released" }, "shipped"),
+      el("span", { class: "muted small mono" }, `${occ.shipped.version ? `v${occ.shipped.version} · ` : ""}marked ${fmtDate(occ.shipped.at.slice(0, 10))}`),
+      btn("undo", () => setShipDay("unship", occ.origin).then(closeDrawer), "ghost")));
+  } else {
+    list.append(el("div", { class: "due-row" },
+      el("span", { class: "k" }, "this day"),
+      btn(`start the ship (v${version})`, () => startTheShip(version), "primary"),
+      btn("mark shipped", () => setShipDay("ship", occ.origin, { version }).then(closeDrawer))));
+  }
+  if (occ.movedFrom) {
+    list.append(el("p", { class: "muted small" },
+      occ.date > occ.movedFrom ? `Pushed back from ${fmtDate(occ.movedFrom)}.` : `Pulled forward from ${fmtDate(occ.movedFrom)}.`,
+      " ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); setShipDay("move", occ.origin, { to: occ.origin }).then(closeDrawer); } }, "put it back")));
+  }
+  const moveTo = el("input", { type: "date", value: occ.date });
+  list.append(el("div", { class: "due-row" },
+    el("span", { class: "k" }, "move it"),
+    moveTo,
+    btn("move", () => { if (moveTo.value) setShipDay("move", occ.origin, { to: moveTo.value }).then(closeDrawer); })));
+  list.append(el("div", { class: "due-row" },
+    el("span", { class: "k" }, occ.source === "cadence" ? cadenceWords(shipDays?.schedule?.cadence) : "one-off"),
+    btn("cancel this ship day", async () => {
+      if (await ask({ title: `Cancel the ship day on ${fmtDate(occ.date)}?`, body: occ.source === "cadence" ? "The cadence keeps running; only this one comes off the calendar." : "This one-off ship day is removed.", confirm: "cancel it", danger: true })) {
+        await setShipDay("remove", occ.origin);
+        closeDrawer();
+      }
+    }, "ghost danger")));
+  root.replaceChildren(
+    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
+    el("aside", { class: "drawer", role: "dialog" },
+      el("div", { class: "drawer-head" }, el("h2", {}, `Ship day · ${fmtDate(occ.date)}`), state ? el("span", { class: `chip ship ${state}` }, state === "now" ? "today" : state) : null, btn("×", closeDrawer, "ghost")),
+      el("div", { class: "drawer-body" }, list),
+      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, el("span", { class: "spacer" }), btn("close", closeDrawer)))),
+  );
+  document.addEventListener("keydown", onDrawerKey);
+};
+
+/**
+ * The notification: today is ship day, or the last one went by unmarked. Shown above whichever
+ * view is on, because the point is that it finds you. Nothing older than a month is raised; the
+ * banner is a nudge, not a ledger.
+ */
+const shipDayBanner = (trackers) => {
+  const occ = shipDays?.occurrences ?? [];
+  const t = today();
+  const now = occ.find((o) => o.date === t && !o.shipped);
+  const missed = occ.findLast((o) => o.date < t && !o.shipped && (Date.parse(t) - Date.parse(o.date)) / 86400000 <= 30);
+  const live = now ?? missed;
+  if (!live) return [];
+  const version = nextVersionBare(trackers);
+  return [el("div", { class: `ship-banner${now ? "" : " missed"}` },
+    el("span", { class: "ship-banner-mark" }, now ? "🛫" : "⚠"),
+    el("strong", {}, now ? "Ship day." : `Ship day was ${fmtDate(live.date)}.`),
+    el("span", { class: "muted" }, now ? `Planned for v${version}.` : "It went by without being marked."),
+    el("span", { class: "spacer" }),
+    btn(`start the ship (v${version})`, () => startTheShip(version), "primary"),
+    btn("mark shipped", () => setShipDay("ship", live.origin, { version })),
+    btn("push it back", () => openShipDayDrawer(live, trackers), "ghost"),
+  )];
+};
+
+/** The cadence control, under the calendar head: how often this project means to ship. */
+const shipCadenceRow = () => {
+  const cadence = shipDays?.schedule?.cadence ?? null;
+  const every = el("select", { class: "cadence-every" },
+    el("option", { value: "0" }, "no cadence"),
+    ...[1, 2, 3, 4, 6].map((n) => el("option", { value: String(n) }, n === 1 ? "every week" : `every ${n} weeks`)));
+  every.value = cadence ? String(cadence.everyWeeks) : "0";
+  const anchor = el("input", { type: "date", value: cadence?.anchor ?? today(), title: "the first ship day; its weekday is the cadence's weekday" });
+  const apply = async () => {
+    const weeks = Number(every.value);
+    try {
+      setStatus(weeks ? `ship days ${cadenceWords({ everyWeeks: weeks, anchor: anchor.value })}` : "clearing the ship cadence");
+      await post("/api/ship-schedule", { project: projectId, cadence: weeks ? { everyWeeks: weeks, anchor: anchor.value } : null });
+      setStatus("");
+      await loadBoard();
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+  every.addEventListener("change", apply);
+  anchor.addEventListener("change", () => { if (Number(every.value)) apply(); });
+  const oneOff = el("input", { type: "date", title: "a ship day on its own, outside the cadence" });
+  const next = (shipDays?.occurrences ?? []).find((o) => o.date >= today());
+  return el("div", { class: "cal-ships" },
+    el("span", { class: "k" }, "Ship days"),
+    every,
+    el("span", { class: "muted small" }, "from"),
+    anchor,
+    next ? el("span", { class: "muted small mono" }, `next ${fmtDate(next.date, true)}`) : el("span", { class: "muted small" }, "none scheduled"),
+    el("span", { class: "spacer" }),
+    oneOff,
+    btn("add a one-off", () => { if (oneOff.value) setShipDay("add", oneOff.value).catch((err) => setStatus(err.message, true)); }, "ghost"),
+  );
+};
+
 const renderCalendar = (trackers) => {
   const [y, m] = calendarMonth.split("-").map(Number);
   const first = new Date(Date.UTC(y, m - 1, 1));
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const lead = (first.getUTCDay() + 6) % 7; // Monday first
   const events = eventsFor(trackers);
+  const shipByDate = new Map();
+  for (const o of shipDays?.occurrences ?? []) {
+    if (!shipByDate.has(o.date)) shipByDate.set(o.date, []);
+    shipByDate.get(o.date).push(o);
+  }
   const byDate = new Map();
   for (const e of events) {
     if (!byDate.has(e.date)) byDate.set(e.date, []);
@@ -1030,7 +1173,7 @@ const renderCalendar = (trackers) => {
     btn("›", () => shift(1), "ghost"),
     btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"),
     el("span", { class: "spacer" }),
-    el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline"),
+    el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, or a ship day to move it"),
   );
   const grid = el("div", { class: "cal-grid" });
   for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) grid.append(el("div", { class: "cal-dow" }, d));
@@ -1038,6 +1181,17 @@ const renderCalendar = (trackers) => {
   for (let day = 1; day <= daysInMonth; day += 1) {
     const date = `${calendarMonth}-${String(day).padStart(2, "0")}`;
     const cell = el("div", { class: `cal-cell${date === today() ? " today" : ""}` }, el("div", { class: "cal-day" }, String(day)));
+    for (const occ of shipByDate.get(date) ?? []) {
+      const state = shipDayState(occ);
+      cell.append(draggableShip(el("div", {
+        class: `cal-event ship ${state}`,
+        tabindex: "0",
+        role: "button",
+        title: `ship day${occ.movedFrom ? `, moved from ${fmtDate(occ.movedFrom)}` : ""}${occ.shipped ? ` · shipped${occ.shipped.version ? ` v${occ.shipped.version}` : ""}` : ""}`,
+        onclick: () => openShipDayDrawer(occ, trackers),
+        onkeydown: (ev) => { if (ev.key === "Enter") ev.currentTarget.click(); },
+      }, occ.shipped ? `🛬 shipped${occ.shipped.version ? ` v${occ.shipped.version}` : ""}` : "🛫 ship day"), occ));
+    }
     for (const e of byDate.get(date) ?? []) {
       const node = el(
         "div",
@@ -1047,7 +1201,13 @@ const renderCalendar = (trackers) => {
       if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
       cell.append(node);
     }
-    dropZone(cell, (d) => d.type === "item" && d.item.fields.due !== date, (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${fmtDate(date)}`));
+    dropZone(
+      cell,
+      (d) => (d.type === "item" ? d.item.fields.due !== date : d.type === "ship" ? d.occ.date !== date : false),
+      (d) => (d.type === "ship"
+        ? post("/api/ship-schedule/day", { project: projectId, action: "move", date: d.occ.origin, to: date })
+        : editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${fmtDate(date)}`)),
+    );
     grid.append(cell);
   }
   const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && isDevItem(i)).map((i) => ({ t, i, s })))));
@@ -1059,8 +1219,9 @@ const renderCalendar = (trackers) => {
     { class: "calendar" },
     el("h3", { class: "strip-title" }, "Releases"),
     renderReleases(trackers),
+    shipCadenceRow(),
     head,
-    el("div", { class: "cal-legend" }, el("span", { class: "cal-event item done" }, "complete"), el("span", { class: "cal-event item warn" }, "in progress, due within a week"), el("span", { class: "cal-event item late" }, "not started, due within a week"), el("span", { class: "cal-event item" }, "later")),
+    el("div", { class: "cal-legend" }, el("span", { class: "cal-event item done" }, "complete"), el("span", { class: "cal-event item warn" }, "in progress, due within a week"), el("span", { class: "cal-event item late" }, "not started, due within a week"), el("span", { class: "cal-event item" }, "later"), el("span", { class: "cal-event ship" }, "🛫 ship day")),
     grid,
     side,
   );
