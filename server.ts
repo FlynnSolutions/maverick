@@ -19,7 +19,7 @@ import { liveCache, liveSignals, readRegistrySessions } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
-import { markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
+import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees } from "./src/missions.ts";
 import { themeFor } from "./src/theme.ts";
@@ -625,9 +625,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
   if (method === "GET" && path === "/api/ship-schedule") {
     const schedule = await readSchedule((await requireProject(url)).id);
-    // The window is the caller's, so the calendar can ask for the month it is showing.
-    const from = url.searchParams.get("from") ?? new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
-    const to = url.searchParams.get("to") ?? new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10);
+    const { from, to } = defaultWindow();
     return sendJson(res, 200, { schedule, occurrences: occurrences(schedule, from, to) });
   }
   if (method === "POST" && path === "/api/ship-schedule") {

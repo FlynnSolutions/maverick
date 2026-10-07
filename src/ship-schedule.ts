@@ -18,6 +18,8 @@ import { config } from "./config.ts";
 const DAY = 86_400_000;
 const file = config.shipScheduleFile;
 
+export interface Shipped { version?: string; at: string }
+
 export interface Cadence {
   /** 1 is weekly, 2 every other week. Capped at 12: past a quarter it is not a cadence. */
   everyWeeks: number;
@@ -34,7 +36,7 @@ export interface ShipSchedule {
   /** origin -> the date it now sits on. Later than the origin means it was pushed back. */
   moved: Record<string, string>;
   /** origin -> what shipped that day. */
-  shipped: Record<string, { version?: string; at: string }>;
+  shipped: Record<string, Shipped>;
 }
 
 export interface Occurrence {
@@ -45,7 +47,7 @@ export interface Occurrence {
   source: "cadence" | "extra";
   /** Set only when the day has been moved off its origin. */
   movedFrom?: string;
-  shipped?: { version?: string; at: string };
+  shipped?: Shipped;
 }
 
 const isDate = (v: unknown): v is string =>
@@ -57,15 +59,21 @@ const requireDate = (v: unknown, what: string): string => {
   return v;
 };
 
+/** Weekly up to quarterly: past twelve weeks it is not a cadence. */
+const isWeeks = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 12;
+
 const at = (date: string): number => Date.parse(`${date}T00:00:00Z`);
 const iso = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+/** The window the console asks for when it has no better idea: half a year back, a year on. */
+export const defaultWindow = (): { from: string; to: string } => ({ from: iso(Date.now() - 180 * DAY), to: iso(Date.now() + 365 * DAY) });
 
 /** Whatever is on disk, read as the shape the rest of this file may assume. */
 const normalize = (raw: unknown): ShipSchedule => {
   const r = (raw ?? {}) as Partial<ShipSchedule>;
   const c = r.cadence;
   const cadence: Cadence | null =
-    c && isDate(c.anchor) && Number.isInteger(c.everyWeeks) && c.everyWeeks >= 1 && c.everyWeeks <= 12
+    c && isDate(c.anchor) && isWeeks(c.everyWeeks)
       ? { everyWeeks: c.everyWeeks, anchor: c.anchor }
       : null;
   return {
@@ -145,9 +153,7 @@ export const setCadence = async (projectId: string, cadence: Cadence | null): Pr
   if (!cadence) return save(projectId, { ...current, cadence: null });
   const anchor = requireDate(cadence.anchor, "anchor");
   const everyWeeks = Number(cadence.everyWeeks);
-  if (!Number.isInteger(everyWeeks) || everyWeeks < 1 || everyWeeks > 12) {
-    throw new Error(`everyWeeks must be a whole number of weeks from 1 to 12, got ${JSON.stringify(cadence.everyWeeks)}`);
-  }
+  if (!isWeeks(everyWeeks)) throw new Error(`everyWeeks must be a whole number of weeks from 1 to 12, got ${JSON.stringify(cadence.everyWeeks)}`);
   return save(projectId, { ...current, cadence: { everyWeeks, anchor } });
 };
 
@@ -164,36 +170,38 @@ export const markDay = async (
   origin: string,
   opts: { to?: string; version?: string } = {},
 ): Promise<ShipSchedule> => {
+  // readSchedule hands back a fresh normalized object every time, so it is ours to edit in place.
   const s = await readSchedule(projectId);
   requireDate(origin, "date");
-  const next: ShipSchedule = { ...s, extra: [...s.extra], skipped: [...s.skipped], moved: { ...s.moved }, shipped: { ...s.shipped } };
   switch (action) {
     case "add":
       // Un-cancelling is the same gesture as adding: a cancelled cadence day comes back rather
       // than being duplicated as a one-off sitting on the same date.
-      next.skipped = next.skipped.filter((d) => d !== origin);
-      if (!isCadenceOrigin(next.cadence, origin) && !next.extra.includes(origin)) next.extra = [...next.extra, origin].sort();
+      s.skipped = s.skipped.filter((d) => d !== origin);
+      if (!isCadenceOrigin(s.cadence, origin) && !s.extra.includes(origin)) s.extra.push(origin);
       break;
     case "remove":
-      next.extra = next.extra.filter((d) => d !== origin);
-      if (isCadenceOrigin(next.cadence, origin)) next.skipped = [...new Set([...next.skipped, origin])].sort();
-      delete next.moved[origin];
-      delete next.shipped[origin];
+      s.extra = s.extra.filter((d) => d !== origin);
+      if (isCadenceOrigin(s.cadence, origin) && !s.skipped.includes(origin)) s.skipped.push(origin);
+      delete s.moved[origin];
+      delete s.shipped[origin];
       break;
     case "move": {
       const to = requireDate(opts.to, "to");
-      if (to === origin) delete next.moved[origin];
-      else next.moved[origin] = to;
+      if (to === origin) delete s.moved[origin];
+      else s.moved[origin] = to;
       break;
     }
     case "ship":
-      next.shipped[origin] = { at: new Date().toISOString(), ...(opts.version ? { version: opts.version } : {}) };
+      s.shipped[origin] = { at: new Date().toISOString(), ...(opts.version ? { version: opts.version } : {}) };
       break;
     case "unship":
-      delete next.shipped[origin];
+      delete s.shipped[origin];
       break;
     default:
       throw new Error(`unknown ship-day action "${String(action)}"`);
   }
-  return save(projectId, next);
+  s.extra.sort();
+  s.skipped.sort();
+  return save(projectId, s);
 };

@@ -480,9 +480,8 @@ const loadBoard = async () => {
     if ($("#status").textContent === "loading") { $("#status").textContent = ""; $("#status").classList.remove("loading"); }
     // The workspace does not need releases (a GitHub round trip); the board and calendar do.
     if (!releasesData && view !== "workspace") releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
-    ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
-    // Every view carries the ship-day banner, so this is not calendar-only.
-    shipDays = await api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`);
+    // Every view carries the ship-day banner, so the schedule is not calendar-only.
+    [ships, shipDays] = await Promise.all([api(`/api/ships?project=${encodeURIComponent(projectId)}`), api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`)]);
     $("#project").classList.toggle("workspace-view", view === "workspace");
     $("#boards").replaceChildren(
       ...shipDayBanner(trackers),
@@ -741,16 +740,18 @@ const setDeployDate = async (tracker, section, group, date) => {
   setStatus(`committed ${commit}`);
 };
 
-const draggableItem = (node, tracker, item, section) => {
+const draggable = (node, payload) => {
   node.draggable = true;
   node.addEventListener("dragstart", (e) => {
-    calDrag = { type: "item", tracker, item, section };
+    calDrag = payload;
     node.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
   });
   node.addEventListener("dragend", () => { node.classList.remove("dragging"); calDrag = null; });
   return node;
 };
+const draggableItem = (node, tracker, item, section) => draggable(node, { type: "item", tracker, item, section });
+const draggableShip = (node, occ) => draggable(node, { type: "ship", occ });
 
 const dropZone = (node, accepts, onDrop) => {
   node.addEventListener("dragover", (e) => {
@@ -906,7 +907,7 @@ const slotCard = (slot, trackers) => {
   const existing = slot.key === "next" ? shipFor(slot.label.replace(/^v/, "")) : null;
   const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
   card.append(el("div", { class: "cta-slot" },
-    slot.key === "next" ? btn(label, (e) => { e.stopPropagation(); flyby(); window.setTimeout(() => { location.href = `/ship.html?project=${encodeURIComponent(projectId)}&version=${encodeURIComponent(slot.label.replace(/^v/, ""))}`; }, 350); }, "primary") : el("span", { class: "muted small" }, "drop cards here to plan")));
+    slot.key === "next" ? btn(label, (e) => { e.stopPropagation(); startTheShip(slot.label.replace(/^v/, "")); }, "primary") : el("span", { class: "muted small" }, "drop cards here to plan")));
   card.addEventListener("dragover", (e) => { if (!acceptsAnyItemDrag()) return; e.preventDefault(); card.classList.add("over"); });
   card.addEventListener("dragleave", () => card.classList.remove("over"));
   card.addEventListener("drop", async (e) => {
@@ -1014,7 +1015,10 @@ const renderReleases = (trackers) => {
 /* ---------- ship days ---------- */
 
 /** "shipped" | "now" (today) | "missed" (past and unmarked) | "" for a future one. */
-const shipDayState = (occ) => (occ.shipped ? "shipped" : occ.date === today() ? "now" : occ.date < today() ? "missed" : "");
+const shipDayState = (occ) => {
+  const t = today();
+  return occ.shipped ? "shipped" : occ.date === t ? "now" : occ.date < t ? "missed" : "";
+};
 
 const cadenceWords = (c) => {
   if (!c) return "no cadence";
@@ -1081,13 +1085,6 @@ const openShipDayDrawer = (occ, trackers) => {
   document.addEventListener("keydown", onDrawerKey);
 };
 
-const draggableShip = (node, occ) => {
-  node.draggable = true;
-  node.addEventListener("dragstart", (e) => { calDrag = { type: "ship", occ }; node.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
-  node.addEventListener("dragend", () => { node.classList.remove("dragging"); calDrag = null; });
-  return node;
-};
-
 /**
  * The notification: today is ship day, or the last one went by unmarked. Shown above whichever
  * view is on, because the point is that it finds you. Nothing older than a month is raised; the
@@ -1095,8 +1092,9 @@ const draggableShip = (node, occ) => {
  */
 const shipDayBanner = (trackers) => {
   const occ = shipDays?.occurrences ?? [];
-  const now = occ.find((o) => o.date === today() && !o.shipped);
-  const missed = occ.filter((o) => o.date < today() && !o.shipped && (new Date(today()) - new Date(o.date)) / 86400000 <= 30).pop();
+  const t = today();
+  const now = occ.find((o) => o.date === t && !o.shipped);
+  const missed = occ.findLast((o) => o.date < t && !o.shipped && (Date.parse(t) - Date.parse(o.date)) / 86400000 <= 30);
   const live = now ?? missed;
   if (!live) return [];
   const version = nextVersionBare(trackers);
@@ -1115,8 +1113,9 @@ const shipDayBanner = (trackers) => {
 const shipCadenceRow = () => {
   const cadence = shipDays?.schedule?.cadence ?? null;
   const every = el("select", { class: "cadence-every" },
-    el("option", { value: "0", ...(cadence ? {} : { selected: "selected" }) }, "no cadence"),
-    ...[1, 2, 3, 4, 6].map((n) => el("option", { value: String(n), ...(cadence?.everyWeeks === n ? { selected: "selected" } : {}) }, n === 1 ? "every week" : `every ${n} weeks`)));
+    el("option", { value: "0" }, "no cadence"),
+    ...[1, 2, 3, 4, 6].map((n) => el("option", { value: String(n) }, n === 1 ? "every week" : `every ${n} weeks`)));
+  every.value = cadence ? String(cadence.everyWeeks) : "0";
   const anchor = el("input", { type: "date", value: cadence?.anchor ?? today(), title: "the first ship day; its weekday is the cadence's weekday" });
   const apply = async () => {
     const weeks = Number(every.value);
@@ -1206,7 +1205,7 @@ const renderCalendar = (trackers) => {
       cell,
       (d) => (d.type === "item" ? d.item.fields.due !== date : d.type === "ship" ? d.occ.date !== date : false),
       (d) => (d.type === "ship"
-        ? setShipDay("move", d.occ.origin, { to: date })
+        ? post("/api/ship-schedule/day", { project: projectId, action: "move", date: d.occ.origin, to: date })
         : editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${fmtDate(date)}`)),
     );
     grid.append(cell);

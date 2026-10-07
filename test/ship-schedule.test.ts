@@ -3,7 +3,7 @@
  * said something about (moved, cancelled, shipped) and the cadence underneath it then changes.
  */
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -75,7 +75,6 @@ test("the file round-trips, and rubbish in it does not take the console down", a
   const again = await readSchedule("p9");
   assert.equal(again.cadence?.everyWeeks, 2);
   assert.equal(again.shipped["2026-09-24"].version, "1.0.0");
-  const { writeFile } = await import("node:fs/promises");
   await writeFile(join(process.env.SESSION_CONSOLE_HOME!, "ship-schedule.json"), JSON.stringify({ p9: { cadence: { everyWeeks: 99, anchor: "nope" }, extra: ["x", "2026-10-01"], moved: { bad: "2026-10-02" } } }), "utf8");
   const salvaged = await readSchedule("p9");
   assert.equal(salvaged.cadence, null);
