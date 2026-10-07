@@ -75,6 +75,33 @@ format: checklist
   mission across more than one repo, and human-style QA driving the real UI (Playwright is a
   dependency, so it is a decision rather than a step).
 
+- [ ] `[ENG]` `[L]` **Brainstorm, breakdown, plan: the phases before an item reaches the board**
+  - created: 2026-10-06
+  - source: Cory, 2026-10-06
+  - kind: feature
+  Three phases sit in front of the checklist today and only the last is formal. **Brainstorm**: one
+  conversation, many ideas, no structure, written as one dated markdown doc per conversation at
+  `deliverables/brainstorms/<date>-<topic>.md`. This is the CAG's first real job (decisions M5,
+  M9), and the one level whose tool boundary is enforceable by the tool list: Read and Write under
+  `deliverables/`, edit the tracker, no `Bash`. Session role `plan` already exists for the record.
+  **Breakdown**: a step that reads one brainstorm doc and proposes items, each with a title, `kind`,
+  `size`, and a call of *plan now* or *backlog*. On approval it writes them into the tracker with
+  the insert-into-group path missions already use: planned items carry
+  `plan: deliverables/plans/<slug>.md` and land in Priority; the rest land in Backlog under a `###`
+  group named after the brainstorm. A feature that is mission-sized is handed to a Strike Lead
+  interview rather than planned twice. **The rule**: Priority and In Progress require a `plan:`
+  field that resolves to a real file; Backlog does not. *Planned* means the field is present and
+  the file exists, not a `status:` word, because a path is verifiable and a word is a claim. The
+  board shows an *unplanned* badge on any roadmap or in-progress item missing one, offers a
+  *plan it* verb that opens a plan session, and the drawer refuses to spawn a Wingman on an
+  unplanned item. Backlog stays free-form, organised by theme groups, which the parser already
+  reads in any lane. This formalises what is already half there: the `plan` field, the *note
+  only, not scoped* marker on six backlog items, and Realtime's `deliverables/plans/`. No new
+  store; every artifact is markdown in the repo (M1).
+  **Decided by Cory 2026-10-06:** one dated brainstorm file per conversation, not a rolling
+  `IDEAS.md`, since a running file gets edited by agents and drifts; and *planned* is the
+  presence of a resolving `plan:` field, not a new status value.
+
 ### Readiness at the door
 
 - [ ] `[ENG]` `[M]` **Score a project when it is imported, and offer to fix it**
