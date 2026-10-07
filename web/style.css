@@ -938,7 +938,7 @@ body.ask-open { overflow: hidden; }
 }
 .chip.due { text-transform: none; letter-spacing: 0.02em; font-family: var(--mono); background: var(--panel); color: var(--ink-soft); }
 .chip.due.soon { background: var(--accent-dim); color: var(--accent-hot); }
-.chip.due.overdue { background: var(--threat-dim); color: var(--threat); }
+.chip.due.overdue, .chip.unplanned { background: var(--threat-dim); color: var(--threat); }
 .chip.release { text-transform: none; letter-spacing: 0.02em; }
 .card .meta { align-items: center; }
 .card .since { align-self: center; }

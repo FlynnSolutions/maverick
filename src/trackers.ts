@@ -31,6 +31,15 @@ export interface Item {
   created?: string;
   /** Everything that is not title, source, or a field line: the prose. */
   description: string;
+  /* Set by the console's board read, not by the parser: what the file system says about the item. */
+  /** When the bullet line last changed, from git blame, for items with no `created`. */
+  lineDate?: string;
+  /** The file the `plan:` field names, relative to the project, when it exists. */
+  planFile?: string | null;
+  /** The field names a real file, or a mission's plan covers this task. */
+  planned?: boolean;
+  /** On the roadmap or in progress without a plan: the rule at the door, unmet. */
+  unplanned?: boolean;
 }
 
 export interface Group {
@@ -63,6 +72,8 @@ const COLUMN_BY_EMOJI: Array<[string, ColumnId]> = [
 ];
 /** Sections that exist but are never shown as a lane. */
 const HIDDEN_SECTION = "🗑️ Removed";
+
+export const today = (): string => new Date().toISOString().slice(0, 10);
 
 const isSectionHeading = (line: string): boolean => line.startsWith("## ");
 const isGroupHeading = (line: string): boolean => line.startsWith("### ");
@@ -326,7 +337,7 @@ export const removeItem = (text: string, itemStart: number, itemFirstLine: strin
   }
   const end = blockEnd(lines, itemStart);
   const block = lines.slice(itemStart, end);
-  const stamped = [block[0], `  - removed: ${new Date().toISOString().slice(0, 10)}, ${reason.replace(/\s+/g, " ").trim()}`, ...block.slice(1)];
+  const stamped = [block[0], `  - removed: ${today()}, ${reason.replace(/\s+/g, " ").trim()}`, ...block.slice(1)];
   const remaining = [...lines.slice(0, itemStart), ...lines.slice(end)];
   const heading = `## ${HIDDEN_SECTION}`;
   let at = remaining.findIndex((l) => l === heading);

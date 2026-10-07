@@ -228,7 +228,7 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
     },
     el("span", { class: "num" }, number === null ? "" : String(number)),
     el("div", { class: "title" }, item.title),
-    el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), createdOf(item) ? el("span", { class: "since", title: `${item.created ? "created" : "entry last changed"} ${fmtDate(createdOf(item))}` }, fmtDate(createdOf(item), true)) : null),
+    el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), item.unplanned ? el("span", { class: "chip unplanned", title: "on the roadmap with no plan: a plan: field that names a real file" }, "unplanned") : null, createdOf(item) ? el("span", { class: "since", title: `${item.created ? "created" : "entry last changed"} ${fmtDate(createdOf(item))}` }, fmtDate(createdOf(item), true)) : null),
     item.checked
       ? null
       : el(
@@ -239,7 +239,7 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
             title: "Spawn a headless Claude session on this item and open it below",
             onclick: (e) => {
               e.stopPropagation();
-              spawnOnItem(item, e.currentTarget.closest(".card"));
+              spawnOnItem(trackerIndex, item, e.currentTarget.closest(".card"));
             },
           },
           "spawn",
@@ -295,6 +295,8 @@ const withField = (body, key, value) => {
   return lines.join("\n");
 };
 const withDue = (body, due) => withField(body, "due", due);
+/** A document inside the project, served read-only. */
+const fileHref = (path) => `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`;
 const editItemBody = async (trackerIndex, item, newBody, label) => {
   setStatus(label);
   const { commit } = await post("/api/edit", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, body: newBody });
@@ -565,7 +567,7 @@ const openDrawer = (trackerIndex, item) => {
   const head = el("h2", {}, item.title);
   const actions = el("div", { class: "drawer-actions" });
 
-  const FIELD_ORDER = ["size", "kind", "status", "owner", "mission", "milestone", "plan", "pr", "blocked-by", "links"];
+  const FIELD_ORDER = ["size", "kind", "status", "owner", "mission", "milestone", "pr", "blocked-by", "links"];
   const saveBody = async (newBody, label) => {
     setStatus(label);
     try {
@@ -590,6 +592,10 @@ const openDrawer = (trackerIndex, item) => {
       if (/^(https?:\/\/|plans\/|deliverables\/|\.\.\/)/.test(v)) addField(k, el("code", {}, v));
       else addField(k, v);
     }
+    // The plan is the one field the board checks: a link when the file exists, red when the field names nothing.
+    if (item.planFile) addField("plan", el("a", { href: fileHref(item.planFile), target: "_blank" }, el("code", {}, item.fields.plan)));
+    else if (item.fields.plan) addField("plan", el("code", {}, item.fields.plan), "overdue");
+    else if (!item.checked && !item.planned) addField("plan", item.unplanned ? "none; the roadmap needs one" : "none", item.unplanned ? "overdue" : "");
     const slotsNow = planningSlots(lastTrackers);
     const releaseSelect = el("select", { class: "supervisor" },
       el("option", { value: "" }, "no release"),
@@ -631,8 +637,9 @@ const openDrawer = (trackerIndex, item) => {
     });
     const flipped = item.body.replace(/^- (\[( |x)\] )?/i, item.checked ? "- [ ] " : "- [x] ");
     actions.replaceChildren(
-      item.checked ? null : btn("spawn", () => { const parent = supervisor.value || undefined; closeDrawer(); spawnOnItem(item, null, parent); }, "primary"),
+      item.checked ? null : btn("spawn", () => { const parent = supervisor.value || undefined; closeDrawer(); spawnOnItem(trackerIndex, item, null, parent); }, item.planned ? "primary" : ""),
       item.checked ? null : supervisor,
+      item.checked || item.planned ? null : btn("plan it", () => { closeDrawer(); planItem(trackerIndex, item); }, "primary"),
       el("span", { class: "spacer" }),
       btn(item.checked ? "reopen" : "mark done", () => saveBody(flipped, item.checked ? "reopening" : "marking done"), item.checked ? "" : "primary"),
       btn("remove", async () => {
@@ -1403,7 +1410,7 @@ const openShipWizard = async (version) => {
         step.ended ? el("div", { class: "ship-when muted small mono" }, `${step.status} ${new Date(step.ended).toLocaleTimeString()}${step.started ? ` · started ${new Date(step.started).toLocaleTimeString()}` : ""}`) : step.started ? el("div", { class: "ship-when muted small mono" }, `started ${new Date(step.started).toLocaleTimeString()}`) : null,
         step.report ? el("div", { class: "ship-report" }, el("span", { class: "k" }, "result"), text(step.report)) : null,
         live,
-        step.artifacts?.length ? el("div", { class: "ship-artifacts" }, ...step.artifacts.map((a) => el("a", { href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(a)}`, target: "_blank" }, `${a} ↗`))) : null,
+        step.artifacts?.length ? el("div", { class: "ship-artifacts" }, ...step.artifacts.map((a) => el("a", { href: fileHref(a), target: "_blank" }, `${a} ↗`))) : null,
         notes,
       );
       list.append(row);
@@ -1704,10 +1711,11 @@ const acceptDrops = (host, onPaths) => {
   });
 };
 
-const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent }) => {
+const openTerminal = async (body) => {
+  const { kind, title } = body;
   setStatus(`opening ${title ?? kind}`);
   try {
-    const info = await createTerminal({ kind, id, sessionId, title, prompt, cwd, parent });
+    const info = await createTerminal(body);
     setStatus(`${info.title}: running. It appears in the rack as it registers.`);
     if (kind === "spawn") loadRail(true);
     commandCenter?.refresh();
@@ -1717,10 +1725,20 @@ const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent })
   }
 };
 
-const spawnOnItem = async (item, card, parent) => {
+const itemRef = (trackerIndex, item) => ({ tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine });
+
+/** The CAG, in a terminal, planning one item: it interviews, writes the plan document, and sets the field. */
+const planItem = (trackerIndex, item) => openTerminal({ kind: "cag", item: itemRef(trackerIndex, item), title: `plan: ${item.title.slice(0, 60)}` });
+
+const spawnOnItem = async (trackerIndex, item, card, parent) => {
+  // The server refuses an unplanned item too; this is the page offering the better verb first.
+  if (!item.planned) {
+    if (await ask({ title: "This item has no plan", body: `${item.title}\n\nNothing is spawned on an item without a plan: field naming a real file. The CAG can write one with you now.`, confirm: "plan it" })) planItem(trackerIndex, item);
+    return;
+  }
   if (!(await ask({ title: "Spawn a headless Claude session on this item?", body: `${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.${parent ? " When it finishes, the auditor reviews it." : ""}`, confirm: "spawn" }))) return;
   if (card) missile(card);
-  openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body, parent });
+  openTerminal({ kind: "spawn", item: itemRef(trackerIndex, item), title: item.title.slice(0, 80), parent });
 };
 
 /* ---------- theme: the project's colours and display font ---------- */

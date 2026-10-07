@@ -372,18 +372,23 @@ const missionRepo = (mission: Mission, task: MissionTask): MissionRepo => {
   return repo;
 };
 
-const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
-  `You are the Strike Lead for a mission in the project at ${project.path}. A strike lead plans the package, briefs it and sends it; it does not fly every jet in it. Your entire job in this session is the interview and the plan.`,
-  "",
-  `Cory opened this mission with one line: "${mission.brief}"`,
-  "",
-  "That line is not a specification and you must not treat it as one. Interview him first, in the terminal, one or two questions at a time. Read the repo before you ask, so every question is informed rather than generic: its docs, its rulebook, the code the work would touch, and what already exists that this should build on rather than replace. Probe until you can answer, in his words:",
+/** What an interview has to be able to answer, in Cory's words, before anything is planned. The CAG asks the same of one item. */
+export const INTERVIEW_PROBES = [
   "  - what is actually being asked for, as against what he first said",
   "  - what done looks like, in a form that can be tested rather than asserted",
   "  - what is deliberately out of scope",
   "  - which constraints are binding (the rulebook, the design contract, the decision log)",
   "  - what already exists that this grows out of, named by file",
   "  - where you disagree with his approach, said plainly before anything is planned",
+];
+
+const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
+  `You are the Strike Lead for a mission in the project at ${project.path}. A strike lead plans the package, briefs it and sends it; it does not fly every jet in it. Your entire job in this session is the interview and the plan.`,
+  "",
+  `Cory opened this mission with one line: "${mission.brief}"`,
+  "",
+  "That line is not a specification and you must not treat it as one. Interview him first, in the terminal, one or two questions at a time. Read the repo before you ask, so every question is informed rather than generic: its docs, its rulebook, the code the work would touch, and what already exists that this should build on rather than replace. Probe until you can answer, in his words:",
+  ...INTERVIEW_PROBES,
   "",
   "This interview is where most of the value is. Do not shorten it into a formality, and do not present a plan until he has answered.",
   "",
