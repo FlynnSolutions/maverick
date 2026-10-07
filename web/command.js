@@ -840,27 +840,19 @@ export const mountCommandCenter = (root, ctx) => {
   };
   const between = (a, b) => (a && b ? Date.parse(b) - Date.parse(a) : 0);
 
-  /* The kinds that change something stand out; the kinds that only look are counted. */
-  const STANDOUT = { edit: "edited", test: "tested", run: "ran", agent: "sent out" };
-  const QUIET = { read: "read", search: "searched", web: "fetched", other: "called" };
-  const kindCounts = (tools) => tools.reduce((m, t) => { m[t.kind ?? "other"] = (m[t.kind ?? "other"] ?? 0) + 1; return m; }, {});
-  /** "edited 3 · ran 2 · read 12": what the fold did, loud kinds first. */
-  const workWords = (tools) => {
-    const c = kindCounts(tools);
-    const words = [...Object.keys(STANDOUT).filter((k) => c[k]).map((k) => `${STANDOUT[k]} ${c[k]}`), ...Object.keys(QUIET).filter((k) => c[k]).map((k) => `${QUIET[k]} ${c[k]}`)];
-    return words.join(" · ") || `${tools.length} tool call${tools.length === 1 ? "" : "s"}`;
-  };
+  /* What a fold did, in words, the kinds that change something first; the order here is the order on the line. */
+  const WORDS = { edit: "edited", test: "tested", run: "ran", agent: "sent out", read: "read", search: "searched", web: "fetched", other: "called" };
+  const LOUD = new Set(["edit", "test", "run", "agent"]);
+  const kindOf = (t) => t.kind ?? "other";
+  const workWords = (tools) => Object.entries(WORDS).map(([k, w]) => [w, tools.filter((t) => kindOf(t) === k).length]).filter(([, n]) => n).map(([w, n]) => `${w} ${n}`).join(" · ");
 
   /** A reply in the console's format: its sections as labelled blocks, the TL;DR last and set apart. */
   const replyNodes = (e) => {
     const { lead, sections } = e.reply;
-    const tldr = sections.find((s) => s.label === "TL;DR");
-    const rest = sections.filter((s) => s !== tldr);
+    const ordered = [...sections.filter((s) => s.label !== "TL;DR"), ...sections.filter((s) => s.label === "TL;DR")];
     return [
       lead ? renderMd(lead, { project: ctx.projectId }) : null,
-      el("div", { class: "reply" },
-        ...rest.map((s) => el("div", { class: `sec ${s.label.toLowerCase().replace(/\W+/g, "-")}` }, el("span", { class: "lbl" }, s.label), renderMd(s.body || "nothing", { project: ctx.projectId }))),
-        tldr ? el("div", { class: "sec tldr" }, el("span", { class: "lbl" }, "TL;DR"), renderMd(tldr.body || "nothing", { project: ctx.projectId })) : null),
+      el("div", { class: "reply" }, ...ordered.map((s) => el("div", { class: `sec ${s.label.toLowerCase().replace(/\W+/g, "")}` }, el("span", { class: "lbl" }, s.label), renderMd(s.body || "nothing", { project: ctx.projectId })))),
     ];
   };
 
@@ -871,11 +863,11 @@ export const mountCommandCenter = (root, ctx) => {
     let lastPrompt = null;
     const flushWork = () => {
       if (!work) return;
-      const loud = work.tools.filter((t) => STANDOUT[t.kind]);
-      const quiet = work.tools.filter((t) => !STANDOUT[t.kind]);
-      const details = el("details", { class: `turn work${loud.length ? " loud" : ""}` },
-        el("summary", {}, el("span", { class: "kinds" }, workWords(work.tools)), el("span", { class: "took" }, took(between(work.t, work.last))), el("span", { class: "t" }, timeOf(work.t))),
-        el("div", { class: "chips" }, ...loud.map(chip), ...(quiet.length ? [el("details", { class: "quiet" }, el("summary", {}, `${quiet.length} more: ${workWords(quiet)}`), el("div", { class: "chips" }, ...quiet.map(chip)))] : [])));
+      // Loud chips first, so an edit or a test run is the first thing in an opened fold.
+      const chips = [...work.tools.filter((t) => LOUD.has(kindOf(t))), ...work.tools.filter((t) => !LOUD.has(kindOf(t)))];
+      const details = el("details", { class: `turn work${chips.length && LOUD.has(kindOf(chips[0])) ? " loud" : ""}` },
+        el("summary", {}, el("span", { class: "kinds" }, workWords(work.tools)), el("span", { class: "t" }, took(between(work.t, work.last))), el("span", { class: "t" }, timeOf(work.t))),
+        el("div", { class: "chips" }, ...chips.map(chip)));
       nodes.push(details);
       work = null;
     };
@@ -904,7 +896,7 @@ export const mountCommandCenter = (root, ctx) => {
         const tools = e.tools?.length ? el("div", { class: "chips" }, ...e.tools.map(chip)) : null;
         // How long the turn took, from the prompt that started it; a reply is also the end of the work above it.
         const turnTook = took(between(lastPrompt, e.t));
-        nodes.push(el("div", { class: `turn claude${e.reply ? " shaped" : ""}` }, el("span", { class: "who" }, "claude", turnTook ? el("span", { class: "took" }, `after ${turnTook}`) : null, el("span", { class: "t" }, timeOf(e.t))), ...body, tools));
+        nodes.push(el("div", { class: "turn claude" }, el("span", { class: "who" }, "claude", turnTook ? el("span", { class: "t" }, `after ${turnTook}`) : null, el("span", { class: "t" }, timeOf(e.t))), ...body, tools));
       }
     }
     flushWork();
@@ -917,18 +909,17 @@ export const mountCommandCenter = (root, ctx) => {
    * owned by the pane and stopped with it.
    */
   const paintClock = (p) => {
-    const s = liveSession(p);
+    p.clock?.remove();
     const last = p.events.at(-1)?.t;
-    const working = /^(busy|running)$/.test(s?.status ?? "") && last;
-    if (!working) {
-      p.clock?.remove();
-      p.clock = null;
+    if (!last || !/^(busy|running)$/.test(liveSession(p)?.status ?? "")) {
+      // Nothing to tick; the next page of events starts the clock again if the session is back at work.
+      window.clearInterval(p.ticker);
+      p.ticker = null;
       return;
     }
-    p.clock ??= el("div", { class: "turn clock" }, lamp("busy"), el("span", { class: "words" }), el("span", { class: "t" }));
-    p.clock.querySelector(".words").textContent = `working · ${took(Date.now() - Date.parse(last)) || "0s"} since the last event`;
-    p.clock.querySelector(".t").textContent = timeOf(last);
-    if (p.clock.parentNode !== p.list) p.list.append(p.clock);
+    p.clock = el("div", { class: "turn clock" }, lamp("busy"), el("span", {}, `working · ${took(Date.now() - Date.parse(last)) || "0s"} since the last event`), el("span", { class: "t" }, timeOf(last)));
+    p.list.append(p.clock);
+    p.ticker ??= window.setInterval(() => paintClock(p), 1000);
   };
 
   /** Every pane alive on the page, by session key. A strip's pane and the overlay's are the same thing. */
@@ -1028,9 +1019,7 @@ export const mountCommandCenter = (root, ctx) => {
     p.events.push(...page.events);
     p.list.replaceChildren(...turnNodes(p.events));
     if (p.list.childElementCount === 0) p.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
-    p.clock = null;
     paintClock(p);
-    p.ticker ??= window.setInterval(() => paintClock(p), 1000);
     // New turns land below, so everything above the held offset is unchanged and it still points
     // at what you were reading.
     view.scrollTop = following || p.first ? view.scrollHeight : held;

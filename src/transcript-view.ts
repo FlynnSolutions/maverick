@@ -153,7 +153,7 @@ const parseFrom = async (handle: Awaited<ReturnType<typeof open>>, start: number
         }
         if (texts.length || tools.length) {
           const text = texts.join("\n\n");
-          const reply = texts.length ? parseReply(text) : null;
+          const reply = parseReply(text);
           events.push({ t, role: "assistant", ...(texts.length ? { text } : {}), ...(reply ? { reply } : {}), ...(tools.length ? { tools } : {}) });
         }
       }

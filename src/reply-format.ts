@@ -32,8 +32,9 @@ export const REPLY_FORMAT = [
 /** The arguments every launched session carries. Spread into the `claude` command line. */
 export const REPLY_FORMAT_ARGS = ["--append-system-prompt", REPLY_FORMAT];
 
-const LABEL = new RegExp(`^\\*\\*(${REPLY_SECTIONS.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})[.:]?\\*\\*[.:]?\\s*`, "i");
-const canonical = new Map(REPLY_SECTIONS.map((s) => [s.toLowerCase(), s]));
+/* None of the labels carries a regex character, so they go in as written. A colon after the label reads the same as a full stop. */
+const LABEL = new RegExp(`^\\*\\*(${REPLY_SECTIONS.join("|")})[.:]?\\*\\*[.:]?[ \\t]*`, "i");
+const AT_LABEL = new RegExp(`^(?=\\*\\*(?:${REPLY_SECTIONS.join("|")})[.:]?\\*\\*)`, "im");
 
 /**
  * The sections of a reply written in the format, in the order they appear, and whatever prose
@@ -41,19 +42,11 @@ const canonical = new Map(REPLY_SECTIONS.map((s) => [s.toLowerCase(), s]));
  * labels, so a reply that happens to bold the word "Answer" is not mistaken for one.
  */
 export const parseReply = (text: string): { lead: string; sections: ReplySection[] } | null => {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const sections: ReplySection[] = [];
-  const lead: string[] = [];
-  let current: { label: ReplyLabel; lines: string[] } | null = null;
-  for (const line of lines) {
-    const m = line.match(LABEL);
-    if (m) {
-      if (current) sections.push({ label: current.label, body: current.lines.join("\n").trim() });
-      current = { label: canonical.get(m[1].toLowerCase())!, lines: [line.slice(m[0].length)] };
-    } else if (current) current.lines.push(line);
-    else lead.push(line);
-  }
-  if (current) sections.push({ label: current.label, body: current.lines.join("\n").trim() });
-  if (sections.length < 2) return null;
-  return { lead: lead.join("\n").trim(), sections };
+  const chunks = text.replace(/\r\n/g, "\n").split(AT_LABEL);
+  const lead = LABEL.test(chunks[0]) ? "" : chunks.shift()!.trim();
+  const sections = chunks.map((c) => {
+    const m = c.match(LABEL)!;
+    return { label: REPLY_SECTIONS.find((s) => s.toLowerCase() === m[1].toLowerCase())!, body: c.slice(m[0].length).trim() };
+  });
+  return sections.length < 2 ? null : { lead, sections };
 };
