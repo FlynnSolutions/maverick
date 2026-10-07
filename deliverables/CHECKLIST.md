@@ -156,6 +156,60 @@ _Nothing. Move an item here only when its session starts._
   ceiling, not a position.
   - created: 2026-09-16
 
+- [ ] `[ENG]` `[M]` **Fire an overnight build session from Maverick.** _Note only, not scoped._
+  Tonight's run (2026-10-06) was set up by hand in a terminal: a queue of checklist items in
+  priority order, a stop line (push and open draft PRs, never merge), and `caffeinate` to keep
+  the machine awake. All of that is a form Maverick could show: pick the items, pick the stop
+  line, press go, read the PRs in the morning. The Strike Lead already dispatches background
+  agents; this is the same dispatch pointed at a queue instead of a plan, and the morning read is
+  the session review that already exists.
+  - created: 2026-10-06
+  - source: Cory, 2026-10-06, going to bed
+  - kind: feature
+
+- [ ] `[ENG]` `[M]` **A gated walkthrough on every mission task, the way the ship has one.** _Note
+  only, not scoped._ The ship page already hosts a walkthrough document inside a step and marks the
+  step done only when the human has been through it (`src/ships.ts`, the `walkthrough` step). The
+  `/develop` skill now produces the same kind of walkthrough per feature. A mission is a pile of
+  smaller PRs under one Strike Lead, and today a task goes `built → reviewing → passed` on the
+  RIO's verdict alone; nobody walks it. Give each task (or each milestone, to be decided) the same
+  hosted walkthrough and the same gate: the task is not `passed` until the walkthrough is answered,
+  and the mission page shows where each one stands. Reuse the ship page's walkthrough panel and the
+  `walkthrough` record on the step rather than inventing a second shape. Open: whether the Wingman
+  writes the walkthrough as part of its task or the Strike Lead commissions it after the RIO passes;
+  and per task vs. per milestone (per milestone matches "validation at every milestone" above).
+  - created: 2026-09-24
+  - source: Cory, 2026-09-24
+  - kind: feature
+
+- [ ] `[ENG]` `[M]` **One response format from every agent, parsed and shown as sections.** _Note
+  only, not scoped; the section list is still being decided._ Every reply Maverick reads back from
+  an agent should arrive in one fixed, parseable shape, and the console should render it as
+  labelled sections you can scan and skip rather than as a wall of prose. Sections named so far:
+  **what changed**, **decisions** (the call, what it was chosen over, how it is set up, briefly),
+  and a **TL;DR at the very bottom**. Candidates to settle: **verified** (what was actually run and
+  what was not), **open** (questions, assumptions, blockers), **next**. Four to five short blocks,
+  not an essay. Enforced where Maverick already writes the prompt (Wingman, RIO, Strike Lead, ship
+  steps) and rendered by the transcript view, which already splits replies into events
+  (`src/transcript-view.ts`). Sits underneath the event timeline item below: a structured reply is
+  the last event of a turn.
+  - created: 2026-09-24
+  - source: Cory, 2026-09-24
+  - kind: feature
+
+- [ ] `[ENG]` `[M]` **The live stream as a timeline of events that stand out, with a running
+  clock.** _Note only, not scoped._ Watching a session today is watching Claude Code's own stream:
+  everything scrolls past at the same weight. Wanted: a broader, simplified view of the same
+  transcript where the things that matter are distinct events you can spot at a glance, a decision,
+  a change to a file, a test run and its result, a question waiting on you, and each running thing
+  shows a live timer for how long it has been going. Quick to review after the fact for exactly
+  what happened, without reading the whole transcript. `src/transcript-view.ts` already turns the
+  jsonl into events; this is the classification and the UI on top. Pairs with the response format
+  above.
+  - created: 2026-09-24
+  - source: Cory, 2026-09-24
+  - kind: feature
+
 ## ✅ Recently shipped, pending release
 
 - [x] `[OSS]` **MIT `LICENSE`** — the repo was public with no license, which made it legally
