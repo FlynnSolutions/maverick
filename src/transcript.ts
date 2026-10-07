@@ -6,6 +6,7 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parseReply } from "./reply-format.ts";
 
 const TAIL_BYTES = 160 * 1024;
 
@@ -70,7 +71,8 @@ export const glance = async (cwd: string, sessionId: string): Promise<Transcript
         if (text && !text.startsWith("<") && !/^\[Request interrupted/.test(text)) out.lastPrompt = clip(text);
       } else if (type === "assistant" && message) {
         const text = textOf(message.content);
-        if (text) out.lastReply = clip(text);
+        // A reply in the console's shape wrote its TL;DR to be the glance; the rest of it is the body.
+        if (text) out.lastReply = clip(parseReply(text)?.sections.find((s) => s.label === "TL;DR")?.body ?? text);
       }
       if (typeof entry.timestamp === "string" && (type === "user" || type === "assistant")) out.lastActivity = entry.timestamp;
     }

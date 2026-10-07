@@ -6,14 +6,36 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parseReply, type ReplySection } from "./reply-format.ts";
+
+/**
+ * What a tool call is, from a reader's distance. The page gives the kinds that change something
+ * (an edit, a command, a test run, a subagent) their own weight and folds the rest into a count,
+ * so a session's work reads as events rather than as a list of tool names.
+ */
+export type ToolKind = "edit" | "test" | "run" | "read" | "search" | "agent" | "web" | "other";
+
+const TEST_COMMAND = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(pytest|vitest|jest|mocha|cargo test|go test|node --test|rspec|phpunit)\b/;
+
+export const toolKind = (name: string, input: Record<string, unknown> | undefined): ToolKind => {
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name)) return "edit";
+  if (name === "Bash") return TEST_COMMAND.test(String(input?.command ?? "")) ? "test" : "run";
+  if (/^(Read|ReadMcpResource)/.test(name)) return "read";
+  if (/^(Grep|Glob|LS)$/.test(name)) return "search";
+  if (/^(Agent|Task|Workflow)$/.test(name)) return "agent";
+  if (/^(WebFetch|WebSearch)$/.test(name)) return "web";
+  return "other";
+};
 
 export interface ChatEvent {
   t: string;
   role: "user" | "assistant" | "system";
   /** Prose, markdown as written. */
   text?: string;
-  /** Tool calls in this assistant turn: name and a one-line gloss of the input. */
-  tools?: Array<{ name: string; gloss: string }>;
+  /** Tool calls in this assistant turn: name, what kind of thing it did, and a one-line gloss of the input. */
+  tools?: Array<{ name: string; kind: ToolKind; gloss: string }>;
+  /** The reply's sections, when it was written in the console's format (see reply-format.ts). */
+  reply?: { lead: string; sections: ReplySection[] };
   /** Count of tool results carried by a user turn (their bodies are not shipped to the page). */
   results?: number;
   interrupted?: boolean;
@@ -127,9 +149,13 @@ const parseFrom = async (handle: Awaited<ReturnType<typeof open>>, start: number
         const tools: ChatEvent["tools"] = [];
         for (const part of message.content as Array<{ type?: string; text?: string; name?: string; input?: Record<string, unknown> }>) {
           if (part.type === "text" && part.text) texts.push(part.text);
-          else if (part.type === "tool_use" && part.name) tools.push({ name: part.name, gloss: gloss(part.name, part.input) });
+          else if (part.type === "tool_use" && part.name) tools.push({ name: part.name, kind: toolKind(part.name, part.input), gloss: gloss(part.name, part.input) });
         }
-        if (texts.length || tools.length) events.push({ t, role: "assistant", ...(texts.length ? { text: texts.join("\n\n") } : {}), ...(tools.length ? { tools } : {}) });
+        if (texts.length || tools.length) {
+          const text = texts.join("\n\n");
+          const reply = parseReply(text);
+          events.push({ t, role: "assistant", ...(texts.length ? { text } : {}), ...(reply ? { reply } : {}), ...(tools.length ? { tools } : {}) });
+        }
       }
     }
     return { events, offset: start + consumed, size, ...(title ? { title } : {}) };

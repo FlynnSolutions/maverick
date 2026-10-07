@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { REPLY_FORMAT_ARGS } from "./reply-format.ts";
 
 const run = promisify(execFile);
 
@@ -169,12 +170,22 @@ export const diffStat = async (repoPath: string, from: string, to: string): Prom
 };
 
 /**
- * Start a background Claude session and return the id it prints. The only spawner that takes
- * an `--agent`, so it is the one to promote if the three inline copies in server.ts, audits.ts
- * and ships.ts are ever folded in.
+ * The command line for a Claude session Maverick launches, background or in one of its own
+ * terminals. Every launch goes through here, which is what makes the reply format a fact about
+ * every session rather than a thing each prompt builder has to remember.
  */
+export const claudeArgs = (o: { prompt: string; bg?: boolean; agent?: string; name?: string; tools?: string }): string[] => [
+  ...(o.bg ? ["--bg", "--permission-mode", "auto"] : []),
+  ...(o.agent ? ["--agent", o.agent] : []),
+  ...(o.name ? ["--name", o.name.slice(0, 60)] : []),
+  ...(o.tools ? ["--tools", o.tools] : []),
+  ...REPLY_FORMAT_ARGS,
+  o.prompt,
+];
+
+/** Start a background Claude session and return the id it prints. */
 export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string): Promise<string> => {
-  const { stdout } = await run("claude", ["--bg", ...(agent ? ["--agent", agent] : []), "--name", name.slice(0, 60), "--permission-mode", "auto", prompt], { cwd });
+  const { stdout } = await run("claude", claudeArgs({ prompt, bg: true, agent, name }), { cwd });
   const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
   if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);
   return id;

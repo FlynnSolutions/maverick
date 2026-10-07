@@ -5,16 +5,12 @@
  * session; the auditor writes a findings file whose first line is its verdict. Cory then
  * accepts or rejects the findings from the console. The auditor never fixes anything.
  */
-import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { config } from "./config.ts";
-import { backgroundAgents } from "./git.ts";
+import { backgroundAgents, spawnBackgroundAgent } from "./git.ts";
 import type { Project } from "./projects.ts";
 import { readSessions, type SessionRecord } from "./sessions.ts";
-
-const run = promisify(execFile);
 
 export interface AuditInfo {
   /** The background session running the audit. */
@@ -92,13 +88,7 @@ export const runAudit = async (project: Project, childId: string): Promise<Audit
     `Write your findings to ${file}. The FIRST line must be exactly one of: "verdict: pass", "verdict: fail", "verdict: mixed". Then a markdown list of findings, each with a severity (blocker / major / minor / note), the evidence (file, line, command output), and whether it contradicts the session's self-report. Say plainly what you could not verify.`,
     `Do not fix anything. Do not commit. Do not touch the trackers.`,
   ].join("\n");
-  const { stdout } = await run(
-    "claude",
-    ["--bg", "--agent", "auditor", "--name", `audit: ${child.loop.slice(0, 50)}`, "--permission-mode", "auto", prompt],
-    { cwd: project.path },
-  );
-  const claudeId = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
-  if (!claudeId) throw new Error(`could not read the audit session id from:\n${stdout}`);
+  const claudeId = await spawnBackgroundAgent(project.path, `audit: ${child.loop.slice(0, 50)}`, prompt, "auditor");
   const audit: AuditInfo = { claudeId, started: new Date().toISOString(), file };
   await writeRecord({ ...child, audit } as SessionRecord);
   return audit;

@@ -836,22 +836,53 @@ export const mountCommandCenter = (root, ctx) => {
      you take the stick, its terminal. Full screen is a pane in an overlay; a formation expands
      a pane inside the strip it belongs to, which is how several run at once. */
 
-  const chip = (t) => el("span", { class: "tool-chip", title: t.gloss }, el("b", {}, t.name), t.gloss ? text(` ${clip(t.gloss, 64)}`) : null);
+  const chip = (t) => el("span", { class: `tool-chip ${t.kind ?? ""}`, title: t.gloss }, el("b", {}, t.name), t.gloss ? text(` ${clip(t.gloss, 64)}`) : null);
 
-  /** Fold a run of tool-only turns into one collapsible block. */
+  /** A duration in words: seconds under a minute, then minutes and seconds, then hours. */
+  const took = (ms) => {
+    if (!(ms > 0)) return "";
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  };
+  const between = (a, b) => (a && b ? Date.parse(b) - Date.parse(a) : 0);
+
+  /* What a fold did, in words, the kinds that change something first; the order here is the order on the line. */
+  const WORDS = { edit: "edited", test: "tested", run: "ran", agent: "sent out", read: "read", search: "searched", web: "fetched", other: "called" };
+  const LOUD = new Set(["edit", "test", "run", "agent"]);
+  const kindOf = (t) => t.kind ?? "other";
+  const workWords = (tools) => Object.entries(WORDS).map(([k, w]) => [w, tools.filter((t) => kindOf(t) === k).length]).filter(([, n]) => n).map(([w, n]) => `${w} ${n}`).join(" · ");
+
+  /** A reply in the console's format: its sections as labelled blocks, the TL;DR last and set apart. */
+  const replyNodes = (e) => {
+    const { lead, sections } = e.reply;
+    const ordered = [...sections.filter((s) => s.label !== "TL;DR"), ...sections.filter((s) => s.label === "TL;DR")];
+    return [
+      lead ? renderMd(lead, { project: ctx.projectId }) : null,
+      el("div", { class: "reply" }, ...ordered.map((s) => el("div", { class: `sec ${s.label.toLowerCase().replace(/\W+/g, "")}` }, el("span", { class: "lbl" }, s.label), renderMd(s.body || "nothing", { project: ctx.projectId })))),
+    ];
+  };
+
+  /** Fold a run of tool-only turns into one block whose summary says what was done and how long it took. */
   const turnNodes = (events) => {
     const nodes = [];
     let work = null;
+    let lastPrompt = null;
     const flushWork = () => {
       if (!work) return;
-      const n = work.tools.length;
-      const details = el("details", { class: "turn work" }, el("summary", {}, `${n} tool call${n === 1 ? "" : "s"}`, el("span", { class: "t" }, timeOf(work.t))), el("div", { class: "chips" }, ...work.tools.map(chip)));
+      // Loud chips first, so an edit or a test run is the first thing in an opened fold.
+      const chips = [...work.tools.filter((t) => LOUD.has(kindOf(t))), ...work.tools.filter((t) => !LOUD.has(kindOf(t)))];
+      const details = el("details", { class: `turn work${chips.length && LOUD.has(kindOf(chips[0])) ? " loud" : ""}` },
+        el("summary", {}, el("span", { class: "kinds" }, workWords(work.tools)), el("span", { class: "t" }, took(between(work.t, work.last))), el("span", { class: "t" }, timeOf(work.t))),
+        el("div", { class: "chips" }, ...chips.map(chip)));
       nodes.push(details);
       work = null;
     };
     for (const e of events) {
       if (e.role === "assistant" && !e.text && e.tools?.length) {
-        work ??= { t: e.t, tools: [] };
+        work ??= { t: e.t, last: e.t, tools: [] };
+        work.last = e.t;
         work.tools.push(...e.tools);
         continue;
       }
@@ -866,15 +897,37 @@ export const mountCommandCenter = (root, ctx) => {
         continue;
       }
       if (e.role === "user") {
+        lastPrompt = e.t;
         nodes.push(el("div", { class: "turn user" }, el("span", { class: "who" }, "you", el("span", { class: "t" }, timeOf(e.t))), renderMd(e.text ?? "", { project: ctx.projectId })));
       } else {
-        const body = renderMd(e.text ?? "", { project: ctx.projectId });
+        const body = e.reply ? replyNodes(e) : [renderMd(e.text ?? "", { project: ctx.projectId })];
         const tools = e.tools?.length ? el("div", { class: "chips" }, ...e.tools.map(chip)) : null;
-        nodes.push(el("div", { class: "turn claude" }, el("span", { class: "who" }, "claude", el("span", { class: "t" }, timeOf(e.t))), body, tools));
+        // How long the turn took, from the prompt that started it; a reply is also the end of the work above it.
+        const turnTook = took(between(lastPrompt, e.t));
+        nodes.push(el("div", { class: "turn claude" }, el("span", { class: "who" }, "claude", turnTook ? el("span", { class: "t" }, `after ${turnTook}`) : null, el("span", { class: "t" }, timeOf(e.t))), ...body, tools));
       }
     }
     flushWork();
     return nodes;
+  };
+
+  /**
+   * The clock on a session that is still working: how long since its last event, ticking. It
+   * is the one thing on the page that moves without a transcript line behind it, so it is
+   * owned by the pane and stopped with it.
+   */
+  const paintClock = (p) => {
+    p.clock?.remove();
+    const last = p.events.at(-1)?.t;
+    if (!last || !/^(busy|running)$/.test(liveSession(p)?.status ?? "")) {
+      // Nothing to tick; the next page of events starts the clock again if the session is back at work.
+      window.clearInterval(p.ticker);
+      p.ticker = null;
+      return;
+    }
+    p.clock = el("div", { class: "turn clock" }, lamp("busy"), el("span", {}, `working · ${took(Date.now() - Date.parse(last)) || "0s"} since the last event`), el("span", { class: "t" }, timeOf(last)));
+    p.list.append(p.clock);
+    p.ticker ??= window.setInterval(() => paintClock(p), 1000);
   };
 
   /** Every pane alive on the page, by session key. A strip's pane and the overlay's are the same thing. */
@@ -974,6 +1027,7 @@ export const mountCommandCenter = (root, ctx) => {
     p.events.push(...page.events);
     p.list.replaceChildren(...turnNodes(p.events));
     if (p.list.childElementCount === 0) p.list.append(el("p", { class: "muted cc-empty" }, "the transcript is empty so far"));
+    paintClock(p);
     // New turns land below, so everything above the held offset is unchanged and it still points
     // at what you were reading.
     view.scrollTop = following || p.first ? view.scrollHeight : held;
@@ -1620,6 +1674,7 @@ export const mountCommandCenter = (root, ctx) => {
 
   const destroyPane = (p) => {
     p.dead = true;
+    window.clearInterval(p.ticker);
     p.stream?.close();
     window.clearInterval(p.timer);
     p.stickTerm?.src.close();
