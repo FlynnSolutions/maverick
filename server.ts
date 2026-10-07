@@ -21,7 +21,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees } from "./src/missions.ts";
-import { CAG_TOOLS, brainstormPrompt, planFileFor, planPrompt, resolvePlan } from "./src/plans.ts";
+import { CAG_TOOLS, brainstormPrompt, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
@@ -135,12 +135,12 @@ const board = async (project: Project) =>
       const parsed = parseTracker(text);
       const dates = await lineDates(tracker.path);
       for (const section of parsed.sections) for (const group of section.groups) for (const item of group.items) {
-        (item as { lineDate?: string }).lineDate = dates.get(item.start + 1);
-        // Planned is the presence of a resolving `plan:` field, not a status word: a path can be
-        // checked and a word is a claim. A mission's tasks are planned by the mission's plan.
-        const planFile = item.fields.mission ? null : await resolvePlan(project, tracker.path, item.fields.plan);
-        const planned = Boolean(item.fields.mission || planFile);
-        Object.assign(item, { planFile, planned, unplanned: !planned && !item.checked && (section.column === "priority" || section.column === "in-progress") });
+        item.lineDate = dates.get(item.start + 1);
+        const plan = await planOf(project, tracker.path, item);
+        item.planFile = plan.file;
+        item.planned = plan.planned;
+        // The rule at the door holds on the roadmap and in progress; the backlog stays free-form.
+        item.unplanned = !plan.planned && !item.checked && (section.column === "priority" || section.column === "in-progress");
       }
       return { index, label: tracker.label, path: tracker.path, ...parsed };
     }),
@@ -221,6 +221,13 @@ const editItem = async (body: EditBody): Promise<{ commit: string }> => {
 
 /* ---------- sessions and terminals ---------- */
 
+/** One item in one tracker, resolved against the file when acted on, so a stale board cannot act on the wrong line. */
+interface ItemRef {
+  tracker: number;
+  itemStart: number;
+  itemFirstLine: string;
+}
+
 interface OpenTerminalBody {
   project: string;
   /** attach a background agent, resume an interactive session, start a fresh claude, spawn a task agent and attach it, open a plain shell, or sit the CAG down. */
@@ -233,12 +240,10 @@ interface OpenTerminalBody {
   cwd?: string;
   /** An audit parent's record id; a supervised task session is audited when it finishes. */
   parent?: string;
-  /** For the CAG: a brainstorm on a topic, or a plan for one item in one tracker. */
-  mode?: "brainstorm" | "plan";
+  /** The item a spawn is on, or the item the CAG plans. */
+  item?: ItemRef;
+  /** For the CAG without an item: the topic of a brainstorm. */
   topic?: string;
-  tracker?: number;
-  itemStart?: number;
-  itemFirstLine?: string;
   cols?: number;
   rows?: number;
 }
@@ -267,6 +272,14 @@ const terminalsBySession = async (registry: { pid: number; sessionId: string }[]
     return id ? ([s.sessionId, id] as const) : null;
   }));
   return new Map(found.filter(Boolean) as (readonly [string, string])[]);
+};
+
+const itemAt = async (project: Project, ref: ItemRef) => {
+  const tracker = project.trackers[ref.tracker];
+  if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${ref.tracker}`);
+  const item = parseTracker(await readFile(tracker.path, "utf8")).sections.flatMap((s) => s.groups.flatMap((g) => g.items)).find((i) => i.start === ref.itemStart);
+  if (!item || item.firstLine !== ref.itemFirstLine) throw new StaleMoveError(`line ${ref.itemStart + 1} is no longer "${ref.itemFirstLine}"; reload the board`);
+  return { tracker, item };
 };
 
 const openTerminalFor = async (body: OpenTerminalBody) => {
@@ -298,34 +311,32 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
     case "cag": {
       // The project level's boundary is its tool list, enforced by the CLI rather than asked for
       // in the prompt (decisions M5): it reads, writes and searches, and runs nothing.
-      if (body.mode === "brainstorm") {
-        if (!body.topic?.trim()) throw new Error("a brainstorm needs a topic");
-        return openTerminal(`CAG · ${body.topic.trim().slice(0, 60)}`, ["claude", "--tools", CAG_TOOLS, brainstormPrompt(project, body.topic.trim())], project.path, size.cols, size.rows);
+      if (body.item) {
+        const { tracker, item } = await itemAt(project, body.item);
+        return openTerminal(`CAG · plan: ${item.title.slice(0, 50)}`, ["claude", "--tools", CAG_TOOLS, planPrompt(project, tracker.path, item, planFileFor(tracker.path, item))], project.path, size.cols, size.rows, undefined, "cag");
       }
-      if (body.mode === "plan") {
-        const tracker = project.trackers[body.tracker ?? -1];
-        if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
-        const item = parseTracker(await readFile(tracker.path, "utf8")).sections.flatMap((s) => s.groups.flatMap((g) => g.items)).find((i) => i.start === body.itemStart);
-        if (!item || item.firstLine !== body.itemFirstLine) throw new Error("that item moved since the board was read; reload and try again");
-        return openTerminal(`CAG · plan: ${item.title.slice(0, 50)}`, ["claude", "--tools", CAG_TOOLS, planPrompt(project, tracker.path, item, planFileFor(tracker.path, item))], project.path, size.cols, size.rows);
-      }
-      throw new Error("the CAG does a brainstorm or a plan");
+      if (!body.topic?.trim()) throw new Error("the CAG plans an item or brainstorms a topic");
+      return openTerminal(`CAG · ${body.topic.trim().slice(0, 60)}`, ["claude", "--tools", CAG_TOOLS, brainstormPrompt(project, body.topic.trim())], project.path, size.cols, size.rows, undefined, "cag");
     }
     case "spawn": {
-      if (!body.prompt || !body.title) throw new Error("spawn needs title and prompt");
-      const trackerPath = project.trackers[0]?.path ?? project.path;
-      const id = await spawnBackgroundAgent(project.path, body.title, spawnPrompt(project, body.title, body.prompt, trackerPath));
+      if (!body.item) throw new Error("spawn needs the item it is on");
+      const { tracker, item } = await itemAt(project, body.item);
+      // The page asks first, but the page is not the guard: a session spawned on an item without a
+      // plan is building from a bullet, which is how a session builds the wrong thing well.
+      if (!(await planOf(project, tracker.path, item)).planned) throw new Error(`"${item.title}" has no plan: a plan: field naming a real file. Plan it first.`);
+      const title = item.title.slice(0, 80);
+      const id = await spawnBackgroundAgent(project.path, title, spawnPrompt(project, title, item.body, tracker.path));
       await writeSession(config.sessionsDir, {
         id: `bg-${id}`,
         role: "develop",
-        loop: body.title,
+        loop: title,
         status: "open",
         started: new Date().toISOString(),
         project: project.id,
         claudeId: id,
         ...(body.parent ? { parent: body.parent } : {}),
       });
-      return openTerminal(body.title, ["claude", "attach", id], project.path, size.cols, size.rows, id);
+      return openTerminal(title, ["claude", "attach", id], project.path, size.cols, size.rows, id);
     }
     default:
       throw new Error(`unknown terminal kind "${String(body.kind)}"`);
@@ -722,7 +733,14 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   if (method === "GET" && path === "/api/terminals") return sendJson(res, 200, listTerminals());
-  if (method === "POST" && path === "/api/terminals") return sendJson(res, 200, await openTerminalFor(await readJson<OpenTerminalBody>(req)));
+  if (method === "POST" && path === "/api/terminals") {
+    try {
+      return sendJson(res, 200, await openTerminalFor(await readJson<OpenTerminalBody>(req)));
+    } catch (err) {
+      if (err instanceof StaleMoveError) return sendJson(res, 409, { error: err.message });
+      throw err;
+    }
+  }
   // A file dropped on a terminal or a composer: saved under the console's home, its path is what gets typed.
   if (method === "POST" && path === "/api/drop") {
     const name = (url.searchParams.get("name") ?? "file").replace(/[^\w.\-]+/g, "_").slice(0, 120) || "file";

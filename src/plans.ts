@@ -14,17 +14,16 @@
 import { stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { Project } from "./projects.ts";
-import type { Item } from "./trackers.ts";
+import { today, type Item } from "./trackers.ts";
 import { slug } from "./audits.ts";
+import { INTERVIEW_PROBES } from "./missions.ts";
 
 /** What the CAG may do, enforced by the CLI (`claude --tools`). Reading, writing and searching; never running anything. */
 export const CAG_TOOLS = "Read,Write,Edit,Grep,Glob";
 
 /** The path in a `plan:` field: its first word, without a `#section` anchor. Realtime writes prose after the path. */
-export const planPath = (value: string | undefined): string | null => {
-  const first = value?.trim().split(/\s+/)[0]?.replace(/#.*$/, "").replace(/[.,;:)]+$/, "");
-  return first || null;
-};
+export const planPath = (value: string | undefined): string | null =>
+  value?.match(/\S+/)?.[0].replace(/#.*$/, "").replace(/[.,;:)]+$/, "") || null;
 
 /** The file a `plan:` field names, relative to the project, or null when no such file exists. Tried from the tracker's folder first, then the project root. */
 export const resolvePlan = async (project: Project, trackerPath: string, value: string | undefined): Promise<string | null> => {
@@ -38,9 +37,19 @@ export const resolvePlan = async (project: Project, trackerPath: string, value: 
   return null;
 };
 
+/**
+ * The rule, written once: planned is the presence of a resolving `plan:` field, not a status
+ * word, because a path can be checked and a word is a claim. A mission's tasks are planned by
+ * the mission's plan, which Maverick itself wrote.
+ */
+export const planOf = async (project: Project, trackerPath: string, item: Item): Promise<{ file: string | null; planned: boolean }> => {
+  const file = item.fields.mission ? null : await resolvePlan(project, trackerPath, item.fields.plan);
+  return { file, planned: Boolean(item.fields.mission || file) };
+};
+
 /** Where a new plan goes: a `plans/` folder beside the tracker, named the way Realtime already names them. */
 export const planFileFor = (trackerPath: string, item: Item): { field: string; full: string } => {
-  const field = join("plans", `${slug(item.title)}-${new Date().toISOString().slice(0, 10)}.md`);
+  const field = join("plans", `${slug(item.title)}-${today()}.md`);
   return { field, full: join(dirname(trackerPath), field) };
 };
 
@@ -58,7 +67,7 @@ export const brainstormPrompt = (project: Project, topic: string): string => [
   "",
   "A brainstorm is many ideas with no structure. Draw him out, offer angles he has not named, say where an idea collides with what the repo already does, and do not converge early. Keep it a conversation in this terminal, one or two questions at a time.",
   "",
-  `Write it down as you go, as one document for this conversation: ${join(project.path, "deliverables", "brainstorms", `${new Date().toISOString().slice(0, 10)}-${slug(topic) || "untitled"}.md`)}. Ideas, the reasoning around them, what was rejected and why, open questions. Rewrite the document freely; it is this conversation's, not a running file.`,
+  `Write it down as you go, as one document for this conversation: ${join(project.path, "deliverables", "brainstorms", `${today()}-${slug(topic) || "untitled"}.md`)}. Ideas, the reasoning around them, what was rejected and why, open questions. Rewrite the document freely; it is this conversation's, not a running file.`,
   "",
   "Do not write to the tracker. Turning a brainstorm into items is a separate step that Cory approves in Maverick. When the conversation is done, say that the document is written and where, then stop.",
 ].join("\n");
@@ -71,7 +80,9 @@ export const planPrompt = (project: Project, trackerPath: string, item: Item, pl
   "",
   item.body,
   "",
-  "Interview Cory in this terminal before you write: what is actually being asked for, what done looks like in a form that can be tested, what is out of scope, which constraints bind, and what already exists that this grows out of, named by file. Say plainly where you disagree with his approach. Do not present a plan until he has answered.",
+  "Interview Cory in this terminal before you write, one or two questions at a time, until you can answer in his words:",
+  ...INTERVIEW_PROBES,
+  "Do not present a plan until he has answered.",
   "",
   `When you and he have agreed, write the plan to ${plan.full}. One document, in prose and lists, carrying everything a session with no other context needs: what it is, done when, the files it touches, the steps in order, what it must not touch, how it proves itself, and the walkthrough cards a person will check it by.`,
   "",

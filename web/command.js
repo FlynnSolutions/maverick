@@ -724,7 +724,7 @@ export const mountCommandCenter = (root, ctx) => {
   const brainstorm = async () => {
     const topic = await ask({ title: "Brainstorm with the CAG", body: "Many ideas, no structure, one dated document for the conversation. Nothing lands on the board from it until you break it down. What is it about?", confirm: "sit down", field: { placeholder: "the topic" } });
     if (!topic) return;
-    openTerminal({ kind: "cag", mode: "brainstorm", topic, title: `CAG · ${topic}` });
+    openTerminal({ kind: "cag", topic, title: `CAG · ${topic}` });
   };
 
   const newMission = async () => {
