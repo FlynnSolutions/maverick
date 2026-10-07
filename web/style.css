@@ -741,6 +741,32 @@ body.ask-open { overflow: hidden; }
 .cal-event.undated { white-space: normal; background: var(--steel); }
 .cal-undated h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 8px; }
 
+/* ---------- ship days ---------- */
+/* A ship day is not a deadline and not a release: it reads as its own thing, and it is the one
+   event on the calendar you can pick up and move. */
+.cal-ships { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-radius: var(--radius-m); background: var(--gunmetal); box-shadow: 0 0 0 1px var(--seam-soft); }
+.cal-ships .k { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+.cal-ships .spacer { flex: 1; }
+.cal-ships select, .cal-ships input[type="date"] { height: 28px; padding: 0 8px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink); font-size: 12px; }
+.cal-ships input[type="date"] { font-family: var(--mono); }
+.cal-event.ship { font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; background: var(--steel); color: var(--ink-soft); box-shadow: inset 0 0 0 1px var(--seam-strong); cursor: grab; }
+.cal-event.ship.now { background: var(--accent-dim); color: var(--accent-hot); box-shadow: 0 0 0 1px var(--accent-glow), 0 0 14px var(--accent-dim); }
+.cal-event.ship.shipped { background: rgba(80, 200, 120, 0.16); color: var(--ok); box-shadow: none; }
+.cal-event.ship.missed { background: var(--threat-dim); color: var(--threat); box-shadow: none; }
+.chip.ship { background: var(--steel); color: var(--ink-soft); }
+.chip.ship.now { background: var(--accent-dim); color: var(--accent-hot); }
+.chip.ship.shipped { background: rgba(80, 200, 120, 0.16); color: var(--ok); }
+.chip.ship.missed { background: var(--threat-dim); color: var(--threat); }
+
+/* The banner rides above every view, because a ship day you have to go looking for is not a
+   notification. */
+.ship-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 14px; border-radius: var(--radius-m); background: var(--accent-dim); box-shadow: 0 0 0 1px var(--accent-glow), 0 0 22px var(--accent-dim); }
+.ship-banner strong { font-family: var(--display); font-size: 14px; letter-spacing: 0.04em; color: var(--accent-hot); }
+.ship-banner .ship-banner-mark { font-size: 16px; }
+.ship-banner .spacer { flex: 1; }
+.ship-banner.missed { background: var(--threat-dim); box-shadow: 0 0 0 1px var(--threat); }
+.ship-banner.missed strong { color: var(--threat); }
+
 /* ---------- tag chips ---------- */
 
 .chip { font-family: var(--display); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; line-height: 1.3; }

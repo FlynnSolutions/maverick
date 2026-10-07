@@ -156,6 +156,44 @@ _Nothing. Move an item here only when its session starts._
   ceiling, not a position.
   - created: 2026-09-16
 
+- [~] `[ENG]` `[L]` **Planned and recurring ship days on the calendar.** The calendar today only
+  plots item deadlines (`due:`) and releases already computed from the changelog. It cannot hold a
+  *future* ship. Add a ship day as its own event: pick a date on the calendar, and set a recurrence
+  (weekly, every other week, whatever cadence the operator picks) so the next ones are already
+  there. Needs the interface (place one, set the cadence, move one, cancel one) and the backing
+  record. **Decided by Cory 2026-09-17:** a schedule is the first thing the markdown trackers
+  genuinely cannot hold, so it earns a new named exception, a ship dates tracker and schedule under
+  `~/.claude/session-console/`. Still not a database. Notify on the morning of: "ship day". Other
+  recurring notifications should hang off the same mechanism.
+  **Why, from Cory 2026-09-17, mid-ship:** three weeks between ships and the pile of untested
+  changes is the part that hurts. Testing is the tedious step and there is no removing it, but a
+  weekly or biweekly cadence keeps each batch small enough to stomach. The cadence is the product
+  feature; the calendar is where it becomes visible.
+  **What it sets up (not now):** once a ship day is a scheduled event, work can fire *on* it.
+  Auto-generate the session review for the batch when ship day arrives, and so on. Reason enough to
+  model it as a real scheduled event rather than a reminder string.
+  **Built 2026-09-18 on `feat/ship-schedule`:** `src/ship-schedule.ts` (the cadence, one-offs,
+  skips, moves and shipped history, keyed to the day the cadence generated so a pushed-back day
+  still knows where it was meant to be), three `/api/ship-schedule` routes, ship days on the
+  calendar with drag-to-move and a drawer, the cadence control, and the ship-day banner above
+  every view. Ten tests in `test/ship-schedule.test.ts`; verified in the browser against a seeded
+  schedule. **Left open:** an OS-level notification, which a browser tab cannot do when it is
+  closed, so it properly belongs to the Electron shell.
+  - created: 2026-09-17
+  - source: Cory, 2026-09-17, while shipping Realtime
+  - kind: feature
+  - status: built on `feat/ship-schedule`, not merged
+
+- [ ] `[ENG]` `[S]` **Gamify the ship.** _Note only, not scoped._ Marking a ship complete should
+  feel like something: "mission complete", with a plane getting up into the sky. Pushing a ship day
+  back is the opposite: mission failed, the plane crashes and burns. Fits the callsign language the
+  console already speaks (Maverick, Wingman, Strike Lead) and gives the cadence above teeth, since
+  a slipped ship day should cost something visible. Open: what the animation actually is, and
+  whether anything is tracked across ships (a streak) or it is purely per-event.
+  - created: 2026-09-17
+  - source: Cory, 2026-09-17
+  - kind: feature
+
 - [ ] `[ENG]` `[M]` **Fire an overnight build session from Maverick.** _Note only, not scoped._
   Tonight's run (2026-10-06) was set up by hand in a terminal: a queue of checklist items in
   priority order, a stop line (push and open draft PRs, never merge), and `caffeinate` to keep

@@ -19,6 +19,7 @@ import { liveCache, liveSignals, readRegistrySessions } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
+import { markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees } from "./src/missions.ts";
 import { themeFor } from "./src/theme.ts";
@@ -621,6 +622,21 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (body.name !== undefined) patch.name = body.name;
     if (body.deploy !== undefined) patch.deploy = body.deploy;
     return sendJson(res, 200, await writeSlot((await projectById(body.project)).id, body.slot, patch));
+  }
+  if (method === "GET" && path === "/api/ship-schedule") {
+    const schedule = await readSchedule((await requireProject(url)).id);
+    // The window is the caller's, so the calendar can ask for the month it is showing.
+    const from = url.searchParams.get("from") ?? new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
+    const to = url.searchParams.get("to") ?? new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10);
+    return sendJson(res, 200, { schedule, occurrences: occurrences(schedule, from, to) });
+  }
+  if (method === "POST" && path === "/api/ship-schedule") {
+    const body = await readJson<{ project: string; cadence: Cadence | null }>(req);
+    return sendJson(res, 200, await setCadence((await projectById(body.project)).id, body.cadence ?? null));
+  }
+  if (method === "POST" && path === "/api/ship-schedule/day") {
+    const body = await readJson<{ project: string; action: DayAction; date: string; to?: string; version?: string }>(req);
+    return sendJson(res, 200, await markDay((await projectById(body.project)).id, body.action, body.date, { to: body.to, version: body.version }));
   }
   if (method === "POST" && path === "/api/edit") {
     try {
