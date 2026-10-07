@@ -7,17 +7,13 @@
  * `~/.claude/console-sessions/ships/<project>/<version>.json`, so a ship can be picked up
  * again after any interruption.
  */
-import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { promisify } from "node:util";
 import { config } from "./config.ts";
-import { backgroundAgents } from "./git.ts";
+import { backgroundAgents, spawnBackgroundAgent } from "./git.ts";
 import type { Project } from "./projects.ts";
 import { readSessions, type SessionRecord } from "./sessions.ts";
 import { runAudit } from "./audits.ts";
-
-const run = promisify(execFile);
 
 export type StepStatus = "pending" | "running" | "finished" | "done" | "failed" | "skipped";
 
@@ -149,14 +145,7 @@ export const runStep = async (project: Project, version: string, stepId: string)
     step.ended = new Date().toISOString();
     step.report = started.length ? `Audits started for: ${started.join("; ")}. Verdicts show under their audit parents on the rail.` : "No un-audited task sessions for this project.";
   } else {
-    const { stdout } = await run(
-      "claude",
-      ["--bg", "--name", `ship ${version}: ${step.title.slice(0, 40)}`, "--permission-mode", "auto", step.prompt],
-      { cwd: project.path },
-    );
-    const claudeId = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
-    if (!claudeId) throw new Error(`could not read the session id from:\n${stdout}`);
-    step.claudeId = claudeId;
+    step.claudeId = await spawnBackgroundAgent(project.path, `ship ${version}: ${step.title.slice(0, 40)}`, step.prompt);
     step.status = "running";
   }
   await writeShip(ship);

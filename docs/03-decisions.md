@@ -235,3 +235,22 @@ overlapping work into one milestone, which is a level above the mission. It is r
 escalation on the record and drawn as such, for Cory now and for the **CAG** when that exists
 ([M9](#m9--the-levels-take-the-carriers-own-names--decided)): the level that owns the plan is
 the one that can fix it.
+
+## M14 — Every launched session answers in one shape, and the stream reads as events ✅ built
+
+**One reply format, appended by Maverick, not asked for per prompt.** Every session the console
+launches (`claude --bg` through `spawnBackgroundAgent`, the Strike Lead's terminal) carries
+`--append-system-prompt` with six sections: **Answer**, **What changed**, **Decisions**,
+**Verified**, **Open**, **TL;DR** last. The transcript view parses a reply into those sections
+and the pane shows them as labelled blocks, the TL;DR set apart at the bottom. A reply that is
+not in the shape is still shown, as prose; the format is a request the page can read, not a
+filter. Decided by Cory 2026-10-06: these six, applied to the sessions Maverick spawns.
+
+**Rejected: putting the format into each prompt builder.** Six builders would drift six ways.
+The system prompt is the one place every session passes through.
+
+**The stream is a timeline, not a log.** A tool call is classified at read time (edit, test,
+run, agent stand out; read, search, web are counted and folded), a fold of tool-only turns says
+what it did and how long it took, a reply says how long after the prompt it came, and a session
+still working carries a clock ticking since its last event. The classification lives in
+`src/transcript-view.ts` beside the parser, so the page draws kinds rather than deciding them.

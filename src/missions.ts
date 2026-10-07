@@ -21,6 +21,7 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.ts";
+import { REPLY_FORMAT_ARGS } from "./reply-format.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
 import { backgroundAgents, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
 import { slug, verdictOf, type Verdict } from "./audits.ts";
@@ -401,7 +402,7 @@ export const startMission = async (project: Project, name: string, brief: string
   };
   if (!project.trackers[trackerIndex]) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
   await mkdir(join(project.path, "deliverables", "missions"), { recursive: true });
-  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", interviewPrompt(project, mission, join(project.path, plan), choices, cfg.land)], project.path, 120, 36);
+  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", ...REPLY_FORMAT_ARGS, interviewPrompt(project, mission, join(project.path, plan), choices, cfg.land)], project.path, 120, 36);
   mission.interview = { terminalId: terminal.id, started: new Date().toISOString() };
   await writeMission(mission);
   return { mission, terminal };
@@ -412,7 +413,7 @@ export const reopenInterview = async (project: Project, id: string): Promise<Ter
   const mission = await missionOr404(project.id, id);
   if (mission.approved) throw new Error(`${mission.name} is already approved; the interview is over`);
   const cfg = await missionConfigFor(project.path);
-  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", interviewPrompt(project, mission, join(project.path, mission.plan), await repoChoices(project, cfg), cfg.land)], project.path, 120, 36);
+  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", ...REPLY_FORMAT_ARGS, interviewPrompt(project, mission, join(project.path, mission.plan), await repoChoices(project, cfg), cfg.land)], project.path, 120, 36);
   mission.interview = { terminalId: terminal.id, started: new Date().toISOString() };
   await writeMission(mission);
   return terminal;

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { REPLY_FORMAT_ARGS } from "./reply-format.ts";
 
 const run = promisify(execFile);
 
@@ -174,7 +175,7 @@ export const diffStat = async (repoPath: string, from: string, to: string): Prom
  * and ships.ts are ever folded in.
  */
 export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string): Promise<string> => {
-  const { stdout } = await run("claude", ["--bg", ...(agent ? ["--agent", agent] : []), "--name", name.slice(0, 60), "--permission-mode", "auto", prompt], { cwd });
+  const { stdout } = await run("claude", ["--bg", ...(agent ? ["--agent", agent] : []), "--name", name.slice(0, 60), "--permission-mode", "auto", ...REPLY_FORMAT_ARGS, prompt], { cwd });
   const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
   if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);
   return id;
