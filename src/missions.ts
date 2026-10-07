@@ -19,7 +19,7 @@
  * the same named exception `ships/` already uses.
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
 import { backgroundAgents, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
@@ -29,6 +29,7 @@ import { createFormation, listFormations, updateFormation } from "./formations.t
 import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
+import { documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { addGroup, addItem, parseTracker, setChecked } from "./trackers.ts";
 
@@ -67,6 +68,38 @@ export interface MissionTask {
   note?: string;
 }
 
+/** Progress through the hosted walkthrough document, saved from the page as it is worked. */
+export interface WalkthroughProgress {
+  key: string;
+  total: number;
+  answered: number;
+  verdicts: Record<string, string>;
+  updatedAt: string;
+}
+
+/**
+ * The milestone's walkthrough: the same gate the ship has, one level down. A session builds the
+ * document in the integration worktree once the milestone has merged; the milestone is walked
+ * when a person has answered every case in it, and the mission does not land until every
+ * milestone that changed anything has been walked.
+ */
+export interface MilestoneWalkthrough {
+  /** Which repo's integration worktree the document was built in. */
+  repo: string;
+  claudeId?: string;
+  started: string;
+  ended?: string;
+  /** The document, relative to the project, once the session has written it. */
+  doc?: string;
+  progress?: WalkthroughProgress;
+  /** Why there is no document to walk, when the session did not produce one. */
+  failed?: string;
+  /** Cory let the milestone through without walking it, and said why. */
+  waived?: { note: string; at: string };
+}
+
+export type WalkthroughState = "none" | "building" | "failed" | "walking" | "walked" | "waived";
+
 export interface Milestone {
   n: number;
   title: string;
@@ -75,6 +108,7 @@ export interface Milestone {
   tasks: MissionTask[];
   dispatched?: string;
   merged?: string;
+  walkthrough?: MilestoneWalkthrough;
   /** The merge commit per repo, since a milestone can land work in more than one. */
   mergeShas?: Record<string, string>;
   conflicts?: string[];
@@ -590,6 +624,76 @@ const resolvePrompt = (project: Project, mission: Mission, m: Milestone, repo: M
   "When the merge is committed, or when you have aborted it, stop.",
 ].join("\n");
 
+/**
+ * The walkthrough builder works where the milestone's work has been merged together, so the
+ * document describes what a person will actually find on the mission branch. It commits the
+ * document there and nothing else.
+ */
+const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, repo: MissionRepo, file: string): string => [
+  `You are writing the test walkthrough for milestone ${m.n} of the mission "${mission.name}" in the project at ${project.path}.`,
+  "",
+  `The milestone's work is merged on branch ${repo.branch} of the ${repo.label} repo, checked out at ${repo.integration}. Work there and only there. Read what the milestone changed (\`git -C ${repo.integration} log ${repo.base}..HEAD --stat\`) before you write a word.`,
+  "",
+  `Milestone ${m.n} — ${m.title}. It is done when: ${m.done}`,
+  "",
+  "The tasks that went into it:",
+  ...m.tasks.map((t) => `  - ${t.title}`),
+  "",
+  `Run the /ship-test-walkthrough skill for this milestone, treating the milestone as the batch, and write the document to ${file}. If that skill is not available to you, write the same kind of document by hand, and it must keep the contract the console reads: a \`KEY = "..."\` string that names its localStorage key, an \`<h2>\` per pillar, and one \`.tc\` element with a \`data-id\` per test case. A person walks it in the browser and answers every case; those answers are the gate.`,
+  "",
+  "Cases are what a person does with the real thing and what they should see, not unit tests. Fewer, sharper cases beat a long list.",
+  "",
+  `Commit the document in ${repo.integration} with a plain lowercase subject. Do not change any other file, do not touch the trackers, do not push, do not open a pull request, do not spawn other agents. When the document is committed, stop.`,
+].join("\n");
+
+const WALKTHROUGH_DOC = /deliverables\/testing\/.*walkthrough.*\.html$/;
+
+const walkthroughFile = (mission: Mission, m: Milestone): string => join("deliverables", "testing", `${mission.id}-m${m.n}-walkthrough.html`);
+
+export const walkthroughState = (m: Milestone): WalkthroughState => {
+  const w = m.walkthrough;
+  if (!w) return "none";
+  if (w.waived) return "waived";
+  if (w.failed) return "failed";
+  if (!w.doc) return "building";
+  return w.progress && w.progress.total > 0 && w.progress.answered >= w.progress.total ? "walked" : "walking";
+};
+
+/** A milestone that changed nothing has nothing to walk; every other one is walked or waived before the mission lands. */
+export const needsWalking = (m: Milestone): boolean =>
+  m.tasks.some((t) => t.commits?.length) && !["walked", "waived"].includes(walkthroughState(m));
+
+/** Sent the moment a milestone has merged, into the integration worktree of the repo it landed in. */
+const commissionWalkthrough = async (project: Project, mission: Mission, m: Milestone): Promise<void> => {
+  if (!m.tasks.some((t) => t.commits?.length)) return;
+  const repo = mission.repos.find((r) => m.mergeShas?.[r.label]) ?? mission.repos[0];
+  if (!repo) return;
+  const started = new Date().toISOString();
+  try {
+    const claudeId = await spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m)));
+    m.walkthrough = { repo: repo.label, claudeId, started };
+    agentCache.delete(project.path);
+  } catch (err) {
+    m.walkthrough = { repo: repo.label, started, ended: started, failed: `could not start the walkthrough builder: ${(err as Error).message}` };
+  }
+};
+
+/** A builder that has finished either left a document on the branch or it did not. Returns whether anything changed. */
+const settleWalkthroughs = async (project: Project, mission: Mission, state: Map<string, string>): Promise<boolean> => {
+  let changed = false;
+  for (const m of mission.milestones) {
+    const w = m.walkthrough;
+    if (!w?.claudeId || w.ended || !isOver(state, w.claudeId, w.started)) continue;
+    const repo = mission.repos.find((r) => r.label === w.repo);
+    w.ended = new Date().toISOString();
+    const docs = repo ? (await documentsSince(repo.integration, w.started)).filter((d) => WALKTHROUGH_DOC.test(d)) : [];
+    if (repo && docs.length) w.doc = relative(project.path, join(repo.integration, docs[0]));
+    else w.failed = "the session finished without writing a walkthrough document";
+    changed = true;
+  }
+  return changed;
+};
+
 const reviewFile = (mission: Mission, task: MissionTask): string =>
   join(missionsDir(mission.project), `${mission.id}-${task.id}-review${task.reviews ?? 1}.md`);
 
@@ -703,12 +807,18 @@ export const sweepMissions = async (project: Project): Promise<void> => {
 };
 
 const sweepOnce = async (project: Project): Promise<void> => {
-  const missions = (await listMissions(project.id)).filter((m) => m.status === "flying");
+  // A mission at the review gate is no longer flying, but its last walkthrough may still be being written.
+  const missions = (await listMissions(project.id)).filter((m) => m.status === "flying" || m.status === "review");
   if (!missions.length) return;
   const cfg = await missionConfigFor(project.path);
   const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
   const state = new Map([...agents].map(([id, a]) => [id, a.state ?? ""]));
   for (const mission of missions) {
+    const settled = await settleWalkthroughs(project, mission, state);
+    if (mission.status !== "flying") {
+      if (settled) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
+      continue;
+    }
     const waiting: string[] = [];
     let seated = false;
     mission.trouble = undefined;
@@ -834,6 +944,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
           if (result.sha) m.mergeShas[repo.label] = result.sha;
         }
         m.merged = new Date().toISOString();
+        await commissionWalkthrough(project, mission, m);
         // A repo with nothing left to do gets its pull request now rather than at the close, so
         // an earlier repo can be reviewed and merged while the later ones are still flying.
         if (mission.repos.some((r) => r.land !== "merge")) {
@@ -1071,6 +1182,10 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   // The page only offers this at the review gate, but the page is not the guard: a stale tab
   // or a second request must not land half a mission's work or tick a board that is still live.
   if (mission.status !== "review") throw new Error(`${mission.name} is ${mission.status}, not ready to close; only a mission whose every milestone has merged can be closed`);
+  // The walkthrough is the gate: a milestone is not done because its RIO said so, it is done
+  // because a person went through it. Nothing lands and nothing is ticked before that.
+  const unwalked = mission.milestones.filter(needsWalking);
+  if (unwalked.length) throw new Error(`not walked yet: ${unwalked.map((m) => `milestone ${m.n} (${walkthroughState(m)})`).join(", ")}. Walk each one on its page, or waive it and say why.`);
   // Opened before the tracker is touched: a failure to push or open must not leave the board
   // saying done while nothing is up for review.
   const { landed: pullRequests, failed } = await landTheWork(mission);
@@ -1100,6 +1215,21 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   await writeMission(mission);
   return { mission, commit, ticked, pullRequests };
 };
+
+/** The page saving where the person has got to in a milestone's walkthrough, or waiving it. */
+export const recordWalkthrough = async (project: Project, id: string, n: number, patch: { progress?: WalkthroughProgress; waive?: { note: string } }): Promise<Mission> =>
+  changeMission(project.id, id, (mission) => {
+    const m = mission.milestones.find((x) => x.n === n);
+    if (!m) throw new Error(`no milestone ${n} in ${mission.name}`);
+    if (patch.waive) {
+      if (!patch.waive.note.trim()) throw new Error("say why the walkthrough is being waived; it is kept on the milestone");
+      m.walkthrough = { ...(m.walkthrough ?? { repo: mission.repos[0]?.label ?? "root", started: new Date().toISOString() }), waived: { note: patch.waive.note.trim(), at: new Date().toISOString() } };
+    } else if (patch.progress) {
+      if (!m.walkthrough?.doc) throw new Error(`milestone ${n} has no walkthrough document to record progress in`);
+      m.walkthrough.progress = patch.progress;
+    }
+    return mission;
+  });
 
 /**
  * What the review gate reads. A task that has passed will not change again — its range is

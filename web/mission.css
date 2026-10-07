@@ -54,6 +54,9 @@
    left here is the quiet end of the mission's vocabulary: nothing has happened to these yet,
    and `pending` must not borrow the accent, which is the colour of something running. */
 .verdict.interviewing, .verdict.planned, .verdict.pending, .verdict.review, .verdict.closed { color: var(--ink-soft); background: var(--panel); }
+/* Merged but not yet walked: the person's turn, so it reads as a warning rather than a pass. */
+.verdict.walking { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
+.nav-step.walking .lamp { background: var(--warn); }
 
 /* The interview is a conversation, so it gets a real terminal inside the mission's own view. */
 /* The terminal's dark is a well inside the panel, never the panel itself: a control that

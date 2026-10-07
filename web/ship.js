@@ -4,6 +4,7 @@
 
 import { jetSvg } from "./jet.js";
 import { render as renderMarkdown } from "./markdown.js";
+import { stopWalkthrough, walkthroughPanel } from "./walkthrough.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -167,51 +168,16 @@ const stepCall = async (step, action, body) => {
 };
 
 
-/* ---------- a hosted walkthrough: the document inside the step, its verdicts read live ---------- */
+/* ---------- the walkthrough step hosts its document; the step is done when the person is through it ---------- */
 
 const WALKTHROUGH_DOC = /deliverables\/testing\/.*walkthrough.*\.html$/;
-let walkthroughTimer = null;
 
-const walkthroughPanel = (step) => {
+const stepWalkthrough = (step) => {
   const doc = (step.artifacts ?? []).find((a) => WALKTHROUGH_DOC.test(a));
   if (!doc) return null;
   const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(doc)}`;
-  const bar = el("div", { class: "runway small" }, el("div", { class: "fill", style: "width:0%" }));
-  const count = el("span", { class: "mono small muted" }, "reading the document…");
-  const pillars = el("div", { class: "pillars" });
-  const frame = el("iframe", { class: "doc-frame tall", src: url, title: doc });
-  let cases = [];
-  let key = null;
-
-  const readState = () => {
-    if (!key) return {};
-    try { return JSON.parse(localStorage.getItem(key) || "null") ?? {}; } catch { return {}; }
-  };
-  const paint = () => {
-    const state = readState();
-    const answered = cases.filter((c) => state[c.id]?.v);
-    const pct = cases.length ? (answered.length / cases.length) * 100 : 0;
-    bar.firstChild.style.width = `${pct}%`;
-    count.textContent = cases.length ? `${answered.length} of ${cases.length} cases answered` : "no cases found in the document";
-    const byPillar = new Map();
-    for (const c of cases) {
-      const p = byPillar.get(c.pillar) ?? { total: 0, done: 0, verdicts: {} };
-      p.total += 1;
-      const v = state[c.id]?.v;
-      if (v) { p.done += 1; p.verdicts[v] = (p.verdicts[v] ?? 0) + 1; }
-      byPillar.set(c.pillar, p);
-    }
-    pillars.replaceChildren(...[...byPillar.entries()].map(([name, p]) => el("div", { class: `pillar${p.done === p.total ? " complete" : ""}` }, el("span", { class: "pname" }, name), el("span", { class: "pcount mono" }, `${p.done}/${p.total}`), el("span", { class: "pverdicts mono small muted" }, Object.entries(p.verdicts).map(([v, n]) => `${v} ${n}`).join(" · ")))));
-    return { answered: answered.length, verdicts: Object.fromEntries(answered.map((c) => [c.id, state[c.id].v])) };
-  };
-  let lastSaved = "";
-  const save = async () => {
-    const { answered, verdicts } = paint();
-    if (!key || !cases.length) return;
-    const summary = { doc, key, total: cases.length, answered, verdicts, updatedAt: new Date().toISOString() };
-    const fingerprint = JSON.stringify(verdicts);
-    if (fingerprint === lastSaved) return;
-    lastSaved = fingerprint;
+  return walkthroughPanel({ el, fmtTime, url, doc, saved: step.walkthrough, onSave: async (progress) => {
+    const summary = { doc, ...progress };
     step.walkthrough = summary;
     try {
       const complete = summary.total > 0 && summary.answered >= summary.total && step.status === "finished";
@@ -220,34 +186,7 @@ const walkthroughPanel = (step) => {
     } catch (err) {
       setStatus(`${err.message} (walkthrough progress will save after the server restarts)`, true);
     }
-  };
-  frame.addEventListener("load", () => {
-    try {
-      const d = frame.contentDocument;
-      const text = d.documentElement.innerHTML;
-      key = text.match(/KEY\s*=\s*"([^"]+)"/)?.[1] ?? null;
-      cases = [];
-      let pillar = "";
-      for (const node of d.querySelectorAll("h2, .tc[data-id]")) {
-        if (node.tagName === "H2") pillar = node.textContent.trim();
-        else cases.push({ id: node.dataset.id, pillar });
-      }
-      save();
-    } catch (err) {
-      count.textContent = `could not read the document: ${err.message}`;
-    }
-  });
-  window.addEventListener("storage", save);
-  window.clearInterval(walkthroughTimer);
-  walkthroughTimer = window.setInterval(save, 4000);
-
-  const saved = step.walkthrough;
-  return el("section", { class: "panel walkthrough-panel" },
-    el("h2", {}, "Walkthrough", el("span", { class: "spacer" }), count, el("a", { href: url, target: "_blank", class: "mono small" }, "open in its own tab ↗")),
-    el("div", { class: "wt-progress" }, bar),
-    saved ? el("div", { class: "muted small mono" }, `last saved ${fmtTime(saved.updatedAt)} · ${saved.answered} of ${saved.total}`) : null,
-    pillars,
-    frame);
+  } });
 };
 
 /* ---------- render ---------- */
@@ -317,7 +256,7 @@ const renderStep = (step) => {
     tailInto(live, step.claudeId, `ship ${version}: ${step.title}`).catch((err) => { live.textContent = err.message; });
   }
   // The walkthrough document is the step; it comes before the session's report about building it.
-  const wt = walkthroughPanel(step);
+  const wt = stepWalkthrough(step);
   if (wt) blocks.push(wt);
   if (step.report) {
     const checkCount = Object.values(step.checks ?? {}).filter((c) => c?.done).length;
@@ -365,7 +304,7 @@ const renderReviews = () => {
 
 const renderAll = () => {
   stopTails();
-  window.clearInterval(walkthroughTimer);
+  stopWalkthrough();
   renderTop();
   renderNav();
   if (selected === "__reviews") renderReviews();

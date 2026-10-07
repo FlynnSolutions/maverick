@@ -184,17 +184,17 @@ export const updateStep = async (project: Project, version: string, stepId: stri
   return step;
 };
 
-/** Review documents written since a step started, under the folders the doc skills use. */
-const artifactsSince = async (project: Project, sinceIso: string): Promise<string[]> => {
+/** Review documents written since a step started, under the folders the doc skills use, relative to `root`. */
+export const documentsSince = async (root: string, sinceIso: string): Promise<string[]> => {
   const since = new Date(sinceIso).getTime();
   const out: string[] = [];
   for (const dir of ["deliverables/testing", "deliverables/architecture"]) {
     try {
-      for (const name of await readdir(join(project.path, dir))) {
+      for (const name of await readdir(join(root, dir))) {
         if (!/\.(html|md)$/.test(name)) continue;
-        const full = join(project.path, dir, name);
+        const full = join(root, dir, name);
         const info = await stat(full);
-        if (info.isFile() && info.mtimeMs >= since) out.push(relative(project.path, full));
+        if (info.isFile() && info.mtimeMs >= since) out.push(relative(root, full));
       }
     } catch {
       /* folder absent in this project */
@@ -224,7 +224,7 @@ export const sweepShips = async (project: Project): Promise<void> => {
         step.status = "finished";
       }
       step.ended = new Date().toISOString();
-      step.artifacts = await artifactsSince(project, step.started ?? ship.started);
+      step.artifacts = await documentsSince(project.path, step.started ?? ship.started);
       changed = true;
     }
     if (changed) await writeShip(ship);

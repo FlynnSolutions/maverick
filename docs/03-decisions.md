@@ -235,3 +235,28 @@ overlapping work into one milestone, which is a level above the mission. It is r
 escalation on the record and drawn as such, for Cory now and for the **CAG** when that exists
 ([M9](#m9--the-levels-take-the-carriers-own-names--decided)): the level that owns the plan is
 the one that can fix it.
+
+## M12 — A milestone is walked by a person before the mission lands ✅ built
+
+**The RIO's pass is not the end of a milestone.** The ship has had this from the start: the
+test walkthrough is a document a session builds and a person goes through, and the step is done
+when the person is through it, not when the agent wrote it. A mission is the same thing one
+level down. When a milestone merges, a session is sent into the integration worktree to write
+the milestone's walkthrough and commit it on the mission branch; the milestone page hosts the
+document; and `closeMission` refuses until every milestone that changed anything is walked or
+waived with a reason. Nothing lands and nothing is ticked before that.
+
+**Per milestone, not per task.** Validation in this design happens at milestone boundaries
+([M7](#m7--a-missions-plan-is-tracker-items-and-membership-is-a-field--built)): that is where the
+work is merged together and where a person can see it as one thing. A walkthrough per task would
+be a document per branch, most of them about a piece that only makes sense next to its
+neighbours, and three times as many sessions.
+
+**The walkthrough does not block the next milestone.** Wingmen keep flying while the person
+sleeps; the gate is at the close, where the work would otherwise leave the mission branches.
+What the walkthrough blocks is the landing, which is the only thing that needed blocking.
+
+**Waiving is allowed and recorded.** A builder can fail, or a person can have tested the branch
+by hand. The waiver carries its reason on the milestone so the review reads it later. Decided by
+Cory 2026-10-06: the gate, the milestone granularity, and that the walkthrough reuses the ship's
+hosted panel rather than growing a second one (`web/walkthrough.js`).
