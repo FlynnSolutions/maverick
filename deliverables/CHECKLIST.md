@@ -182,7 +182,7 @@ _Nothing. Move an item here only when its session starts._
   - created: 2026-09-17
   - source: Cory, 2026-09-17, while shipping Realtime
   - kind: feature
-  - status: built on `feat/ship-schedule`, not merged
+  - status: merged to main 2026-10-07 (#1), pending release
 
 - [ ] `[ENG]` `[S]` **Gamify the ship.** _Note only, not scoped._ Marking a ship complete should
   feel like something: "mission complete", with a plane getting up into the sky. Pushing a ship day
@@ -205,7 +205,7 @@ _Nothing. Move an item here only when its session starts._
   - source: Cory, 2026-10-06, going to bed
   - kind: feature
 
-- [ ] `[ENG]` `[M]` **A gated walkthrough on every mission task, the way the ship has one.** _Note
+- [~] `[ENG]` `[M]` **A gated walkthrough on every mission task, the way the ship has one.** _Note
   only, not scoped._ The ship page already hosts a walkthrough document inside a step and marks the
   step done only when the human has been through it (`src/ships.ts`, the `walkthrough` step). The
   `/develop` skill now produces the same kind of walkthrough per feature. A mission is a pile of
@@ -216,9 +216,16 @@ _Nothing. Move an item here only when its session starts._
   `walkthrough` record on the step rather than inventing a second shape. Open: whether the Wingman
   writes the walkthrough as part of its task or the Strike Lead commissions it after the RIO passes;
   and per task vs. per milestone (per milestone matches "validation at every milestone" above).
+  **Built 2026-10-06, merged 2026-10-07 (#2):** per milestone. At merge the sweep sends a session
+  into the integration worktree to write the milestone's walkthrough on the mission branch; the
+  milestone page hosts it through the panel lifted out of the ship page (`web/walkthrough.js`);
+  `closeMission` refuses until every milestone that changed anything is walked or waived with a
+  reason. The next milestone is not held; only the landing is. Decisions M12. Verified under test
+  and with the page served, not yet against a live mission with real agents.
   - created: 2026-09-24
   - source: Cory, 2026-09-24
   - kind: feature
+  - status: merged to main 2026-10-07 (#2), pending release
 
 - [ ] `[ENG]` `[M]` **One response format from every agent, parsed and shown as sections.** _Note
   only, not scoped; the section list is still being decided._ Every reply Maverick reads back from

@@ -14,7 +14,7 @@ import { dirname, extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
-import { backgroundAgents, commitFile, spawnBackgroundAgent } from "./src/git.ts";
+import { backgroundAgents, claudeArgs, commitFile, spawnBackgroundAgent } from "./src/git.ts";
 import { liveCache, liveSignals, readRegistrySessions } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
@@ -314,10 +314,10 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
       // in the prompt (decisions M5): it reads, writes and searches, and runs nothing.
       if (body.item) {
         const { tracker, item } = await itemAt(project, body.item);
-        return openTerminal(`CAG · plan: ${item.title.slice(0, 50)}`, ["claude", "--tools", CAG_TOOLS, planPrompt(project, tracker.path, item, planFileFor(tracker.path, item))], project.path, size.cols, size.rows, undefined, "cag");
+        return openTerminal(`CAG · plan: ${item.title.slice(0, 50)}`, ["claude", ...claudeArgs({ prompt: planPrompt(project, tracker.path, item, planFileFor(tracker.path, item)), tools: CAG_TOOLS })], project.path, size.cols, size.rows, undefined, "cag");
       }
       if (!body.topic?.trim()) throw new Error("the CAG plans an item or brainstorms a topic");
-      return openTerminal(`CAG · ${body.topic.trim().slice(0, 60)}`, ["claude", "--tools", CAG_TOOLS, brainstormPrompt(project, body.topic.trim())], project.path, size.cols, size.rows, undefined, "cag");
+      return openTerminal(`CAG · ${body.topic.trim().slice(0, 60)}`, ["claude", ...claudeArgs({ prompt: brainstormPrompt(project, body.topic.trim()), tools: CAG_TOOLS })], project.path, size.cols, size.rows, undefined, "cag");
     }
     case "spawn": {
       if (!body.item) throw new Error("spawn needs the item it is on");
