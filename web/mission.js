@@ -6,6 +6,7 @@ import { jetSvg } from "./jet.js";
 import { lamp } from "./lamp.js";
 import { readableOn, recall } from "./theme.js";
 import { render as renderMarkdown } from "./markdown.js";
+import { stopWalkthrough, walkthroughPanel } from "./walkthrough.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -127,7 +128,11 @@ const load = async (force = false) => {
   if (!res.ok) throw new Error(JSON.parse(body).error ?? `${res.status} on ${missionUrl()}`);
   // A poll that changed nothing must not rebuild the page: re-rendering collapses whatever
   // findings you had open and drops you back to the top of the panel every eight seconds.
-  if (!force && body === lastPayload) return;
+  // The walkthrough's own saves change the record every few seconds while it is being walked;
+  // repainting on those would reload the document under the person answering it.
+  const next = JSON.parse(body);
+  const shape = JSON.stringify(next, (k, v) => (k === "progress" ? undefined : v));
+  if (!force && shape === lastPayload) return;
   // A repaint disposes every mounted terminal, so a poll holds off while one is open, the way
   // the workspace holds off during a rename. The page says so rather than quietly going stale.
   if (!force && attached.length) {
@@ -135,8 +140,8 @@ const load = async (force = false) => {
     $("#status").textContent = "paused while you are watching a session · click the verb again to resume";
     return;
   }
-  lastPayload = body;
-  mission = JSON.parse(body);
+  lastPayload = shape;
+  mission = next;
   const keys = [...mission.milestones.map((m) => `m${m.n}`), "plan", "review"];
   if (!selected || !keys.includes(selected)) {
     const open = mission.milestones.find((m) => !m.merged) ?? mission.milestones.at(-1);
@@ -159,10 +164,21 @@ const act = async (action, body, said) => {
 const tasksOf = (m) => m.tasks ?? [];
 /** A milestone's merges, one per repo it touched. */
 const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${repo} ${sha}`).join(" · ");
+/** The walkthrough's state and whether it still blocks the close, derived by the server so the page and the gate cannot disagree. */
+const walkState = (m) => mission.walk?.[m.n]?.state ?? "none";
+const needsWalking = (m) => Boolean(mission.walk?.[m.n]?.needed);
 /** Derived in one place: the nav and the detail head disagreed about a handed-back milestone. */
-const milestoneState = (m) => (m.merged ? "passed" : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending");
+const milestoneState = (m) => (m.merged ? (needsWalking(m) ? "walking" : "passed") : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending");
+const WALK_LABEL = { none: "merged · not walked", building: "merged · walkthrough on its way", failed: "merged · no walkthrough", waived: "merged · waived" };
 /** And its word, for the same reason: three places had spelled it three ways. */
-const milestoneLabel = (m) => (m.merged ? "merged" : milestoneState(m) === "handed-back" ? "needs you" : m.dispatched ? "flying" : "not sent yet");
+const milestoneLabel = (m) => {
+  if (!m.merged) return milestoneState(m) === "handed-back" ? "needs you" : m.dispatched ? "flying" : "not sent yet";
+  const w = walkState(m);
+  if (!needsWalking(m)) return w === "waived" ? WALK_LABEL.waived : "merged";
+  if (w === "walking") return `walk it · ${m.walkthrough.progress ? `${m.walkthrough.progress.answered} of ${m.walkthrough.progress.total}` : "not started"}`;
+  return WALK_LABEL[w];
+};
+const goTo = (key) => { selected = key; history.replaceState(null, "", `?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(missionId)}&at=${key}`); renderAll(); };
 const allTasks = () => mission.milestones.flatMap(tasksOf);
 
 const renderTop = () => {
@@ -184,7 +200,7 @@ const renderNav = () => {
   const entry = (key, n, title, badge, cls = "") => el("button", {
     type: "button",
     class: `nav-step ${cls}${key === selected ? " selected" : ""}`,
-    onclick: () => { selected = key; history.replaceState(null, "", `?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(missionId)}&at=${key}`); renderAll(); },
+    onclick: () => goTo(key),
   }, el("span", { class: "lamp" }), el("span", { class: "n" }, n), el("span", { class: "t", title }, title), badge ?? el("span", {}));
 
   const items = [entry("plan", "P", mission.approved ? "The plan, as approved" : "The plan, and the gate", el("span", { class: `verdict ${mission.approved ? "passed" : mission.status}` }, mission.approved ? "approved" : mission.status))];
@@ -305,33 +321,38 @@ const renderPlan = () => {
 };
 
 /* ---------- a milestone in flight ---------- */
+/**
+ * A button that mounts a session's terminal in `host` and, on a second click, closes it. The
+ * close is also how the page starts polling again: while a terminal is mounted a repaint would
+ * dispose it mid-keystroke, so load() holds off.
+ */
+const watchButton = (label, host, idOf, title) => btn(label, (e) => {
+  const id = idOf();
+  if (!id) return;
+  const open = host.querySelector(".mv-term-well");
+  if (open) {
+    stopWatching(id);
+    open.remove();
+    e.target.textContent = label;
+    load(true).catch(() => {});
+    return;
+  }
+  const well = host.appendChild(el("div", { class: "mv-term-well" }, el("div", { class: "term" })));
+  e.target.textContent = "stop watching";
+  watchSession(well.querySelector(".term"), id, title);
+}, "ghost");
+
 const taskRow = (task) => {
   const findings = mission.findings?.[task.id];
   const diff = mission.diffstat?.[task.id];
   const live = task.status === "flying" || task.status === "reviewing";
-  return el("div", { class: "mv-task" },
+  const row = el("div", { class: "mv-task" });
+  row.append(
     live ? lamp("busy") : el("span", { class: `dot ${task.status}` }),
     el("span", { class: "t", title: task.title }, task.title),
     el("span", { class: `verdict ${task.status}` }, task.status === "reviewing" ? "in review" : task.status),
     el("span", { class: "mv-acts" },
-      task.claudeId || task.review?.claudeId ? btn(live ? "watch" : "read it back", (e) => {
-        const row = e.target.closest(".mv-task");
-        const id = task.status === "reviewing" ? task.review?.claudeId : task.claudeId;
-        if (!id) return;
-        const open = row.querySelector(".mv-term-well");
-        // A second click closes it, which is also how the page starts polling again: while a
-        // terminal is mounted a repaint would dispose it mid-keystroke, so load() holds off.
-        if (open) {
-          stopWatching(id);
-          open.remove();
-          e.target.textContent = live ? "watch" : "read it back";
-          load(true).catch(() => {});
-          return;
-        }
-        const host = row.appendChild(el("div", { class: "mv-term-well" }, el("div", { class: "term" })));
-        e.target.textContent = "stop watching";
-        watchSession(host.querySelector(".term"), id, task.title);
-      }, "ghost") : null,
+      task.claudeId || task.review?.claudeId ? watchButton(live ? "watch" : "read it back", row, () => (task.status === "reviewing" ? task.review?.claudeId : task.claudeId), task.title) : null,
       task.status === "handed-back" ? btn("send it back out", () => act(`tasks/${task.id}/retry`, {}, `${task.title} is flying again`), "primary") : null,
       task.status === "handed-back" ? btn("accept it over the RIO", async () => {
         const note = window.prompt(`Accept "${task.title}" over its RIO?\n\nSay why; it is kept on the task.`, "");
@@ -349,6 +370,46 @@ const taskRow = (task) => {
     task.note ? el("div", { class: "note" }, task.note) : null,
     diff ? el("pre", { class: "diffstat" }, diff) : null,
     findings ? el("details", {}, el("summary", { class: "muted small" }, "what its RIO found"), renderMarkdown(findings.replace(/^verdict:.*\n?/i, ""), { project: projectId })) : null);
+  return row;
+};
+
+/* ---------- the walkthrough: a milestone is done when a person has been through it, not when the RIO said so ---------- */
+const waive = async (m) => {
+  const note = window.prompt(`Let milestone ${m.n} through without walking it?\n\nSay why; it is kept on the milestone.`, "");
+  if (note === null) return;
+  await act(`milestones/${m.n}/walkthrough`, { waive: { note } }, `milestone ${m.n} waived`);
+};
+
+const walkthroughSection = (m) => {
+  if (!m.merged) return null;
+  const w = m.walkthrough;
+  const state = walkState(m);
+  const head = (label) => el("h2", {}, "Walkthrough", el("span", { class: "spacer" }), el("span", { class: "muted small mono" }, label));
+  if (state === "none") {
+    return needsWalking(m)
+      ? el("section", { class: "panel mv-gate" }, head("not built"), el("p", { class: "mv-plan" }, "This milestone merged before walkthroughs existed, so there is no document to walk. Waive it to let the mission land."), el("div", { class: "gate-actions" }, btn("waive it", () => waive(m), "ghost")))
+      : null;
+  }
+  if (state === "waived") return el("section", { class: "panel" }, head(`waived ${fmtTime(w.waived.at)}`), el("p", { class: "mv-plan" }, w.waived.note));
+  if (state === "failed") return el("section", { class: "panel mv-gate" }, head("no document"), el("p", { class: "mv-warn" }, w.failed), el("div", { class: "gate-actions" }, btn("waive it", () => waive(m), "ghost"), el("span", { class: "muted small" }, "or write the document yourself on the mission branch and reopen this page")));
+  if (state === "building") {
+    const section = el("section", { class: "panel mv-gate" }, head(`session ${w.claudeId} · since ${fmtTime(w.started)}`),
+      el("p", { class: "mv-plan" }, "A session is writing the test walkthrough for this milestone in the integration worktree. When it has committed the document, it shows here for you to walk."));
+    section.append(el("div", { class: "gate-actions" }, watchButton("watch", section, () => w.claudeId, `walkthrough m${m.n}`)));
+    return section;
+  }
+  const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(w.doc)}`;
+  const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, onSave: async (progress) => {
+    w.progress = progress;
+    try {
+      await post(actionUrl(`milestones/${m.n}/walkthrough`), { progress: { total: progress.total, answered: progress.answered, verdicts: progress.verdicts, updatedAt: progress.updatedAt } });
+      if (progress.answered >= progress.total) setStatus(`milestone ${m.n} walked`);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  } });
+  panel.querySelector("h2").append(state === "walked" ? el("span", { class: "verdict passed" }, "walked") : btn("waive it", () => waive(m), "ghost"));
+  return panel;
 };
 
 const renderMilestone = (m) => {
@@ -374,6 +435,7 @@ const renderMilestone = (m) => {
       el("p", { class: "mv-plan" }, `Two tasks in this milestone touched the same lines in ${m.resolve.repo}: ${(m.resolve.paths ?? []).join(", ")}. The Strike Lead wrote the plan that put them together, so it is finishing the merge in the integration worktree. It keeps both behaviours or it aborts and says why; it never takes one side to make the conflict go away.`)) : null,
     m.conflicts?.length && !m.resolve ? el("section", { class: "panel" }, el("h2", {}, "It will not merge"),
       el("p", { class: "mv-plan" }, `These paths collided: ${m.conflicts.join(", ")}, each prefixed with the repo it is in. The merge was aborted, so nothing is half-applied, and the Strike Lead could not reconcile them either. Both sides are work this plan asked for, so the answer is a change to the plan rather than a better merge.`)) : null,
+    walkthroughSection(m),
     el("section", { class: "panel" },
       el("h2", {}, "Tasks", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "one Wingman each in its own worktree, with a RIO in the back seat that did not write the code")),
       tasks.length ? el("div", {}, ...tasks.map(taskRow)) : el("p", { class: "mv-empty" }, "No tasks in this milestone.")));
@@ -383,7 +445,8 @@ const renderMilestone = (m) => {
 const renderReview = () => {
   const tasks = allTasks();
   const passed = tasks.filter((t) => t.status === "passed");
-  const ready = mission.status === "review";
+  const unwalked = mission.milestones.filter(needsWalking);
+  const ready = mission.status === "review" && !unwalked.length;
   const closed = mission.status === "closed";
   const byPr = (mission.repos ?? []).some((r) => r.land === "pr");
   const landsAnywhere = (mission.repos ?? []).some((r) => r.land !== "merge");
@@ -402,7 +465,11 @@ const renderReview = () => {
           ? (byPr
               ? `Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks the tracker and opens one pull request per repo against its base. It stops there. This project forbids a tool merging, so the merge is yours.`
               : `Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks each passed item in the tracker and hands the branches on; Maverick does not merge a mission to a base, the ship does.`)
-          : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
+          : mission.status === "review"
+            ? `Every milestone merged. ${unwalked.length} of them still to walk: a milestone is done when you have been through its walkthrough, not when its RIO said pass. Nothing lands before that.`
+            : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
+      mission.status === "review" && unwalked.length ? el("div", { class: "gate-actions" },
+        ...unwalked.map((m) => btn(`walk milestone ${m.n}`, () => goTo(`m${m.n}`), "primary"))) : null,
       (mission.repos ?? []).some((r) => r.landed) ? el("div", { class: "mv-repos" }, el("span", { class: "muted" }, "landed:"),
         ...(mission.repos ?? []).filter((r) => r.landed).map((r) => (r.landed.startsWith("http")
           ? el("a", { href: r.landed, target: "_blank" }, `${r.label} ↗`)
@@ -430,12 +497,15 @@ const renderReview = () => {
         }, "ghost"),
         el("span", { class: "muted small" }, "the branches stay; this only clears the directories")) : null),
     ...mission.milestones.map((m) => el("section", { class: "panel" },
-      el("h2", {}, `Milestone ${m.n} — ${m.title}`, el("span", { class: "spacer" }), merges(m) ? el("span", { class: "muted small mono" }, `merged as ${merges(m)}`) : null),
+      el("h2", {}, `Milestone ${m.n} — ${m.title}`, el("span", { class: "spacer" }),
+        m.merged ? el("span", { class: `verdict ${milestoneState(m)}` }, needsWalking(m) ? "not walked" : ({ walked: "walked", waived: "waived" }[walkState(m)] ?? "nothing to walk")) : null,
+        merges(m) ? el("span", { class: "muted small mono" }, `merged as ${merges(m)}`) : null),
       ...tasksOf(m).map(taskRow))));
 };
 
 const renderAll = () => {
   detachTerminal();
+  stopWalkthrough();
   renderTop();
   renderNav();
   if (selected === "plan") renderPlan();
