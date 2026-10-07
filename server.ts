@@ -21,6 +21,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees } from "./src/missions.ts";
+import { CAG_TOOLS, brainstormPrompt, planFileFor, planPrompt, resolvePlan } from "./src/plans.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
@@ -135,6 +136,11 @@ const board = async (project: Project) =>
       const dates = await lineDates(tracker.path);
       for (const section of parsed.sections) for (const group of section.groups) for (const item of group.items) {
         (item as { lineDate?: string }).lineDate = dates.get(item.start + 1);
+        // Planned is the presence of a resolving `plan:` field, not a status word: a path can be
+        // checked and a word is a claim. A mission's tasks are planned by the mission's plan.
+        const planFile = item.fields.mission ? null : await resolvePlan(project, tracker.path, item.fields.plan);
+        const planned = Boolean(item.fields.mission || planFile);
+        Object.assign(item, { planFile, planned, unplanned: !planned && !item.checked && (section.column === "priority" || section.column === "in-progress") });
       }
       return { index, label: tracker.label, path: tracker.path, ...parsed };
     }),
@@ -217,8 +223,8 @@ const editItem = async (body: EditBody): Promise<{ commit: string }> => {
 
 interface OpenTerminalBody {
   project: string;
-  /** attach a background agent, resume an interactive session, start a fresh claude, spawn a task agent and attach it, or open a plain shell. */
-  kind: "attach" | "resume" | "new" | "spawn" | "shell";
+  /** attach a background agent, resume an interactive session, start a fresh claude, spawn a task agent and attach it, open a plain shell, or sit the CAG down. */
+  kind: "attach" | "resume" | "new" | "spawn" | "shell" | "cag";
   id?: string;
   sessionId?: string;
   title?: string;
@@ -227,6 +233,12 @@ interface OpenTerminalBody {
   cwd?: string;
   /** An audit parent's record id; a supervised task session is audited when it finishes. */
   parent?: string;
+  /** For the CAG: a brainstorm on a topic, or a plan for one item in one tracker. */
+  mode?: "brainstorm" | "plan";
+  topic?: string;
+  tracker?: number;
+  itemStart?: number;
+  itemFirstLine?: string;
   cols?: number;
   rows?: number;
 }
@@ -282,6 +294,22 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
       const shell = process.env.SHELL || "/bin/zsh";
       // A login shell, so it is the same environment the user's own terminal gives them.
       return openTerminal(body.title ?? shell.split("/").pop() ?? "shell", [shell, "-l"], cwd, size.cols, size.rows, undefined, "shell");
+    }
+    case "cag": {
+      // The project level's boundary is its tool list, enforced by the CLI rather than asked for
+      // in the prompt (decisions M5): it reads, writes and searches, and runs nothing.
+      if (body.mode === "brainstorm") {
+        if (!body.topic?.trim()) throw new Error("a brainstorm needs a topic");
+        return openTerminal(`CAG · ${body.topic.trim().slice(0, 60)}`, ["claude", "--tools", CAG_TOOLS, brainstormPrompt(project, body.topic.trim())], project.path, size.cols, size.rows);
+      }
+      if (body.mode === "plan") {
+        const tracker = project.trackers[body.tracker ?? -1];
+        if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
+        const item = parseTracker(await readFile(tracker.path, "utf8")).sections.flatMap((s) => s.groups.flatMap((g) => g.items)).find((i) => i.start === body.itemStart);
+        if (!item || item.firstLine !== body.itemFirstLine) throw new Error("that item moved since the board was read; reload and try again");
+        return openTerminal(`CAG · plan: ${item.title.slice(0, 50)}`, ["claude", "--tools", CAG_TOOLS, planPrompt(project, tracker.path, item, planFileFor(tracker.path, item))], project.path, size.cols, size.rows);
+      }
+      throw new Error("the CAG does a brainstorm or a plan");
     }
     case "spawn": {
       if (!body.prompt || !body.title) throw new Error("spawn needs title and prompt");

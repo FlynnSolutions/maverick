@@ -713,10 +713,18 @@ export const mountCommandCenter = (root, ctx) => {
     return el("section", { class: "rack missions" },
       el("h4", {}, el("span", {}, "Missions"), el("span", { class: "n" }, String(missions.length)),
         el("span", { class: "spacer" }),
+        el("button", { type: "button", class: "ghost", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm"),
         el("button", { type: "button", class: "ghost", onclick: newMission }, "open one")),
       mine.length
         ? el("div", { class: "rack-strips" }, ...mine.map(missionRow))
         : el("p", { class: "muted small cc-empty" }, "None. A mission is for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve."));
+  };
+
+  /** The CAG in a terminal. It reads and writes documents and runs nothing; the tracker is not touched until a breakdown is approved. */
+  const brainstorm = async () => {
+    const topic = await ask({ title: "Brainstorm with the CAG", body: "Many ideas, no structure, one dated document for the conversation. Nothing lands on the board from it until you break it down. What is it about?", confirm: "sit down", field: { placeholder: "the topic" } });
+    if (!topic) return;
+    openTerminal({ kind: "cag", mode: "brainstorm", topic, title: `CAG · ${topic}` });
   };
 
   const newMission = async () => {

@@ -235,3 +235,29 @@ overlapping work into one milestone, which is a level above the mission. It is r
 escalation on the record and drawn as such, for Cory now and for the **CAG** when that exists
 ([M9](#m9--the-levels-take-the-carriers-own-names--decided)): the level that owns the plan is
 the one that can fix it.
+
+## M13 — Planned is a field that names a real file, and the CAG's boundary is its tool list ✅ built
+
+**The rule at the door.** An item in Priority or In Progress carries a `plan:` field that
+resolves to a real file; Backlog does not have to. *Planned* means the field is present and the
+file exists, not a `status:` word, because a path is verifiable and a word is a claim. The board
+badges a roadmap item without one as *unplanned*, the drawer offers *plan it*, and nothing is
+spawned on an item that has no plan: a session building from a bullet is how a session builds
+the wrong thing well. A mission's tasks are planned by the mission's plan.
+
+**The CAG exists, and its boundary is enforced.** The project level
+([M5](#m5--three-levels-of-agent-separated-by-blast-radius--design),
+[M9](#m9--the-levels-take-the-carriers-own-names--decided)) now sits down in a terminal for two
+jobs: a brainstorm, written as one dated document per conversation under
+`deliverables/brainstorms/`, and a plan for one item, written under the tracker's `plans/`
+folder with the field set beside the item. It runs as `claude --tools Read,Write,Edit,Grep,Glob`:
+no shell, no subagents, no network. That is the CLI refusing, not the prompt asking, which is
+what M5 wanted and the only level where it is fully possible.
+
+**Rejected: a rolling IDEAS.md.** A running file gets edited by agents and drifts; one dated
+document per conversation does not. Decided by Cory 2026-10-06.
+
+**Not yet: the breakdown.** Reading one brainstorm document and proposing items, each with a
+title, kind, size and a call of *plan now* or *backlog*, approved once and written with the
+insert-into-group path missions use. It is the same gate shape as a mission plan and is the next
+brick; the rule and the CAG had to exist first.

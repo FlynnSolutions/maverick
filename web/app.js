@@ -228,7 +228,7 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
     },
     el("span", { class: "num" }, number === null ? "" : String(number)),
     el("div", { class: "title" }, item.title),
-    el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), createdOf(item) ? el("span", { class: "since", title: `${item.created ? "created" : "entry last changed"} ${fmtDate(createdOf(item))}` }, fmtDate(createdOf(item), true)) : null),
+    el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), item.unplanned ? el("span", { class: "chip unplanned", title: "on the roadmap with no plan: a plan: field that names a real file" }, "unplanned") : null, createdOf(item) ? el("span", { class: "since", title: `${item.created ? "created" : "entry last changed"} ${fmtDate(createdOf(item))}` }, fmtDate(createdOf(item), true)) : null),
     item.checked
       ? null
       : el(
@@ -585,9 +585,12 @@ const openDrawer = (trackerIndex, item) => {
     for (const k of FIELD_ORDER) {
       if (!item.fields[k]) continue;
       const v = item.fields[k];
-      if (/^(https?:\/\/|plans\/|deliverables\/|\.\.\/)/.test(v)) addField(k, el("code", {}, v));
+      if (k === "plan" && item.planFile) addField(k, el("a", { href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(item.planFile)}`, target: "_blank" }, el("code", {}, v)));
+      else if (k === "plan") addField(k, el("code", {}, v), "overdue");
+      else if (/^(https?:\/\/|plans\/|deliverables\/|\.\.\/)/.test(v)) addField(k, el("code", {}, v));
       else addField(k, v);
     }
+    if (!item.checked && !item.planned && !item.fields.plan) addField("plan", el("span", { class: item.unplanned ? "overdue" : "" }, item.unplanned ? "none; the roadmap needs one" : "none"));
     const slotsNow = planningSlots(lastTrackers);
     const releaseSelect = el("select", { class: "supervisor" },
       el("option", { value: "" }, "no release"),
@@ -629,8 +632,9 @@ const openDrawer = (trackerIndex, item) => {
     });
     const flipped = item.body.replace(/^- (\[( |x)\] )?/i, item.checked ? "- [ ] " : "- [x] ");
     actions.replaceChildren(
-      item.checked ? null : btn("spawn", () => { const parent = supervisor.value || undefined; closeDrawer(); spawnOnItem(item, null, parent); }, "primary"),
+      item.checked ? null : btn("spawn", () => { const parent = supervisor.value || undefined; closeDrawer(); spawnOnItem(item, null, parent); }, item.planned ? "primary" : ""),
       item.checked ? null : supervisor,
+      item.checked || item.planned ? null : btn("plan it", () => { closeDrawer(); planItem(trackerIndex, item); }, "primary"),
       el("span", { class: "spacer" }),
       btn(item.checked ? "reopen" : "mark done", () => saveBody(flipped, item.checked ? "reopening" : "marking done"), item.checked ? "" : "primary"),
       btn("remove", async () => {
@@ -1543,10 +1547,10 @@ const acceptDrops = (host, onPaths) => {
   });
 };
 
-const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent }) => {
+const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent, mode, topic, tracker, itemStart, itemFirstLine }) => {
   setStatus(`opening ${title ?? kind}`);
   try {
-    const info = await createTerminal({ kind, id, sessionId, title, prompt, cwd, parent });
+    const info = await createTerminal({ kind, id, sessionId, title, prompt, cwd, parent, mode, topic, tracker, itemStart, itemFirstLine });
     setStatus(`${info.title}: running. It appears in the rack as it registers.`);
     if (kind === "spawn") loadRail(true);
     commandCenter?.refresh();
@@ -1556,7 +1560,18 @@ const openTerminal = async ({ kind, id, sessionId, title, prompt, cwd, parent })
   }
 };
 
+/** The CAG, in a terminal, planning one item: it interviews, writes the plan document, and sets the field. */
+const planItem = (trackerIndex, item) =>
+  openTerminal({ kind: "cag", mode: "plan", tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, title: `plan: ${item.title.slice(0, 60)}` });
+
 const spawnOnItem = async (item, card, parent) => {
+  // Planned is a field that names a real file. A session spawned on an item without one is
+  // building from a bullet, which is how a session ends up building the wrong thing well.
+  if (!item.planned) {
+    const trackerIndex = lastTrackers.find((t) => t.sections.some((s) => s.groups.some((g) => g.items.includes(item))))?.index ?? 0;
+    if (await ask({ title: "This item has no plan", body: `${item.title}\n\nNothing is spawned on an item without a plan: field naming a real file. The CAG can write one with you now.`, confirm: "plan it" })) planItem(trackerIndex, item);
+    return;
+  }
   if (!(await ask({ title: "Spawn a headless Claude session on this item?", body: `${item.title}\n\nIt starts in ${project.path} in auto permission mode and opens below.${parent ? " When it finishes, the auditor reviews it." : ""}`, confirm: "spawn" }))) return;
   if (card) missile(card);
   openTerminal({ kind: "spawn", title: item.title.slice(0, 80), prompt: item.body, parent });
