@@ -32,10 +32,11 @@ with real agents on 2026-09-16: plan, dispatch, review verdict, merge, close and
 
 ## What does not
 
-- **Agent readiness: Level 1, 6%** (`npx @kodus/agent-readiness . --ci --no-web`, 2026-09-16).
-  Short of Level 2. No linter, formatter, type checker or CI. `npm test` now exists
-  (`node --test`, no dependency) but covers only the mission plan parser and the tracker;
-  the score has not been re-taken since.
+- **Agent readiness: Level 1, 63%** (`npx @kodus/agent-readiness . --ci --no-web`, 2026-10-07; 6% on
+  2026-09-16). Still short of Level 2, which needs eight of ten named criteria: six pass (tests, a
+  test script, a `dev` script, CONTRIBUTING, `.nvmrc`, CI), and the cheapest of the four left
+  are a linter, a formatter and a `.env.example`. The first two are a dev dependency, which is a decision (M2,
+  M15), not a file. No type checker.
 - **A known banding defect**: the client helper that decides a session is finished counts
   `blocked`, while the "Needs you" rack also claims `blocked`, so a blocked session renders in
   both. Visible in `web/command.js`; not reproducible live because the registry currently has no
@@ -46,7 +47,10 @@ with real agents on 2026-09-16: plan, dispatch, review verdict, merge, close and
 - **A mission is one repo.** It merges into the root repo's branch, so a multi-repo project
   gets a mission only on its root.
 - **Single agent runtime.** Only Claude Code is read. `web/providers/` has the shape for more.
-- No checkbox flips from the board; no ship-time `release: next+1` rewrite; no Electron shell.
+- No checkbox flips from the board; no ship-time `release: next+1` rewrite.
+- **The Electron shell exists (2026-10-07, `app/`)** and has been run on one machine, an Apple
+  silicon Mac. It is built unsigned, for arm64 only, by the Release workflow on a `v*` tag. No
+  Windows or Linux build, no auto-update, no OS notification yet.
 
 ## What is next
 
