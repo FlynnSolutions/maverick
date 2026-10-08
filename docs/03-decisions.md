@@ -305,3 +305,32 @@ run, agent stand out; read, search, web are counted and folded), a fold of tool-
 what it did and how long it took, a reply says how long after the prompt it came, and a session
 still working carries a clock ticking since its last event. The classification lives in
 `src/transcript-view.ts` beside the parser, so the page draws kinds rather than deciding them.
+
+## M15 — A brainstorm reaches the board through one gate, and a CAG proposes rather than writes ✅ built
+
+**The breakdown is the mission's gate shape pointed at a brainstorm.** A CAG reads the
+brainstorm document and the tracker and writes one proposal document in a fixed shape under
+`deliverables/breakdowns/`; the server parses it into items plus the reasons it cannot be
+written yet; the breakdown page shows both; one approve writes the tracker in one commit
+through `addGroup` and `addItem`, the path missions already use. The approved document is
+stamped and kept as the artifact of the gate, never read back as state.
+
+**The proposer is a background read, not a conversation.** The brainstorm was the
+conversation. The proposer carries the CAG's tool list (`--tools Read,Write,Edit,Grep,Glob`
+through `claude --bg`), so it can read two things and write one file, and it cannot reach the
+console: the form-filling alternative would have widened the one boundary that is fully
+enforced (M5, M13).
+
+**Where items land, decided by Cory 2026-10-06:** *now* to Priority, *backlog* to Backlog,
+both under a `### Brainstorm: <topic>` group so the breakdown reads as one thing on the board
+the day after; *mission* to a Strike Lead interview opened from the gate, never written twice.
+Every item carries `source: brainstorm <file>, <date>` so it points back at the reasoning.
+
+**A roadmap item arrives unplanned, on purpose.** The 2026-10-06 sketch said planned items
+carry a `plan:` field, but the rule at the door (M13) is a field that names a real file, and no
+plan file exists at breakdown time; a path to nothing is the claim the rule rejects. So a *now*
+item lands with no field, wears the badge, and *plan it* is its next verb. The gate says so.
+
+**Rejected: per-item edits at the gate.** Whole-document approve, as missions have it; the fix
+for a wrong proposal is to propose again. One fewer place the page and the file can disagree.
+If dropping two bullets turns out to be a conversation too often, that is the next brick.

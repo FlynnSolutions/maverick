@@ -487,7 +487,7 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
 
 
 /** One item block, in the shape `src/trackers.ts` parses: a bullet, its fields, then its prose. */
-const itemBlock = (title: string, fields: Record<string, string>, body: string[]): string => [
+export const itemBlock = (title: string, fields: Record<string, string>, body: string[]): string => [
   `- [ ] \`[ENG]\` **${title}**`,
   ...Object.entries(fields).map(([k, v]) => `  - ${k}: ${v}`),
   ...body.flatMap((line) => line.split("\n")).map((l) => l.trim()).filter(Boolean).map((l) => `  ${l}`),

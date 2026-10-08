@@ -107,6 +107,7 @@ export const mountCommandCenter = (root, ctx) => {
   let editing = false; // a rename is open: the repaint would tear the input out mid-word
   let formations = [];
   let missions = [];
+  let brainstorms = [];
   let activeFormation = new URLSearchParams(location.search).get("formation");
   // A strip is the paper flight strip a controller picks up and moves to another rack. The tabs
   // are the racks, so drag and drop is one rule: a strip dropped on a tab flies there. Inside a
@@ -720,6 +721,36 @@ export const mountCommandCenter = (root, ctx) => {
         : el("p", { class: "muted small cc-empty" }, "None. A mission is for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve."));
   };
 
+  /* The brainstorms, and where each one stands on its way to the board. The verbs live on the breakdown page. */
+  const BRAINSTORM_SAYS = { "not broken down": "written; nothing proposed yet", proposing: "a CAG is proposing items", "proposal waiting": "a proposal is waiting at the gate", "broken down": "on the board" };
+  const brainstormsRack = () => el("section", { class: "rack brainstorms" },
+    el("h4", {}, el("span", {}, "Brainstorms"), el("span", { class: "n" }, String(brainstorms.length)),
+      el("span", { class: "spacer" }),
+      el("button", { type: "button", class: "ghost", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm")),
+    brainstorms.length
+      ? el("div", { class: "rack-strips" }, ...brainstorms.map((b) => {
+          const href = `/breakdown.html?project=${encodeURIComponent(ctx.projectId)}&file=${encodeURIComponent(b.file)}`;
+          const open = () => { location.href = href; };
+          // A proposal at the gate is waiting on the pilot, which is what the lock means; a finished one is done.
+          const status = b.state === "broken down" ? "done" : b.state === "proposing" ? "busy" : "waiting";
+          return el("article", {
+            class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" ? " full" : ""}`,
+            tabindex: "0",
+            title: `${b.title} · ${BRAINSTORM_SAYS[b.state] ?? b.state}`,
+            onclick: (e) => { if (!e.target.closest("button, input")) open(); },
+            onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } },
+          }, stripLine({
+            status,
+            name: el("h4", { class: "strip-name" }, b.title),
+            state: BRAINSTORM_SAYS[b.state] ?? b.state,
+            note: b.parsed?.problems?.length ? clip(b.parsed.problems[0], 90) : null,
+            when: b.approved ? `approved ${b.approved}` : null,
+            where: b.parsed ? `${b.parsed.items.length} proposed · ${b.parsed.already.length} already there` : b.file.replace(/^deliverables\/brainstorms\//, ""),
+            acts: [el("button", { type: "button", class: "act", title: "open the breakdown gate", onclick: open }, b.state === "proposal waiting" ? "open the gate" : "open")],
+          }));
+        }))
+      : el("p", { class: "muted small cc-empty" }, "None yet. A brainstorm is one conversation with the CAG and one dated document; breaking it down is how its ideas reach the board."));
+
   /** The CAG in a terminal. It reads and writes documents and runs nothing; the tracker is not touched until a breakdown is approved. */
   const brainstorm = async () => {
     const topic = await ask({ title: "Brainstorm with the CAG", body: "Many ideas, no structure, one dated document for the conversation. Nothing lands on the board from it until you break it down. What is it about?", confirm: "sit down", field: { placeholder: "the topic" } });
@@ -774,6 +805,7 @@ export const mountCommandCenter = (root, ctx) => {
       "section",
       { class: "cc-project" },
       missionsRack(),
+      brainstormsRack(),
       !sessions.length && !formations.length && !closed.length ? el("p", { class: "muted small cc-empty" }, "No sessions in this project.") : null,
       rack("Needs you", needs, "needs", true),
       rack("Shells", shells, "shells"),
@@ -1736,10 +1768,11 @@ export const mountCommandCenter = (root, ctx) => {
     // Rebuilding every session record takes over a second; the jet flies while it does.
     const stop = firstLoad ? loading?.() : null;
     try {
-      [all, formations, missions] = await Promise.all([
+      [all, formations, missions, brainstorms] = await Promise.all([
         api("/api/sessions/all"),
         api(`/api/formations?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
         api(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
+        api(`/api/brainstorms?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
       ]);
       paint();
     } catch (err) {

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Breakdown · Maverick</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="ship.css" />
+  <link rel="stylesheet" href="mission.css" />
+</head>
+<body>
+  <header class="bar">
+    <a id="back" href="/" class="brand">Maverick</a>
+    <span class="crumb" id="crumb"></span>
+    <span id="status" class="status" role="status"></span>
+    <a id="board-link" class="button-link" href="/">Board</a>
+  </header>
+  <main class="ship-page" id="page">
+    <section class="ship-top" id="top"></section>
+    <nav class="ship-nav" id="nav" aria-label="Brainstorms"></nav>
+    <section class="ship-detail" id="detail"></section>
+  </main>
+  <script type="module" src="breakdown.js"></script>
+</body>
+</html>
