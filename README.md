@@ -1,23 +1,56 @@
 # Maverick
 
-The pilot. Maverick flies the work: it sits in the seat over every project, the sessions,
-the releases, and the ship, and the name is the point, this application is the pilot.
+I'm a longtime developer and a founder, and I've been using this to build all of my projects. It uses a lot of the tools I already build with in Claude Code, but it organizes them and lets me see my workflow. I've run small products on my own with it and full enterprise-level software, so it can handle either end. It helps you manage work project by project, anything from brainstorming to shipping features and everything in between. Customize it as much as you like or use it as it is out of the box; either way it will help you build your own workflow, loosely based on mine and what I do. I want the reality of it to be the marketing of it. Open source, free to everyone.
 
-Maverick is the one screen Cory manages work from, one project at a time: the roadmap columns
-(Priority, In progress, Backlog, Shipped) read straight from that project's markdown
-trackers, drag to sequence or move items, the Claude sessions running under the project
-(interactive and background), our session records (driver / develop / audit / plan), and
-the live signals those sessions own (dev servers, worktrees, open PRs).
+Cory Flynn, Flynn Solutions
 
-Opening the console shows the project picker. Import a directory from Finder (a native
-folder dialog) or paste a path; the console finds the tracker files it recognises
-(`deliverables/CHECKLIST.md`, `CHECKLIST.md`, `PUNCHLIST.md`, `TODO.md`, `NEXT_STEPS.md`)
-and remembers the project in `~/.claude/session-console/projects.json`.
+![The board over an invented project's checklist](docs/screenshots/board.png)
 
-**The markdown trackers stay the source of truth.** The console reads them and writes each
-drag back as one line move, committed immediately in the tracker's repo so every other open
-session sees it. It keeps no store of its own; if the console and the file disagree, the
-file wins.
+## What it does
+
+Maverick is one screen over the projects on your machine, one project at a time. It reads the markdown checklist each project already keeps and the Claude Code sessions already running, and it never keeps a store of its own for anything those can hold. In the order you meet it:
+
+- **The picker.** Import a directory and Maverick finds the tracker files it recognises (`deliverables/CHECKLIST.md`, `CHECKLIST.md`, `PUNCHLIST.md`, `TODO.md`, `NEXT_STEPS.md`). That file is the source of truth from then on.
+- **The board.** The checklist's sections become lanes: Backlog, Roadmap, In progress, Done. Drag a card and the move is written back as one line move and committed in the tracker's own repo, so every other open session sees it. Releases are computed from the changelog and the merged pull requests, and a card can be planned into the next one.
+- **Sessions.** The workspace shows every Claude Code session on the machine, grouped by what needs you. Open one full screen to read it as a conversation and type into it, spawn a background session on a card, or open a terminal inside the console.
+- **Missions.** A Strike Lead interviews you in a terminal and writes a plan of milestones. You approve it once; then one Wingman per task builds in its own worktree, a RIO that did not write the code reviews each one, and a milestone that passes merges into a mission branch that you walk through before it lands. It never merges into `main`.
+- **The ship.** A ship wizard runs the project's own ship workflow phase by phase, each phase a session you can watch, with the walkthrough and the architecture doc built on the way.
+- **The calendar.** Due dates, releases, and ship days on a cadence you set, with a banner on the morning of.
+
+Everything above is one person's workflow, published as it is. It assumes you have Claude Code installed and signed in, `git`, and `gh` for anything that reads GitHub; macOS ships the `python3` the embedded terminal uses. Where it reads other people's files it is read-only, with one exception: the one-line tracker move it commits for you.
+
+## Get it
+
+**Download the app.** The latest macOS build is on the [Releases page](https://github.com/FlynnSolutions/maverick/releases). It is built for Apple silicon only and has been run on exactly one machine, mine, so expect rough edges and say so in an issue. The build is not signed with an Apple developer certificate; macOS will refuse to open it until you clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Maverick.app
+```
+
+**Or run it from a clone.** No install step, no dependencies, no build:
+
+```bash
+git clone https://github.com/FlynnSolutions/maverick.git
+cd maverick
+node server.ts        # http://localhost:8766
+```
+
+Node 22.18 or newer. The app and the browser tab are the same server; if `node server.ts` is already running, opening the app gives you a window onto it.
+
+**Not here yet:** Windows and Linux builds, auto-update, and any agent runtime other than Claude Code. The full list of what is and is not built is in [`docs/04-status.md`](docs/04-status.md).
+
+## Where things are
+
+- `server.ts` is the whole HTTP surface and the Electron main process. Static files from `web/`, every `/api/*` route, nothing that assumes a browser tab.
+- `web/` is the UI: plain HTML, CSS and JavaScript talking only to `/api/*`.
+- `src/` is the model, one module per concern. `trackers.ts` parses a checklist and applies a move; `missions.ts` is a mission end to end; `git.ts` commits one file and reads worktrees, PRs and `claude agents`.
+- `app/` is the Electron shell: its own `package.json`, the only one in the repo that installs anything, and one file that imports `server.ts` and opens a window. See [`docs/06-runbook.md`](docs/06-runbook.md) to run or build it.
+- `bin/` holds the pty bridge the embedded terminals run through and the session-record helpers.
+- `docs/` is the documentation in fixed slots; start at [`docs/INDEX.md`](docs/INDEX.md). The rules are [`RULEBOOK.md`](RULEBOOK.md), and the reasons are [`docs/03-decisions.md`](docs/03-decisions.md).
+
+Contributions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md). MIT licensed. Agent readiness, by the same [Kodus](https://github.com/kodustech/agent-readiness) score Maverick means to show for every project it imports: Level 1, 63% on 2026-10-07, short of Level 2 for want of a linter and a formatter, which this repo does not take on without a recorded decision.
+
+The rest of this page is the reference: how each surface behaves, in the detail you need once you are using it.
 
 ## Theme
 
@@ -230,8 +263,8 @@ you: it reads the repo, probes what done means and what is out of scope, and ref
 your first line. When you agree, it writes a plan to `deliverables/missions/<id>.md` as
 milestones, each with one testable "done when" line and its tasks.
 
-That plan is the first gate. Maverick shows it with what it will cost — how many tasks, how many
-background sessions, and Factory's published numbers for a mission of this kind — and nothing
+That plan is the first gate. Maverick shows it with what it will cost (how many tasks, how many
+background sessions, and Factory's published numbers for a mission of this kind), and nothing
 has spawned yet. Approving writes the whole plan into your tracker as ordinary items carrying
 `mission` and `milestone` fields, cuts a `mission/<id>` branch, and sends the first milestone out:
 one **Wingman** per task, each in its own worktree, in parallel within a milestone and sequential
@@ -245,7 +278,7 @@ conflict aborts and names the paths.
 
 The second gate is the result: every task with its diff, its verdict and its findings, on a
 branch you can check out and test. Closing ticks the items in the tracker. **Maverick never merges
-a mission into main** — the ship wizard does, with you in it phase by phase.
+a mission into main**: the ship wizard does, with you in it phase by phase.
 
 ### The Wingman agent
 
@@ -259,11 +292,11 @@ ln -s "$PWD/.claude/agents/wingman.md" ~/.claude/agents/wingman.md
 ```
 
 A symlink rather than a copy, so there is one source of truth and it moves with the repo. Which
-agent a project spawns is configurable — `missions.wingmanAgent` in that project's
-`maverick.json` — but whatever it is named has to exist in `~/.claude/agents/`. Without it
+agent a project spawns is configurable, `missions.wingmanAgent` in that project's
+`maverick.json`, but whatever it is named has to exist in `~/.claude/agents/`. Without it
 Claude Code warns `no agent named …` and falls back to the default template, which is a Wingman
 with none of its boundaries.
 
 ## Not built yet
 
-The CAG (the project-level agent), the Air Boss (the readiness gate on what may launch unattended), checkbox flips from the UI, the archive-on-ship button, rewriting `release: next+1` to `next` at ship time, and the Electron shell (the server is already shaped as its main process). The data directories still carry the old name (`~/.claude/session-console`, `~/.claude/console-sessions`) so nothing recorded so far is lost.
+The Air Boss (the readiness gate on what may launch unattended), checkbox flips from the board, the archive-on-ship button, rewriting `release: next+1` to `next` at ship time, Windows and Linux builds, auto-update, and agent runtimes other than Claude Code. The data directories still carry the old name (`~/.claude/session-console`, `~/.claude/console-sessions`) so nothing recorded so far is lost.
