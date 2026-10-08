@@ -122,6 +122,7 @@ _Nothing. Move an item here only when its session starts._
 ## 📋 Backlog
 
 - [ ] `[ENG]` `[M]` **Checkbox flips from the board** — tick an item in the UI, write `- [x]` back.
+  - plan: plans/does-not-exist.md
   - created: 2026-09-14
 - [ ] `[ENG]` `[M]` **Ship-time `release: next+1` → `next` rewrite**, today a manual edit.
   - created: 2026-09-15
