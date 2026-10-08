@@ -1,0 +1,462 @@
+<meta charset="utf-8">
+<title>Maverick: Founder Pass (2026-10-07)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+    --radius:10px; --maxw:1000px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+      --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+      --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+      --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+    --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+    --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+    --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em;
+    background:var(--line2);padding:.08em .38em;border-radius:5px;border:1px solid var(--line);
+    word-break:break-word;}
+  a{color:var(--accent)}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 120px}
+  header.mast{max-width:var(--maxw);margin:0 auto;padding:36px 20px 20px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:30px;line-height:1.15;margin:.28em 0 .1em;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:15px;max-width:72ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .progwrap{position:sticky;top:0;z-index:20;background:var(--bg);
+    border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:6px}
+  .progrow{max-width:var(--maxw);margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:14px}
+  .bar{flex:1;height:8px;background:var(--line2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s ease}
+  .pct{font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;white-space:nowrap}
+  .tools{display:flex;gap:8px}
+  button.btn{font:inherit;font-size:12.5px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+  button.btn:hover{color:var(--ink);border-color:var(--accent)}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:var(--radius);padding:16px 18px;margin:18px 0}
+  .callout h3{margin:0 0 8px;font-size:15px}
+  .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px;margin-top:4px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px 16px;margin:18px 0 6px}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:28px}
+  @media(max-width:640px){nav.toc ol{columns:1}}
+  nav.toc li{margin:4px 0;break-inside:avoid}
+  nav.toc a{text-decoration:none;color:var(--ink)}
+  nav.toc a:hover{color:var(--accent)}
+  nav.toc .c{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px}
+  section.pillar{margin:30px 0 0}
+  .phead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:10px 0 8px;border-bottom:2px solid var(--line);position:sticky;top:44px;background:var(--bg);z-index:5}
+  .phead h2{margin:0;font-size:21px;letter-spacing:-.01em}
+  .phead .pc{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .tc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    margin:12px 0;overflow:hidden}
+  .tc-head{display:flex;gap:11px;align-items:flex-start;padding:13px 40px 13px 15px;cursor:pointer;user-select:none;position:relative}
+  .tc-head:after{content:"\25BE";position:absolute;right:15px;top:13px;color:var(--faint);transition:transform .15s}
+  .tc-head:hover:after{color:var(--accent)}
+  .tc.collapsed .tc-head:after{transform:rotate(-90deg)}
+  .tc-title{font-weight:600;font-size:15px;flex:1}
+  .caseid{display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    font-weight:700;color:var(--muted);background:var(--line2);border:1px solid var(--line);
+    border-radius:5px;padding:0 6px;margin-right:8px;vertical-align:1px}
+  .tc-actions{display:inline-flex;gap:8px;align-items:center;margin-left:auto;flex:none}
+  .verdict{display:inline-flex;gap:3px}
+  .vbtn{font:inherit;font-size:13px;font-weight:800;width:27px;height:24px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--faint);cursor:pointer;line-height:1;padding:0}
+  .vbtn:hover{border-color:var(--accent);color:var(--ink)}
+  .vbtn.v-pass.on{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+  .vbtn.v-partial.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+  .vbtn.v-fail.on{background:#fdecec;border-color:#e0554c;color:#b3261e}
+  :root[data-theme="dark"] .vbtn.v-fail.on{background:#2c1514;color:#f0918a;border-color:#7a3b36}
+  .vbtn.v-blocked.on{background:var(--line2);border-color:var(--faint);color:var(--ink)}
+  .vbtn.v-defer.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .notebtn{font:inherit;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;white-space:nowrap}
+  .notebtn:hover{border-color:var(--accent);color:var(--accent)}
+  .notebtn.has{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .notebtn.sendbtn.sent{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+  .vchip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--setup);
+    background:var(--setup-soft);border:1px solid var(--setup);border-radius:5px;padding:0 5px;margin-left:7px;vertical-align:1px}
+  .notearea{width:100%;font:inherit;font-size:13px;border:1px solid var(--warn);border-radius:7px;padding:7px 9px;margin:0 0 11px;background:var(--warn-soft);color:var(--ink);resize:vertical;box-sizing:border-box}
+  .tc[data-v="pass"]{border-left:3px solid var(--good)}
+  .tc[data-v="partial"]{border-left:3px solid var(--warn)}
+  .tc[data-v="fail"]{border-left:3px solid #d3453b}
+  .tc[data-v="blocked"]{border-left:3px solid var(--faint)}
+  .tc[data-v="defer"]{border-left:3px solid var(--accent)}
+  #breakdown{display:inline-flex;gap:9px;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  #breakdown .p{color:var(--good)} #breakdown .pa{color:var(--warn)} #breakdown .f{color:#d3453b} #breakdown .bl{color:var(--muted)}
+  #barFill{width:100%;height:100%;background:transparent;display:flex}
+  .bar .seg{height:100%;display:block}
+  .bar .seg-pass{background:var(--good)} .bar .seg-partial{background:var(--warn)}
+  .bar .seg-blocked{background:var(--faint)} .bar .seg-fail{background:#d3453b}
+  .progrow.filters{margin-top:9px;gap:8px;flex-wrap:wrap}
+  .flabel{font-size:12.5px;color:var(--muted)} .flabel b{color:var(--ink);font-weight:600}
+  .fchip{font:inherit;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 13px;cursor:pointer;color:var(--muted)}
+  .fchip:hover{border-color:var(--accent)}
+  .fchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .cpanel{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}
+  .cbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(760px,100%);max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+  .chead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+  .chead .csub{color:var(--muted);font-size:12.5px}
+  #compileText{flex:1;min-height:340px;border:0;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);color:var(--ink);resize:none;outline:none}
+  .tc.done .tc-title{color:var(--done);text-decoration:line-through;text-decoration-thickness:1px}
+  .tc-body{padding:0 15px 14px 43px;font-size:14px}
+  .tc.collapsed .tc-body{display:none}
+  .why{color:var(--muted);margin:0 0 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;margin-right:7px;vertical-align:1px}
+  .tag.setup{background:var(--setup-soft);color:var(--setup)}
+  .tag.ask{background:var(--warn-soft);color:var(--warn)}
+  .setup-line{background:var(--setup-soft);border:1px solid var(--line);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .ask-line{background:var(--warn-soft);border:1px solid var(--warn);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .auto-note{background:var(--accent-soft);border:1px solid var(--line);border-radius:7px;
+    padding:6px 11px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+  .auto-note b{color:var(--ink)}
+  .hist{background:var(--line2);border:1px solid var(--line);border-left:3px solid var(--faint);
+    border-radius:7px;padding:7px 11px;margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .hist .hr{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:3px}
+  .hist p{margin:0 0 6px}
+  .hist p:last-child{margin-bottom:0}
+  .notearea::placeholder{color:var(--faint)}
+  .fix-note{background:var(--good-soft);border:1px solid var(--good);border-radius:7px;
+    padding:7px 11px;margin:0 0 11px;font-size:12.5px;color:var(--ink)}
+  .fix-note b{color:var(--good)}
+  .fix-note.pending{background:var(--warn-soft);border-color:var(--warn)}
+  .fix-note.pending b{color:var(--warn)}
+  .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:10px 0 4px}
+  ol.steps{margin:0 0 4px;padding-left:20px} ol.steps li{margin:4px 0}
+  ul.exp{margin:0;padding-left:0;list-style:none}
+  ul.exp li{margin:5px 0;padding-left:22px;position:relative}
+  ul.exp li:before{content:"\2713";position:absolute;left:2px;color:var(--good);font-weight:800}
+  .exp-wrap{background:var(--good-soft);border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin-top:4px}
+  .guide{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--line2);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 12px;font-size:13px}
+  .guide .who b{color:var(--accent)}
+  .guide .sep{color:var(--muted)}
+  .glink{display:inline-flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);
+    border-radius:6px;padding:3px 10px;color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px}
+  .glink:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .glink:before{content:"\2197";font-size:11px}
+  .pswitch{font-weight:650;text-decoration:none;border-bottom:1px dashed currentColor}
+  .pswitch:hover{opacity:.75}
+</style>
+
+
+<header class="mast">
+  <h1>Maverick: Founder Pass (2026-10-07)</h1>
+</header>
+
+<div class="progwrap">
+  <div class="progrow">
+    <span class="pct" id="pctText">0 / 0</span>
+    <span id="breakdown"></span>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="tools">
+      <button class="btn" id="compileBtn" style="font-weight:700;color:var(--accent);border-color:var(--accent)">&#128203; Compile findings</button>
+      <button class="btn" id="themeBtn">Theme</button>
+      <button class="btn" id="expandBtn">Collapse all</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div class="progrow filters">
+    <span class="flabel">Show:</span>
+    <button class="fchip on" data-f="all">All</button>
+    <button class="fchip" data-f="work">Needs work</button>
+    <button class="fchip" data-f="notes">Has notes</button>
+    <button class="fchip" data-f="untested">Untested</button>
+  </div>
+</div>
+<div id="compilePanel" class="cpanel" style="display:none">
+  <div class="cbox">
+    <div class="chead"><b>Findings (markdown)</b><span class="csub">paste this back to iterate</span><span style="flex:1"></span>
+      <button class="btn" id="copyBtn">Copy</button><button class="btn" id="closeBtn">Close</button></div>
+    <textarea id="compileText" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="callout">
+    <p><b>This pass covers the four pull requests merged to main on 2026-10-07</b> (#1 ship days, #2 the mission walkthrough gate, #3 the plan gate and the CAG, #4 the reply format and the event timeline). Everything objective is under <code>npm test</code> (42 pass); this is the surface a person has to see.</p>
+    <p><b>Where to look:</b> Maverick itself at <code>http://localhost:8766</code>. The ship-day cases use the Maverick project's own calendar. The plan-gate cases use the Realtime board, which has real <code>plan:</code> fields in all three shapes. The reply cases need a session spawned from a planned item. The mission pillar needs a mission with real agents; defer it if you are not flying one.</p>
+    <p><b>Each card:</b> a verdict (✓ ~ ✗ ⛔ »), a note, and "→ Claude", which posts the case to the session that built this. "Compile findings" at the top gives you one markdown block to paste back.</p>
+  </div>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#ship">Ship days on the calendar (#1)</a> <span class="c" id="toc-ship"></span></li>
+      <li><a href="#walk">A milestone is walked before the mission lands (#2)</a> <span class="c" id="toc-walk"></span></li>
+      <li><a href="#plan">Planned is a field that names a real file, and the CAG (#3)</a> <span class="c" id="toc-plan"></span></li>
+      <li><a href="#reply">Every launched session answers in one shape (#4)</a> <span class="c" id="toc-reply"></span></li>
+    </ol>
+  </nav>
+
+  <section class="pillar" id="ship" data-key="ship">
+    <div class="phead"><h2>Ship days on the calendar (#1)</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="sh1"><div class="tc-head"><span class="tc-title">A cadence puts ship days on the calendar going forward</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Open Maverick on the Maverick project and switch to the Calendar view.</li><li>In the Ship days row under the releases strip, pick "every 2 weeks" and set the date to this coming Friday.</li><li>Page forward two months.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>A 🛫 ship day sits on that Friday and on every second Friday after it.</li><li>The row reads "next <date>" for the first one.</li><li>The legend at the top of the grid shows the ship-day marker.</li></ul></div></div></div>
+    <div class="tc" data-id="sh2"><div class="tc-head"><span class="tc-title">Dragging a ship day moves it and the drawer remembers where it came from</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Drag the next 🛫 ship day onto a different day in the same month.</li><li>Click the moved ship day.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The marker lands on the new day and the old day is empty.</li><li>The drawer says "Pushed back from <date>" (or "Pulled forward") with a "put it back" link.</li><li>"put it back" returns it to the cadence day.</li></ul></div></div></div>
+    <div class="tc" data-id="sh3"><div class="tc-head"><span class="tc-title">Cancelling one cadence day leaves the cadence running</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Click a cadence ship day and press "cancel this ship day"; confirm.</li><li>Look at the later ship days.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>Only that day comes off the calendar; the ones after it stay.</li><li>Adding a one-off on the same date (next case) brings it back as the cadence day, not as a duplicate.</li></ul></div></div></div>
+    <div class="tc" data-id="sh4"><div class="tc-head"><span class="tc-title">A one-off ship day outside the cadence</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>In the Ship days row, pick a date that is not on the cadence in the one-off picker and press "add a one-off".</li><li>Click it.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>It appears on that day with the same marker.</li><li>Its drawer says "one-off" where a cadence day says the cadence words.</li></ul></div></div></div>
+    <div class="tc" data-id="sh5"><div class="tc-head"><span class="tc-title">Marking a day shipped keeps it for good</span></div><div class="tc-body"><div class="lbl">Setup</div><p class="setup-line">Any ship day on the calendar.</p><div class="lbl">Steps</div><ol class="steps"><li>Click a ship day and press "mark shipped".</li><li>Clear the cadence (set the row to "no cadence").</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The day reads 🛬 shipped with the version, in green.</li><li>After clearing the cadence the other ship days vanish and the shipped one stays.</li></ul></div></div></div>
+    <div class="tc" data-id="sh6"><div class="tc-head"><span class="tc-title">The banner finds you: today, and a missed day</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Add a one-off ship day on today's date. Switch to the Board view, then the Workspace view.</li><li>Remove it. Add a one-off on yesterday's date and reload.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>Today: a banner above every view says "Ship day. Planned for v<next>" with "start the ship", "mark shipped" and "push it back".</li><li>Yesterday, unmarked: a red banner says the ship day went by without being marked.</li><li>"push it back" opens the day's drawer.</li></ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="walk" data-key="walk">
+    <div class="phead"><h2>A milestone is walked before the mission lands (#2)</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="wk1"><div class="tc-head"><span class="tc-title">A merged milestone commissions its walkthrough</span></div><div class="tc-body"><div class="lbl">Setup</div><p class="setup-line">This pillar needs a mission with real agents. Defer it if you are not flying one today; the gate itself is under test (42 tests).</p><div class="lbl">Steps</div><ol class="steps"><li>Fly a small mission on a fixture project (one milestone, one or two tasks) and let the Wingmen and RIOs finish.</li><li>When the milestone merges, open the mission page.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The milestone's nav badge reads "merged · walkthrough on its way".</li><li>The milestone page shows a Walkthrough panel naming the builder session, with a "watch" button that mounts its terminal.</li><li>The next milestone, if any, is dispatched; nothing waits on the walkthrough.</li></ul></div></div></div>
+    <div class="tc" data-id="wk2"><div class="tc-head"><span class="tc-title">The document is hosted and the answers count</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Wait for the builder to commit the document (deliverables/testing/<mission>-m1-walkthrough.html on the mission branch).</li><li>Answer the cases in the hosted panel.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The panel shows the document in a frame with pillars and a progress bar.</li><li>The nav badge reads "walk it · N of M" and climbs as you answer.</li><li>When every case is answered the badge reads "walked" and the panel header shows a passed verdict.</li></ul></div></div></div>
+    <div class="tc" data-id="wk3"><div class="tc-head"><span class="tc-title">The review gate holds until every milestone is walked</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>With a milestone merged but not walked, open "What the mission built".</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>No close button. The copy says how many milestones are still to walk and why.</li><li>A "walk milestone N" button per unwalked milestone jumps to its page.</li></ul></div></div></div>
+    <div class="tc" data-id="wk4"><div class="tc-head"><span class="tc-title">Waiving is allowed, with a reason that is kept</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>On an unwalked milestone, press "waive it" and give a reason.</li><li>Return to the review page.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The milestone reads "merged · waived" in the nav and the review page shows "waived".</li><li>The reason is shown on the milestone page.</li><li>The close button is offered.</li></ul></div></div></div>
+    <div class="tc" data-id="wk5"><div class="tc-head"><span class="tc-title">A waiver without a reason is refused</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Press "waive it" and submit an empty or blank reason.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The status line says to say why; nothing changes.</li></ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="plan" data-key="plan">
+    <div class="phead"><h2>Planned is a field that names a real file, and the CAG (#3)</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="pl1"><div class="tc-head"><span class="tc-title">The board badges roadmap items that have no plan</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Open the Realtime project's board.</li><li>Look at the Priority and In Progress lanes, then the Backlog.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>Items without a plan: field naming a real file carry a red "unplanned" chip in Priority and In Progress.</li><li>Backlog items carry no such chip whatever their fields say.</li><li>Mission tasks (items with a mission: field) are not badged.</li></ul></div></div></div>
+    <div class="tc" data-id="pl2"><div class="tc-head"><span class="tc-title">A resolving plan is a link</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Open the drawer of a Realtime item whose plan: field names a real file (for example the shared-board-groups plan).</li><li>Click the plan value.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The plan row shows the field as a link.</li><li>It opens the plan document in a new tab, served from inside the project.</li></ul></div></div></div>
+    <div class="tc" data-id="pl3"><div class="tc-head"><span class="tc-title">A plan field that names nothing reads red</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Edit any backlog item's markdown to add "  - plan: plans/does-not-exist.md" and save.</li><li>Reopen its drawer.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The plan row shows the value in red, not as a link.</li><li>Remove the line afterwards.</li></ul></div></div></div>
+    <div class="tc" data-id="pl4"><div class="tc-head"><span class="tc-title">Spawn on an unplanned item offers the plan instead</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>On a Priority item with the unplanned chip, press "spawn" on the card.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>A dialog titled "This item has no plan" with a "plan it" verb, not the spawn dialog.</li><li>Pressing "plan it" opens a terminal titled "CAG · plan: <item>" in the dock.</li><li>The drawer's spawn button is not the primary verb on this item; "plan it" is.</li></ul></div></div></div>
+    <div class="tc" data-id="pl5"><div class="tc-head"><span class="tc-title">The CAG has no shell</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>In that CAG terminal, ask it to run a command ("run ls" or "run the tests").</li><li>Ask it to read the rulebook.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>It says it cannot run commands: Bash is not among its tools.</li><li>It reads the file and answers from it.</li></ul></div></div></div>
+    <div class="tc" data-id="pl6"><div class="tc-head"><span class="tc-title">A brainstorm is one dated document</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>On the Workspace view, press "brainstorm" on the Missions rack, give a topic, and talk for a few turns.</li><li>Ask it where it wrote the document.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>A terminal titled "CAG · <topic>" opens.</li><li>A file deliverables/brainstorms/<today>-<topic>.md exists in the project and grows as the conversation goes.</li><li>The tracker is not touched.</li></ul></div></div></div>
+    <div class="tc" data-id="pl7"><div class="tc-head"><span class="tc-title">A plan written by the CAG makes the item planned</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Let the CAG in pl4 finish: answer its interview briefly and let it write the plan and set the field.</li><li>Reload the board and open the item's drawer.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The unplanned chip is gone.</li><li>The plan row is a link to plans/<slug>-<date>.md beside the tracker.</li><li>"spawn" is the primary verb again, and pressing it opens the spawn dialog.</li></ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="reply" data-key="reply">
+    <div class="phead"><h2>Every launched session answers in one shape, and the stream reads as events (#4)</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="rp1"><div class="tc-head"><span class="tc-title">A spawned session's reply renders as six blocks</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Spawn a session on a planned item (Realtime, or the Maverick item you planned in pl7).</li><li>Open its pane on the Workspace and wait for its first full reply.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>The reply shows as labelled blocks: Answer, What changed, Decisions, Verified, Open, with TL;DR last in an accent block.</li><li>Prose before the first label, if any, is shown above the blocks.</li><li>The turn's left border is the accent colour.</li></ul></div></div></div>
+    <div class="tc" data-id="rp2"><div class="tc-head"><span class="tc-title">A fold of tool calls says what it did</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>In the same pane, find a collapsed run of tool calls between two replies.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>Its summary reads in words: "edited N · ran N · read N" (whichever apply), followed by how long the run took and the time it started.</li><li>A fold that edited or tested anything has a stronger outline.</li><li>Opened, the edit and test chips are coloured and come first; reads follow.</li></ul></div></div></div>
+    <div class="tc" data-id="rp3"><div class="tc-head"><span class="tc-title">A working session carries a clock</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>While the session is still working, look at the bottom of its pane.</li><li>Wait for it to finish.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>A line reads "working · Ns since the last event" and ticks every second.</li><li>It disappears once the session is done.</li></ul></div></div></div>
+    <div class="tc" data-id="rp4"><div class="tc-head"><span class="tc-title">A reply says how long after the prompt it came</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>Look at the header of any claude turn that followed a prompt of yours.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>Next to "claude" it reads "after 1m 23s" (or seconds), then the time.</li></ul></div></div></div>
+    <div class="tc" data-id="rp5"><div class="tc-head"><span class="tc-title">The rail's one-line glance is the TL;DR</span></div><div class="tc-body"><div class="lbl">Steps</div><ol class="steps"><li>On the Workspace, find the same session's strip without opening it.</li></ol><div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp"><li>Its last-reply line shows the TL;DR text, not "**Answer.** ..." clipped.</li></ul></div></div></div>
+  </section>
+
+</div>
+
+<script>
+window.RT=(function(){
+  var KEY="maverick-review-2026-10-07";
+  var VERDS=[["pass","Pass","✓"],["partial","Partial","~"],["fail","Fail","✗"],["blocked","Blocked","⛔"],["defer","Defer to next release","»"]];
+  // Founder-review notes baked into the doc (durable baseline). localStorage edits overlay these.
+  // Pass 1 starts empty; after each Compile round, bake the pasted-back notes here.
+  var SEED={};
+  // Fixes landed since a founder pass (pr + one line + live flag). Empty until pass 2.
+  var FIXES={};
+  // Steps-audit corrections / open questions injected after a pass. Empty until needed.
+  var AUDIT={};
+  // ROUND = which review pass we're in. Bump per pass; earlier notes become history.
+  var ROUND=1;
+  // Cases whose Expected asserts something invisible in the UI; the assistant arms a log watch for these.
+  var MONITOR={"sh6":"after the mark, ~/.claude/session-console/ship-schedule.json carries the day under shipped with the version; after a move, the entry sits under moved keyed by the origin date.","pl7":"the CHECKLIST line under the item reads `  - plan: plans/<slug>-<date>.md` and that file exists beside the tracker; GET /api/board then reports planned true and unplanned false for it.","rp1":"the spawned session was launched with --append-system-prompt (ps -o args on the claude process, or claude agents --json); the transcript's last assistant event carries a reply object with six sections.","wk2":"the mission record at ~/.claude/console-sessions/missions/<project>/<id>.json carries milestones[n].walkthrough.doc and, as cases are answered, .progress.answered climbing."};
+  // Per-case version map (ledger: v190-case-versions.md). Default 1. A patch that changes
+  // a case's steps bumps it here so the case resets to untested; v1 verdicts stay stored
+  // under the plain id. Convention comment at the end of this file.
+  var CASE_V={};
+  function cv(id){return CASE_V[id]||1;}
+  function skey(id){var v=cv(id);return v>1?id+"@v"+v:id;}
+  var state={};
+  Object.keys(SEED).forEach(function(k){
+    state[k]={v:SEED[k].v||"",n:"",hist:SEED[k].n?[{r:SEED[k].r||1,t:SEED[k].n}]:[]};
+  });
+  function norm(e){
+    if(!e)return{v:"",n:"",hist:[]};
+    if(!e.hist)return{v:e.v||"",n:"",hist:e.n?[{r:1,t:e.n}]:[]};
+    return{v:e.v||"",n:e.n||"",hist:e.hist||[]};
+  }
+  try{var sv=JSON.parse(localStorage.getItem(KEY)||"null");
+    if(sv&&typeof sv==="object")Object.keys(sv).forEach(function(k){
+      var incoming=norm(sv[k]), base=state[k];
+      if(base&&base.hist.length&&!incoming.hist.length)incoming.hist=base.hist;
+      state[k]=incoming;});}catch(e){}
+  function save(){localStorage.setItem(KEY,JSON.stringify(state));}
+  function get(id){
+    var e=norm(state[skey(id)]);
+    if(cv(id)>1&&!e.v&&!e.n&&!e.hist.length){
+      // Bumped case, untouched at this version: surface the v1 record as history.
+      var prev=norm(state[id]); e.hist=prev.hist.slice();
+      if(prev.n&&prev.n.trim())e.hist.push({r:ROUND+' (v1)',t:prev.n});
+    }
+    return e;}
+  function put(id,e){
+    if(!e.v&&!(e.n&&e.n.trim())&&!(e.hist&&e.hist.length))delete state[skey(id)];
+    else state[skey(id)]=e;
+    save();}
+  function setV(id,v){var e=get(id);put(id,{v:(e.v===v?"":v),n:e.n,hist:e.hist});paint(id);render();}
+  function setN(id,n){var e=get(id);put(id,{v:e.v,n:n,hist:e.hist});paintNote(id);render();}
+  [].forEach.call(document.querySelectorAll('.tc'),function(tc){
+    var id=tc.dataset.id; if(!id)return; var head=tc.querySelector('.tc-head'); if(!head)return;
+    var acts=document.createElement('div'); acts.className='tc-actions';
+    var vc=document.createElement('div'); vc.className='verdict';
+    VERDS.forEach(function(vd){
+      var b=document.createElement('button'); b.type='button'; b.className='vbtn v-'+vd[0]; b.dataset.v=vd[0];
+      b.title=vd[1]; b.textContent=vd[2];
+      b.addEventListener('click',function(e){e.stopPropagation();setV(id,vd[0]);});
+      vc.appendChild(b);
+    });
+    var nb=document.createElement('button'); nb.type='button'; nb.className='notebtn'; nb.textContent='+ note';
+    nb.addEventListener('click',function(e){e.stopPropagation();
+      var na=tc.querySelector('.notearea'); if(!na)return;
+      na.style.display=(na.style.display==='none')?'':'none';
+      if(na.style.display!=='none'){tc.classList.remove('collapsed'); na.focus();}});
+    var sb=document.createElement('button'); sb.type='button'; sb.className='notebtn sendbtn'; sb.textContent='→ Claude';
+    sb.title='Send this case’s verdict + note to Claude';
+    sb.addEventListener('click',function(e){e.stopPropagation();
+      var st=get(id); sb.disabled=true;
+      fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({caseId:id,caseVersion:cv(id),verdict:st.v||'',note:(st.n||'').trim()})})
+      .then(function(r){if(!r.ok)throw new Error(r.status);sb.textContent='✓ sent';sb.classList.add('sent');})
+      .catch(function(){sb.textContent='✗ retry';})
+      .then(function(){sb.disabled=false;
+        setTimeout(function(){sb.textContent='→ Claude';sb.classList.remove('sent');},2000);});});
+    acts.appendChild(vc); acts.appendChild(nb); acts.appendChild(sb); head.appendChild(acts);
+    if(cv(id)>1){var tt=tc.querySelector('.tc-title');
+      if(tt){var vch=document.createElement('span'); vch.className='vchip'; vch.textContent='v'+cv(id); tt.appendChild(vch);}}
+    var na=document.createElement('textarea'); na.className='notearea'; na.rows=2;
+    na.placeholder="Pass "+ROUND+" note for "+id+": what's wrong / partial / blocked";
+    na.value=get(id).n||''; na.style.display=(get(id).n&&get(id).n.trim())?'':'none';
+    na.addEventListener('click',function(e){e.stopPropagation();});
+    na.addEventListener('input',function(){setN(id,na.value);});
+    var body=tc.querySelector('.tc-body'); if(body)body.insertBefore(na,body.firstChild);
+    var h=get(id).hist;
+    if(h&&h.length&&body){
+      var hb=document.createElement('div'); hb.className='hist';
+      hb.innerHTML='<span class="hr">From earlier pass'+(h.length>1?'es':'')+'</span>'+
+        h.map(function(x){return '<p><b>Pass '+x.r+':</b> '+String(x.t).replace(/[<>&]/g,function(c){
+          return{'<':'&lt;','>':'&gt;','&':'&amp;'}[c];})+'</p>';}).join('');
+      body.insertBefore(hb,body.firstChild);
+    }
+    if(AUDIT[id]&&body){var A=AUDIT[id];
+      var ab=document.createElement('div'); ab.className=A.ask?'fix-note pending':'auto-note';
+      ab.innerHTML=(A.ask
+        ? '<b>&#10067; STEPS AUDIT: OPEN QUESTION FOR YOU</b><br>'+A.ask
+        : '<b>&#128221; STEPS CORRECTED</b><br>'+A.fix);
+      body.insertBefore(ab,body.firstChild);}
+    if(FIXES[id]&&body){var F=FIXES[id];
+      var fx=document.createElement('div'); fx.className=F.live?'fix-note':'fix-note pending';
+      fx.innerHTML=(F.live
+        ? '<b>&#9989; Fix is LIVE on develop ('+F.pr+'): RE-TEST THIS CASE</b><br>'
+        : '<b>&#9203; Fix merged but NOT deployed yet ('+F.pr+'): SKIP THIS CASE</b><br>')+F.t;
+      body.insertBefore(fx,body.firstChild);}
+    paint(id);
+  });
+  function paint(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); if(!tc)return;
+    var v=get(id).v; tc.setAttribute('data-v',v||'');
+    [].forEach.call(tc.querySelectorAll('.vbtn'),function(b){b.classList.toggle('on',b.dataset.v===v);}); paintNote(id);}
+  function paintNote(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); if(!tc)return;
+    var has=!!(get(id).n&&get(id).n.trim()); var nb=tc.querySelector('.notebtn');
+    if(nb){nb.classList.toggle('has',has); nb.textContent=has?'📝 note':'+ note';}}
+  var FILTER='all';
+  function match(id){var e=get(id);
+    if(FILTER==='work')return e.v==='partial'||e.v==='fail'||e.v==='blocked';
+    if(FILTER==='notes')return !!(e.n&&e.n.trim());
+    if(FILTER==='untested')return !e.v;
+    return true;}
+  function counts(){var c={total:0,reviewed:0,pass:0,partial:0,fail:0,blocked:0,defer:0,notes:0};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var e=get(tc.dataset.id);c.total++;
+      if(e.v){c.reviewed++;c[e.v]=(c[e.v]||0)+1;} if(e.n&&e.n.trim())c.notes++;}); return c;}
+  function render(){var c=counts();
+    var pe=document.getElementById('pctText'); if(pe)pe.textContent=c.reviewed+' / '+c.total;
+    var bd=document.getElementById('breakdown');
+    if(bd)bd.innerHTML='<span class="bd p">✓'+c.pass+'</span><span class="bd pa">~'+c.partial+'</span><span class="bd f">✗'+c.fail+'</span><span class="bd bl">⛔'+c.blocked+'</span>';
+    var bar=document.getElementById('barFill');
+    if(bar){var t=c.total||1;bar.innerHTML='';
+      [['pass',c.pass],['partial',c.partial],['blocked',c.blocked],['fail',c.fail],['defer',c.defer]].forEach(function(x){
+        if(x[1]){var seg=document.createElement('i');seg.className='seg seg-'+x[0];seg.style.width=(x[1]/t*100)+'%';bar.appendChild(seg);}});}
+    [].forEach.call(document.querySelectorAll('section.pillar'),function(p){
+      var bs=p.querySelectorAll('.tc'),d=0;[].forEach.call(bs,function(tc){if(get(tc.dataset.id).v)d++;});
+      var el=p.querySelector('.phead .pc'); if(el)el.textContent=d+' / '+bs.length;
+      var tt=document.getElementById('toc-'+p.dataset.key); if(tt)tt.textContent='('+d+'/'+bs.length+')';});
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){tc.style.display=match(tc.dataset.id)?'':'none';});}
+  function compile(){var g={fail:[],blocked:[],partial:[],defer:[],passn:[],noverdict:[]},carried=[];
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var id=tc.dataset.id,e=get(id);
+      var tEl=tc.querySelector('.tc-title'); var title=tEl?tEl.textContent:'';
+      title=title.replace(/switch → \S+/,'').trim(); if(title.indexOf(id)===0)title=title.slice(id.length).trim();
+      var row={id:id,title:title,n:(e.n||'').trim()};
+      if(e.v==='fail')g.fail.push(row); else if(e.v==='blocked')g.blocked.push(row);
+      else if(e.v==='partial')g.partial.push(row); else if(e.v==='defer')g.defer.push(row);
+      else if(e.v==='pass'&&row.n)g.passn.push(row);
+      // A note with no verdict used to fall through every branch and vanish from the
+      // compiled output with no count and no warning. "Defer" is not a verdict, so the
+      // most common annotation was the one that got dropped. Nothing typed is lost now.
+      else if(!e.v&&row.n)g.noverdict.push(row);
+      if(e.hist&&e.hist.length)e.hist.forEach(function(x){
+        carried.push({id:id,title:title,r:x.r,t:x.t,v:e.v});});});
+    var c=counts();
+    var md='# Maverick 2026-10-07 founder pass: findings (pass '+ROUND+')\n\nReviewed '+c.reviewed+'/'+c.total+' · ✓'+c.pass+' pass · ~'+c.partial+' partial · ✗'+c.fail+' fail · ⛔'+c.blocked+' blocked · »'+c.defer+' defer · ✎'+c.notes+' noted\n';
+    function S(h,a){if(!a.length)return'';var s='\n## '+h+' ('+a.length+')\n';a.forEach(function(x){s+='- ['+x.id+'] '+x.title+(x.n?': '+x.n:'')+'\n';});return s;}
+    md+='\n_Sections below are NEW notes from pass '+ROUND+' only._\n';
+    md+=S('✗ Fail',g.fail)+S('⛔ Blocked',g.blocked)+S('~ Partial',g.partial)+S('» Defer to next release',g.defer)+S('✓ Pass (noted)',g.passn)+S('✎ Noted, no verdict',g.noverdict);
+    if(!(g.fail.length||g.blocked.length||g.partial.length||g.defer.length||g.passn.length||g.noverdict.length))md+='\n_No new findings recorded this pass._\n';
+    if(carried.length){
+      md+='\n---\n\n## 📜 Carried over from earlier passes ('+carried.length+')\n';
+      md+='_Preserved for context. A verdict in brackets is where the case stands NOW._\n';
+      carried.forEach(function(x){
+        md+='- [pass '+x.r+'] ['+x.id+'] '+x.title+': '+x.t+'  `now: '+(x.v||'untested')+'`\n';});}
+    return md;}
+  var eb=document.getElementById('expandBtn'),collapsed=false;
+  if(eb)eb.addEventListener('click',function(){collapsed=!collapsed;
+    [].forEach.call(document.querySelectorAll('.tc'),function(el){el.classList.toggle('collapsed',collapsed);});
+    this.textContent=collapsed?'Expand all':'Collapse all';});
+  var rb=document.getElementById('resetBtn');
+  if(rb)rb.addEventListener('click',function(){if(!confirm('Clear all verdicts and notes?'))return;
+    state={};save();
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){paint(tc.dataset.id);var na=tc.querySelector('.notearea');if(na){na.value='';na.style.display='none';}});render();});
+  [].forEach.call(document.querySelectorAll('.tc-head'),function(h){
+    h.addEventListener('click',function(e){
+      if(e.target.closest('.verdict')||e.target.closest('.notebtn')||e.target.tagName==='A')return;
+      h.parentNode.classList.toggle('collapsed');});});
+  var root=document.documentElement,tkey="maverick-test-theme"; var tv=localStorage.getItem(tkey); if(tv)root.setAttribute('data-theme',tv);
+  var thb=document.getElementById('themeBtn');
+  if(thb)thb.addEventListener('click',function(){var cur=root.getAttribute('data-theme');
+    var next=cur==='dark'?'light':(cur==='light'?'dark':(matchMedia('(prefers-color-scheme: dark)').matches?'light':'dark'));
+    root.setAttribute('data-theme',next);localStorage.setItem(tkey,next);});
+  [].forEach.call(document.querySelectorAll('.fchip'),function(ch){ch.addEventListener('click',function(){
+    FILTER=ch.dataset.f; [].forEach.call(document.querySelectorAll('.fchip'),function(c){c.classList.toggle('on',c===ch);}); render();});});
+  var cb=document.getElementById('compileBtn'),panel=document.getElementById('compilePanel'),
+      ta=document.getElementById('compileText'),cpy=document.getElementById('copyBtn'),cls=document.getElementById('closeBtn');
+  if(cb)cb.addEventListener('click',function(){if(ta)ta.value=compile();if(panel)panel.style.display='flex';if(ta){ta.focus();ta.select();}});
+  if(cls)cls.addEventListener('click',function(){if(panel)panel.style.display='none';});
+  if(panel)panel.addEventListener('click',function(e){if(e.target===panel)panel.style.display='none';});
+  if(cpy)cpy.addEventListener('click',function(){if(!ta)return;ta.select();
+    if(navigator.clipboard){navigator.clipboard.writeText(ta.value).then(function(){cpy.textContent='Copied ✓';setTimeout(function(){cpy.textContent='Copy';},1500);});}
+    else{var ok=false;try{ok=document.execCommand('copy');}catch(e){}cpy.textContent=ok?'Copied ✓':'Cmd-C';setTimeout(function(){cpy.textContent='Copy';},1500);}});
+  render();
+  return {render:render,compile:compile};
+})();
+</script>
+<script>
+[].forEach.call(document.querySelectorAll('.tc'),function(tc){
+  var id=tc.dataset.id, t=tc.querySelector('.tc-title');
+  if(id&&t&&!t.querySelector('.caseid')){
+    var s=document.createElement('span'); s.className='caseid'; s.textContent=id;
+    t.insertBefore(s,t.firstChild);
+  }
+});
+</script>
