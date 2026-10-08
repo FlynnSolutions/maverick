@@ -19,11 +19,11 @@
  */
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { backgroundAgents, commitFile, spawnBackgroundAgent } from "./git.ts";
-import { itemBlock, startMission } from "./missions.ts";
-import { CAG_TOOLS } from "./plans.ts";
+import { FINISHED, commitFile, spawnBackgroundAgent } from "./git.ts";
+import { agentsFor, startMission } from "./missions.ts";
+import { CAG_TOOLS, cagOpening } from "./plans.ts";
 import type { Project } from "./projects.ts";
-import { addGroup, addItem, parseTracker, today, type Section } from "./trackers.ts";
+import { BACKLOG, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, today } from "./trackers.ts";
 
 export type Call = "now" | "backlog" | "mission";
 export const SIZES = ["S", "M", "L"] as const;
@@ -83,10 +83,7 @@ const CALLS: Call[] = ["now", "backlog", "mission"];
  */
 export const parseBreakdown = (text: string, existingTitles: string[] = []): Breakdown => {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const topic = text.match(/^#\s*Breakdown:\s*(.+)$/m)?.[1].trim() ?? "";
-  const headingAt = lines.findIndex((l) => /^#\s/.test(l));
-  const firstSection = lines.findIndex((l) => l.startsWith("## "));
-  const intro = lines.slice(headingAt + 1, firstSection < 0 ? lines.length : firstSection).join("\n").trim();
+  const { title: topic, intro } = documentHead(text, /^#\s*Breakdown:\s*(.+)$/m);
   const problems: string[] = [];
   if (!topic) problems.push('the document has no "# Breakdown: <topic>" heading');
   const sections = parseTracker(text).sections;
@@ -96,16 +93,14 @@ export const parseBreakdown = (text: string, existingTitles: string[] = []): Bre
   const seen = new Set<string>();
   const existing = new Set(existingTitles.map((t) => t.trim().toLowerCase()));
   for (const item of itemsSection?.groups.flatMap((g) => g.items) ?? []) {
-    // `call` is not a tracker field, so the tracker parser left it in the prose; read it from there.
-    const callLine = item.description.match(/^\s*-?\s*call:\s*(\S+)/m);
-    const body = item.description.replace(/^\s*-?\s*call:.*$/m, "").trim();
-    const call = (callLine?.[1] ?? "").toLowerCase() as Call;
+    const body = item.description.trim();
+    const call = (item.fields.call ?? "").trim().toLowerCase() as Call;
     const kind = (item.fields.kind ?? "").trim();
     const size = (item.fields.size ?? "").trim().toUpperCase();
     const key = item.title.trim().toLowerCase();
     if (!kind) problems.push(`"${item.title}" has no kind`);
     if (!SIZES.includes(size as (typeof SIZES)[number])) problems.push(`"${item.title}" has size "${item.fields.size ?? ""}"; it must be one of ${SIZES.join(", ")}`);
-    if (!CALLS.includes(call)) problems.push(`"${item.title}" has call "${callLine?.[1] ?? ""}"; it must be one of ${CALLS.join(", ")}`);
+    if (!CALLS.includes(call)) problems.push(`"${item.title}" has call "${item.fields.call ?? ""}"; it must be one of ${CALLS.join(", ")}`);
     if (call === "now" && body.split("\n").filter(Boolean).length < 2) problems.push(`"${item.title}" is called now but says only one line; a plan session gets no context`);
     if (existing.has(key)) problems.push(`"${item.title}" is already on the board; list it under "Already on the board" instead`);
     if (seen.has(key)) problems.push(`"${item.title}" is proposed twice`);
@@ -135,6 +130,7 @@ export interface BrainstormView {
 }
 
 const STAMP = /^<!-- approved: (\S+) · commit: (\S+) -->$/m;
+/** The proposer's session name is also how it is found again: a brainstorm with no proposal and a live session of this name is "proposing". */
 const proposerName = (file: string): string => `breakdown · ${basename(file, ".md")}`.slice(0, 60);
 
 /** Every brainstorm document, newest first, with its proposal parsed when there is one. */
@@ -147,8 +143,9 @@ export const listBrainstorms = async (project: Project): Promise<BrainstormView[
     throw err;
   }
   if (!names.length) return [];
-  const existing = await existingTitles(project);
-  const agents = await backgroundAgents(project.path).catch(() => []);
+  // The agent listing is a subprocess and the board titles are a parse; each is fetched once, and only when a brainstorm needs it.
+  let agents: Promise<Awaited<ReturnType<typeof agentsFor>>> | undefined;
+  let existing: Promise<string[]> | undefined;
   return Promise.all(names.map(async (name) => {
     const file = join("deliverables", "brainstorms", name);
     const text = await readFile(join(project.path, file), "utf8");
@@ -156,27 +153,24 @@ export const listBrainstorms = async (project: Project): Promise<BrainstormView[
     const proposal = proposalPathFor(file);
     const ptext = await readFile(join(project.path, proposal), "utf8").catch(() => null);
     if (ptext === null) {
-      const busy = agents.some((a) => a.name === proposerName(file) && !/^(done|exited|stopped)$/.test(a.state ?? ""));
+      const busy = (await (agents ??= agentsFor(project.path).catch(() => []))).some((a) => a.name === proposerName(file) && !FINISHED.test(a.state ?? ""));
       return { file, title, state: busy ? "proposing" : "not broken down" } as BrainstormView;
     }
     const stamp = ptext.match(STAMP);
-    return { file, title, proposal, parsed: parseBreakdown(ptext, existing), ...(stamp ? { state: "broken down", approved: stamp[1], commit: stamp[2] } : { state: "proposal waiting" }) } as BrainstormView;
+    return { file, title, proposal, parsed: parseBreakdown(ptext, await (existing ??= existingTitles(project))), ...(stamp ? { state: "broken down", approved: stamp[1], commit: stamp[2] } : { state: "proposal waiting" }) } as BrainstormView;
   }));
 };
 
 const existingTitles = async (project: Project): Promise<string[]> => {
   const titles: string[] = [];
-  for (const tracker of project.trackers) {
-    const text = await readFile(tracker.path, "utf8").catch(() => "");
-    for (const s of parseTracker(text).sections) for (const g of s.groups) for (const i of g.items) titles.push(i.title);
-  }
+  for (const tracker of project.trackers) titles.push(...allItems(parseTracker(await readFile(tracker.path, "utf8").catch(() => ""))).map((i) => i.title));
   return titles;
 };
 
 /* ---------- the proposer: a CAG, in the background, reading rather than talking ---------- */
 
 const breakdownPrompt = (project: Project, file: string, proposal: string, trackerPath: string): string => [
-  `You are the CAG for the project at ${project.path}: the one agent that holds the whole landscape and writes the documents work is planned from. You never edit product code, and this session cannot: your tools are ${CAG_TOOLS.replaceAll(",", ", ")}, and in this session you write exactly one file.`,
+  ...cagOpening(project, "exactly one file in this session"),
   "",
   `Break down the brainstorm at ${join(project.path, file)} into items for the tracker at ${trackerPath}.`,
   "",
@@ -201,15 +195,6 @@ export const proposeItems = async (project: Project, file: string, trackerIndex 
 
 /* ---------- the approve: the tracker write, the missions, the stamp ---------- */
 
-const PRIORITY = /🔥/;
-const BACKLOG = /📋/;
-
-const sectionOr = (sections: Section[], re: RegExp, what: string, label: string): Section => {
-  const s = sections.find((x) => re.test(x.heading));
-  if (!s) throw new Error(`${label} has no ${what} section to break down into`);
-  return s;
-};
-
 /**
  * The tracker text after a breakdown lands: "now" under a group named after the brainstorm in
  * Priority, "backlog" under the same name in Backlog, "mission" not written (the mission's own
@@ -217,23 +202,12 @@ const sectionOr = (sections: Section[], re: RegExp, what: string, label: string)
  */
 export const writeBreakdown = (text: string, label: string, breakdown: Breakdown, sourceFile: string): string => {
   const group = `Brainstorm: ${breakdown.topic}`;
-  const source = `brainstorm ${sourceFile}, ${today()}`;
-  let out = text;
-  const place = (re: RegExp, what: string, items: ProposedItem[]) => {
-    if (!items.length) return;
-    const section = sectionOr(parseTracker(out).sections, re, what, label);
-    if (!section.groups.some((g) => g.name === group)) out = addGroup(out, section.heading, group);
-    for (const it of items) out = addItem(out, section.heading, group, itemBlock(it.title, { created: today(), source, kind: it.kind, size: it.size }, [it.body]));
-  };
-  place(PRIORITY, "🔥 Priority", breakdown.items.filter((i) => i.call === "now"));
-  place(BACKLOG, "📋 Backlog", breakdown.items.filter((i) => i.call === "backlog"));
-  return out;
+  const blocks = (call: Call) => breakdown.items.filter((i) => i.call === call).map((it) => itemBlock(it.title, { created: today(), source: `brainstorm ${sourceFile}, ${today()}`, kind: it.kind, size: it.size }, [it.body]));
+  return placeInGroup(placeInGroup(text, PRIORITY, label, group, blocks("now")), BACKLOG, label, group, blocks("backlog"));
 };
 
 export interface ApproveResult {
   commit: string;
-  now: number;
-  backlog: number;
   missions: string[];
 }
 
@@ -246,18 +220,16 @@ export const approveBreakdown = async (project: Project, file: string, trackerIn
   if (STAMP.test(ptext)) throw new Error(`${proposal} was already approved`);
   const breakdown = parseBreakdown(ptext, await existingTitles(project));
   if (breakdown.problems.length) throw new Error(`the proposal cannot be written as it stands: ${breakdown.problems.join("; ")}`);
-  const text = await readFile(tracker.path, "utf8");
-  await writeFile(tracker.path, writeBreakdown(text, tracker.label, breakdown, file), "utf8");
-  const now = breakdown.items.filter((i) => i.call === "now").length;
-  const backlog = breakdown.items.filter((i) => i.call === "backlog").length;
-  const commit = await commitFile(tracker.path, `console: break down "${breakdown.topic}" (${now} on the roadmap, ${backlog} in backlog)`);
+  await writeFile(tracker.path, writeBreakdown(await readFile(tracker.path, "utf8"), tracker.label, breakdown, file), "utf8");
+  const count = (call: Call) => breakdown.items.filter((i) => i.call === call).length;
+  const commit = await commitFile(tracker.path, `console: break down "${breakdown.topic}" (${count("now")} on the roadmap, ${count("backlog")} in backlog)`);
   // A mission-sized item is not written twice: the Strike Lead interviews from it, and the mission's approve writes it.
   const missions: string[] = [];
   for (const it of breakdown.items.filter((i) => i.call === "mission")) {
-    const { mission } = await startMission(project, it.title, `${it.title}. ${it.body} (From the brainstorm at ${file}; read it first.)`, trackerIndex);
+    const { mission } = await startMission(project, it.title, it.title, trackerIndex, proposal);
     missions.push(mission.id);
   }
   await writeFile(join(project.path, proposal), `${ptext.replace(/\n+$/, "")}\n\n<!-- approved: ${today()} · commit: ${commit} -->\n`, "utf8");
   await commitFile(join(project.path, proposal), `console: breakdown "${breakdown.topic}" approved`);
-  return { commit, now, backlog, missions };
+  return { commit, missions };
 };

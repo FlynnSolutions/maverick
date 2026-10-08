@@ -110,6 +110,9 @@ export interface BackgroundAgent {
 }
 
 /** Claude Code's own background sessions started under `cwd` (`claude --bg`), via its JSON listing. */
+/** A background session's terminal states, as `claude agents` reports them. */
+export const FINISHED = /^(done|exited|stopped)$/;
+
 export const backgroundAgents = async (cwd: string): Promise<BackgroundAgent[]> => {
   const { stdout } = await run("claude", ["agents", "--json", "--all", "--cwd", cwd]);
   const all = JSON.parse(stdout) as Array<BackgroundAgent & { kind: string }>;

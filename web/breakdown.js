@@ -3,7 +3,6 @@
 // a document a CAG wrote, parsed into what it would do to the board, and one approve.
 
 import { readableOn, recall } from "./theme.js";
-import { render as renderMarkdown } from "./markdown.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -46,6 +45,7 @@ const applyTheme = (theme) => {
   root.setProperty("--accent-hot", theme.accentHot);
   root.setProperty("--on-accent", readableOn(theme.accent));
   root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
+  if (theme.font !== "Chakra Petch") document.head.append(el("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
 };
 
 const fileHref = (path) => `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`;
@@ -87,7 +87,7 @@ const itemRow = (it) => el("div", { class: "mv-plan-task" },
 
 const renderOne = (b) => {
   const parsed = b.parsed;
-  const counts = parsed ? { now: parsed.items.filter((i) => i.call === "now").length, backlog: parsed.items.filter((i) => i.call === "backlog").length, mission: parsed.items.filter((i) => i.call === "mission").length } : null;
+  const count = (call) => parsed.items.filter((i) => i.call === call).length;
   const gate = [];
   if (b.state === "not broken down") {
     gate.push(el("p", { class: "why" }, "Nothing has been proposed from this brainstorm. A CAG reads it and the board and writes a proposal: items with a kind, a size, and a call of now, backlog or mission. It reads and writes one file; it runs nothing."),
@@ -99,13 +99,13 @@ const renderOne = (b) => {
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))),
       el("div", { class: "gate-actions" }, btn("propose again", () => act("propose", { file: b.file }, "a CAG is reading the brainstorm again"), "primary"), el("a", { class: "button-link", target: "_blank", href: fileHref(b.proposal) }, "read the proposal ↗")));
   } else if (b.state === "proposal waiting") {
-    gate.push(el("p", { class: "why" }, `This is the one approval. Approving writes ${counts.now} item${counts.now === 1 ? "" : "s"} onto the roadmap and ${counts.backlog} into the backlog, both under a group named after this brainstorm, in one commit.${counts.mission ? ` ${counts.mission} mission-sized item${counts.mission === 1 ? "" : "s"} open${counts.mission === 1 ? "s" : ""} a Strike Lead interview instead of being written here.` : ""}`),
+    gate.push(el("p", { class: "why" }, `This is the one approval. Approving writes ${count("now")} item${count("now") === 1 ? "" : "s"} onto the roadmap and ${count("backlog")} into the backlog, both under a group named after this brainstorm, in one commit.${count("mission") ? ` ${count("mission")} mission-sized item${count("mission") === 1 ? "" : "s"} open${count("mission") === 1 ? "s" : ""} a Strike Lead interview instead of being written here.` : ""}`),
       el("div", { class: "mv-band" },
-        el("div", { class: "cell" }, el("span", { class: "k" }, "onto the roadmap"), el("span", { class: "v" }, String(counts.now))),
-        el("div", { class: "cell" }, el("span", { class: "k" }, "into the backlog"), el("span", { class: "v" }, String(counts.backlog))),
-        el("div", { class: "cell" }, el("span", { class: "k" }, "to a Strike Lead"), el("span", { class: "v" }, String(counts.mission))),
+        el("div", { class: "cell" }, el("span", { class: "k" }, "onto the roadmap"), el("span", { class: "v" }, String(count("now")))),
+        el("div", { class: "cell" }, el("span", { class: "k" }, "into the backlog"), el("span", { class: "v" }, String(count("backlog")))),
+        el("div", { class: "cell" }, el("span", { class: "k" }, "to a Strike Lead"), el("span", { class: "v" }, String(count("mission")))),
         el("div", { class: "cell" }, el("span", { class: "k" }, "already on the board"), el("span", { class: "v" }, String(parsed.already.length)))),
-      counts.now ? el("p", { class: "cost-note" }, "Roadmap items arrive unplanned, on purpose: no plan file exists yet, and the rule at the door is a field that names a real file. They wear the badge, and \"plan it\" is their next verb.") : null,
+      count("now") ? el("p", { class: "cost-note" }, "Roadmap items arrive unplanned, on purpose: no plan file exists yet, and the rule at the door is a field that names a real file. They wear the badge, and \"plan it\" is their next verb.") : null,
       el("div", { class: "gate-actions" },
         btn("approve and write the board", async () => {
           const result = await act("approve", { file: b.file }, "writing the board");

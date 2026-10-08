@@ -65,7 +65,7 @@ test("a proposal parses into items with their kind, size and call, and the alrea
     ["Per-item edits at the gate", "feature", "M", "backlog"],
     ["Breakdown as a mission", "feature", "L", "mission"],
   ]);
-  assert.equal(b.items[0].body, "List the documents under deliverables/brainstorms with their state.\nThe verbs live there: propose, open the gate, read.", "the call line is not part of the body");
+  assert.equal(b.items[0].body, "List the documents under deliverables/brainstorms with their state.\nThe verbs live there: propose, open the gate, read.", "the fields are not part of the body");
   assert.deepEqual(b.already, ["the rule at the door — Brainstorm, breakdown, plan: the phases before an item reaches the board"]);
 });
 

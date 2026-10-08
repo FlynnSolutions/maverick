@@ -683,6 +683,15 @@ export const mountCommandCenter = (root, ctx) => {
     closed: "closed",
   };
 
+  /** A strip that is a link to its own page: the article shell, with click and keyboard opening it, around one strip line. */
+  const pageStrip = ({ status, title, open }, line) => el("article", {
+    class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" || status === "blocked" ? " full" : ""}`,
+    tabindex: "0",
+    title,
+    onclick: (e) => { if (!e.target.closest("button, input")) open(); },
+    onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } },
+  }, line);
+
   const missionRow = (m) => {
     const tasks = m.milestones.flatMap((x) => x.tasks ?? []);
     const passed = tasks.filter((t) => t.status === "passed").length;
@@ -690,13 +699,7 @@ export const mountCommandCenter = (root, ctx) => {
     const status = m.trouble ? "blocked" : MISSION_LAMP[m.status];
     const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
     const openMission = () => { location.href = href; };
-    return el("article", {
-      class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" || status === "blocked" ? " full" : ""}`,
-      tabindex: "0",
-      title: `${m.name} · ${MISSION_SAYS[m.status] ?? m.status}`,
-      onclick: (e) => { if (!e.target.closest("button, input")) openMission(); },
-      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openMission(); } },
-    }, stripLine({
+    return pageStrip({ status, title: `${m.name} · ${MISSION_SAYS[m.status] ?? m.status}`, open: openMission }, stripLine({
       // waiting and blocked both draw the lock: a mission at its gate is blocked on the pilot,
       // which is what the lock means, and the band is ignored for those two anyway.
       status,
@@ -714,7 +717,6 @@ export const mountCommandCenter = (root, ctx) => {
     return el("section", { class: "rack missions" },
       el("h4", {}, el("span", {}, "Missions"), el("span", { class: "n" }, String(missions.length)),
         el("span", { class: "spacer" }),
-        el("button", { type: "button", class: "ghost", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm"),
         el("button", { type: "button", class: "ghost", onclick: newMission }, "open one")),
       mine.length
         ? el("div", { class: "rack-strips" }, ...mine.map(missionRow))
@@ -733,13 +735,7 @@ export const mountCommandCenter = (root, ctx) => {
           const open = () => { location.href = href; };
           // A proposal at the gate is waiting on the pilot, which is what the lock means; a finished one is done.
           const status = b.state === "broken down" ? "done" : b.state === "proposing" ? "busy" : "waiting";
-          return el("article", {
-            class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" ? " full" : ""}`,
-            tabindex: "0",
-            title: `${b.title} · ${BRAINSTORM_SAYS[b.state] ?? b.state}`,
-            onclick: (e) => { if (!e.target.closest("button, input")) open(); },
-            onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } },
-          }, stripLine({
+          return pageStrip({ status, title: `${b.title} · ${BRAINSTORM_SAYS[b.state] ?? b.state}`, open }, stripLine({
             status,
             name: el("h4", { class: "strip-name" }, b.title),
             state: BRAINSTORM_SAYS[b.state] ?? b.state,

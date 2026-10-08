@@ -67,8 +67,9 @@ export const planFileFor = (trackerPath: string, item: Item): { field: string; f
   return { field, full: join(dirname(trackerPath), field) };
 };
 
-const cagOpening = (project: Project): string[] => [
-  `You are the CAG for the project at ${project.path}: the one agent that holds the whole landscape, answers questions about it, and writes the documents work is planned from. You never edit product code. This session cannot: your tools are ${CAG_TOOLS.replaceAll(",", ", ")}, and you write only under deliverables/ and in the tracker.`,
+/** How every CAG session is introduced to itself; `writes` says what this one may write. */
+export const cagOpening = (project: Project, writes = "only under deliverables/ and in the tracker"): string[] => [
+  `You are the CAG for the project at ${project.path}: the one agent that holds the whole landscape, answers questions about it, and writes the documents work is planned from. You never edit product code. This session cannot: your tools are ${CAG_TOOLS.replaceAll(",", ", ")}, and you write ${writes}.`,
   "",
   "Read the repo before you say anything: its rulebook, its decision log, its docs, and the code any idea would touch. Every question you ask should be informed by what is already there.",
 ];

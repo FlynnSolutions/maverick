@@ -9,7 +9,7 @@
 export type ColumnId = "priority" | "in-progress" | "backlog" | "shipped";
 
 /** Structured lines an item may carry, as `  - key: value` under its bullet. */
-export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by", "mission", "milestone", "repo"] as const;
+export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by", "mission", "milestone", "repo", "call"] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
 export interface Item {
@@ -308,6 +308,37 @@ export const addGroup = (text: string, heading: string, name: string): string =>
  * an ordinary item, so the board, the drag and every other session read it without knowing
  * what a mission is. The caller supplies the whole block, bullet line first.
  */
+/** Every item in a tracker, whatever lane or group it sits in. */
+export const allItems = (tracker: Tracker): Item[] => tracker.sections.flatMap((s) => s.groups.flatMap((g) => g.items));
+
+/** A document's `# ` title (matched by `titleRe`) and the prose between it and the first `## `. */
+export const documentHead = (text: string, titleRe: RegExp): { title: string; intro: string } => {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const title = text.match(titleRe)?.[1].trim() ?? "";
+  const headingAt = lines.findIndex((l) => /^#\s/.test(l));
+  const firstSection = lines.findIndex((l) => l.startsWith("## "));
+  return { title, intro: lines.slice(headingAt + 1, firstSection < 0 ? lines.length : firstSection).join("\n").trim() };
+};
+
+/** One item block, in the shape this file parses: a bullet with its tag, its fields, then its prose. */
+export const itemBlock = (title: string, fields: Record<string, string>, body: string[], tag = "ENG"): string => [
+  `- [ ] \`[${tag}]\` **${title}**`,
+  ...Object.entries(fields).map(([k, v]) => `  - ${k}: ${v}`),
+  ...body.flatMap((line) => line.split("\n")).map((l) => l.trim()).filter(Boolean).map((l) => `  ${l}`),
+].join("\n");
+
+export const PRIORITY = /🔥/;
+export const BACKLOG = /📋/;
+
+/** Land blocks at the end of `group` in the section `re` names, creating the group when it is new. */
+export const placeInGroup = (text: string, re: RegExp, label: string, group: string, blocks: string[]): string => {
+  if (!blocks.length) return text;
+  const section = parseTracker(text).sections.find((s) => re.test(s.heading));
+  if (!section) throw new Error(`${label} has no ${re.source} section to write into`);
+  const withGroup = section.groups.some((g) => g.name === group) ? text : addGroup(text, section.heading, group);
+  return blocks.reduce((t, block) => addItem(t, section.heading, group, block), withGroup);
+};
+
 export const addItem = (text: string, heading: string, group: string, block: string): string => {
   const lines = text.split("\n");
   const section = parseTracker(text).sections.find((s) => s.heading === heading);

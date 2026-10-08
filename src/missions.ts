@@ -22,7 +22,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { backgroundAgents, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
+import { FINISHED, backgroundAgents, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
 import { slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -31,7 +31,7 @@ import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
-import { addGroup, addItem, parseTracker, setChecked, today } from "./trackers.ts";
+import { PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -141,6 +141,8 @@ export interface Mission {
   name: string;
   /** The one line Cory opened the interview with. */
   brief: string;
+  /** The breakdown document this mission came out of, when a Strike Lead was handed a brainstorm's item rather than a line Cory typed. */
+  from?: string;
   status: MissionStatus;
   created: string;
   approved?: string;
@@ -288,10 +290,7 @@ const DONE_LINE = /^_*\s*done when:\s*(.+?)\s*_*$/i;
 /** Parse the Strike Lead's plan document. Reuses the tracker parser, because the plan is written in its shape. */
 export const parsePlan = (text: string, repos: string[] = []): { name: string; intro: string; milestones: Milestone[]; problems: string[] } => {
   const lines = text.split("\n");
-  const name = text.match(/^#\s*Mission:\s*(.+)$/m)?.[1].trim() ?? "";
-  const headingAt = lines.findIndex((l) => /^#\s/.test(l));
-  const firstSection = lines.findIndex((l) => l.startsWith("## "));
-  const intro = lines.slice(headingAt + 1, firstSection < 0 ? lines.length : firstSection).join("\n").trim();
+  const { title: name, intro } = documentHead(text, /^#\s*Mission:\s*(.+)$/m);
   const problems: string[] = [];
   if (!name) problems.push('the document has no "# Mission: <name>" heading');
 
@@ -385,7 +384,7 @@ export const INTERVIEW_PROBES = [
 const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
   `You are the Strike Lead for a mission in the project at ${project.path}. A strike lead plans the package, briefs it and sends it; it does not fly every jet in it. Your entire job in this session is the interview and the plan.`,
   "",
-  `Cory opened this mission with one line: "${mission.brief}"`,
+  mission.from ? `This mission came out of the breakdown of ${join(project.path, mission.from)}, as the item "${mission.brief}". Read that document first; it holds the reasoning.` : `Cory opened this mission with one line: "${mission.brief}"`,
   "",
   "That line is not a specification and you must not treat it as one. Interview him first, in the terminal, one or two questions at a time. Read the repo before you ask, so every question is informed rather than generic: its docs, its rulebook, the code the work would touch, and what already exists that this should build on rather than replace. Probe until you can answer, in his words:",
   ...INTERVIEW_PROBES,
@@ -419,7 +418,7 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
 ].join("\n");
 
 /** Open a mission: the record, and the Strike Lead in an embedded terminal, because an interview is a conversation. */
-export const startMission = async (project: Project, name: string, brief: string, trackerIndex = 0): Promise<{ mission: Mission; terminal: TerminalInfo }> => {
+export const startMission = async (project: Project, name: string, brief: string, trackerIndex = 0, from?: string): Promise<{ mission: Mission; terminal: TerminalInfo }> => {
   if (!name.trim()) throw new Error("a mission needs a name");
   if (!brief.trim()) throw new Error("a mission needs the line you would have opened a session with");
   const id = slug(name);
@@ -433,6 +432,7 @@ export const startMission = async (project: Project, name: string, brief: string
     project: project.id,
     name: name.trim(),
     brief: brief.trim(),
+    ...(from ? { from } : {}),
     status: "interviewing",
     created: new Date().toISOString(),
     plan,
@@ -486,13 +486,6 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
 /* ---------- the blessing, and the tracker write ---------- */
 
 
-/** One item block, in the shape `src/trackers.ts` parses: a bullet, its fields, then its prose. */
-export const itemBlock = (title: string, fields: Record<string, string>, body: string[]): string => [
-  `- [ ] \`[ENG]\` **${title}**`,
-  ...Object.entries(fields).map(([k, v]) => `  - ${k}: ${v}`),
-  ...body.flatMap((line) => line.split("\n")).map((l) => l.trim()).filter(Boolean).map((l) => `  ${l}`),
-].join("\n");
-
 const headerBlock = (mission: Mission, intro: string): string =>
   itemBlock(`Mission: ${mission.name}`, { created: today(), source: `Strike Lead interview, ${today()}`, kind: "mission", mission: mission.id, plan: mission.plan },
     [intro, ...mission.milestones.map((m) => `Milestone ${m.n} — ${m.title}: done when ${m.done}`)]);
@@ -500,20 +493,12 @@ const headerBlock = (mission: Mission, intro: string): string =>
 const taskBlock = (mission: Mission, m: Milestone, task: MissionTask): string =>
   itemBlock(task.title, { created: today(), source: `mission ${mission.id}, milestone ${m.n}`, mission: mission.id, milestone: String(m.n), ...(task.repo ? { repo: task.repo } : {}) }, [task.intent]);
 
-const PRIORITY = /🔥/;
-
 /** Write the whole plan into the tracker as items, in one commit, under its own group on the roadmap. */
 const writePlanToTracker = async (project: Project, mission: Mission, intro: string): Promise<string> => {
   const tracker = project.trackers[mission.trackerIndex];
   if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${mission.trackerIndex}`);
-  let text = await readFile(tracker.path, "utf8");
-  const section = parseTracker(text).sections.find((s) => PRIORITY.test(s.heading));
-  if (!section) throw new Error(`${tracker.label} has no 🔥 Priority section to plan into`);
-  const { heading } = section;
-  const group = `Mission: ${mission.name}`;
-  if (!section.groups.some((g) => g.name === group)) text = addGroup(text, heading, group);
-  text = addItem(text, heading, group, headerBlock(mission, intro));
-  for (const m of mission.milestones) for (const task of m.tasks) text = addItem(text, heading, group, taskBlock(mission, m, task));
+  const blocks = [headerBlock(mission, intro), ...mission.milestones.flatMap((m) => m.tasks.map((task) => taskBlock(mission, m, task)))];
+  const text = placeInGroup(await readFile(tracker.path, "utf8"), PRIORITY, tracker.label, `Mission: ${mission.name}`, blocks);
   await writeFile(tracker.path, text, "utf8");
   return commitFile(tracker.path, `console: plan mission "${mission.name}" (${mission.milestones.length} milestones, ${mission.milestones.reduce((n, m) => n + m.tasks.length, 0)} tasks)`);
 };
@@ -779,7 +764,6 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
   await recordWingman(mission, task);
 };
 
-const FINISHED = /^(done|exited|stopped)$/;
 /** An agent absent from the listing is only believed gone once it has had time to appear in it. */
 const SETTLE_MS = 90_000;
 const isOver = (state: Map<string, string>, claudeId: string, since?: string): boolean => {
@@ -798,7 +782,7 @@ const sweeping = new Set<string>();
 /** `claude agents` is a subprocess and the page polls; well inside SETTLE_MS, so it changes nothing. */
 const AGENTS_TTL_MS = 20_000;
 const agentCache = new Map<string, { at: number; agents: Awaited<ReturnType<typeof backgroundAgents>> }>();
-const agentsFor = async (path: string): Promise<Awaited<ReturnType<typeof backgroundAgents>>> => {
+export const agentsFor = async (path: string): Promise<Awaited<ReturnType<typeof backgroundAgents>>> => {
   const hit = agentCache.get(path);
   if (hit && Date.now() - hit.at < AGENTS_TTL_MS) return hit.agents;
   const agents = await backgroundAgents(path);
@@ -1212,8 +1196,7 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   // items between lanes while a mission flies. Read and written once, ticking from the bottom
   // up so the earlier items' line numbers are still good when their turn comes.
   let text = await readFile(tracker.path, "utf8");
-  const mine = parseTracker(text).sections
-    .flatMap((s) => s.groups.flatMap((g) => g.items))
+  const mine = allItems(parseTracker(text))
     .filter((i) => i.fields.mission === mission.id && !i.checked)
     .filter((i) => (whole && i.fields.kind === "mission") || passed.has(`${i.fields.milestone ?? ""}\u0000${i.title}`));
   for (const item of [...mine].sort((a, b) => b.start - a.start)) text = setChecked(text, item.start, item.firstLine, true);

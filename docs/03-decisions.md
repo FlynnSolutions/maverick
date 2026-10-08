@@ -331,6 +331,10 @@ carry a `plan:` field, but the rule at the door (M13) is a field that names a re
 plan file exists at breakdown time; a path to nothing is the claim the rule rejects. So a *now*
 item lands with no field, wears the badge, and *plan it* is its next verb. The gate says so.
 
+**A consequence to know:** the board treats every group under Priority as a release (ordering,
+the deploy-date drawer), so a `Brainstorm:` group gets release verbs, exactly as a `Mission:`
+group does today. Living with it until a third kind of Priority group appears.
+
 **Rejected: per-item edits at the gate.** Whole-document approve, as missions have it; the fix
 for a wrong proposal is to propose again. One fewer place the page and the file can disagree.
 If dropping two bullets turns out to be a conversation too often, that is the next brick.
