@@ -6,5 +6,5 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.18" },
-  "scripts": { "start": "node server.ts", "dev": "node server.ts", "test": "node --test \"test/**/*.test.ts\"", "lint": "node tools/lint.mjs" }
+  "scripts": { "start": "node server.ts", "test": "node --test \"test/**/*.test.ts\"", "lint": "node tools/lint.mjs" }
 }

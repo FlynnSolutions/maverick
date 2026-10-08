@@ -1,5 +1,5 @@
-# The Electron shell is the only thing in the repo with dependencies; keep it and the workflow
-# actions current. The server and the web client have none (RULEBOOK.md).
+# The Electron shell is the only thing in the repo with dependencies (RULEBOOK.md); keep it and
+# the workflow actions current.
 version: 2
 updates:
   - package-ecosystem: npm

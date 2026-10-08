@@ -1,19 +1,23 @@
 /**
  * The Electron shell: one window onto the same server a browser tab talks to. `server.ts` is
- * imported here as the main process, as the rulebook planned from the start, and `web/` is
- * served from it unchanged. If something already answers on the port (a `node server.ts` left
- * running in a terminal), the window opens on that and starts nothing of its own.
+ * imported here as the main process and `web/` is served from it unchanged. If something
+ * already answers on the port (a `node server.ts` left running in a terminal), the window
+ * opens on that and starts nothing of its own.
  */
 import { app, BrowserWindow, shell } from "electron";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { request } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
+import { promisify } from "node:util";
+import { config } from "../src/config.ts";
+
+const run = promisify(execFile);
 
 /** A GUI app launched from Finder gets a bare PATH; `claude`, `gh` and `git` live on the login shell's. */
-const loginPath = () => {
+const loginPath = async () => {
   try {
-    const out = execFileSync(process.env.SHELL || "/bin/zsh", ["-ilc", "echo $PATH"], { encoding: "utf8", timeout: 5000 });
-    return out.trim().split("\n").pop();
+    const { stdout } = await run(config.shell, ["-ilc", "echo $PATH"], { timeout: 5000 });
+    return stdout.trim().split("\n").pop();
   } catch {
     return undefined;
   }
@@ -30,6 +34,17 @@ const answers = (port) =>
     req.on("timeout", () => { req.destroy(); resolve(false); });
     req.end();
   });
+
+const startServer = async () => {
+  const path = await loginPath();
+  if (path) process.env.PATH = path;
+  await import("../server.ts");
+  const started = Date.now();
+  while (!(await answers(config.port))) {
+    if (Date.now() - started > 10_000) throw new Error(`nothing answered on port ${config.port} ten seconds after starting the server`);
+    await sleep(200);
+  }
+};
 
 const openWindow = (origin) => {
   const win = new BrowserWindow({
@@ -52,15 +67,7 @@ const openWindow = (origin) => {
 };
 
 app.whenReady().then(async () => {
-  const path = loginPath();
-  if (path) process.env.PATH = path;
-  const { config } = await import("../src/config.ts");
-  if (!(await answers(config.port))) await import("../server.ts");
-  const started = Date.now();
-  while (!(await answers(config.port))) {
-    if (Date.now() - started > 10_000) throw new Error(`nothing answered on port ${config.port} ten seconds after starting the server`);
-    await sleep(200);
-  }
+  if (!(await answers(config.port))) await startServer();
   openWindow(`http://127.0.0.1:${config.port}/`);
 });
 

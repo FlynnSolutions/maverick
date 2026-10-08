@@ -325,11 +325,10 @@ already answers on the port, the window opens on that and starts nothing.
 and it would make the Electron build a prerequisite of the server it wraps. **Rejected: moving
 `server.ts` under `app/`.** The server is the product; the shell is packaging.
 
-**Dev tooling follows the same line.** CI runs the readiness tool and anything else it needs from
-`npx` at a pinned version. `lint` is `node --check` over every file, which is the strongest check
-the standard library gives and the only one that costs no dependency. Accepting a linter or a
-type checker as a dev dependency is still the open question M2 named; this entry does not close
-it.
+**Dev tooling follows the same line.** `lint` is `node --check` over every tracked file, which is
+the strongest check the standard library gives and the only one that costs no dependency.
+Accepting a linter or a type checker as a dev dependency is still the open question M2 named;
+this entry does not close it.
 
 **Consequence:** two lockfiles (the root one is empty by design, so a reader can see that),
 `macOS only` on the front page until another platform has been run on, and the release is cut by

@@ -13,6 +13,8 @@ export const config = {
   port: Number(process.env.SESSION_CONSOLE_PORT ?? 8766),
   /** 127.0.0.1 by default; 0.0.0.0 opens the console to the LAN (phone), behind the access key. */
   host: process.env.SESSION_CONSOLE_HOST ?? "127.0.0.1",
+  /** The user's login shell: what a plain terminal runs, and where the app learns its PATH. */
+  shell: process.env.SHELL || "/bin/zsh",
   /** A random key required from any non-loopback client; created on first start. */
   keyFile: join(consoleHome, "access-key"),
   /** The project registry (see src/projects.ts). */

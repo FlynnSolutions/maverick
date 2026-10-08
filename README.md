@@ -17,7 +17,7 @@ Maverick is one screen over the projects on your machine, one project at a time.
 - **The ship.** A ship wizard runs the project's own ship workflow phase by phase, each phase a session you can watch, with the walkthrough and the architecture doc built on the way.
 - **The calendar.** Due dates, releases, and ship days on a cadence you set, with a banner on the morning of.
 
-Everything above is one person's workflow, published as it is. It assumes you have Claude Code installed and signed in, `git`, and `gh` for anything that reads GitHub; macOS ships the `python3` the embedded terminal uses. Where it reads other people's files it is read-only, with one exception: the one-line tracker move it commits for you.
+It assumes you have Claude Code installed and signed in, `git`, and `gh` for anything that reads GitHub; macOS ships the `python3` the embedded terminal uses. Where it reads other people's files it is read-only, with one exception: the one-line tracker move it commits for you.
 
 ## Get it
 
@@ -37,7 +37,7 @@ node server.ts        # http://localhost:8766
 
 Node 22.18 or newer. The app and the browser tab are the same server; if `node server.ts` is already running, opening the app gives you a window onto it.
 
-**Not here yet:** Windows and Linux builds, auto-update, and any agent runtime other than Claude Code. The full list of what is and is not built is in [`docs/04-status.md`](docs/04-status.md).
+What is not here yet is listed at the [end of this page](#not-built-yet) and, in full, in [`docs/04-status.md`](docs/04-status.md).
 
 ## Where things are
 
@@ -48,7 +48,7 @@ Node 22.18 or newer. The app and the browser tab are the same server; if `node s
 - `bin/` holds the pty bridge the embedded terminals run through and the session-record helpers.
 - `docs/` is the documentation in fixed slots; start at [`docs/INDEX.md`](docs/INDEX.md). The rules are [`RULEBOOK.md`](RULEBOOK.md), and the reasons are [`docs/03-decisions.md`](docs/03-decisions.md).
 
-Contributions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md). MIT licensed. Agent readiness, by the same [Kodus](https://github.com/kodustech/agent-readiness) score Maverick means to show for every project it imports: Level 1, 63% on 2026-10-07, short of Level 2 for want of a linter and a formatter, which this repo does not take on without a recorded decision.
+Contributions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md). MIT licensed. Agent readiness, by the same [Kodus](https://github.com/kodustech/agent-readiness) score Maverick means to show for every project it imports: Level 1, 60% on 2026-10-07; [`docs/04-status.md`](docs/04-status.md) says what Level 2 would take.
 
 The rest of this page is the reference: how each surface behaves, in the detail you need once you are using it.
 
@@ -66,20 +66,10 @@ not, they are the product.
 ## Run
 
 ```
-node server.ts                               # http://localhost:8766
 SESSION_CONSOLE_HOST=0.0.0.0 node server.ts  # also reachable from your phone, behind the access key
 ```
 
-Node 22.18+ runs the TypeScript directly. No build step, no dependencies.
-
-Environment overrides (see `src/config.ts`):
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `SESSION_CONSOLE_PORT` | `8766` | listen port |
-| `SESSION_CONSOLE_HOST` | `127.0.0.1` | `0.0.0.0` opens it to the LAN; non-loopback clients need the key in `~/.claude/session-console/access-key` once (`?key=`), then a cookie |
-| `SESSION_CONSOLE_HOME` | `~/.claude/session-console` | holds `projects.json`, `releases.json`, the access key, the usage cache |
-| `SESSION_CONSOLE_SESSIONS` | `~/.claude/console-sessions` | session record directory |
+The environment overrides (port, host, where the data lives) are in [`docs/06-runbook.md`](docs/06-runbook.md).
 
 ## Layout
 

@@ -117,10 +117,8 @@ Everything is optional. A repo the plan never names gets no branch, however many
 npx @kodus/agent-readiness . --ci --no-web --no-color
 ```
 
-Use `--ci --no-web`: without `--no-web` the tool starts a dashboard and blocks. Level 1 at 63%
-as of 2026-10-07 (6% on 2026-09-16). Level 2 needs eight of ten named criteria, two more than pass;
-the cheapest left are a linter, a formatter and a `.env.example`, and the first two are a
-dependency decision (M15).
+Use `--ci --no-web`: without `--no-web` the tool starts a dashboard and blocks. Level 1 at 60%
+as of 2026-10-07 (6% on 2026-09-16); what Level 2 needs is in [`04-status.md`](./04-status.md).
 
 ## Deploy it
 

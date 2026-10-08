@@ -23,8 +23,7 @@ on the port it listens on, and it is the one place in the repo that installs any
 **`server.ts`** is the whole HTTP surface: static files from `web/`, and every `/api/*`
 endpoint dispatched from one router. It holds no business logic of its own; each route calls
 into a `src/` module. Nothing in it assumes a browser tab, because it is also the Electron main
-process: `app/main.mjs` imports it and opens a window on the port (see
-[`03-decisions.md`](./03-decisions.md), M3 and M15).
+process (M3, M15).
 
 **`src/*.ts`** is the model, one module per concern:
 

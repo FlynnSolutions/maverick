@@ -32,10 +32,10 @@ with real agents on 2026-09-16: plan, dispatch, review verdict, merge, close and
 
 ## What does not
 
-- **Agent readiness: Level 1, 63%** (`npx @kodus/agent-readiness . --ci --no-web`, 2026-10-07; 6% on
-  2026-09-16). Still short of Level 2, which needs eight of ten named criteria: six pass (tests, a
-  test script, a `dev` script, CONTRIBUTING, `.nvmrc`, CI), and the cheapest of the four left
-  are a linter, a formatter and a `.env.example`. The first two are a dev dependency, which is a decision (M2,
+- **Agent readiness: Level 1, 60%** (`npx @kodus/agent-readiness . --ci --no-web`, 2026-10-07; 6% on
+  2026-09-16). Still short of Level 2, which needs eight of ten named criteria: five pass (tests, a
+  test script, CONTRIBUTING, `.nvmrc`, CI), and the cheapest of the five left are a linter, a
+  formatter and a `.env.example`. The first two are a dev dependency, which is a decision (M2,
   M15), not a file. No type checker.
 - **A known banding defect**: the client helper that decides a session is finished counts
   `blocked`, while the "Needs you" rack also claims `blocked`, so a blocked session renders in
