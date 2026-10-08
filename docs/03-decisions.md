@@ -315,11 +315,16 @@ written yet; the breakdown page shows both; one approve writes the tracker in on
 through `addGroup` and `addItem`, the path missions already use. The approved document is
 stamped and kept as the artifact of the gate, never read back as state.
 
-**The proposer is a background read, not a conversation.** The brainstorm was the
-conversation. The proposer carries the CAG's tool list (`--tools Read,Write,Edit,Grep,Glob`
-through `claude --bg`), so it can read two things and write one file, and it cannot reach the
-console: the form-filling alternative would have widened the one boundary that is fully
-enforced (M5, M13).
+**The proposer is a read, not a conversation, and it runs in one of Maverick's terminals.** The
+brainstorm was the conversation. The proposer carries the CAG's tool list
+(`--tools Read,Write,Edit,Grep,Glob`), so it can read two things and write one file, and it
+cannot reach the console: the form-filling alternative would have widened the one boundary that
+is fully enforced (M5, M13). It was first built as a `claude --bg` job and that failed on the
+first real run (2026-10-07): a background job refuses to write into the checkout unless the
+session enters a worktree, and a tool-fenced session has no worktree tool, so the proposal
+landed in the job's own tmp folder. A terminal has no such guard, and it is the same thing the
+brainstorm and the plan already use. The lesson is general: **a fenced CAG cannot be a
+background job while it has to write into the checkout.**
 
 **Where items land, decided by Cory 2026-10-06:** *now* to Priority, *backlog* to Backlog,
 both under a `### Brainstorm: <topic>` group so the breakdown reads as one thing on the board

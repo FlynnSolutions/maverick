@@ -585,7 +585,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (method === "GET" && path === "/api/brainstorms") return sendJson(res, 200, await listBrainstorms(await requireProject(url)));
   if (method === "POST" && path === "/api/brainstorms/propose") {
     const body = await readJson<{ project: string; file: string; tracker?: number }>(req);
-    return sendJson(res, 200, { claudeId: await proposeItems(await projectById(body.project), body.file, body.tracker ?? 0) });
+    return sendJson(res, 200, await proposeItems(await projectById(body.project), body.file, body.tracker ?? 0));
   }
   if (method === "POST" && path === "/api/brainstorms/approve") {
     const body = await readJson<{ project: string; file: string; tracker?: number }>(req);

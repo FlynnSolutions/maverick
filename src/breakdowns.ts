@@ -7,9 +7,12 @@
  * through the insert-into-group path missions use. The approved document is stamped and kept
  * as the artifact of the gate, never read back as state (M1, M7).
  *
- * The CAG that proposes is a background read, not a conversation: the brainstorm was the
- * conversation. It carries the CAG's tool list, so it can read the brainstorm and the tracker
- * and write one file, and nothing else.
+ * The CAG that proposes is a read, not a conversation: the brainstorm was the conversation. It
+ * carries the CAG's tool list, so it can read the brainstorm and the tracker and write one file,
+ * and nothing else. It runs in one of Maverick's own terminals rather than as a `claude --bg`
+ * job, because a background job refuses to write into the checkout unless the session enters a
+ * worktree, and a tool-fenced session has no worktree tool; the proposal has to land in the
+ * checkout, where the gate reads it.
  *
  * Where items land is Cory's call of 2026-10-06: *now* goes to Priority, *backlog* goes to
  * Backlog, both under a group named after the brainstorm; *mission* is handed to a Strike Lead
@@ -19,10 +22,11 @@
  */
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { FINISHED, commitFile, spawnBackgroundAgent } from "./git.ts";
-import { agentsFor, startMission } from "./missions.ts";
+import { claudeArgs, commitFile } from "./git.ts";
+import { startMission } from "./missions.ts";
 import { CAG_TOOLS, cagOpening } from "./plans.ts";
 import type { Project } from "./projects.ts";
+import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { BACKLOG, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, today } from "./trackers.ts";
 
 export type Call = "now" | "backlog" | "mission";
@@ -130,7 +134,7 @@ export interface BrainstormView {
 }
 
 const STAMP = /^<!-- approved: (\S+) · commit: (\S+) -->$/m;
-/** The proposer's session name is also how it is found again: a brainstorm with no proposal and a live session of this name is "proposing". */
+/** The proposer's terminal title is also how it is found again: a brainstorm with no proposal and a live terminal of this title is "proposing". */
 const proposerName = (file: string): string => `breakdown · ${basename(file, ".md")}`.slice(0, 60);
 
 /** Every brainstorm document, newest first, with its proposal parsed when there is one. */
@@ -143,8 +147,8 @@ export const listBrainstorms = async (project: Project): Promise<BrainstormView[
     throw err;
   }
   if (!names.length) return [];
-  // The agent listing is a subprocess and the board titles are a parse; each is fetched once, and only when a brainstorm needs it.
-  let agents: Promise<Awaited<ReturnType<typeof agentsFor>>> | undefined;
+  // The board titles are a parse of every tracker, done once and only when a brainstorm has a proposal to check.
+  const live = new Set(listTerminals().filter((t) => t.exitCode === null).map((t) => t.title));
   let existing: Promise<string[]> | undefined;
   return Promise.all(names.map(async (name) => {
     const file = join("deliverables", "brainstorms", name);
@@ -153,8 +157,7 @@ export const listBrainstorms = async (project: Project): Promise<BrainstormView[
     const proposal = proposalPathFor(file);
     const ptext = await readFile(join(project.path, proposal), "utf8").catch(() => null);
     if (ptext === null) {
-      const busy = (await (agents ??= agentsFor(project.path).catch(() => []))).some((a) => a.name === proposerName(file) && !FINISHED.test(a.state ?? ""));
-      return { file, title, state: busy ? "proposing" : "not broken down" } as BrainstormView;
+      return { file, title, state: live.has(proposerName(file)) ? "proposing" : "not broken down" } as BrainstormView;
     }
     const stamp = ptext.match(STAMP);
     return { file, title, proposal, parsed: parseBreakdown(ptext, await (existing ??= existingTitles(project))), ...(stamp ? { state: "broken down", approved: stamp[1], commit: stamp[2] } : { state: "proposal waiting" }) } as BrainstormView;
@@ -185,12 +188,13 @@ const breakdownPrompt = (project: Project, file: string, proposal: string, track
   "Do not write to the tracker, do not edit the brainstorm, do not write any other file. Cory approves the proposal in Maverick, and Maverick writes the tracker.",
 ].join("\n");
 
-/** Send a CAG to read the brainstorm and write its proposal. Returns the background session id. */
-export const proposeItems = async (project: Project, file: string, trackerIndex = 0): Promise<string> => {
+/** Sit a CAG down to read the brainstorm and write its proposal, in one of Maverick's terminals, unattended. */
+export const proposeItems = async (project: Project, file: string, trackerIndex = 0): Promise<TerminalInfo> => {
   const tracker = project.trackers[trackerIndex];
   if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
   await readFile(join(project.path, file), "utf8").catch(() => { throw new Error(`no brainstorm at ${file}`); });
-  return spawnBackgroundAgent(project.path, proposerName(file), breakdownPrompt(project, file, proposalPathFor(file), tracker.path), undefined, CAG_TOOLS);
+  if (listTerminals().some((t) => t.title === proposerName(file) && t.exitCode === null)) throw new Error("a CAG is already proposing from this brainstorm");
+  return openTerminal(proposerName(file), ["claude", ...claudeArgs({ prompt: breakdownPrompt(project, file, proposalPathFor(file), tracker.path), tools: CAG_TOOLS })], project.path, 120, 36, undefined, "cag");
 };
 
 /* ---------- the approve: the tracker write, the missions, the stamp ---------- */
