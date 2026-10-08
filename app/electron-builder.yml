@@ -1,0 +1,35 @@
+# The macOS build. Run from app/: `npm run build`. The application directory is the repo root so
+# the packaged app carries server.ts, src/ and web/ exactly as a clone does, and nothing else.
+appId: com.flynnsolutions.maverick
+productName: Maverick
+electronVersion: 44.7.0
+directories:
+  app: ..
+  output: dist
+  buildResources: build
+extraMetadata:
+  main: app/main.mjs
+files:
+  - package.json
+  - server.ts
+  - src/**
+  - web/**
+  - bin/**
+  - app/main.mjs
+# Plain files, no archive: python3 runs bin/ptybridge.py by path, and nothing here is big enough
+# for the archive to buy anything.
+asar: false
+mac:
+  category: public.app-category.developer-tools
+  # No Apple developer certificate. An ad-hoc signature is what lets the bundle run at all on
+  # Apple silicon once the quarantine flag is cleared; the README says how.
+  identity: "-"
+  # Hardened runtime only matters for notarisation, and with an ad-hoc signature it makes the
+  # launch fail library validation.
+  hardenedRuntime: false
+  darkModeSupport: true
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]

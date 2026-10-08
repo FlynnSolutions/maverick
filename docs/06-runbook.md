@@ -18,6 +18,20 @@ On first open you get the project picker. Import a directory (native folder dial
 path; Maverick finds the tracker files it recognises and remembers the project in
 `~/.claude/session-console/projects.json`.
 
+## Run it as an app
+
+```bash
+cd app && npm install     # the only install in the repo: Electron and its builder
+npm start                 # the same server, in a window
+npm run build             # app/dist/Maverick-<version>-arm64.dmg and .zip
+```
+
+The app imports `server.ts` as its main process, so everything below about ports, env and data
+applies to it unchanged. If a `node server.ts` is already listening on the port, the app opens a
+window onto it and starts nothing. A release is cut by pushing a `v*` tag: the Release workflow
+builds the macOS app (arm64, unsigned) and attaches it to the GitHub Release. Run by hand from
+the Actions tab it uploads the build as an artifact without cutting a release.
+
 ## Configure it
 
 Everything environment-specific is in `src/config.ts` and overridable by env:
@@ -42,6 +56,7 @@ bin/session-close --id <id> --status handed-off --handoff "path/to/plan.md secti
 
 ```bash
 npm test          # node --test "test/**/*.test.ts", no dependency, no build
+npm run lint      # node --check over every file (tools/lint.mjs); CI runs both
 ```
 
 That covers the mission plan parser and the tracker, including the claim the mission design
@@ -102,10 +117,12 @@ Everything is optional. A repo the plan never names gets no branch, however many
 npx @kodus/agent-readiness . --ci --no-web --no-color
 ```
 
-Use `--ci --no-web`: without `--no-web` the tool starts a dashboard and blocks. Level 1 at 6%
-as of 2026-09-16.
+Use `--ci --no-web`: without `--no-web` the tool starts a dashboard and blocks. Level 1 at 63%
+as of 2026-10-07 (6% on 2026-09-16). Level 2 needs eight of ten named criteria, two more than pass;
+the cheapest left are a linter, a formatter and a `.env.example`, and the first two are a
+dependency decision (M15).
 
 ## Deploy it
 
-Nothing to deploy. It is a local, single-user process. `server.ts` is written to become the
-Electron main process later, which is how it would ever be packaged.
+Nothing to deploy. It is a local, single-user process. Packaging is the Electron shell above,
+and a release is a tag.
