@@ -129,8 +129,13 @@ _Nothing. Move an item here only when its session starts._
   sessions, spawn, assign, handoffs) and which never touches code. Merges and promotions stay
   Cory's buttons.
   - created: 2026-09-14
-- [ ] `[ENG]` `[L]` **Electron shell** — `server.ts` becomes the main process.
+- [ ] `[ENG]` `[L]` **Electron shell, and Maverick posted as a free, open-source download** —
+  `server.ts` becomes the main process. **Cory, 2026-10-07:** make it an app people can download
+  from GitHub, open source and free, with one completely honest statement on the front about
+  why it was built and who built it; the reality of it is the marketing of it. The brief and
+  his statement are in the plan.
   - created: 2026-09-14
+  - plan: plans/maverick-public-release-2026-10-07.md
 - [ ] `[ENG]` `[M]` **"Who is behind" on the project picker** — a fix to the flow, a skill, or a
   UI-testing pattern in one repo should not leave the others behind. Decided 2026-09-16: do **not**
   build a propagation engine. Skills already propagate (one versioned `flynn-kit` plugin at user
