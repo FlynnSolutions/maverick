@@ -636,7 +636,8 @@ const openDrawer = (trackerIndex, item) => {
       }
     });
     const flipped = item.body.replace(/^- (\[( |x)\] )?/i, item.checked ? "- [ ] " : "- [x] ");
-    actions.replaceChildren(
+    // replaceChildren paints a null as the word "null"; el() drops them, this does not, so filter.
+    actions.replaceChildren(...[
       item.checked ? null : btn("spawn", () => { const parent = supervisor.value || undefined; closeDrawer(); spawnOnItem(trackerIndex, item, null, parent); }, item.planned ? "primary" : ""),
       item.checked ? null : supervisor,
       item.checked || item.planned ? null : btn("plan it", () => { closeDrawer(); planItem(trackerIndex, item); }, "primary"),
@@ -657,7 +658,7 @@ const openDrawer = (trackerIndex, item) => {
       }, "danger"),
       btn("edit markdown", () => { editing = true; edit(); }),
       btn("close", closeDrawer),
-    );
+    ].filter(Boolean));
   };
   const edit = () => {
     const area = el("textarea", { spellcheck: "false" });
