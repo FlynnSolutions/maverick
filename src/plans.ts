@@ -13,6 +13,7 @@
  */
 import { stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import { commitFile, uncommittedDiff } from "./git.ts";
 import type { Project } from "./projects.ts";
 import { today, type Item } from "./trackers.ts";
 import { slug } from "./audits.ts";
@@ -45,6 +46,19 @@ export const resolvePlan = async (project: Project, trackerPath: string, value: 
 export const planOf = async (project: Project, trackerPath: string, item: Item): Promise<{ file: string | null; planned: boolean }> => {
   const file = item.fields.mission ? null : await resolvePlan(project, trackerPath, item.fields.plan);
   return { file, planned: Boolean(item.fields.mission || file) };
+};
+
+/**
+ * The CAG sets the `plan:` line but has no shell, so it cannot commit it; the console commits
+ * each tracker change back, and this is that change. Only a diff made entirely of added
+ * `plan:` lines is taken: anything else in the file is a person mid-edit, and is left alone.
+ */
+export const commitPlanFields = async (trackerPath: string): Promise<string | null> => {
+  const diff = await uncommittedDiff(trackerPath).catch(() => "");
+  if (!diff.trim()) return null;
+  const changes = diff.split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l));
+  if (!changes.length || !changes.every((l) => /^\+\s+- plan: \S/.test(l))) return null;
+  return commitFile(trackerPath, `console: plan set by the CAG (${changes.length} item${changes.length === 1 ? "" : "s"})`);
 };
 
 /** Where a new plan goes: a `plans/` folder beside the tracker, named the way Realtime already names them. */
@@ -86,7 +100,7 @@ export const planPrompt = (project: Project, trackerPath: string, item: Item, pl
   "",
   `When you and he have agreed, write the plan to ${plan.full}. One document, in prose and lists, carrying everything a session with no other context needs: what it is, done when, the files it touches, the steps in order, what it must not touch, how it proves itself, and the walkthrough cards a person will check it by.`,
   "",
-  `Then, in ${trackerPath}, add the line \`  - plan: ${plan.field}\` under that item's bullet, beside its other fields, and change nothing else in the file. That line is what makes the item planned: the field, and the file existing.`,
+  `Then, in ${trackerPath}, add the line \`  - plan: ${plan.field}\` under that item's bullet, beside its other fields, and change nothing else in the file. That line is what makes the item planned: the field, and the file existing. Maverick commits that line itself the next time it reads the board; you have no shell and do not need one.`,
   "",
   "If the item is more than one session's work in a few milestones, say so and stop: that is a mission, the Strike Lead plans it, and it must not be planned twice.",
   "",

@@ -15,6 +15,13 @@ export const repoRootOf = async (filePath: string): Promise<string> => {
  * Stage exactly this file and commit it. Every console edit commits immediately so other
  * sessions see it on their next read (Cory, 2026-09-14). Never `git add -A`.
  */
+/** The uncommitted change to one file, as `git diff` prints it; empty when the file is clean or untracked. */
+export const uncommittedDiff = async (filePath: string): Promise<string> => {
+  const root = await repoRootOf(filePath);
+  const { stdout } = await run("git", ["-C", root, "diff", "--", filePath]);
+  return stdout;
+};
+
 export const commitFile = async (filePath: string, message: string): Promise<string> => {
   const root = await repoRootOf(filePath);
   // A no-op edit (an item dropped back where it was) must not try to commit nothing.

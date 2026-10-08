@@ -41,3 +41,33 @@ test("a new plan lands beside the tracker, named after the item and the day", ()
   assert.match(plan.field, /^plans\/checkbox-flips-from-the-board-\d{4}-\d{2}-\d{2}\.md$/);
   assert.equal(plan.full, join(root, "deliverables", plan.field));
 });
+
+test("a plan line the CAG set is committed by the console; any other uncommitted edit is left alone", async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  const { commitPlanFields } = await import("../src/plans.ts");
+  const repo = await mkdtemp(join(tmpdir(), "mv-plancommit-"));
+  await run("git", ["-C", repo, "init", "-q"]);
+  await run("git", ["-C", repo, "config", "user.email", "t@example.com"]);
+  await run("git", ["-C", repo, "config", "user.name", "t"]);
+  const file = join(repo, "CHECKLIST.md");
+  const base = "## 🔥 Priority\n\n- [ ] **One**\n  - created: 2026-10-07\n\n- [ ] **Two**\n  - created: 2026-10-07\n";
+  await writeFile(file, base, "utf8");
+  await run("git", ["-C", repo, "add", "."]);
+  await run("git", ["-C", repo, "commit", "-q", "-m", "base"]);
+
+  assert.equal(await commitPlanFields(file), null, "a clean file commits nothing");
+
+  await writeFile(file, base.replace("- [ ] **One**\n", "- [ ] **One**\n  - plan: plans/one.md\n"), "utf8");
+  const sha = await commitPlanFields(file);
+  assert.match(sha ?? "", /^[0-9a-f]{7,}$/, "an added plan line is committed");
+  const { stdout: subject } = await run("git", ["-C", repo, "log", "-1", "--format=%s"]);
+  assert.equal(subject.trim(), "console: plan set by the CAG (1 item)");
+
+  const { readFile } = await import("node:fs/promises");
+  await writeFile(file, (await readFile(file, "utf8")).replace("**Two**", "**Two, renamed**"), "utf8");
+  assert.equal(await commitPlanFields(file), null, "a person's edit is not swept up");
+  const { stdout: status } = await run("git", ["-C", repo, "status", "--porcelain"]);
+  assert.match(status, /CHECKLIST\.md/, "and it stays uncommitted");
+});

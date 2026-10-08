@@ -22,7 +22,7 @@ import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/r
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, recordWalkthrough, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
-import { CAG_TOOLS, brainstormPrompt, planFileFor, planOf, planPrompt } from "./src/plans.ts";
+import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
@@ -132,6 +132,8 @@ const lineDates = async (filePath: string): Promise<Map<number, string>> => {
 const board = async (project: Project) =>
   Promise.all(
     project.trackers.map(async (tracker, index) => {
+      // A plan the CAG set since the last read is committed here, the way every drag is.
+      await commitPlanFields(tracker.path).catch((err: Error) => console.error(`committing plan fields in ${tracker.path}:`, err.message));
       const text = await readFile(tracker.path, "utf8");
       const parsed = parseTracker(text);
       const dates = await lineDates(tracker.path);
