@@ -73,7 +73,8 @@ const COLUMN_BY_EMOJI: Array<[string, ColumnId]> = [
 /** Sections that exist but are never shown as a lane. */
 const HIDDEN_SECTION = "🗑️ Removed";
 
-export const today = (): string => new Date().toISOString().slice(0, 10);
+/** The calendar date where the person is, not at Greenwich: at 7pm Pacific the UTC date is already tomorrow. */
+export const today = (): string => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 const isSectionHeading = (line: string): boolean => line.startsWith("## ");
 const isGroupHeading = (line: string): boolean => line.startsWith("### ");

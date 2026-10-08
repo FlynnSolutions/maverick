@@ -31,7 +31,7 @@ import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
-import { addGroup, addItem, parseTracker, setChecked } from "./trackers.ts";
+import { addGroup, addItem, parseTracker, setChecked, today } from "./trackers.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -485,7 +485,6 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
 
 /* ---------- the blessing, and the tracker write ---------- */
 
-const today = (): string => new Date().toISOString().slice(0, 10);
 
 /** One item block, in the shape `src/trackers.ts` parses: a bullet, its fields, then its prose. */
 const itemBlock = (title: string, fields: Record<string, string>, body: string[]): string => [
