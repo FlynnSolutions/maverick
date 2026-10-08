@@ -110,6 +110,9 @@ export interface BackgroundAgent {
 }
 
 /** Claude Code's own background sessions started under `cwd` (`claude --bg`), via its JSON listing. */
+/** A background session's terminal states, as `claude agents` reports them. */
+export const FINISHED = /^(done|exited|stopped)$/;
+
 export const backgroundAgents = async (cwd: string): Promise<BackgroundAgent[]> => {
   const { stdout } = await run("claude", ["agents", "--json", "--all", "--cwd", cwd]);
   const all = JSON.parse(stdout) as Array<BackgroundAgent & { kind: string }>;
@@ -190,9 +193,9 @@ export const claudeArgs = (o: { prompt: string; bg?: boolean; agent?: string; na
   o.prompt,
 ];
 
-/** Start a background Claude session and return the id it prints. */
-export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string): Promise<string> => {
-  const { stdout } = await run("claude", claudeArgs({ prompt, bg: true, agent, name }), { cwd });
+/** Start a background Claude session and return the id it prints. `tools` fences it the way the CAG is fenced. */
+export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string, tools?: string): Promise<string> => {
+  const { stdout } = await run("claude", claudeArgs({ prompt, bg: true, agent, name, tools }), { cwd });
   const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
   if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);
   return id;

@@ -104,6 +104,11 @@ format: checklist
   **Decided by Cory 2026-10-06:** one dated brainstorm file per conversation, not a rolling
   `IDEAS.md`, since a running file gets edited by agents and drifts; and *planned* is the
   presence of a resolving `plan:` field, not a new status value.
+  **Built:** the rule and the CAG (brainstorm, plan) merged 2026-10-07 as #3, decisions M13.
+  The breakdown built 2026-10-07 on `feat/breakdown`, decisions M16: a CAG terminal writes
+  the proposal, the breakdown page is the gate, approve writes the board under a group named
+  after the brainstorm and opens a Strike Lead per mission-sized item. Roadmap items land
+  unplanned on purpose (M13 over the sketch's wording). Not yet: per-item edits at the gate.
 
 ### Readiness at the door
 

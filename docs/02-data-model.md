@@ -40,6 +40,7 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | `MilestoneWalkthrough` | `src/missions.ts` | within the milestone | `claudeId`, `doc`, `progress`, `failed`, `waived` |
 | `MissionTask` | `src/missions.ts` | within the milestone | `repo`, `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict` |
 | release labels | `src/releases.ts` | `session-console/releases.json` | the two planned slots' names and deploy dates only |
+| `Breakdown` | `src/breakdowns.ts` | parsed from `deliverables/breakdowns/<brainstorm>.md`, never stored | `topic`, `items[]` (title, kind, size, call), `already[]`, `problems[]` |
 
 `SessionRole` is `driver | develop | audit | plan`; `SessionStatus` is `open | closed |
 handed-off`; `StepStatus` is `pending | running | finished | done | failed | skipped`.

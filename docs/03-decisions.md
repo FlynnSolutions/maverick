@@ -333,3 +333,41 @@ this entry does not close it.
 **Consequence:** two lockfiles (the root one is empty by design, so a reader can see that),
 `macOS only` on the front page until another platform has been run on, and the release is cut by
 a tag, not by hand: a `v*` tag builds the app and attaches it to the Release.
+
+## M16 — A brainstorm reaches the board through one gate, and a CAG proposes rather than writes ✅ built
+
+**The breakdown is the mission's gate shape pointed at a brainstorm.** A CAG reads the
+brainstorm document and the tracker and writes one proposal document in a fixed shape under
+`deliverables/breakdowns/`; the server parses it into items plus the reasons it cannot be
+written yet; the breakdown page shows both; one approve writes the tracker in one commit
+through `addGroup` and `addItem`, the path missions already use. The approved document is
+stamped and kept as the artifact of the gate, never read back as state.
+
+**The proposer is a read, not a conversation, and it runs in one of Maverick's terminals.** The
+brainstorm was the conversation. The proposer carries the CAG's tool list
+(`--tools Read,Write,Edit,Grep,Glob`), so it can read two things and write one file, and it
+cannot reach the console: the form-filling alternative would have widened the one boundary that
+is fully enforced (M5, M13). It was first built as a `claude --bg` job and that failed on the
+first real run (2026-10-07): a background job refuses to write into the checkout unless the
+session enters a worktree, and a tool-fenced session has no worktree tool, so the proposal
+landed in the job's own tmp folder. A terminal has no such guard, and it is the same thing the
+brainstorm and the plan already use. The lesson is general: **a fenced CAG cannot be a
+background job while it has to write into the checkout.**
+
+**Where items land, decided by Cory 2026-10-06:** *now* to Priority, *backlog* to Backlog,
+both under a `### Brainstorm: <topic>` group so the breakdown reads as one thing on the board
+the day after; *mission* to a Strike Lead interview opened from the gate, never written twice.
+Every item carries `source: brainstorm <file>, <date>` so it points back at the reasoning.
+
+**A roadmap item arrives unplanned, on purpose.** The 2026-10-06 sketch said planned items
+carry a `plan:` field, but the rule at the door (M13) is a field that names a real file, and no
+plan file exists at breakdown time; a path to nothing is the claim the rule rejects. So a *now*
+item lands with no field, wears the badge, and *plan it* is its next verb. The gate says so.
+
+**A consequence to know:** the board treats every group under Priority as a release (ordering,
+the deploy-date drawer), so a `Brainstorm:` group gets release verbs, exactly as a `Mission:`
+group does today. Living with it until a third kind of Priority group appears.
+
+**Rejected: per-item edits at the gate.** Whole-document approve, as missions have it; the fix
+for a wrong proposal is to propose again. One fewer place the page and the file can disagree.
+If dropping two bullets turns out to be a conversation too often, that is the next brick.

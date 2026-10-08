@@ -23,6 +23,7 @@ import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cad
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
 import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, previewPlan, recordWalkthrough, reopenInterview, retryTask, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
+import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
@@ -580,6 +581,16 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     return sendJson(res, 200, await readShip(project.id, decodeURIComponent(path.slice("/api/ships/".length))));
   }
   // Missions: a bounded effort run by a Strike Lead. Nothing here spawns a Wingman before /approve.
+  // The brainstorms and where each stands; the proposer is a background CAG; the approve writes the tracker.
+  if (method === "GET" && path === "/api/brainstorms") return sendJson(res, 200, await listBrainstorms(await requireProject(url)));
+  if (method === "POST" && path === "/api/brainstorms/propose") {
+    const body = await readJson<{ project: string; file: string; tracker?: number }>(req);
+    return sendJson(res, 200, await proposeItems(await projectById(body.project), body.file, body.tracker ?? 0));
+  }
+  if (method === "POST" && path === "/api/brainstorms/approve") {
+    const body = await readJson<{ project: string; file: string; tracker?: number }>(req);
+    return sendJson(res, 200, await approveBreakdown(await projectById(body.project), body.file, body.tracker ?? 0));
+  }
   if (path === "/api/missions") {
     const project = await requireProject(url);
     if (method === "GET") {
