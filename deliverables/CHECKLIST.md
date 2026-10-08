@@ -130,7 +130,7 @@ format: checklist
   not yet downloaded from a Release.
   - created: 2026-09-14
   - plan: plans/maverick-public-release-2026-10-07.md
-  - status: draft PR #5 open, not merged
+  - status: PR #5 open, not merged
   - pr: https://github.com/FlynnSolutions/maverick/pull/5
 
 ## 📋 Backlog
