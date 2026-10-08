@@ -1,0 +1,20 @@
+name: CI
+
+# The gate on every pull request: the tests and a syntax pass over every file. No install
+# step, because the server has no dependencies (RULEBOOK.md, decisions M2 and M15).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: test + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm test
+      - run: npm run lint

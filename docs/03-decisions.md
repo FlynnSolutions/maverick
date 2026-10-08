@@ -305,3 +305,31 @@ run, agent stand out; read, search, web are counted and folded), a fold of tool-
 what it did and how long it took, a reply says how long after the prompt it came, and a session
 still working carries a clock ticking since its last event. The classification lives in
 `src/transcript-view.ts` beside the parser, so the page draws kinds rather than deciding them.
+
+## M15 — The Electron shell is a wrapper with its own `package.json`; the server stays install-free ✅ decided
+
+Maverick ships as a macOS app people download from a GitHub Release. Electron is the shell, as
+the rulebook has said since 2026-09-14, and Electron plus its builder are dependencies and a
+build step. [M2](#m2--no-dependencies-no-build-step--built) stands unchanged for everything
+that is Maverick: `server.ts`, `src/` and `web/` take no dependency and `git clone && node
+server.ts` keeps working with no install.
+
+**The shape.** The shell is `app/`: its own `package.json` with `electron` and
+`electron-builder` as dev dependencies, the only `npm install` in the repo, and one file,
+`app/main.mjs`, that imports `../server.ts` and opens a window on the port it listens on. The
+renderer is `web/` unchanged; nothing in it may start assuming Electron, and the browser tab
+stays a first-class way to run it. The app is a window onto the same server: if something
+already answers on the port, the window opens on that and starts nothing.
+
+**Rejected: a dependency in the root `package.json`.** A root `node_modules` is what M2 refuses,
+and it would make the Electron build a prerequisite of the server it wraps. **Rejected: moving
+`server.ts` under `app/`.** The server is the product; the shell is packaging.
+
+**Dev tooling follows the same line.** `lint` is `node --check` over every tracked file, which is
+the strongest check the standard library gives and the only one that costs no dependency.
+Accepting a linter or a type checker as a dev dependency is still the open question M2 named;
+this entry does not close it.
+
+**Consequence:** two lockfiles (the root one is empty by design, so a reader can see that),
+`macOS only` on the front page until another platform has been run on, and the release is cut by
+a tag, not by hand: a `v*` tag builds the app and attaches it to the Release.

@@ -1,7 +1,10 @@
 {
   "name": "maverick",
+  "version": "0.1.0",
+  "description": "Maverick: the pilot. One screen over the roadmap, the Claude sessions, the releases, and the ship.",
+  "author": "Flynn Solutions",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.18" },
-  "scripts": { "start": "node server.ts", "test": "node --test \"test/**/*.test.ts\"" }
+  "scripts": { "start": "node server.ts", "test": "node --test \"test/**/*.test.ts\"", "lint": "node tools/lint.mjs" }
 }

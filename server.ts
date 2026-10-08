@@ -307,7 +307,7 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
       // but to be somewhere you can work, and every other kind here execs claude.
       const cwd = body.cwd ?? project.path;
       if (cwd !== project.path && !cwd.startsWith(`${project.path}/`)) throw new Error(`cwd ${cwd} is outside the project`);
-      const shell = process.env.SHELL || "/bin/zsh";
+      const shell = config.shell;
       // A login shell, so it is the same environment the user's own terminal gives them.
       return openTerminal(body.title ?? shell.split("/").pop() ?? "shell", [shell, "-l"], cwd, size.cols, size.rows, undefined, "shell");
     }

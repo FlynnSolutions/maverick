@@ -27,6 +27,7 @@ format: checklist
   `.nvmrc`, a `test` script with at least one real test, `CONTRIBUTING.md`, `SECURITY.md`, a CI
   workflow that runs lint and test. Re-run `npx @kodus/agent-readiness . --ci --no-web` and put the
   number in the README. Maverick cannot ship a readiness score it fails.
+  - status: on `feat/electron-shell` (2026-10-07): `.editorconfig`, `.nvmrc`, `lint`, CI, CONTRIBUTING, SECURITY; linter and formatter still open (M15)
 
 - [ ] `[OSS]` `[S]` **The public repo reads like one**
   - created: 2026-09-16
@@ -36,6 +37,7 @@ format: checklist
   `LICENSE` landed 2026-09-16. Still missing: `CONTRIBUTING.md`, `SECURITY.md`, issue and PR
   templates under `.github/`, a screenshot or GIF in the README, and a one-line description of who
   this is for. Do not post about it before this is done.
+  - status: on `feat/electron-shell` (2026-10-07): all of it, pending the draft PR
 
 ### The level model
 
@@ -118,7 +120,19 @@ format: checklist
 
 ## 🚧 In Progress
 
-_Nothing. Move an item here only when its session starts._
+- [~] `[ENG]` `[L]` **Electron shell, and Maverick posted as a free, open-source download** —
+  `server.ts` becomes the main process. **Cory, 2026-10-07:** make it an app people can download
+  from GitHub, open source and free, with one completely honest statement on the front about
+  why it was built and who built it; the reality of it is the marketing of it. The brief and
+  his statement are in the plan.
+  **Built 2026-10-07 on `feat/electron-shell`:** `app/` (Electron 44, its own `package.json`,
+  one `main.mjs` that imports `server.ts`), the Release workflow on a `v*` tag, the README with
+  the statement up front, and the public-repo files. Decisions M15. Packaged app run on this Mac;
+  not yet downloaded from a Release.
+  - created: 2026-09-14
+  - plan: plans/maverick-public-release-2026-10-07.md
+  - status: PR #5 open, not merged
+  - pr: https://github.com/FlynnSolutions/maverick/pull/5
 
 ## 📋 Backlog
 
@@ -130,13 +144,6 @@ _Nothing. Move an item here only when its session starts._
   sessions, spawn, assign, handoffs) and which never touches code. Merges and promotions stay
   Cory's buttons.
   - created: 2026-09-14
-- [ ] `[ENG]` `[L]` **Electron shell, and Maverick posted as a free, open-source download** —
-  `server.ts` becomes the main process. **Cory, 2026-10-07:** make it an app people can download
-  from GitHub, open source and free, with one completely honest statement on the front about
-  why it was built and who built it; the reality of it is the marketing of it. The brief and
-  his statement are in the plan.
-  - created: 2026-09-14
-  - plan: plans/maverick-public-release-2026-10-07.md
 - [ ] `[ENG]` `[M]` **"Who is behind" on the project picker** — a fix to the flow, a skill, or a
   UI-testing pattern in one repo should not leave the others behind. Decided 2026-09-16: do **not**
   build a propagation engine. Skills already propagate (one versioned `flynn-kit` plugin at user

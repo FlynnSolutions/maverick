@@ -1,0 +1,37 @@
+name: Release
+
+# A `v*` tag builds the macOS app (arm64, the only platform it has been run on) and attaches
+# the DMG and the zip to a GitHub Release for that tag. Run by hand it only uploads the build
+# as a workflow artifact, so a change to the packaging can be checked without cutting a release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    name: build the macOS app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm test
+      - run: npm ci --prefix app
+      - run: npm run build --prefix app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maverick-macos-arm64
+          path: |
+            app/dist/*.dmg
+            app/dist/*.zip
+      - if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes app/dist/*.dmg app/dist/*.zip
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,16 @@
+{
+  "name": "maverick-app",
+  "private": true,
+  "description": "The Electron shell around Maverick: one window onto the server in ../server.ts",
+  "author": "Flynn Solutions",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac --arm64"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  }
+}

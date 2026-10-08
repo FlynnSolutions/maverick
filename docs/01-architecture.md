@@ -5,10 +5,13 @@ mode: explanation
 # Architecture
 
 One Node process serving a static browser client, over data it reads from other people's
-files. There is no database, no build step and no runtime dependency.
+files. There is no database, no build step and no runtime dependency. The Electron shell under
+`app/` is a window onto that same process: it imports `server.ts` as the main process and opens
+on the port it listens on, and it is the one place in the repo that installs anything (M15).
 
 ```
   browser (web/)  ──HTTP──▶  server.ts  ──reads──▶  the project's git repo + markdown trackers
+  or the app window (app/)
                                  │                   ~/.claude  (Claude Code's own state)
                                  │                   git / gh  (worktrees, PRs, tags)
                                  └──writes──▶        one line move, committed in the tracker's repo
@@ -19,8 +22,8 @@ files. There is no database, no build step and no runtime dependency.
 
 **`server.ts`** is the whole HTTP surface: static files from `web/`, and every `/api/*`
 endpoint dispatched from one router. It holds no business logic of its own; each route calls
-into a `src/` module. It is written so that nothing in it assumes a browser tab, because it
-becomes the Electron main process later (see [`03-decisions.md`](./03-decisions.md)).
+into a `src/` module. Nothing in it assumes a browser tab, because it is also the Electron main
+process (M3, M15).
 
 **`src/*.ts`** is the model, one module per concern:
 

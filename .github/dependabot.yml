@@ -1,0 +1,12 @@
+# The Electron shell is the only thing in the repo with dependencies (RULEBOOK.md); keep it and
+# the workflow actions current.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
