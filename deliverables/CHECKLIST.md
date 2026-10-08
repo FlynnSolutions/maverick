@@ -32,6 +32,7 @@ format: checklist
   - created: 2026-09-16
   - source: Cory, 2026-09-16
   - kind: chore
+  - plan: plans/the-public-repo-reads-like-one-2026-10-08.md
   `LICENSE` landed 2026-09-16. Still missing: `CONTRIBUTING.md`, `SECURITY.md`, issue and PR
   templates under `.github/`, a screenshot or GIF in the README, and a one-line description of who
   this is for. Do not post about it before this is done.
@@ -122,7 +123,6 @@ _Nothing. Move an item here only when its session starts._
 ## 📋 Backlog
 
 - [ ] `[ENG]` `[M]` **Checkbox flips from the board** — tick an item in the UI, write `- [x]` back.
-  - plan: plans/does-not-exist.md
   - created: 2026-09-14
 - [ ] `[ENG]` `[M]` **Ship-time `release: next+1` → `next` rewrite**, today a manual edit.
   - created: 2026-09-15
