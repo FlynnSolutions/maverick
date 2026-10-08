@@ -25,7 +25,7 @@ jobs:
       - run: npm test
       - run: npm ci --prefix app
       - run: npm run build --prefix app
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: maverick-macos-arm64
           path: |
