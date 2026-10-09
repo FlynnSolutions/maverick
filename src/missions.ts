@@ -523,7 +523,7 @@ export const costOf = (milestones: Milestone[]): Cost => {
 /* ---------- the Strike Lead's interview ---------- */
 
 /** Every repo a mission could touch, with the base branch each one lands against. */
-const repoChoices = async (project: Project, cfg: MissionConfig): Promise<Array<{ label: string; path: string; base: string; land: Landing }>> => {
+export const repoChoices = async (project: Project, cfg: MissionConfig): Promise<Array<{ label: string; path: string; base: string; land: Landing }>> => {
   const found = await reposUnder(project.path);
   if (!found.length) throw new Error(`${project.name} holds no git repository; a mission needs at least one`);
   return Promise.all(found.map(async (r) => ({
@@ -541,8 +541,8 @@ const repoChoices = async (project: Project, cfg: MissionConfig): Promise<Array<
  * mission branches because one task touches one of them. Exported so a mission flown from a
  * terminal (`bin/maverick`) uses the app's layout rather than a second one.
  */
-export const missionLayout = async (project: Project, cfg: MissionConfig, id: string, named: Set<string>): Promise<MissionRepo[]> =>
-  (await repoChoices(project, cfg)).filter((r) => named.has(r.label)).map((r) => ({
+export const missionLayout = (choices: Awaited<ReturnType<typeof repoChoices>>, project: Project, cfg: MissionConfig, id: string, named: Set<string>): MissionRepo[] =>
+  choices.filter((r) => named.has(r.label)).map((r) => ({
     label: r.label,
     path: r.path,
     base: r.base,
@@ -716,7 +716,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   // Only the repos the plan actually names get a branch. A project with eleven repos does not
   // get eleven mission branches because one task touches one of them.
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
-  mission.repos = await missionLayout(project, cfg, mission.id, named);
+  mission.repos = missionLayout(choices, project, cfg, mission.id, named);
   mission.planCommit = await writePlanToTracker(project, mission, parsed.intro);
   // Before any worktree exists: the worktrees and the scratch folders inside them are ignored
   // locally in every repo the project holds (the worktrees live under the project root, which

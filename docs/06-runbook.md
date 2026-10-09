@@ -96,7 +96,7 @@ first is what the tooling was usually written to stop.
 | Key | Default | Means |
 |---|---|---|
 | `wingmanAgent` | none | the Claude Code agent a Wingman runs as, carrying its standing orders: own one task, do not widen it, never push or merge, never grade its own work. It is focus rather than a fence — a Wingman needs `Bash` to run the repo's tests, and it may use subagents. Resolved from `~/.claude/agents/` or the project's own `.claude/agents/`. The gate says whether one is set; see [`03-decisions.md`](./03-decisions.md) M5 |
-| `rioAgent` | `auditor` | the agent a RIO runs as: it reads, runs and judges, and never fixes |
+| `rioAgent` | `rio` | the agent a RIO runs as: `.claude/agents/rio.md`, which reads, runs and judges, and has no Edit or Write (install it beside the Wingman, see the README) |
 | `worktrees` | `.claude/worktrees` | where task and integration worktrees go, relative to the project |
 | `branchPrefix` | `mission/` | a task's branch is `<prefix><mission>-<task>` |
 | `land` | `merge` | the default for every repo: `merge` leaves the work on that repo's mission branch, `pr` pushes and opens a pull request against its base, `push` fast-forwards the base to it |

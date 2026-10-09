@@ -44,6 +44,18 @@ test("plan-check prints what each task touches and needs, and every overlap", as
   assert.match(stdout, /overlap: milestone 1: m1-t1 and m1-t2 both touch src\/shared/);
 });
 
+test("brief on the plan copy inside the integration worktree resolves the project, not the worktree", () => {
+  const integration = join(dir, ".claude", "worktrees", "orbit-integration-root");
+  execFileSync("git", ["-C", dir, "add", "-A"]);
+  execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "plan"]);
+  execFileSync("git", ["-C", dir, "worktree", "add", "-q", "-b", "mission/orbit", integration, "HEAD"]);
+  const { status, stdout, stderr } = run("brief", join(integration, "deliverables", "missions", "orbit.md"), "m1-t2", "--role", "wingman");
+  assert.equal(status, 0, stderr);
+  assert.ok(stdout.includes(`Your worktree is ${join(dir, ".claude", "worktrees", "orbit-m1-t2-root")}, on branch mission/orbit-m1-t2`), stdout);
+  assert.ok(stdout.includes(`on the mission branch at ${join(integration, "deliverables", "missions", "orbit.md")}`), stdout);
+  assert.match(run("brief", "/nowhere/plan.md", "m1-t1", "--role", "rio").stderr, /^maverick: no such path/);
+});
+
 test("plan-check names every problem and exits 1", async () => {
   const bad = join(dir, "deliverables", "missions", "bad.md");
   await writeFile(bad, "## Milestone 1 — x\n\n- [ ] **only a title**\n", "utf8");

@@ -15,9 +15,8 @@ import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 
 const src = (name) => join(dirname(fileURLToPath(import.meta.url)), "..", "src", name);
-const { missionLayout, parsePlan, taskLayout } = await import(src("missions.ts"));
+const { missionLayout, parsePlan, repoChoices, taskLayout } = await import(src("missions.ts"));
 const { missionConfigFor } = await import(src("project-config.ts"));
-const { reposUnder } = await import(src("git.ts"));
 const { rioBrief, scratchFor, wingmanBrief } = await import(src("briefs.ts"));
 
 const usage = () => {
@@ -29,15 +28,31 @@ const [command, ...rest] = process.argv.slice(2);
 const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.startsWith("--"));
 const option = (name) => { const i = rest.indexOf(`--${name}`); return i >= 0 ? rest[i + 1] : undefined; };
 
-// Real paths throughout: git reports the repo's real path, and /var and /private/var must agree.
-const planFile = positional[0] ? realpathSync(positional[0]) : usage();
-const projectPath = realpathSync(option("project") ?? execFileSync("git", ["-C", dirname(planFile), "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
-if (!planFile.startsWith(`${projectPath}/`)) { console.error(`${planFile} is not inside the project at ${projectPath}`); process.exit(1); }
+const fail = (message, code = 1) => { console.error(`maverick: ${message}`); process.exit(code); };
+const real = (path) => { try { return realpathSync.native(path); } catch { return fail(`no such path: ${path}`); } };
+// Real paths throughout: git reports the repo's real path, /var and /private/var must agree, and
+// this disk may fold case. The project is the main checkout, found from the common git dir, so
+// the plan copy on the mission branch (inside a worktree) resolves to the same project as the
+// Lead's copy does.
+const planFile = positional[0] ? real(positional[0]) : usage();
+const mainCheckout = () => {
+  try {
+    return dirname(execFileSync("git", ["-C", dirname(planFile), "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+  } catch {
+    return fail(`${planFile} is not inside a git repository; pass --project`);
+  }
+};
+const projectPath = real(option("project") ?? mainCheckout());
+const inProject = planFile.startsWith(`${projectPath}/`) ? planFile : fail(`${planFile} is not inside the project at ${projectPath}`);
+// The plan's path relative to the project, whichever checkout it was read from.
+const planRelative = (await execFileSync("git", ["-C", dirname(planFile), "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim()) === projectPath
+  ? relative(projectPath, inProject)
+  : relative(execFileSync("git", ["-C", dirname(planFile), "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim(), inProject);
 const project = { id: basename(projectPath), name: basename(projectPath), path: projectPath, trackers: [] };
 const cfg = await missionConfigFor(projectPath);
-const labels = (await reposUnder(projectPath)).map((r) => r.label);
+const choices = await repoChoices(project, cfg);
 const text = await readFile(planFile, "utf8");
-const plan = parsePlan(text, labels);
+const plan = parsePlan(text, choices.map((r) => r.label));
 const missionId = basename(planFile, ".md");
 
 if (command === "plan-check") {
@@ -64,12 +79,12 @@ if (command === "brief") {
   if (plan.problems.length) { for (const p of plan.problems) console.error(`problem: ${p}`); process.exit(1); }
   const milestone = plan.milestones.find((m) => m.tasks.some((t) => t.id === taskId));
   const task = milestone?.tasks.find((t) => t.id === taskId);
-  if (!milestone || !task) { console.error(`no task "${taskId}" in ${planFile}`); process.exit(1); }
-  const repos = await missionLayout(project, cfg, missionId, new Set(plan.milestones.flatMap((m) => m.tasks.map((t) => t.repo))));
+  if (!milestone || !task) fail(`no task "${taskId}" in ${planFile}`);
+  const repos = missionLayout(choices, project, cfg, missionId, new Set(plan.milestones.flatMap((m) => m.tasks.map((t) => t.repo))));
   const repo = repos.find((r) => r.label === task.repo);
-  if (!repo) { console.error(`task ${taskId} names repo "${task.repo}", which is not under ${projectPath}`); process.exit(1); }
+  if (!repo) fail(`task ${taskId} names repo "${task.repo}", which is not under ${projectPath}`);
   Object.assign(task, taskLayout(project, cfg, missionId, task, repo));
-  const ctx = { projectPath, mission: { id: missionId, name: plan.name, plan: relative(projectPath, planFile), repos }, milestone, task, repo };
+  const ctx = { projectPath, mission: { id: missionId, name: plan.name, plan: planRelative, repos }, milestone, task, repo };
   console.log(role === "wingman" ? wingmanBrief(ctx) : rioBrief(ctx, option("findings") ?? join(scratchFor(task, `rio${task.reviews ?? 1}`), "findings.md")));
   process.exit(0);
 }
