@@ -369,7 +369,8 @@ const taskRow = (task) => {
     ].filter(Boolean).join(" · ")),
     task.note ? el("div", { class: "note" }, task.note) : null,
     diff ? el("pre", { class: "diffstat" }, diff) : null,
-    findings ? el("details", {}, el("summary", { class: "muted small" }, "what its RIO found"), renderMarkdown(findings.replace(/^verdict:.*\n?/i, ""), { project: projectId })) : null);
+    findings ? el("details", {}, el("summary", { class: "muted small" }, "what its RIO found"), renderMarkdown(findings.replace(/^verdict:.*\n?/i, ""), { project: projectId })) : null,
+    task.carried?.length ? el("details", {}, el("summary", { class: "muted small" }, `${task.carried.length} note(s) carried`), el("ul", {}, ...task.carried.map((n) => el("li", {}, n)))) : null);
   return row;
 };
 

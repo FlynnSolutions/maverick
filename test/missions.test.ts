@@ -5,7 +5,8 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyPlanState, costOf, parsePlan, strays } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, settleReview, strays } from "../src/missions.ts";
+import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
 const PLAN = `# Mission: the Strike Lead
@@ -299,4 +300,25 @@ test("a task whose title is not bold survives the marker the ledger puts on it",
   assert.equal(back.milestones[0].tasks[0].intent, parsePlan(plain, ["root"]).milestones[0].tasks[0].intent);
   assert.doesNotMatch(back.milestones[0].tasks[0].intent, /\[~\]/);
   assert.equal(back.milestones[0].tasks[0].status, "flying");
+});
+
+test("a RIO's verdict is one of four, and its findings sort into blockers and notes", () => {
+  assert.equal(verdictOf("verdict: pass with notes\n- NOTE: x"), "pass with notes");
+  assert.equal(verdictOf("verdict: Pass\n"), "pass");
+  assert.equal(verdictOf("verdict: mixed"), "mixed");
+  assert.equal(verdictOf("no verdict here"), "pending");
+  assert.deepEqual(findingsOf("verdict: mixed\n- BLOCKER: the test is vacuous\n- **NOTE:** a stray log line\n* note: lower case too\nnot a finding", "mixed"), { blockers: ["the test is vacuous"], notes: ["a stray log line", "lower case too"] });
+  assert.deepEqual(findingsOf("verdict: fail\n- the logger drops errors (major)", "fail").blockers, ["findings not sorted into BLOCKER and NOTE; all read as blockers"]);
+  assert.deepEqual(findingsOf("verdict: pass\n", "pass"), { blockers: [], notes: [] });
+});
+
+test("the merge-with-notes rule: notes carry, a blocker stops, and retries come first", () => {
+  const notes = "verdict: mixed\n- NOTE: a\n- NOTE: b";
+  const blocker = "verdict: fail\n- BLOCKER: x\n- NOTE: y";
+  assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: tidy later", "pass with notes"), { status: "passed", carried: ["tidy later"] });
+  assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass", "pass"), { status: "passed" });
+  assert.deepEqual(settleReview({ attempts: 1 }, notes, "mixed"), { status: "retry" }, "attempts left: back out, whatever the severities");
+  assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, notes, "mixed"), { status: "passed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 2 note(s) carried", carried: ["a", "b"] });
+  assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, blocker, "fail"), { status: "handed-back", note: "the RIO said fail after 2 attempts with 1 blocker(s) open; this one is yours" });
+  assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail\n- something unsorted", "fail").status, "handed-back", "unsorted findings are blockers");
 });

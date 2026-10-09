@@ -20,7 +20,7 @@ export interface AuditInfo {
   file: string;
 }
 
-export type Verdict = "pass" | "fail" | "mixed" | "pending" | "none";
+export type Verdict = "pass" | "pass with notes" | "fail" | "mixed" | "pending" | "none";
 
 export interface AuditView {
   verdict: Verdict;
@@ -96,7 +96,21 @@ export const runAudit = async (project: Project, childId: string): Promise<Audit
 
 /** The auditor's contract: the first line of a findings file is its verdict. */
 export const verdictOf = (findings: string | undefined): Verdict =>
-  (findings?.match(/^verdict:\s*(pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
+  (findings?.match(/^verdict:\s*(pass with notes|pass|fail|mixed)/i)?.[1].toLowerCase().replace(/\s+/g, " ") as Verdict | undefined) ?? "pending";
+
+/**
+ * A finding is a line that says what it is: `BLOCKER:` (the task does not pass until it is
+ * fixed) or `NOTE:` (fix if cheap, else carried). A fail or a mixed whose findings carry no
+ * prefix at all is read as all blockers: a RIO that did not sort its list has not said any of
+ * it is safe to carry.
+ */
+export const findingsOf = (findings: string, verdict: Verdict): { blockers: string[]; notes: string[] } => {
+  const lines = findings.split("\n").map((l) => l.replace(/^\s*[-*]\s*/, "").trim());
+  const blockers = lines.filter((l) => /^\**BLOCKER\b/i.test(l)).map((l) => l.replace(/^[*\s]*BLOCKER[:*\s]*/i, ""));
+  const notes = lines.filter((l) => /^\**NOTE\b/i.test(l)).map((l) => l.replace(/^[*\s]*NOTE[:*\s]*/i, ""));
+  if (!blockers.length && !notes.length && (verdict === "fail" || verdict === "mixed")) return { blockers: ["findings not sorted into BLOCKER and NOTE; all read as blockers"], notes: [] };
+  return { blockers, notes };
+};
 
 export const auditView = async (record: SessionRecord & { audit?: AuditInfo; decision?: string }, agentStates: Map<string, string>): Promise<AuditView> => {
   if (!record.audit) return { verdict: "none" };

@@ -23,7 +23,7 @@ import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
 import { FINISHED, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, toplevelOf } from "./git.ts";
-import { slug, verdictOf, type Verdict } from "./audits.ts";
+import { findingsOf, slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
 import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
@@ -75,6 +75,8 @@ export interface MissionTask {
   verdict?: Verdict;
   /** Why this task stopped needing an agent, in words, when it did not simply pass. */
   note?: string;
+  /** NOTE-level findings the task passed with, or merged with when it ran out of retries. They ride to the result page and the report. */
+  carried?: string[];
 }
 
 /** Progress through the hosted walkthrough document, saved from the page as it is worked. */
@@ -302,7 +304,7 @@ const DONE_LINE = /^_*\s*done when:\s*(.+?)\s*_*$/i;
 /** The section at the end of a flying plan where every transition and decision is appended. */
 const LOG_HEADING = /^Log$/i;
 const TASK_STATUSES: readonly string[] = ["pending", "flying", "built", "reviewing", "passed", "handed-back"];
-const VERDICTS: readonly string[] = ["pass", "fail", "mixed"];
+const VERDICTS: readonly string[] = ["pass", "pass with notes", "fail", "mixed"];
 /** The fields Maverick writes under a task as it flies. A Strike Lead leaves them off; the ledger owns them. */
 const STATE_FIELDS: readonly string[] = ["status", "attempt", "verdict", "commit"];
 
@@ -901,6 +903,20 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
   return mission;
 };
 
+/**
+ * What a verdict does to a task. Pure, so the rule is tested without agents. A pass, with or
+ * without notes, passes. A fail or a mixed goes back out while there are attempts left. Out of
+ * retries, a task whose open findings are notes only merges with them carried; one with an open
+ * blocker stops, and with it everything that needs it, because its milestone cannot merge.
+ */
+export const settleReview = (task: Pick<MissionTask, "attempts">, findings: string, verdict: Verdict): { status: "passed" | "retry" | "handed-back"; note?: string; carried?: string[] } => {
+  const { blockers, notes } = findingsOf(findings, verdict);
+  if (verdict === "pass" || verdict === "pass with notes") return { status: "passed", ...(notes.length ? { carried: notes } : {}) };
+  if (task.attempts < MAX_ATTEMPTS) return { status: "retry" };
+  if (!blockers.length) return { status: "passed", note: `the RIO said ${verdict} after ${task.attempts} attempts with no blocker open; merged with ${notes.length} note(s) carried`, carried: notes };
+  return { status: "handed-back", note: `the RIO said ${verdict} after ${task.attempts} attempts with ${blockers.length} blocker(s) open; this one is yours` };
+};
+
 /** Put a task back out with the RIO's findings, in the worktree it already has. */
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
   const previous = task.claudeId;
@@ -1020,9 +1036,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
           }
           task.verdict = verdict;
           await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { status: "closed", ended: new Date().toISOString() });
-          if (verdict === "pass") {
-            task.status = "passed";
-          } else if (task.attempts < MAX_ATTEMPTS) {
+          const settled = settleReview(task, findings!, verdict);
+          if (settled.status === "retry") {
             try {
               await handBack(project, mission, m, task, findings!);
             } catch (err) {
@@ -1030,8 +1045,9 @@ const sweepOnce = async (project: Project): Promise<void> => {
               task.note = `could not hand the task back: ${(err as Error).message}`;
             }
           } else {
-            task.status = "handed-back";
-            task.note = `the RIO said ${verdict} after ${task.attempts} attempts; this one is yours`;
+            task.status = settled.status;
+            task.note = settled.note;
+            task.carried = settled.carried;
           }
         }
       }
