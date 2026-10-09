@@ -447,6 +447,8 @@ test("one deployer per stack per milestone, and a shared environment is nobody's
   assert.deepEqual(fine.milestones[0].tasks[0].deploys, ["data", "compute"]);
   assert.ok(parsePlan(plan("compute"), ["root"], ["dev"]).problems.some((p) => /m1-t1 and m1-t2 both deploy compute; one deployer per stack per milestone/.test(p)));
   assert.ok(parsePlan(plan("dev"), ["root"], ["dev"]).problems.some((p) => /deploys dev, which this project lists as shared; only the merged mission branch deploys there/.test(p)));
+  assert.ok(parsePlan(plan("`Dev`"), ["root"], ["dev"]).problems.some((p) => /lists as shared/.test(p)), "backticks and case do not get a shared environment past the gate");
+  assert.ok(parsePlan(plan("data; Compute"), ["root"], ["dev"]).problems.some((p) => /both deploy compute/.test(p)), "a semicolon splits, and Compute is compute");
   assert.equal(parsePlan(plan("dev"), ["root"]).problems.length, 0, "a project that names nothing shared has no such rule");
 });
 
@@ -457,6 +459,17 @@ test("the proof runs where the milestone merged, and a proof that cannot run is 
   assert.equal(bad.ok, false);
   assert.match(bad.output, /broke/);
   assert.equal((await runProof("/nowhere/at/all", "true")).ok, false);
+  // A server started in the background does not hold the proof open, and does not outlive it.
+  const started = Date.now();
+  const bg = await runProof(import.meta.dirname, "sleep 30 & echo started");
+  assert.equal(bg.ok, true);
+  assert.ok(Date.now() - started < 5000, `took ${Date.now() - started}ms: judged by the shell's exit, not its pipes`);
+  await new Promise((r) => setTimeout(r, 700));
+  const { execFileSync } = await import("node:child_process");
+  assert.ok(!execFileSync("ps", ["-eo", "command"], { encoding: "utf8" }).split("\n").some((l) => l === "sleep 30"), "the group was killed after the proof");
+  const slow = await runProof(import.meta.dirname, "sleep 20", 300);
+  assert.equal(slow.ok, false);
+  assert.match(slow.output, /timed out/);
 });
 
 test("a need in a held milestone is not a base to build on", () => {

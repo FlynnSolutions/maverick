@@ -240,8 +240,10 @@ const reposBand = (repos) => {
 const preflightBand = (checks) => {
   if (!checks?.length) return null;
   const failed = checks.filter((c) => c.status === "fail").length;
+  const warned = checks.filter((c) => c.status === "warn").length;
+  const refusing = checks.some((c) => c.blocking && c.status === "fail");
   return el("div", { class: "mv-preflight" },
-    el("p", { class: failed ? "mv-warn" : "muted small" }, failed ? `${failed} thing(s) the mission needs are not there. Settle them before approving, or expect the Wingmen to find out at 2 a.m.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
+    el("p", { class: failed || warned ? "mv-warn" : "muted small" }, refusing ? `${failed} thing(s) the mission cannot run without are not there; approving is refused until they are.` : failed ? `${failed} thing(s) the plan needs are not there. Settle them before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${warned} thing(s) this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
     el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), ` ${c.detail}`))));
 };
 
@@ -299,7 +301,7 @@ const renderPlan = () => {
           : el("p", { class: "mv-warn" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
         el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
         el("div", { class: "gate-actions" },
-          btn("approve and fly", async () => {
+          doc.preflight?.some((c) => c.blocking && c.status === "fail") ? el("p", { class: "mv-warn" }, "Approving is refused until the missing tool or agent is there.") : btn("approve and fly", async () => {
             const ok = window.confirm(`Approve "${mission.name}"?\n\nThis writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. It is the last thing you are asked until the result.`);
             if (!ok) return;
             await act("approve", {}, "approved; the first milestone is out");
@@ -460,8 +462,16 @@ const renderMilestone = (m) => {
     m.resolve ? el("section", { class: "panel" },
       el("h2", {}, "The Strike Lead is reconciling it", el("span", { class: "spacer" }), el("span", { class: "muted small mono" }, `session ${m.resolve.claudeId}`)),
       el("p", { class: "mv-plan" }, `Two tasks in this milestone touched the same lines in ${m.resolve.repo}: ${(m.resolve.paths ?? []).join(", ")}. The Strike Lead wrote the plan that put them together, so it is finishing the merge in the integration worktree. It keeps both behaviours or it aborts and says why; it never takes one side to make the conflict go away.`)) : null,
-    m.conflicts?.length && !m.resolve ? el("section", { class: "panel" }, el("h2", {}, "It will not merge"),
-      el("p", { class: "mv-plan" }, `These paths collided: ${m.conflicts.join(", ")}, each prefixed with the repo it is in. The merge was aborted, so nothing is half-applied, and the Strike Lead could not reconcile them either. Both sides are work this plan asked for, so the answer is a change to the plan rather than a better merge.`)) : null,
+    m.proof ? el("section", { class: "panel" }, el("h2", {}, m.proof.ok ? "The proof passed on the merged tree" : "The proof failed on the merged tree"),
+      el("p", { class: "muted small" }, `run ${fmtTime(m.proof.at)}`), el("pre", { class: "mv-proof" }, m.proof.output.split("\n").slice(-20).join("\n"))) : null,
+    m.held ? el("section", { class: "panel" }, el("h2", {}, "Held, for you"),
+      el("p", { class: "mv-plan" }, m.held),
+      m.conflicts?.length ? el("p", { class: "muted small" }, `The paths that collided: ${m.conflicts.join(", ")}, each prefixed with the repo it is in. Nothing is half-applied. Reconcile them yourself in the integration worktree, or change the plan; then release the milestone and the sweep tries again.`) : null,
+      btn("release it", async () => {
+        const note = window.prompt("What did you do to settle it? Kept in the ledger.");
+        if (!note) return;
+        await act(`milestones/${m.n}/release`, { note }, `milestone ${m.n} released`);
+      }, "primary")) : null,
     walkthroughSection(m),
     el("section", { class: "panel" },
       el("h2", {}, "Tasks", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "one Wingman each in its own worktree, with a RIO in the back seat that did not write the code")),
@@ -497,9 +507,23 @@ const renderReview = () => {
             : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
       mission.status === "review" && unwalked.length ? el("div", { class: "gate-actions" },
         ...unwalked.map((m) => btn(`walk milestone ${m.n}`, () => goTo(`m${m.n}`), "primary"))) : null,
-      el("details", { class: "mv-report" }, el("summary", { class: "muted small" }, "the report: what a person reads in the morning"),
-        el("p", { class: "muted small" }, "Generated from the record, the ledger and the RIOs' own findings, not written by the agent that flew it. ", el("a", { href: `${actionUrl("report")}`, target: "_blank" }, "raw markdown ↗")),
-        (() => { const box = el("div", {}); fetch(actionUrl("report")).then((r) => r.text()).then((md) => box.replaceChildren(renderMarkdown(md, { project: projectId }))).catch((err) => box.replaceChildren(el("p", { class: "mv-warn" }, `could not load the report: ${err.message}`))); return box; })()),
+      (() => {
+        // Fetched when opened, not on every repaint, and a server failure is said, not shown as a blank.
+        const box = el("div", {});
+        const details = el("details", { class: "mv-report" }, el("summary", { class: "muted small" }, "the report: what a person reads in the morning"),
+          el("p", { class: "muted small" }, "Generated from the record, the ledger and the RIOs' own findings, not written by the agent that flew it. ", el("a", { href: `${actionUrl("report")}`, target: "_blank" }, "raw markdown ↗")), box);
+        details.addEventListener("toggle", async () => {
+          if (!details.open || box.childElementCount) return;
+          try {
+            const r = await fetch(actionUrl("report"));
+            if (!r.ok) throw new Error((await r.json().catch(() => ({ error: r.statusText }))).error ?? r.statusText);
+            box.replaceChildren(renderMarkdown(await r.text(), { project: projectId }));
+          } catch (err) {
+            box.replaceChildren(el("p", { class: "mv-warn" }, `could not load the report: ${err.message}`));
+          }
+        });
+        return details;
+      })(),
       (mission.repos ?? []).some((r) => r.landed) ? el("div", { class: "mv-repos" }, el("span", { class: "muted" }, "landed:"),
         ...(mission.repos ?? []).filter((r) => r.landed).map((r) => (r.landed.startsWith("http")
           ? el("a", { href: r.landed, target: "_blank" }, `${r.label} ↗`)

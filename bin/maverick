@@ -46,7 +46,7 @@ const project = { id: basename(projectPath), name: basename(projectPath), path: 
 const cfg = await missionConfigFor(projectPath);
 const choices = await repoChoices(project, cfg);
 const text = await readFile(planFile, "utf8");
-const plan = parsePlan(text, choices.map((r) => r.label));
+const plan = parsePlan(text, choices.map((r) => r.label), cfg.shared);
 const missionId = basename(planFile, ".md");
 
 if (command === "plan-check") {
@@ -59,6 +59,7 @@ if (command === "plan-check") {
       console.log(`  ${[t.id, t.status.padEnd(11), t.attempts && `attempt ${t.attempts}`, t.verdict && `RIO ${t.verdict}`, t.head && `@${t.head}`, t.title].filter(Boolean).join(" ")}`);
       if (t.touches?.length) console.log(`         touches ${t.touches.join(", ")}`);
       if (t.needs?.length) console.log(`         needs ${t.needs.join(", ")}`);
+      if (t.deploys?.length) console.log(`         deploys ${t.deploys.join(", ")}`);
     }
   }
   if (plan.contracts.length) console.log(`\nContracts\n${plan.contracts.map((c) => `  ${c.name}  (${c.owner})  ${c.shape}`).join("\n")}`);
@@ -75,8 +76,9 @@ if (command === "preflight") {
   const checks = await preflight({ projectPath, repoPaths: mine.map((r) => r.path), requirements: plan.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, landsRemotely: mine.some((r) => r.land !== "merge") });
   for (const c of checks) console.log(`${c.status.padEnd(5)} ${c.name}: ${c.detail}`);
   const failed = checks.filter((c) => c.status === "fail").length;
+  const warned = checks.filter((c) => c.status === "warn").length;
   const human = checks.filter((c) => c.status === "human").length;
-  console.log(`\n${failed ? `${failed} failing; ` : ""}${human ? `${human} for a person to confirm; ` : ""}${checks.length - failed - human} ok`);
+  console.log(`\n${failed ? `${failed} failing; ` : ""}${warned ? `${warned} to read; ` : ""}${human ? `${human} for a person to confirm; ` : ""}${checks.length - failed - warned - human} ok`);
   process.exit(failed ? 1 : 0);
 }
 

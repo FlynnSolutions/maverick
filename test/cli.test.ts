@@ -12,6 +12,9 @@ import { tempRepo } from "./fixtures.ts";
 
 const cli = join(import.meta.dirname, "..", "bin", "maverick");
 const { dir, git } = tempRepo("mv-cli");
+// The agents resolve from the project's own .claude/agents too, so the test does not depend on what this machine has installed.
+mkdirSync(join(dir, ".claude", "agents"), { recursive: true });
+await writeFile(join(dir, ".claude", "agents", "rio.md"), "---\nname: rio\n---\n", "utf8");
 mkdirSync(join(dir, "deliverables", "missions"), { recursive: true });
 const plan = join(dir, "deliverables", "missions", "orbit.md");
 await writeFile(plan, [

@@ -73,6 +73,18 @@ export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   repos: {},
 };
 
+/** A list of names, or nothing. A string where a list was meant is a mistake to name, not to swallow. */
+const sharedOf = (v: unknown): string[] => {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.some((s) => typeof s !== "string")) throw new Error(`maverick.json: missions.shared must be a list of environment names, got ${JSON.stringify(v)}`);
+  return v.map((s: string) => s.trim()).filter(Boolean);
+};
+const proofOf = (v: unknown): string | undefined => {
+  if (v === undefined) return undefined;
+  if (typeof v !== "string") throw new Error(`maverick.json: missions.proof must be a command string, got ${JSON.stringify(v)}`);
+  return v.trim() || undefined;
+};
+
 const isLanding = (v: unknown): v is Landing => v === "merge" || v === "pr" || v === "push";
 
 /**
@@ -134,8 +146,8 @@ export const missionConfigFor = async (projectPath: string): Promise<MissionConf
     ...(typeof m.wingmanAgent === "string" && AGENT.test(m.wingmanAgent) ? { wingmanAgent: m.wingmanAgent } : {}),
     rioAgent: typeof m.rioAgent === "string" && AGENT.test(m.rioAgent) ? m.rioAgent : DEFAULT_MISSION_CONFIG.rioAgent,
     worktrees,
-    shared: Array.isArray(m.shared) ? m.shared.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()) : [],
-    ...(typeof m.proof === "string" && m.proof.trim() ? { proof: m.proof.trim() } : {}),
+    shared: sharedOf(m.shared),
+    ...(proofOf(m.proof) ? { proof: proofOf(m.proof) } : {}),
     branchPrefix: branchPrefix(m.branchPrefix),
     land: missionLanding(m.land),
     repos: repoConfigs(m.repos),

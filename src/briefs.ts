@@ -80,6 +80,7 @@ export const RIO_CHECKLIST: readonly string[] = [
   "Deployed state: where the task deploys or configures something live, the claim is verified against the live thing, not against the code.",
   "Accessibility, for anything a person looks at: keyboard focus, labels, contrast.",
   "Background processes: none left running, no port held.",
+  "Test debris: anything made for a test (a queue, a tenant, a table, a user) is named with the task id and gone after it.",
   "Scope: the diff stays within the files the task was given; a file outside them is justified in the message of the commit that changes it, or is a finding.",
   "Generated output is read against its input: schema-valid is not the same as correct.",
   "The repo's own rules: its rulebook, its decision log, its design contract, before the task's own words.",

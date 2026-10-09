@@ -10,14 +10,19 @@ const tasksOf = (mission: Mission): Array<{ n: number; task: MissionTask }> => m
 
 const line = (n: number, t: MissionTask): string => `${t.id} ${t.title} (milestone ${n})`;
 
-/** The report as markdown. `findings` is each task's RIO text by task id, verbatim. */
-export const reportFor = (mission: Mission, findings: Record<string, string>, log: string[] = []): string => {
+/** The ledger's own decision lines, written by Maverick with these words and no others; a task title holding "by Cory" is not one. */
+const DECISION = /\b(accepted|sent back out|paused|resumed|closed|abandoned|waived|released) by Cory\b/;
+/** A transition the sweep settled on its own under the merge-with-notes rule, rather than a pass or a retry. */
+const AUTOMATIC = /\bmerged with \d+ note\(s\) carried\b/;
+
+/** The report as markdown. `findings` is each task's RIO text by task id, verbatim; `log` is the ledger's, or undefined when it could not be read. */
+export const reportFor = (mission: Mission, findings: Record<string, string>, log?: string[]): string => {
   const all = tasksOf(mission);
   const passed = all.filter(({ task }) => task.status === "passed");
   const open = all.filter(({ task }) => task.status === "handed-back");
   const unfinished = all.filter(({ task }) => !["passed", "handed-back"].includes(task.status));
-  const auto = log.filter((l) => !/by Cory\b/.test(l) && /(merged with \d+ note|carried:|could not|held|collided)/.test(l));
-  const byCory = log.filter((l) => /by Cory\b/.test(l));
+  const auto = (log ?? []).filter((l) => !DECISION.test(l) && AUTOMATIC.test(l));
+  const byCory = (log ?? []).filter((l) => DECISION.test(l));
   const unverified = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => c.startsWith("unverified: ")).map((c) => `${line(n, task)}: ${c.slice("unverified: ".length)}`));
   const carried = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => !c.startsWith("unverified: ")).map((c) => `${line(n, task)}: ${c}`));
   const strayed = all.filter(({ task }) => task.strayed?.length).map(({ n, task }) => `${line(n, task)}: ${task.strayed!.join(", ")}`);
@@ -27,15 +32,16 @@ export const reportFor = (mission: Mission, findings: Record<string, string>, lo
     "",
     `${mission.status}${mission.finished ? `, finished ${mission.finished}` : ""}. ${passed.length} of ${all.length} tasks passed, ${open.length} handed back, ${unfinished.length} unfinished. ${mission.milestones.filter((m) => m.merged).length} of ${mission.milestones.length} milestones merged.${mission.escalation ? ` ${mission.escalation}` : ""}`,
     "",
-    ...section("Decisions made without you", auto, "none recorded: every transition in the ledger was a pass, a retry, or a decision of yours"),
-    ...section("Your decisions", byCory, "none"),
+    ...section("Decisions made without you", auto, log ? "none: every transition in the ledger was a pass, a retry, or a decision of yours" : "the ledger could not be read, so this section is unknown, not empty"),
+    ...section("Your decisions", byCory, log ? "none" : "the ledger could not be read"),
     ...section("Passed, with what rode along", passed.map(({ n, task }) => `${line(n, task)}: RIO ${task.verdict ?? "unrecorded"}${task.note ? `; ${task.note}` : ""}${task.commits?.length ? `; ${task.commits.length} commit(s)` : "; no commits"}`), "nothing passed"),
-    ...section("Handed back, open", open.map(({ n, task }) => `${line(n, task)}: ${task.note ?? `the RIO said ${task.verdict}`}`), "nothing is waiting on you"),
+    ...section("Handed back, open", open.map(({ n, task }) => `${line(n, task)}: ${task.note ?? (task.verdict ? `the RIO said ${task.verdict}` : "no verdict recorded")}`), "nothing is waiting on you"),
     ...section("Unfinished", unfinished.map(({ n, task }) => `${line(n, task)}: ${task.status}`), "nothing left in the air"),
     ...section("Unverified, by the RIOs' own account", unverified, "no RIO reported a step it could not check"),
     ...section("Notes carried", carried, "none"),
     ...section("Files changed outside what the task owned", strayed, "none measured"),
     ...section("Held milestones", mission.milestones.filter((m) => m.held).map((m) => `milestone ${m.n}: ${m.held}`), "none"),
+    ...section("The proof on each merged tree", mission.milestones.filter((m) => m.proof).map((m) => `milestone ${m.n}: ${m.proof!.ok ? "passed" : "failed"} at ${m.proof!.at}`), "no proof command is set for this project, so nothing was run after the merges"),
     "## Not recorded by Maverick",
     "",
     "- Actions an agent was denied and why: not captured; a Wingman says so in its final message, which is in its transcript.",
@@ -44,7 +50,8 @@ export const reportFor = (mission: Mission, findings: Record<string, string>, lo
     "",
     "## The RIOs' findings, unedited",
     "",
-    ...all.flatMap(({ n, task }) => (findings[task.id] ? [`### ${line(n, task)}`, "", findings[task.id].trim(), ""] : [])),
+    // Fenced, so a finding cannot pose as a section of this report.
+    ...all.flatMap(({ n, task }) => (findings[task.id] ? [`### ${line(n, task)}`, "", "~~~", findings[task.id].trim().replace(/~~~/g, "~ ~ ~"), "~~~", ""] : [])),
     ...(all.some(({ task }) => findings[task.id]) ? [] : ["_no findings on file_", ""]),
   ].join("\n");
 };

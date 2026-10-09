@@ -18,7 +18,7 @@
  * RIO said, which gates opened — at `~/.claude/console-sessions/missions/<project>/<id>.json`,
  * the same named exception `ships/` already uses.
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { dirname, join, relative } from "node:path";
@@ -437,7 +437,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   const contracts: Contract[] = [];
   let requirements: Requirement[] = [];
   let log: string[] = [];
-  const bulletsOf = (section: { start: number; end: number }): string[] => lines.slice(section.start + 1, section.end).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
+  const bulletsOf = (section: { start: number; end: number }): string[] => lines.slice(section.start + 1, section.end).filter((l) => /^[-*] /.test(l)).map((l) => l.slice(2).trim());
   for (const section of parseTracker(text).sections) {
     if (PREFLIGHT_HEADING.test(section.heading)) {
       const parsed = parseRequirements(bulletsOf(section));
@@ -485,7 +485,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
         ...(commit ? { head: commit } : {}),
         ...(touches ? { touches: listField(touches, /,/) } : {}),
         ...(needs ? { needs: listField(needs, /[,\s]+/) } : {}),
-        ...(deploys ? { deploys: listField(deploys, /,/) } : {}),
+        ...(deploys ? { deploys: listField(deploys.replace(/[`*]/g, "").toLowerCase(), /[,;]/) } : {}),
       };
     });
     // One deployer per stack per milestone: two tasks flying together deploying one stack raced on the first mission.
@@ -510,7 +510,8 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   problems.push(...needProblems(milestones));
   const ids = new Set(milestones.flatMap((m) => m.tasks.map((t) => t.id)));
   // A shared environment is deployed by the merged mission branch and by nothing that flies in parallel.
-  for (const m of milestones) for (const t of m.tasks) for (const stack of t.deploys ?? []) if (shared.includes(stack)) problems.push(`"${t.title}" in milestone ${m.n} deploys ${stack}, which this project lists as shared; only the merged mission branch deploys there`);
+  const sharedLower = shared.map((s) => s.toLowerCase());
+  for (const m of milestones) for (const t of m.tasks) for (const stack of t.deploys ?? []) if (sharedLower.includes(stack)) problems.push(`"${t.title}" in milestone ${m.n} deploys ${stack}, which this project lists as shared; only the merged mission branch deploys there`);
   for (const c of contracts) if (!ids.has(c.owner)) problems.push(`contract "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
   for (const c of contracts) if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
   // The same thing written in two markdown styles is the same thing, and the check exists to catch two owners for it.
@@ -590,11 +591,14 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
  * `console-sessions/` keeps only what markdown cannot hold: session ids, worktrees, revisions.
  */
 /** The log lines for what changed between the ledger's last state and the mission's, timestamped locally. */
-const transitions = (was: Map<string, MissionTask>, mission: Mission, stamp: string): string[] =>
-  mission.milestones.flatMap((m) => m.tasks).filter((t) => {
+const transitions = (was: Map<string, MissionTask>, mission: Mission, stamp: string, heldBefore: string[]): string[] => [
+  ...mission.milestones.flatMap((m) => m.tasks).filter((t) => {
     const before = was.get(t.id);
     return !before || before.status !== t.status || before.verdict !== t.verdict;
-  }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`);
+  }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`),
+  // A milestone held for a person (a collision, a landing, a proof) is a transition too, written once.
+  ...mission.milestones.filter((m) => m.held && !heldBefore.includes(m.held)).map((m) => `${stamp} milestone ${m.n} held: ${m.held}`),
+];
 
 /**
  * The checkout the ledger may be committed in, or an error. The commit lands wherever git
@@ -622,7 +626,8 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
     const was = new Map(parsePlan(current).milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
     const d = new Date();
     const stamp = `${today()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    const entries = [...transitions(was, mission, stamp), ...decisions.map((x) => `${stamp} ${x}`)];
+    const heldBefore = parsePlan(current).log.filter((l) => / held: /.test(l)).map((l) => l.replace(/^.*? held: /, ""));
+    const entries = [...transitions(was, mission, stamp, heldBefore), ...decisions.map((x) => `${stamp} ${x}`)];
     if (!entries.length && existing !== null) return undefined;
     await ledgerRepoFor(mission, ledger);
     await mkdir(dirname(ledger), { recursive: true });
@@ -868,7 +873,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   if (parsed.problems.length) throw new Error(`the plan cannot be flown as written: ${parsed.problems.join("; ")}`);
   // A tool or an agent the mission cannot run without is refused here; a credential, a pin or a
   // human step is shown at the gate for the person to settle, and approving is their answer.
-  const failing = (await preflightFor(project, cfg, choices, parsed)).filter((c) => c.status === "fail" && /^(claude|git|python3|gh|agent )/.test(c.name));
+  const failing = (await preflightFor(project, cfg, choices, parsed)).filter((c) => c.blocking && c.status === "fail");
   if (failing.length) throw new Error(`preflight: ${failing.map((c) => `${c.name}: ${c.detail}`).join("; ")}`);
   mission.milestones = parsed.milestones;
   mission.contracts = parsed.contracts;
@@ -1078,17 +1083,40 @@ export const needsPerson = (mission: Pick<Mission, "milestones">): string[] => [
 
 const run = promisify(execFile);
 
-/** Run the project's proof command where the milestone's work is merged. Never throws: a proof that cannot run is a failed proof. */
-export const runProof = async (cwd: string, command: string): Promise<{ ok: boolean; at: string; output: string }> => {
-  const at = new Date().toISOString();
-  try {
-    const { stdout, stderr } = await run("sh", ["-c", command], { cwd, maxBuffer: 8 * 1024 * 1024, timeout: 30 * 60_000 });
-    return { ok: true, at, output: `${stdout}${stderr}`.slice(-4000) };
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string; message: string };
-    return { ok: false, at, output: `${e.stdout ?? ""}${e.stderr ?? ""}${e.stdout || e.stderr ? "" : e.message}`.slice(-4000) };
-  }
-};
+/**
+ * Run the project's proof command where the milestone's work is merged. Never throws: a proof
+ * that cannot run is a failed proof. The command runs in its own process group and is judged
+ * by the shell's exit, not by its pipes closing, so a server it starts in the background does
+ * not hold the proof open until the timeout; and the whole group is killed afterwards, so
+ * nothing it started outlives it. A proof that times out is a failed proof.
+ */
+export const runProof = (cwd: string, command: string, timeoutMs = 30 * 60_000): Promise<{ ok: boolean; at: string; output: string }> =>
+  new Promise((resolve) => {
+    const at = new Date().toISOString();
+    let output = "";
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn("sh", ["-c", command], { cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (err) {
+      return resolve({ ok: false, at, output: (err as Error).message });
+    }
+    const keep = (chunk: Buffer): void => { output = (output + chunk.toString()).slice(-4000); };
+    child.stdout?.on("data", keep);
+    child.stderr?.on("data", keep);
+    const killGroup = (): void => { if (child.pid) try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ } };
+    const timer = setTimeout(() => { killGroup(); done(false, `${output}\n(timed out after ${Math.round(timeoutMs / 60_000)} minutes)`); }, timeoutMs);
+    let settled = false;
+    const done = (ok: boolean, text: string): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      // Anything the proof left running (a server, a watcher) dies with it; a proof is not a deploy.
+      setTimeout(killGroup, 500).unref();
+      resolve({ ok, at, output: text.slice(-4000) });
+    };
+    child.on("error", (err) => done(false, `${output}\n${err.message}`));
+    child.on("exit", (code, signal) => done(code === 0, signal ? `${output}\n(killed by ${signal})` : output));
+  });
 
 /** Milestones merge in order: a later one whose tasks all passed early still waits for the ones before it. */
 export const mergeable = (mission: Pick<Mission, "milestones">, m: Milestone): boolean =>
@@ -1399,19 +1427,20 @@ const sweepOnce = async (project: Project): Promise<void> => {
         // The project's own proof, on the merged tree: a merge that dropped a rule a passed task
         // added, or broke what each task proved alone, is caught here and holds the milestone.
         if (cfg.proof) {
-          const repo = walkRepo(mission, m) ?? mission.repos[0];
+          const repo = walkRepo(mission, m)!;
           m.proof = await runProof(repo.integration, cfg.proof);
           if (!m.proof.ok) m.held = `the proof failed after milestone ${m.n} merged (${cfg.proof}): ${m.proof.output.split("\n").filter(Boolean).slice(-3).join(" | ")}`;
         }
         // A repo with nothing left to do gets its pull request now rather than at the close, so
-        // an earlier repo can be reviewed and merged while the later ones are still flying.
-        if (mission.repos.some((r) => r.land !== "merge") && (await still(mission, paused))) {
+        // an earlier repo can be reviewed and merged while the later ones are still flying. Not
+        // a tree whose proof failed: nothing lands until a person has looked at that.
+        if (!m.held && mission.repos.some((r) => r.land !== "merge") && (await still(mission, paused))) {
           const { failed } = await landTheWork(mission);
           // The next milestone is very often the one that consumes what this one just made: a
           // contract package pushed to its base, a service that reads it. Sending its Wingmen
           // out against a base that never received the push would have them build against the
           // old thing and look correct doing it. The milestone is held until a person lands it.
-          if (failed.length) m.held = `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`;
+          if (failed.length) m.held ??= `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`;
         }
       }
     }
@@ -1593,6 +1622,27 @@ export const pauseMission = async (project: Project, id: string, note: string): 
   return recorded(project, mission, [`paused by Cory: ${note.trim()}`]);
 };
 
+/**
+ * Release a milestone a person settled by hand: a collision they reconciled in the integration
+ * worktree, or a landing they fixed. The hold and the conflicts come off, and the sweep merges
+ * or lands again; if it still cannot, the hold comes back with the new reason.
+ */
+export const releaseMilestone = async (project: Project, id: string, n: number, note: string): Promise<Mission> => {
+  if (!note.trim()) throw new Error("say what you did to settle it; it is kept in the ledger");
+  const mission = await changeMission(project.id, id, (mission) => {
+    const m = mission.milestones.find((x) => x.n === n);
+    if (!m) throw new Error(`no milestone ${n} on ${mission.name}`);
+    if (!m.held) throw new Error(`milestone ${n} is not held`);
+    m.held = undefined;
+    m.conflicts = undefined;
+    m.resolveTried = undefined;
+    if (mission.status !== "paused") mission.status = needsPerson(mission).length ? "blocked" : "flying";
+    mission.trouble = needsPerson(mission).join(" · ") || undefined;
+    return mission;
+  });
+  return recorded(project, mission, [`milestone ${n} released by Cory: ${note.trim()}`]);
+};
+
 export const resumeMission = async (project: Project, id: string): Promise<Mission> => {
   const mission = await changeMission(project.id, id, (mission) => {
     if (mission.status !== "paused") throw new Error(`${mission.name} is ${mission.status}, not paused`);
@@ -1681,7 +1731,13 @@ export const missionReport = async (project: Project, id: string): Promise<strin
   for (const task of mission.milestones.flatMap((m) => m.tasks)) {
     if (task.review) findings[task.id] = await readFile(task.review.file, "utf8").catch(() => "");
   }
-  const log = await readFile(planOnBranch(project.path, mission.plan, mission.repos), "utf8").then((text) => parsePlan(text).log).catch(() => []);
+  // A ledger that cannot be read is said to be unread, never reported as empty.
+  let log: string[] | undefined;
+  try {
+    log = parsePlan(await readFile(planOnBranch(project.path, mission.plan, mission.repos), "utf8")).log;
+  } catch {
+    log = undefined;
+  }
   return reportFor(mission, findings, log);
 };
 

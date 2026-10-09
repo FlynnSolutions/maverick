@@ -16,7 +16,7 @@ import { test } from "node:test";
 const dir = mkdtempSync(join(tmpdir(), "mv-store-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "p"), { recursive: true });
-const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, closeMission, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
+const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, closeMission, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
 const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
@@ -191,4 +191,19 @@ test("pause keeps its reason, refuses a retry, and resume comes back blocked whe
   assert.equal(resumed.status, "blocked", "the collision is still a person's to answer");
   assert.match(resumed.trouble ?? "", /milestone 1 collided/);
   await assert.rejects(() => resumeMission(project, "pause"), /not paused/);
+});
+
+test("a held milestone is released by a person with a reason, and the mission is flying again if nothing else needs them", async () => {
+  const m = await seed("held");
+  (m.milestones[0] as { held?: string; conflicts?: string[] }).held = "milestone 1 collided";
+  (m.milestones[0] as { held?: string; conflicts?: string[] }).conflicts = ["root/a.ts"];
+  m.status = "blocked";
+  await writeFile(file("held"), JSON.stringify(m), "utf8");
+  await assert.rejects(() => releaseMilestone(project, "held", 1, ""), /say what you did/);
+  await assert.rejects(() => releaseMilestone(project, "held", 2, "x"), /no milestone 2/);
+  const released = await releaseMilestone(project, "held", 1, "merged it by hand in the integration worktree");
+  assert.equal(released.status, "flying");
+  assert.equal(released.milestones[0].held, undefined);
+  assert.equal(released.milestones[0].conflicts, undefined);
+  await assert.rejects(() => releaseMilestone(project, "held", 1, "again"), /is not held/);
 });

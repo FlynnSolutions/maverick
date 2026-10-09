@@ -90,9 +90,11 @@ test("a project that says nothing gets no Wingman agent, which is the state the 
 });
 
 test("a project names its shared environments and its proof, and junk in either is dropped", async () => {
-  const cfg = await withConfig({ shared: ["dev", "", 3, " staging "], proof: "  npm test " } as never);
+  const cfg = await withConfig({ shared: ["dev", "", " staging "], proof: "  npm test " } as never);
   assert.deepEqual(cfg.shared, ["dev", "staging"]);
   assert.equal(cfg.proof, "npm test");
   assert.deepEqual((await withConfig({})).shared, []);
   assert.equal((await withConfig({ proof: "   " } as never)).proof, undefined);
+  await assert.rejects(() => withConfig({ shared: "dev" } as never), /missions.shared must be a list/, "a string where a list was meant is said, not swallowed");
+  await assert.rejects(() => withConfig({ proof: ["npm", "test"] } as never), /missions.proof must be a command string/);
 });
