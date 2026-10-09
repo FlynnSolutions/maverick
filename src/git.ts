@@ -6,10 +6,13 @@ import { REPLY_FORMAT_ARGS } from "./reply-format.ts";
 
 const run = promisify(execFile);
 
-export const repoRootOf = async (filePath: string): Promise<string> => {
-  const { stdout } = await run("git", ["-C", dirname(filePath), "rev-parse", "--show-toplevel"]);
+/** The root of the checkout a directory is in: for a worktree, the worktree, not the main checkout. */
+export const toplevelOf = async (dir: string): Promise<string> => {
+  const { stdout } = await run("git", ["-C", dir, "rev-parse", "--show-toplevel"]);
   return stdout.trim();
 };
+
+export const repoRootOf = (filePath: string): Promise<string> => toplevelOf(dirname(filePath));
 
 /**
  * Stage exactly this file and commit it. Every console edit commits immediately so other
@@ -137,11 +140,13 @@ const branchExists = async (repoPath: string, branch: string): Promise<boolean> 
 export const excludeLocally = async (repoPath: string, patterns: string[]): Promise<void> => {
   const { stdout } = await run("git", ["-C", repoPath, "rev-parse", "--git-common-dir"]);
   const file = join(stdout.trim().startsWith("/") ? stdout.trim() : join(repoPath, stdout.trim()), "info", "exclude");
-  const have = new Set((await readFile(file, "utf8").catch(() => "")).split("\n").map((l) => l.trim()));
+  const existing = await readFile(file, "utf8").catch((err: NodeJS.ErrnoException) => { if (err.code === "ENOENT") return ""; throw err; });
+  const have = new Set(existing.split("\n").map((l) => l.trim()));
   const missing = patterns.filter((p) => !have.has(p));
   if (!missing.length) return;
   await mkdir(dirname(file), { recursive: true });
-  await appendFile(file, `${missing.join("\n")}\n`, "utf8");
+  // A file whose last line has no newline would otherwise have the first pattern glued onto it, un-ignoring both.
+  await appendFile(file, `${existing && !existing.endsWith("\n") ? "\n" : ""}${missing.join("\n")}\n`, "utf8");
 };
 
 export const ensureBranch = async (repoPath: string, branch: string, from = "HEAD"): Promise<void> => {
@@ -160,6 +165,12 @@ export const ensureWorktree = async (repoPath: string, path: string, branch: str
 };
 
 /** Commit subjects on `branch` that `base` does not have, oldest first. Empty means the branch did nothing. */
+/** The paths a branch changed since it left its base. */
+export const changedFiles = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
+  const { stdout } = await run("git", ["-C", repoPath, "diff", "--name-only", `${base}..${branch}`]);
+  return stdout.split("\n").filter(Boolean);
+};
+
 export const commitsAhead = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
   const { stdout } = await run("git", ["-C", repoPath, "log", "--reverse", "--format=%h %s", `${base}..${branch}`]);
   return stdout.split("\n").filter(Boolean);

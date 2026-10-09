@@ -46,8 +46,13 @@ if (command === "plan-check") {
   console.log(`${plan.problems.length ? "cannot fly" : "flyable"}: ${plan.name || "(unnamed)"}: ${plan.milestones.length} milestone(s), ${tasks.length} task(s), repos ${[...new Set(tasks.map((t) => t.repo))].join(", ") || "(none)"}`);
   for (const m of plan.milestones) {
     console.log(`\nMilestone ${m.n}: ${m.title}\n  done when: ${m.done}`);
-    for (const t of m.tasks) console.log(`  ${t.id}  ${t.status.padEnd(11)} ${t.attempts ? `attempt ${t.attempts} ` : ""}${t.verdict ? `RIO ${t.verdict} ` : ""}${t.head ? `@${t.head} ` : ""} ${t.title}`);
+    for (const t of m.tasks) {
+      console.log(`  ${t.id}  ${t.status.padEnd(11)} ${t.attempts ? `attempt ${t.attempts} ` : ""}${t.verdict ? `RIO ${t.verdict} ` : ""}${t.head ? `@${t.head} ` : ""} ${t.title}`);
+      if (t.touches?.length) console.log(`         touches ${t.touches.join(", ")}`);
+      if (t.needs?.length) console.log(`         needs ${t.needs.join(", ")}`);
+    }
   }
+  for (const o of plan.overlaps) console.log(`\noverlap: ${o}`);
   if (plan.log.length) console.log(`\nLog (${plan.log.length}), last: ${plan.log[plan.log.length - 1]}`);
   process.exit(plan.problems.length ? 1 : 0);
 }
@@ -65,7 +70,7 @@ if (command === "brief") {
   if (!repo) { console.error(`task ${taskId} names repo "${task.repo}", which is not under ${projectPath}`); process.exit(1); }
   Object.assign(task, taskLayout(project, cfg, missionId, task, repo));
   const ctx = { projectPath, mission: { id: missionId, name: plan.name, plan: relative(projectPath, planFile), repos }, milestone, task, repo };
-  console.log(role === "wingman" ? wingmanBrief(ctx) : rioBrief(ctx, option("findings") ?? join(scratchFor(task.worktree, `rio${task.reviews ?? 1}`), "findings.md")));
+  console.log(role === "wingman" ? wingmanBrief(ctx) : rioBrief(ctx, option("findings") ?? join(scratchFor(task, `rio${task.reviews ?? 1}`), "findings.md")));
   process.exit(0);
 }
 

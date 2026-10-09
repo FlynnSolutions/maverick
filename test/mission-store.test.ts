@@ -123,20 +123,31 @@ test("a person's decision is written into the plan on the mission branch and com
   git("commit", "-q", "--allow-empty", "-m", "base");
   mkdirSync(join(repoDir, "deliverables", "missions"), { recursive: true });
   await writeFile(join(repoDir, "deliverables", "missions", "ledger.md"), "# Mission: ledger\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  Build it.\n", "utf8");
+  git("add", "-A"); git("commit", "-q", "-m", "the plan");
+  const integration = join(repoDir, ".claude", "worktrees", "ledger-integration-root");
+  git("worktree", "add", "-q", "-b", "mission/ledger", integration, "HEAD");
   const m = await seed("ledger");
   m.plan = "deliverables/missions/ledger.md";
-  m.repos = [{ label: "root", path: repoDir, base: "main", branch: "mission/ledger", integration: repoDir, land: "merge" }];
+  m.repos = [{ label: "root", path: repoDir, base: "main", branch: "mission/ledger", integration, land: "merge" }];
   m.milestones[0].tasks[0].status = "handed-back";
   await writeFile(file("ledger"), JSON.stringify(m), "utf8");
 
   await acceptTask({ id: "p", name: "P", path: repoDir, trackers: [] } as never, "ledger", "m1-t1", "read the diff myself");
-  const text = await readFile(join(repoDir, "deliverables", "missions", "ledger.md"), "utf8");
+  const text = await readFile(join(integration, "deliverables", "missions", "ledger.md"), "utf8");
   const plan = parsePlan(text, ["root"]);
   assert.equal(plan.milestones[0].tasks[0].status, "passed", text);
   assert.match(plan.log[0], /m1-t1 t: pending to passed/, "the transition is logged");
   assert.match(plan.log[1], /accepted by Cory over the RIO: read the diff myself/, "and so is the decision");
-  assert.match(git("log", "--format=%s", "-1"), /^mission ledger: m1-t1 t: pending to passed \(\+1\)/, "committed on the mission branch's worktree");
-  assert.equal(git("status", "--porcelain").trim(), "", "nothing left uncommitted");
+  const wt = (...args: string[]) => execFileSync("git", ["-C", integration, ...args], { encoding: "utf8" });
+  assert.match(wt("log", "--format=%s", "-1"), /^mission ledger: m1-t1 t: pending to passed \(\+1\)/, "committed on the mission branch's worktree");
+  assert.equal(wt("status", "--porcelain").trim(), "", "nothing left uncommitted");
+  assert.equal(git("log", "--format=%s", "-1").trim(), "the plan", "the main checkout got nothing");
+
+  // The worktree gone while the mission is open: nothing is committed anywhere, and the record says so.
+  git("worktree", "remove", "--force", integration);
+  await acceptTask({ id: "p", name: "P", path: repoDir, trackers: [] } as never, "ledger", "m1-t1", "again");
+  assert.equal(git("log", "--format=%s", "-1").trim(), "the plan", "still nothing on main");
+  assert.match((await readMission("p", "ledger"))!.trouble ?? "", /the ledger .*could not be written/);
 });
 
 test("a plan no mission repo holds lands on the first repo's mission branch, and the main checkout is never committed to", async () => {

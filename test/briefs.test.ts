@@ -34,6 +34,18 @@ test("a Wingman's brief carries every absolute path, the standing orders and the
   assert.ok(!brief.includes("rejected your predecessor"), "a first attempt carries no findings");
 });
 
+test("both briefs carry what the task owns, what it builds on, and what strayed", () => {
+  const owned = { ...task, touches: ["src/two.ts", "src/shared"], needs: ["m1-t1"], strayed: ["src/one.ts"] };
+  const wingman = wingmanBrief({ ...ctx, task: owned });
+  assert.match(wingman, /owns these paths and no others: src\/two\.ts, src\/shared\./);
+  assert.match(wingman, /builds on m1-t1 \(The first thing\), which flies beside it in this milestone on branch mission\/x-m1-t1/);
+  assert.match(wingman, /which means inside: src\/two\.ts, src\/shared\./);
+  const rio = rioBrief({ ...ctx, task: owned }, "/f.md");
+  assert.match(rio, /Files outside them: src\/one\.ts\. Each is a finding unless/);
+  const later = wingmanBrief({ ...ctx, task: { ...owned, needs: ["m0-t1"] } });
+  assert.match(later, /builds on m0-t1, from an earlier milestone, already merged on mission\/x and checked out at/);
+});
+
 test("a retry brief carries the findings verbatim and says what must still pass", () => {
   const brief = wingmanBrief(ctx, { findings: "verdict: mixed\n- BLOCKER: the test is vacuous\n- NOTE: a stray log line" });
   assert.ok(brief.includes("- BLOCKER: the test is vacuous"));
@@ -43,11 +55,14 @@ test("a retry brief carries the findings verbatim and says what must still pass"
 
 test("a RIO's brief names the branch to read, its own scratch path, its siblings and the findings file", () => {
   const brief = rioBrief(ctx, "/home/findings-2.md");
-  for (const needle of [`git -C ${task.worktree} log mission/x..HEAD -p`, `${task.worktree}/.scratch/rio2`, "Write your findings to /home/findings-2.md", "Its siblings in this milestone", "The first thing", '"verdict: pass", "verdict: fail", "verdict: mixed"']) {
+  for (const needle of [`git -C ${task.worktree} log mission/x..HEAD -p`, `${task.worktree}/.scratch/rio2`, "Write your findings to /home/findings-2.md", "Its siblings in this milestone", "The first thing", '"verdict: pass", "verdict: pass with notes", "verdict: fail", "verdict: mixed"', 'each starting "BLOCKER:"']) {
     assert.ok(brief.includes(needle), `missing: ${needle}`);
   }
   for (const line of RIO_CHECKLIST) assert.ok(brief.includes(`- ${line}`), `missing check: ${line.slice(0, 40)}`);
   assert.match(brief, /Do not fix anything\. Do not commit\./);
+  assert.ok(!brief.includes("Commit as you go"), "a RIO is not told to commit");
+  assert.ok(wingmanBrief(ctx).includes("- Commit as you go"), "a Wingman is");
+  assert.throws(() => rioBrief({ ...ctx, task: { ...task, worktree: undefined } }, "/f.md"), /has no worktree yet/);
 });
 
 test("on a multi-repo mission the Wingman is told where the other repos' work is, and that none of it is on a base branch", () => {

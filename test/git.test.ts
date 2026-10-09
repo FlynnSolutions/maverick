@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,8 +12,12 @@ test("excludeLocally ignores paths in the repo without a commit, once, and a wor
   const git = (...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
   git("init", "-q");
   git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "base");
+  // A rule already there with no newline after it must not have the first pattern glued on.
+  await writeFile(join(dir, ".git", "info", "exclude"), "# mine\nsecret.env", "utf8");
   await excludeLocally(dir, [".claude/worktrees/", ".scratch/"]);
   await excludeLocally(dir, [".scratch/", "other/"]);
+  await writeFile(join(dir, "secret.env"), "x", "utf8");
+  assert.ok((await readFile(join(dir, ".git", "info", "exclude"), "utf8")).includes("secret.env\n.claude/worktrees/\n"), "appended on its own line");
   const exclude = await readFile(join(dir, ".git", "info", "exclude"), "utf8");
   assert.equal(exclude.split("\n").filter((l) => l === ".scratch/").length, 1, "written once");
   assert.ok(exclude.includes(".claude/worktrees/\n") && exclude.includes("other/\n"));

@@ -19,10 +19,10 @@
  * the same named exception `ships/` already uses.
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { FINISHED, backgroundAgents, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
+import { FINISHED, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, toplevelOf } from "./git.ts";
 import { slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -62,6 +62,12 @@ export interface MissionTask {
   commits?: string[];
   /** The branch head when the Wingman stopped: the `commit:` line in the plan's ledger. */
   head?: string;
+  /** The paths this task owns, relative to its repo, from the plan's `touches:` line. A file or a directory. */
+  touches?: string[];
+  /** The tasks this one builds on, by id, from the plan's `needs:` line. Validated at parse; not yet what the scheduler dispatches by. */
+  needs?: string[];
+  /** Files the Wingman changed outside `touches`, found when it stopped. The RIO is told; a stray is a finding unless the hand-back justified it. */
+  strayed?: string[];
   /** How many RIOs this task has had. Only ever goes up, so their findings never share a path. */
   reviews?: number;
   /** The RIO in this Wingman's back seat: a separate session, never the Wingman, never the lead. */
@@ -273,6 +279,8 @@ _done when: <one testable line>_
 
 - [ ] **<task title>**
   - repo: <which repo this works in; omit it only when the project has one>
+  - touches: <the files and directories this task owns, relative to its repo, comma separated>
+  - needs: <the ids of tasks this one builds on (m1-t2), if any>
   <Everything a session with no other context needs to build this: the files, the shape, what
   it must not touch, and how it proves itself. Several lines is right; one line is not.>
   <Once the mission flies, Maverick writes status, attempt, verdict and commit lines under each
@@ -298,8 +306,24 @@ const VERDICTS: readonly string[] = ["pass", "fail", "mixed"];
 /** The fields Maverick writes under a task as it flies. A Strike Lead leaves them off; the ledger owns them. */
 const STATE_FIELDS: readonly string[] = ["status", "attempt", "verdict", "commit"];
 
+const listField = (value: string | undefined): string[] => (value ?? "").split(/[,\s]+/).map((v) => v.trim().replace(/^\.\//, "").replace(/\/+$/, "")).filter(Boolean);
+
+/** Whether two owned paths are the same file, or one is inside the other. */
+const pathsOverlap = (a: string, b: string): boolean => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+
+/** Files a Wingman changed that none of its `touches` cover. Empty when the task owns nothing in particular. */
+export const strays = (files: string[], touches: string[] | undefined): string[] =>
+  touches?.length ? files.filter((f) => !touches.some((t) => f === t || f.startsWith(`${t}/`))) : [];
+
+/** Tasks in one milestone whose `touches` overlap: they fly in parallel, so this is a collision planned in. */
+export const overlapsIn = (milestones: Milestone[]): string[] =>
+  milestones.flatMap((m) => m.tasks.flatMap((a, i) => m.tasks.slice(i + 1).flatMap((b) => {
+    const shared = (a.touches ?? []).filter((x) => (b.touches ?? []).some((y) => pathsOverlap(x, y)));
+    return shared.length ? [`milestone ${m.n}: ${a.id} and ${b.id} both touch ${shared.join(", ")}`] : [];
+  })));
+
 /** Parse the Strike Lead's plan document. Reuses the tracker parser, because the plan is written in its shape. */
-export const parsePlan = (text: string, repos: string[] = []): { name: string; intro: string; milestones: Milestone[]; log: string[]; problems: string[] } => {
+export const parsePlan = (text: string, repos: string[] = []): { name: string; intro: string; milestones: Milestone[]; log: string[]; problems: string[]; overlaps: string[] } => {
   const lines = text.split("\n");
   const { title: name, intro } = documentHead(text, /^#\s*Mission:\s*(.+)$/m);
   const problems: string[] = [];
@@ -322,7 +346,7 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
     if (!done) problems.push(`milestone ${n} has no "_done when: ..._" line`);
     const only = repos.length === 1 ? repos[0] : "";
     const tasks = section.groups.flatMap((g) => g.items).map((item, i) => {
-      const { status, attempt, verdict, commit } = item.fields;
+      const { status, attempt, verdict, commit, touches, needs } = item.fields;
       if (status && !TASK_STATUSES.includes(status)) problems.push(`"${item.title}" in milestone ${n} has status "${status}", which is not one of: ${TASK_STATUSES.join(", ")}`);
       if (attempt && !/^\d+$/.test(attempt)) problems.push(`"${item.title}" in milestone ${n} has attempt "${attempt}", which is not a count`);
       if (verdict && !VERDICTS.includes(verdict)) problems.push(`"${item.title}" in milestone ${n} has verdict "${verdict}", which is not one of: ${VERDICTS.join(", ")}`);
@@ -335,6 +359,8 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
         attempts: attempt && /^\d+$/.test(attempt) ? Number(attempt) : 0,
         ...(verdict && VERDICTS.includes(verdict) ? { verdict: verdict as Verdict } : {}),
         ...(commit ? { head: commit } : {}),
+        ...(touches ? { touches: listField(touches) } : {}),
+        ...(needs ? { needs: listField(needs) } : {}),
       };
     });
     if (!tasks.length) problems.push(`milestone ${n} has no tasks`);
@@ -347,7 +373,18 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
     milestones.push({ n, title: m[2].trim(), done, tasks });
   }
   if (!milestones.length) problems.push("the document has no milestones");
-  return { name, intro, milestones: milestones.sort((a, b) => a.n - b.n), log, problems };
+  milestones.sort((a, b) => a.n - b.n);
+  // `needs` names tasks that exist, that are not the task itself, that are not in a later
+  // milestone (it would never be there in time), and that do not need it back.
+  const where = new Map(milestones.flatMap((m) => m.tasks.map((t) => [t.id, { m: m.n, t }] as const)));
+  for (const m of milestones) for (const t of m.tasks) for (const need of t.needs ?? []) {
+    const target = where.get(need);
+    if (!target) problems.push(`"${t.title}" in milestone ${m.n} needs "${need}", which is not a task in this plan`);
+    else if (need === t.id) problems.push(`"${t.title}" in milestone ${m.n} needs itself`);
+    else if (target.m > m.n) problems.push(`"${t.title}" in milestone ${m.n} needs ${need}, which flies later, in milestone ${target.m}`);
+    else if (target.t.needs?.includes(t.id)) problems.push(`${t.id} and ${need} need each other`);
+  }
+  return { name, intro, milestones, log, problems, overlaps: overlapsIn(milestones) };
 };
 
 /* ---------- the plan as the ledger ---------- */
@@ -414,8 +451,15 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
   let ledger = "";
   try {
     ledger = planOnBranch(project.path, mission.plan, mission.repos);
-    // A ledger that is not inside an integration worktree is a commit on somebody's branch.
-    if (!mission.repos.some((r) => ledger.startsWith(`${r.integration}/`))) throw new Error(`${ledger} is not in an integration worktree`);
+    // The commit lands wherever git finds a repo above the file, so the check is on the repo
+    // and the branch that will take it, not on the path: the integration worktree must exist,
+    // be the repo the file is in, and have the mission branch out. Anything else is a commit on
+    // somebody's branch (M8), and a missing worktree is not something to mkdir into being.
+    const repo = mission.repos.find((r) => ledger.startsWith(`${r.integration}/`));
+    if (!repo) throw new Error(`${ledger} is not in an integration worktree`);
+    const [top, branch] = await Promise.all([toplevelOf(repo.integration), currentBranch(repo.integration)]);
+    if (top !== await toplevelOf(dirname(ledger)).catch(() => top)) throw new Error(`${ledger} is not inside the worktree at ${repo.integration}`);
+    if (branch !== repo.branch) throw new Error(`${repo.integration} has ${branch || "a detached HEAD"} checked out, not ${repo.branch}`);
     const current = await readFile(ledger, "utf8").catch(() => readFile(source, "utf8"));
     const was = new Map(parsePlan(current).milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
     const d = new Date();
@@ -426,7 +470,7 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
     }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}`);
     const entries = [...moved, ...decisions.map((d) => `${stamp} ${d}`)];
     if (!entries.length && (await readFile(ledger, "utf8").catch(() => null)) !== null) return undefined;
-    await mkdir(join(ledger, ".."), { recursive: true });
+    await mkdir(dirname(ledger), { recursive: true });
     await writeFile(ledger, applyPlanState(current, mission.milestones, entries), "utf8");
     await commitFile(ledger, `mission ${mission.id}: ${entries[0]?.replace(/^\S+ \S+ /, "") ?? "state"}${entries.length > 1 ? ` (+${entries.length - 1})` : ""}`);
     return undefined;
@@ -674,10 +718,11 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
   mission.repos = await missionLayout(project, cfg, mission.id, named);
   mission.planCommit = await writePlanToTracker(project, mission, parsed.intro);
+  // Before any worktree exists: the worktrees and the scratch folders inside them are ignored
+  // locally in every repo the project holds (the worktrees live under the project root, which
+  // may be a repo the plan does not name), so nothing on a base branch can sweep them in (M8).
+  for (const repo of choices) await excludeLocally(repo.path, [`${cfg.worktrees.replace(/\/+$/, "")}/`, ".scratch/"]);
   for (const repo of mission.repos) {
-    // Before any worktree exists: the worktrees and the scratch folders inside them are ignored
-    // locally, so nothing on a base branch can sweep them in (M8).
-    await excludeLocally(repo.path, [`${cfg.worktrees}/`, ".scratch/"]);
     await ensureBranch(repo.path, repo.branch, repo.base);
     await ensureWorktree(repo.path, repo.integration, repo.branch, repo.base);
   }
@@ -945,6 +990,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
           task.ended = new Date().toISOString();
           task.commits = await commitsAhead(missionRepo(mission, task).path, missionRepo(mission, task).branch, task.branch!).catch(() => []);
           task.head = await revParse(missionRepo(mission, task).path, task.branch!).then((sha) => sha.slice(0, 7)).catch(() => undefined);
+          task.strayed = strays(await changedFiles(missionRepo(mission, task).path, missionRepo(mission, task).branch, task.branch!).catch(() => []), task.touches);
         }
         if (task.status === "built") {
           task.reviews = (task.reviews ?? 0) + 1;

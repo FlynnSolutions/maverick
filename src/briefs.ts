@@ -30,21 +30,33 @@ export const planOnBranch = (projectPath: string, plan: string, repos: MissionRe
   return join(repos[0].integration, relative(projectPath, source));
 };
 
-/** Where an agent may make a mess: inside its own worktree, in a folder git ignores (see `excludeLocally`). */
-export const scratchFor = (worktree: string, role: string): string => join(worktree, ".scratch", role);
+/** Where an agent may make a mess: inside the task's worktree, in a folder git ignores (see `excludeLocally`). */
+export const scratchFor = (task: Pick<MissionTask, "id" | "worktree">, role: string): string => {
+  if (!task.worktree) throw new Error(`task ${task.id} has no worktree yet, so it has nowhere to work; a brief is written after dispatch`);
+  return join(task.worktree, ".scratch", role);
+};
+
+/** A fact about this host, read from the host, so the brief stays true on another one. */
+const hostLine = (): string => process.platform === "darwin"
+  ? "The host is macOS with BSD tools: there is no `timeout`, `sed -i` needs `''`, `date -d` does not exist. Do not go looking for GNU versions."
+  : `The host is ${process.platform}; check which coreutils it has before assuming GNU or BSD flags.`;
 
 /**
  * How to behave in the harness. Each line was a real stumble on the first overnight mission, and
  * the list only grows: a stumble seen twice is a template bug, not a one-off.
  */
 export const STANDING_ORDERS: readonly string[] = [
-  "The host is macOS with BSD tools: there is no `timeout`, `sed -i` needs `''`, `date -d` does not exist. Do not go looking for GNU versions.",
-  "Anything that takes more than a few seconds runs in the background and you poll it with a wait loop. A foreground `sleep` or a blocking server start hangs your session.",
+  hostLine(),
+  "Anything that takes more than a few seconds is started in the background (the Bash tool's background option, or `&` with its output to a file under your scratch path) and checked with short polls. A foreground `sleep`, a blocking server start, or a wait loop in the foreground hangs your session.",
   "Probes, copies, downloads and installs go under your scratch path and nowhere else. Delete only literal paths you created yourself, never a path read from a variable or a file, and never with `rm -rf` on anything you did not make.",
-  "One check per command, so a failure names itself.",
-  "Commit as you go, in small commits with plain lowercase subjects. Never amend a commit that has been reviewed; append a new one.",
-  "Export environment variables, never pass a secret or an option through a shell variable into a command line, and never print a secret or write one into a file you commit.",
+  "One check per command, so a failure names itself. Each command runs in a fresh shell: an environment variable is exported in the same command that needs it, never relied on from an earlier one.",
+  "Never put a secret or an option into a shell variable that is then expanded into a command line, never print a secret, and never write one into a file you commit.",
   "Stop every process you started (servers, watchers, containers) before you stop, and name the ports you used in your final message.",
+];
+
+/** The builder's own orders; a RIO commits nothing, so it does not get these. */
+const BUILDER_ORDERS: readonly string[] = [
+  "Commit as you go, in small commits with plain lowercase subjects. Never amend a commit that has been reviewed; append a new one.",
 ];
 
 /**
@@ -64,6 +76,20 @@ export const RIO_CHECKLIST: readonly string[] = [
 
 const list = (lines: readonly string[]): string[] => lines.map((l) => `- ${l}`);
 
+/** What the task owns and what it builds on, as the plan declared them. */
+const ownership = (ctx: BriefContext): string[] => {
+  const { task, milestone: m, repo } = ctx;
+  const out: string[] = [];
+  if (task.touches?.length) out.push(`This task owns these paths and no others: ${task.touches.join(", ")}. A file outside them is a finding unless your final message says why it had to change; if it needs more, add a new file rather than editing a shared one.`);
+  for (const need of task.needs ?? []) {
+    const sibling = m.tasks.find((t) => t.id === need);
+    out.push(sibling
+      ? `It builds on ${need} (${sibling.title}), which flies beside it in this milestone on branch ${repo.branch}-${need}; read it there, and expect it to change until it passes.`
+      : `It builds on ${need}, from an earlier milestone, already merged on ${repo.branch} and checked out at ${repo.integration}.`);
+  }
+  return out.length ? ["", ...out] : [];
+};
+
 const otherRepos = (ctx: BriefContext): string[] =>
   ctx.mission.repos.length > 1
     ? ["",
@@ -80,7 +106,7 @@ export const wingmanBrief = (ctx: BriefContext, retry?: { findings: string }): s
     "",
     `Your repo is ${repo.label}, at ${repo.path}. Your worktree is ${task.worktree}, on branch ${task.branch}, branched from ${repo.branch}. Work there and only there: do not touch the project's other repos, do not touch their main worktrees, do not switch branches, and do not merge anything.`,
     `The plan, with where every task stands, is on the mission branch at ${planOnBranch(ctx.projectPath, mission.plan, mission.repos)}. Read it; do not edit it, Maverick writes it.`,
-    `Your scratch path is ${scratchFor(task.worktree ?? repo.path, "wingman")}; git ignores it.`,
+    `Your scratch path is ${scratchFor(task, "wingman")}; git ignores it.`,
     ...otherRepos(ctx),
     "",
     `Milestone ${m.n} — ${m.title}. That milestone is done when: ${m.done}`,
@@ -88,6 +114,7 @@ export const wingmanBrief = (ctx: BriefContext, retry?: { findings: string }): s
     `Your task: ${task.title}`,
     "",
     task.intent,
+    ...ownership(ctx),
     "",
     ...(retry ? [
       `A RIO who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${retry.findings}\n\nStart from the code that is already on your branch. Fix every finding marked BLOCKER. Fix a NOTE when it is cheap; otherwise leave it and say why in your final message. Everything the RIO did not flag passed, and must still pass: re-run the repo's tests and the checks the RIO ran before you stop, because a retry that fixes the list and breaks what the list did not mention costs another full round. Do not argue with the RIO in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.`,
@@ -96,12 +123,12 @@ export const wingmanBrief = (ctx: BriefContext, retry?: { findings: string }): s
     "Read the repo's own rules before you write anything: its rulebook, its decision log and its design contract if it has them. Match the code around you.",
     "",
     "Standing orders:",
-    ...list(STANDING_ORDERS),
+    ...list([...STANDING_ORDERS, ...BUILDER_ORDERS]),
     "",
     "A RIO that is not you will check the work against this list; check it yourself first, so its review confirms rather than discovers:",
     ...list(RIO_CHECKLIST),
     "",
-    `Before you stop, run \`git -C ${task.worktree} diff --name-only ${repo.branch}..HEAD\` and make sure every file in it belongs to this task.`,
+    `Before you stop, run \`git -C ${task.worktree} diff --name-only ${repo.branch}..HEAD\` and make sure every file in it belongs to this task${task.touches?.length ? ", which means inside: " + task.touches.join(", ") : ""}.`,
     "",
     "Do not write to the project's trackers; Maverick owns those for this mission. Do not open a pull request. Do not spawn other agents.",
     "",
@@ -115,15 +142,17 @@ export const rioBrief = (ctx: BriefContext, file: string): string => {
   return [
     `You are the RIO for one Wingman on the mission "${mission.name}" in the project at ${ctx.projectPath}. You fly in its back seat: you read what it did and you call it. You did not write this code and you will not fix it.`,
     "",
-    `The work is in the ${repo.label} repo, on branch ${task.branch}, in the worktree at ${task.worktree}. Read every commit on it that ${repo.branch} does not have (\`git -C ${task.worktree} log ${repo.branch}..HEAD -p\`). Run things in that worktree; if you need a checkout of your own, make a detached one under ${scratchFor(task.worktree ?? repo.path, `rio${task.reviews ?? 1}`)} and remove it when you are done.`,
+    `The work is in the ${repo.label} repo, on branch ${task.branch}, in the worktree at ${task.worktree}. Read every commit on it that ${repo.branch} does not have (\`git -C ${task.worktree} log ${repo.branch}..HEAD -p\`). Run things in that worktree; if you need a checkout of your own, make a detached one under ${scratchFor(task, `rio${task.reviews ?? 1}`)} and remove it when you are done.`,
     `The plan, with where every task stands, is on the mission branch at ${planOnBranch(ctx.projectPath, mission.plan, mission.repos)}. Read it; do not edit it.`,
-    `Your scratch path is ${scratchFor(task.worktree ?? repo.path, `rio${task.reviews ?? 1}`)}; git ignores it.`,
+    `Your scratch path is ${scratchFor(task, `rio${task.reviews ?? 1}`)}; git ignores it.`,
     "",
     `The task it was given: ${task.title}`,
     "",
     task.intent,
     "",
     `The milestone it belongs to is done when: ${m.done}`,
+    ...ownership(ctx),
+    ...(task.strayed?.length ? ["", `Maverick diffed the branch against the paths the task owns. Files outside them: ${task.strayed.join(", ")}. Each is a finding unless the Wingman's final message justified it.`] : []),
     ...(m.tasks.length > 1 ? ["", `Its siblings in this milestone, which will merge with it: ${m.tasks.filter((t) => t.id !== task.id).map((t) => t.title).join("; ")}. Say what happens when they land together.`] : []),
     "",
     "Judge whether the work does what the task says, in the repo's own terms. Run the thing: its tests, its build, its checks, whatever the repo actually has. Where it has none, say so and verify by reading and by running the code by hand. Check it against the repo's binding rules, not only against the task. Then check every line of this list:",
@@ -132,7 +161,7 @@ export const rioBrief = (ctx: BriefContext, file: string): string => {
     "Standing orders:",
     ...list(STANDING_ORDERS),
     "",
-    `Write your findings to ${file}. The FIRST line must be exactly one of: "verdict: pass", "verdict: fail", "verdict: mixed". Then a markdown list of findings, each with a severity (blocker / major / minor / note), the evidence (file, line, command output), and whether it contradicts what the session claimed about itself. Say plainly what you could not verify.`,
+    `Write your findings to ${file}, with a shell redirect. The FIRST line must be exactly one of: "verdict: pass", "verdict: pass with notes", "verdict: fail", "verdict: mixed". Then a markdown list, one finding per line, each starting "BLOCKER:" (the task does not pass until it is fixed) or "NOTE:" (fix if cheap, else carried into the report), with the evidence (file, line, command output) and whether it contradicts what the Wingman claimed. Say plainly what you could not verify, as lines of their own. A pass that disagreed with nothing is a pass that read the commit messages.`,
     "",
     "Do not fix anything. Do not commit. Do not touch the trackers. Do not spawn other agents.",
   ].join("\n");

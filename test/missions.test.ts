@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyPlanState, costOf, parsePlan } from "../src/missions.ts";
+import { applyPlanState, costOf, parsePlan, strays } from "../src/missions.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
 const PLAN = `# Mission: the Strike Lead
@@ -234,6 +234,59 @@ test("applyPlanState writes the state under each task and reads back equal, leav
   const twice = applyPlanState(once, milestones, ["2026-10-09 10:05 m1-t2 Write the plan into the tracker: reviewing to passed (RIO: pass)"]);
   assert.deepEqual(parsePlan(twice, ["root"]).log.map((l) => l.slice(0, 16)), ["2026-10-09 10:00", "2026-10-09 10:05"]);
   assert.ok(twice.endsWith("(RIO: pass)\n"), JSON.stringify(twice.slice(-80)));
+});
+
+const OWNED = `# Mission: owned
+
+Who touches what.
+
+## Milestone 1 — parallel
+
+_done when: both pass._
+
+- [ ] **Alpha**
+  - touches: src/alpha.ts, src/shared/
+  Build alpha.
+
+- [ ] **Bravo**
+  - touches: src/bravo.ts, ./src/shared/types.ts
+  - needs: m1-t1
+  Build bravo on alpha.
+
+## Milestone 2 — after
+
+_done when: it lands._
+
+- [ ] **Charlie**
+  - touches: src/charlie/
+  - needs: m1-t2 m1-t1
+  Build charlie.
+`;
+
+test("touches and needs are read from the plan, and an overlap inside one milestone is named", () => {
+  const plan = parsePlan(OWNED, ["root"]);
+  assert.equal(plan.problems.length, 0, plan.problems.join("; "));
+  const [alpha, bravo] = plan.milestones[0].tasks;
+  assert.deepEqual(alpha.touches, ["src/alpha.ts", "src/shared"]);
+  assert.deepEqual(bravo.touches, ["src/bravo.ts", "src/shared/types.ts"], "a leading ./ and a trailing / are noise");
+  assert.deepEqual(bravo.needs, ["m1-t1"]);
+  assert.deepEqual(plan.milestones[1].tasks[0].needs, ["m1-t2", "m1-t1"]);
+  assert.deepEqual(plan.overlaps, ["milestone 1: m1-t1 and m1-t2 both touch src/shared"], "a file inside a directory another task owns");
+  assert.deepEqual(parsePlan(OWNED.replace("./src/shared/types.ts", "src/other.ts"), ["root"]).overlaps, []);
+});
+
+test("a need that is missing, itself, later, or mutual is a problem", () => {
+  const problems = (text: string) => parsePlan(text, ["root"]).problems;
+  assert.ok(problems(OWNED.replace("- needs: m1-t1\n", "- needs: m9-t9\n")).some((p) => /needs "m9-t9", which is not a task/.test(p)));
+  assert.ok(problems(OWNED.replace("- needs: m1-t1\n", "- needs: m1-t2\n")).some((p) => /needs itself/.test(p)));
+  assert.ok(problems(OWNED.replace("- needs: m1-t1\n", "- needs: m2-t1\n")).some((p) => /flies later, in milestone 2/.test(p)));
+  assert.ok(problems(OWNED.replace("  - touches: src/alpha.ts, src/shared/\n", "  - touches: src/alpha.ts, src/shared/\n  - needs: m1-t2\n")).some((p) => /need each other/.test(p)));
+});
+
+test("strays are the files a Wingman changed that none of its touches cover", () => {
+  assert.deepEqual(strays(["src/alpha.ts", "src/shared/a.ts", "src/other.ts", "test/alpha.test.ts"], ["src/alpha.ts", "src/shared"]), ["src/other.ts", "test/alpha.test.ts"]);
+  assert.deepEqual(strays(["anything"], undefined), [], "a task that owns nothing in particular has no strays");
+  assert.deepEqual(strays(["src/alpha.tsx"], ["src/alpha.ts"]), ["src/alpha.tsx"], "a prefix is not a match");
 });
 
 test("a task whose title is not bold survives the marker the ledger puts on it", () => {

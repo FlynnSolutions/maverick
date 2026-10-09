@@ -34,6 +34,16 @@ test("plan-check prints where every task stands and exits 0 on a flyable plan", 
   assert.match(stdout, /Log \(1\), last: 2026-10-09 10:00 m1-t1 Parse/);
 });
 
+test("plan-check prints what each task touches and needs, and every overlap", async () => {
+  const owned = join(dir, "deliverables", "missions", "owned.md");
+  await writeFile(owned, "# Mission: owned\n\nO.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **A**\n  - touches: src/a.ts, src/shared/\n  a\n\n- [ ] **B**\n  - touches: src/shared/b.ts\n  - needs: m1-t1\n  b\n", "utf8");
+  const { status, stdout } = run("plan-check", owned);
+  assert.equal(status, 0, stdout);
+  assert.match(stdout, /touches src\/a\.ts, src\/shared\n/);
+  assert.match(stdout, /needs m1-t1\n/);
+  assert.match(stdout, /overlap: milestone 1: m1-t1 and m1-t2 both touch src\/shared/);
+});
+
 test("plan-check names every problem and exits 1", async () => {
   const bad = join(dir, "deliverables", "missions", "bad.md");
   await writeFile(bad, "## Milestone 1 — x\n\n- [ ] **only a title**\n", "utf8");
