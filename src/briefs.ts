@@ -138,7 +138,7 @@ export const wingmanBrief = (ctx: BriefContext, retry?: { findings: string }): s
 };
 
 /** The RIO's brief. It reads, runs and judges; it never fixes, and its tool list says so. */
-export const rioBrief = (ctx: BriefContext, file: string): string => {
+export const rioBrief = (ctx: BriefContext, file: string, previous?: string): string => {
   const { mission, milestone: m, task, repo } = ctx;
   return [
     `You are the RIO for one Wingman on the mission "${mission.name}" in the project at ${ctx.projectPath}. You fly in its back seat: you read what it did and you call it. You did not write this code and you will not fix it.`,
@@ -154,6 +154,7 @@ export const rioBrief = (ctx: BriefContext, file: string): string => {
     `The milestone it belongs to is done when: ${m.done}`,
     ...ownership(ctx),
     ...(task.strayed?.length ? ["", `Maverick diffed the branch against the paths the task owns. Files outside them: ${task.strayed.join(", ")}. Each is a finding unless the Wingman's final message justified it.`] : []),
+    ...(previous ? ["", `This is a retry. The previous RIO's findings, verbatim, and the Wingman was told to fix every BLOCKER and any NOTE that was cheap, and to say in its final message which notes it left and why:\n\n${previous}\n\nCheck that each blocker is fixed and that nothing which passed before broke. A note the Wingman deliberately left stays a note unless it got worse.`] : []),
     ...(m.tasks.length > 1 ? ["", `Its siblings in this milestone, which will merge with it: ${m.tasks.filter((t) => t.id !== task.id).map((t) => t.title).join("; ")}. Say what happens when they land together.`] : []),
     "",
     "Judge whether the work does what the task says, in the repo's own terms. Run the thing: its tests, its build, its checks, whatever the repo actually has. Where it has none, say so and verify by reading and by running the code by hand. Check it against the repo's binding rules, not only against the task. Then check every line of this list:",
@@ -162,7 +163,7 @@ export const rioBrief = (ctx: BriefContext, file: string): string => {
     "Standing orders:",
     ...list(STANDING_ORDERS),
     "",
-    `Write your findings to ${file}, with a shell redirect. The FIRST line must be exactly one of: "verdict: pass", "verdict: pass with notes", "verdict: fail", "verdict: mixed". Then a markdown list, one finding per line, each starting "BLOCKER:" (the task does not pass until it is fixed) or "NOTE:" (fix if cheap, else carried into the report), with the evidence (file, line, command output) and whether it contradicts what the Wingman claimed. Say plainly what you could not verify, as lines of their own. A pass that disagreed with nothing is a pass that read the commit messages.`,
+    `Write your findings to ${file}, with a shell redirect. The FIRST line must be exactly one of: "verdict: pass", "verdict: pass with notes", "verdict: fail", "verdict: mixed". Then a markdown list, one finding per line, each starting "BLOCKER:" (the task does not pass until it is fixed), "NOTE:" (fix if cheap, else carried into the report) or "UNVERIFIED:" (what you could not check; it is carried too), with the evidence (file, line, command output) and whether it contradicts what the Wingman claimed. In a fail or a mixed, a list line with none of those words is read as a blocker. A pass that disagreed with nothing is a pass that read the commit messages.`,
     "",
     "Do not fix anything. Do not commit. Do not touch the trackers. Do not spawn other agents.",
   ].join("\n");

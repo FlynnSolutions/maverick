@@ -32,10 +32,11 @@ your own, make a detached one under your scratch path and remove it when you are
 
 The findings file. Its first line is the verdict, exactly one of `verdict: pass`,
 `verdict: pass with notes`, `verdict: fail`, `verdict: mixed`. Then a list, one finding per
-line, each starting `BLOCKER:` (the task does not pass until this is fixed) or `NOTE:` (fix if
-cheap, otherwise carried into the report), with the evidence: file and line, the command and
-its output, and whether it contradicts what the Wingman claimed. Say plainly what you could
-not verify, as its own lines. A pass that disagreed with nothing is a pass that read the
+line, each starting `BLOCKER:` (the task does not pass until this is fixed), `NOTE:` (fix if
+cheap, otherwise carried into the report) or `UNVERIFIED:` (what you could not check, carried
+too), with the evidence: file and line, the command and its output, and whether it contradicts
+what the Wingman claimed. In a fail or a mixed, a list line with none of those words is read as
+a blocker, so sort every one. A pass that disagreed with nothing is a pass that read the
 commit messages; look until you have disagreed with something or can say why there is nothing.
 
 ## How to look

@@ -487,7 +487,7 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
     const moved = mission.milestones.flatMap((m) => m.tasks).filter((t) => {
       const before = was.get(t.id);
       return !before || before.status !== t.status || before.verdict !== t.verdict;
-    }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}`);
+    }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`);
     const entries = [...moved, ...decisions.map((d) => `${stamp} ${d}`)];
     if (!entries.length && (await readFile(ledger, "utf8").catch(() => null)) !== null) return undefined;
     await mkdir(dirname(ledger), { recursive: true });
@@ -762,8 +762,8 @@ const briefContext = (project: Project, mission: Mission, m: Milestone, task: Mi
 const wingmanPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, findings?: string): string =>
   wingmanBrief(briefContext(project, mission, m, task, repo), findings ? { findings } : undefined);
 
-const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, file: string): string =>
-  rioBrief(briefContext(project, mission, m, task, repo), file);
+const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, file: string, previous?: string): string =>
+  rioBrief(briefContext(project, mission, m, task, repo), file, previous);
 
 /**
  * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:
@@ -927,12 +927,22 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
  * retries, a task whose open findings are notes only merges with them carried; one with an open
  * blocker stops, and with it everything that needs it, because its milestone cannot merge.
  */
-export const settleReview = (task: Pick<MissionTask, "attempts">, findings: string, verdict: Verdict): { status: "passed" | "retry" | "handed-back"; note?: string; carried?: string[] } => {
-  const { blockers, notes } = findingsOf(findings, verdict);
+export const settleReview = (task: Pick<MissionTask, "attempts">, findings: string, said: Verdict): { status: "passed" | "retry" | "handed-back"; note?: string; carried?: string[] } => {
+  const { blockers, notes } = findingsOf(findings, said);
+  // A pass with a blocker in it is a RIO contradicting itself; the blocker wins.
+  const verdict = (said === "pass" || said === "pass with notes") && blockers.length ? "mixed" : said;
   if (verdict === "pass" || verdict === "pass with notes") return { status: "passed", ...(notes.length ? { carried: notes } : {}) };
   if (task.attempts < MAX_ATTEMPTS) return { status: "retry" };
   if (!blockers.length) return { status: "passed", note: `the RIO said ${verdict} after ${task.attempts} attempts with no blocker open; merged with ${notes.length} note(s) carried`, carried: notes };
   return { status: "handed-back", note: `the RIO said ${verdict} after ${task.attempts} attempts with ${blockers.length} blocker(s) open; this one is yours` };
+};
+
+/** What was remembered about a task's last attempt, cleared when it goes back in the air. */
+const forget = (task: MissionTask): void => {
+  task.commits = undefined;
+  task.head = undefined;
+  task.strayed = undefined;
+  task.carried = undefined;
 };
 
 /** Put a task back out with the RIO's findings, in the worktree it already has. */
@@ -947,6 +957,7 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
   task.ended = undefined;
   task.verdict = undefined;
   task.review = undefined;
+  forget(task);
   if (previous) await patchSession(config.sessionsDir, `bg-${previous}`, { status: "handed-off", ended: new Date().toISOString(), handoff: findings.split("\n")[0] });
   await recordWingman(mission, task);
 };
@@ -1038,7 +1049,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
           const file = reviewFile(mission, task);
           try {
             // The agent is installed in `~/.claude/agents/` (`rio.md` from this repo, by default); the brief says what to do, the tool list says what it cannot.
-            const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, reviewPrompt(project, mission, m, task, missionRepo(mission, task), file), cfg.rioAgent);
+            const previous = task.reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: task.reviews - 1 }), "utf8").catch(() => undefined) : undefined;
+            const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, reviewPrompt(project, mission, m, task, missionRepo(mission, task), file, previous), cfg.rioAgent);
             task.review = { claudeId, file, started: new Date().toISOString() };
             task.status = "reviewing";
             agentCache.delete(project.path);

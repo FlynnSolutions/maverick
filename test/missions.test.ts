@@ -321,8 +321,10 @@ test("a RIO's verdict is one of four, and its findings sort into blockers and no
   assert.equal(verdictOf("verdict: Pass\n"), "pass");
   assert.equal(verdictOf("verdict: mixed"), "mixed");
   assert.equal(verdictOf("no verdict here"), "pending");
-  assert.deepEqual(findingsOf("verdict: mixed\n- BLOCKER: the test is vacuous\n- **NOTE:** a stray log line\n* note: lower case too\nnot a finding", "mixed"), { blockers: ["the test is vacuous"], notes: ["a stray log line", "lower case too"] });
-  assert.deepEqual(findingsOf("verdict: fail\n- the logger drops errors (major)", "fail").blockers, ["findings not sorted into BLOCKER and NOTE; all read as blockers"]);
+  assert.deepEqual(findingsOf("verdict: mixed\r\n- BLOCKER: the test is vacuous\n- **NOTE:** a stray log line\n1. note: lower case too\n- **BLOCKER: bold all through**\n- UNVERIFIED: the deploy\nprose that is not a list line\n  indented evidence under a finding", "mixed"), { blockers: ["the test is vacuous", "bold all through"], notes: ["a stray log line", "lower case too", "unverified: the deploy"] });
+  // In a fail, every list line the RIO did not sort is a blocker, and one sorted line does not switch that off.
+  assert.deepEqual(findingsOf("verdict: fail\n- the logger drops errors (major)\n- NOTE: stray log line\n- the deletion is keyed on the wrong id\n\nNote: I could not run the deploy.", "fail"), { blockers: ["the logger drops errors (major)", "the deletion is keyed on the wrong id"], notes: ["stray log line"] });
+  assert.deepEqual(findingsOf("verdict: pass\n- Blocker or not, this was fine.", "pass"), { blockers: [], notes: [] }, "a sentence is not a finding; only a sorted list line is, on a pass");
   assert.deepEqual(findingsOf("verdict: pass\n", "pass"), { blockers: [], notes: [] });
 });
 
@@ -335,4 +337,8 @@ test("the merge-with-notes rule: notes carry, a blocker stops, and retries come 
   assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, notes, "mixed"), { status: "passed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 2 note(s) carried", carried: ["a", "b"] });
   assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, blocker, "fail"), { status: "handed-back", note: "the RIO said fail after 2 attempts with 1 blocker(s) open; this one is yours" });
   assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail\n- something unsorted", "fail").status, "handed-back", "unsorted findings are blockers");
+  assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail\n- NOTE: tidy\n- the real defect\n\nNote: prose", "fail").status, "handed-back", "one sorted line does not let the rest through");
+  assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: mixed\n- NOTE: a", "mixed").status, "passed", "mixed, notes only, out of retries: merges");
+  assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass\n- BLOCKER: it does not build", "pass"), { status: "retry" }, "a pass with a blocker in it is a mixed");
+  assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: a\n- UNVERIFIED: the deploy", "pass with notes"), { status: "passed", carried: ["a", "unverified: the deploy"] });
 });

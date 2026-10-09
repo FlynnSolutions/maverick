@@ -96,19 +96,32 @@ export const runAudit = async (project: Project, childId: string): Promise<Audit
 
 /** The auditor's contract: the first line of a findings file is its verdict. */
 export const verdictOf = (findings: string | undefined): Verdict =>
-  (findings?.match(/^verdict:\s*(pass with notes|pass|fail|mixed)/i)?.[1].toLowerCase().replace(/\s+/g, " ") as Verdict | undefined) ?? "pending";
+  (findings?.match(/^verdict:\s*(pass with notes|pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
+
+/** A list line: `- `, `* ` or `1. `, with any bold stripped, so a RIO's own markdown habits do not hide a finding. */
+const listLine = (line: string): string | undefined => {
+  const m = line.match(/^\s*(?:[-*]|\d+[.)])\s+(.*)$/);
+  return m ? m[1].replace(/\*\*/g, "").trim() : undefined;
+};
 
 /**
- * A finding is a line that says what it is: `BLOCKER:` (the task does not pass until it is
- * fixed) or `NOTE:` (fix if cheap, else carried). A fail or a mixed whose findings carry no
- * prefix at all is read as all blockers: a RIO that did not sort its list has not said any of
- * it is safe to carry.
+ * A finding is a list line that says what it is: `BLOCKER:` (the task does not pass until it
+ * is fixed), `NOTE:` (fix if cheap, else carried) or `UNVERIFIED:` (what the RIO could not
+ * check; carried with the notes so it reaches the page). In a fail or a mixed, every other
+ * list line is a blocker: a RIO that did not sort a finding has not said it is safe to carry,
+ * and one sorted line must not switch that off for the rest.
  */
 export const findingsOf = (findings: string, verdict: Verdict): { blockers: string[]; notes: string[] } => {
-  const lines = findings.split("\n").map((l) => l.replace(/^\s*[-*]\s*/, "").trim());
-  const blockers = lines.filter((l) => /^\**BLOCKER\b/i.test(l)).map((l) => l.replace(/^[*\s]*BLOCKER[:*\s]*/i, ""));
-  const notes = lines.filter((l) => /^\**NOTE\b/i.test(l)).map((l) => l.replace(/^[*\s]*NOTE[:*\s]*/i, ""));
-  if (!blockers.length && !notes.length && (verdict === "fail" || verdict === "mixed")) return { blockers: ["findings not sorted into BLOCKER and NOTE; all read as blockers"], notes: [] };
+  const blockers: string[] = [];
+  const notes: string[] = [];
+  for (const raw of findings.split(/\r?\n/)) {
+    const line = listLine(raw);
+    if (line === undefined || /^verdict:/i.test(line)) continue;
+    const sorted = line.match(/^(BLOCKER|NOTE|UNVERIFIED):\s*(.*)$/i);
+    if (sorted?.[1].toUpperCase() === "BLOCKER") blockers.push(sorted[2]);
+    else if (sorted) notes.push(sorted[1].toUpperCase() === "UNVERIFIED" ? `unverified: ${sorted[2]}` : sorted[2]);
+    else if (verdict === "fail" || verdict === "mixed") blockers.push(line);
+  }
   return { blockers, notes };
 };
 

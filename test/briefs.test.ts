@@ -66,6 +66,11 @@ test("a RIO's brief names the branch to read, its own scratch path, its siblings
   assert.ok(!brief.includes("Commit as you go"), "a RIO is not told to commit");
   assert.ok(wingmanBrief(ctx).includes("- Commit as you go"), "a Wingman is");
   assert.throws(() => rioBrief({ ...ctx, task: { ...task, worktree: undefined } }, "/f.md"), /has no worktree yet/);
+  const second = rioBrief(ctx, "/f2.md", "verdict: mixed\n- BLOCKER: x\n- NOTE: y");
+  assert.match(second, /This is a retry\. The previous RIO's findings, verbatim/);
+  assert.ok(second.includes("- BLOCKER: x\n- NOTE: y"));
+  assert.match(second, /A note the Wingman deliberately left stays a note unless it got worse/);
+  assert.ok(!rioBrief(ctx, "/f.md").includes("This is a retry"));
 });
 
 test("on a multi-repo mission the Wingman is told where the other repos' work is, and that none of it is on a base branch", () => {

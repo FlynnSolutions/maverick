@@ -139,7 +139,7 @@ test("a person's decision is written into the plan on the mission branch and com
   assert.match(plan.log[0], /m1-t1 t: pending to passed/, "the transition is logged");
   assert.match(plan.log[1], /accepted by Cory over the RIO: read the diff myself/, "and so is the decision");
   const wt = (...args: string[]) => execFileSync("git", ["-C", integration, ...args], { encoding: "utf8" });
-  assert.match(wt("log", "--format=%s", "-1"), /^mission ledger: m1-t1 t: pending to passed \(\+1\)/, "committed on the mission branch's worktree");
+  assert.match(wt("log", "--format=%s", "-1"), /^mission ledger: m1-t1 t: pending to passed: accepted by Cory over the RIO: read the diff myself \(\+1\)/, "committed on the mission branch's worktree, with the reason");
   assert.equal(wt("status", "--porcelain").trim(), "", "nothing left uncommitted");
   assert.equal(git("log", "--format=%s", "-1").trim(), "the plan", "the main checkout got nothing");
 
