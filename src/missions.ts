@@ -590,13 +590,6 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
 };
 
 /**
- * The plan on the mission branch is the ledger. After every transition the state is written
- * into it and committed in the integration worktree, so a person, or a Strike Lead that has
- * lost its context, can read where the mission stands from the file alone. The record under
- * `console-sessions/` keeps only what markdown cannot hold: session ids, worktrees, revisions.
- */
-/** The log lines for what changed between the ledger's last state and the mission's, timestamped locally. */
-/**
  * The log lines for what changed between the ledger's last state and the mission's. A line
  * says what it is after its stamp: `auto:` for a transition the merge-with-notes rule settled
  * without a person, `held:` for a milestone held for one, `decision:` (written by `recorded`)
@@ -630,6 +623,12 @@ const ledgerRepoFor = async (mission: Mission, ledger: string): Promise<MissionR
   return repo;
 };
 
+/**
+ * The plan on the mission branch is the ledger. After every transition the state is written
+ * into it and committed in the integration worktree, so a person, or a Strike Lead that has
+ * lost its context, can read where the mission stands from the file alone. The record under
+ * `console-sessions/` keeps only what markdown cannot hold: session ids, worktrees, revisions.
+ */
 const syncPlan = async (project: Project, mission: Mission, decisions: string[] = []): Promise<string | undefined> => {
   const source = join(project.path, mission.plan);
   let ledger = "";
@@ -999,9 +998,9 @@ const commissionWalkthrough = async (project: Project, mission: Mission, m: Mile
   const started = new Date().toISOString();
   try {
     await claimed(mission,
-      () => { m.walkthrough = { started }; },
+      () => { m.walkthrough = { claudeId: "", started }; },
       () => spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m))),
-      (claudeId) => { m.walkthrough = { claudeId, started }; });
+      (on, claudeId) => { const x = on.milestones.find((y) => y.n === m.n); if (x?.walkthrough) x.walkthrough.claudeId = claudeId; });
     agentCache.delete(project.path);
   } catch (err) {
     if (err instanceof StaleMissionError) throw err;
@@ -1050,13 +1049,6 @@ const recordWingman = async (mission: Mission, task: MissionTask): Promise<void>
   await writeSession(config.sessionsDir, record);
 };
 
-/**
- * Which pending tasks may start now. A task with no `needs` starts with its milestone. A task
- * with `needs` starts when every task it names has passed, wherever that task is: a sibling in
- * the same milestone, or a task in an earlier milestone that has not merged yet. So the plan's
- * dependencies, not its milestone boundaries, decide when work can begin, and one straggler no
- * longer idles everything behind it. The milestone still merges as one, once all its tasks pass.
- */
 /** Whether two tasks could collide in the air: a stack both deploy, or a path both own. */
 const clash = (a: MissionTask, b: MissionTask): boolean => {
   const fold = (s: string): string => s.toLowerCase().replace(/\/+$/, "");
@@ -1074,15 +1066,22 @@ const clash = (a: MissionTask, b: MissionTask): boolean => {
  * base to build on, and a task that would deploy a stack or own a path a task in the air has
  * waits its turn: one deployer per stack in the air, whatever the milestones say.
  */
-export const startable = (mission: Pick<Mission, "milestones" | "status">): Array<{ milestone: Milestone; task: MissionTask }> => {
+export const startable = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">): Array<{ milestone: Milestone; task: MissionTask }> => {
   if (mission.status === "paused") return [];
   const all = mission.milestones.flatMap((m) => m.tasks);
-  const passed = new Set(mission.milestones.filter((m) => !m.hold).flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
+  // A passed task is a base to build on unless its milestone is held, or merged and not yet proved.
+  const passed = new Set(mission.milestones.filter((m) => !m.hold && (!m.merged || done(mission, m))).flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
   const airborne = all.filter((t) => ["flying", "built", "reviewing"].includes(t.status));
-  return mission.milestones.flatMap((milestone) => milestone.tasks
-    .filter((task) => task.status === "pending" && (task.needs?.length ? task.needs.every((id) => passed.has(id)) : Boolean(milestone.dispatched)))
-    .filter((task) => !airborne.some((other) => clash(task, other)))
-    .map((task) => ({ milestone, task })));
+  const out: Array<{ milestone: Milestone; task: MissionTask }> = [];
+  for (const milestone of mission.milestones) for (const task of milestone.tasks) {
+    if (task.status !== "pending") continue;
+    if (!(task.needs?.length ? task.needs.every((id) => passed.has(id)) : Boolean(milestone.dispatched))) continue;
+    // Against what is in the air and what this call is about to put there, so two of its own cannot clash either.
+    if (airborne.some((other) => clash(task, other))) continue;
+    out.push({ milestone, task });
+    airborne.push(task);
+  }
+  return out;
 };
 
 /** The one definition of "a person is needed": a task handed back, or a milestone held. Used by the sweep, resume, release and landAgain alike, through `settle`. */
@@ -1098,10 +1097,10 @@ export const needsPerson = (mission: Pick<Mission, "milestones">): string[] => [
  * approval and after the end are not its business.
  */
 export const settle = (mission: Mission, extra: string[] = []): Mission => {
-  if (SWEPT.has(mission.status) || mission.status === "review") {
-    const done = (m: Milestone): boolean => Boolean(m.merged) && !m.hold && (!mission.proofRequired || Boolean(m.proof?.ok));
+  if (!SWEPT.has(mission.status) && mission.status !== "review") return mission;
+  {
     mission.status = mission.pausedFor !== undefined ? "paused"
-      : mission.milestones.length && mission.milestones.every(done) ? "review"
+      : mission.milestones.length && mission.milestones.every((m) => done(mission, m)) ? "review"
       : needsPerson(mission).length ? "blocked" : "flying";
     if (mission.status === "review") mission.finished ??= new Date().toISOString();
   }
@@ -1118,12 +1117,29 @@ const holdFor = (m: Milestone, kind: HoldKind, reason: string): void => { m.hold
  * before any agent is spawned that nobody owns. What the spawn needs is already on the record
  * when it starts; the id is patched in after.
  */
-const claimed = async <T>(mission: Mission, claim: () => void, spawn: () => Promise<T>, record: (result: T) => void): Promise<void> => {
+export const claimed = async <T>(mission: Mission, claim: () => void, spawn: () => Promise<T>, record: (on: Mission, result: T) => void): Promise<void> => {
   claim();
   await writeMission(mission);
-  record(await spawn());
-  await writeMission(mission);
+  const result = await spawn();
+  record(mission, result);
+  try {
+    await writeMission(mission);
+  } catch (err) {
+    if (!(err instanceof StaleMissionError)) throw err;
+    // The agent is running and the record moved under it. The id goes onto the fresh record,
+    // which is the one that is true, and the pass ends: an agent the record does not name is
+    // one nobody can stop or review, and that is the one thing a refused write must not leave.
+    const fresh = await readMission(mission.project, mission.id);
+    if (fresh) {
+      record(fresh, result);
+      await writeMission(fresh);
+    }
+    throw err;
+  }
 };
+
+/** The task with this id on whichever record is at hand. */
+const taskOn = (on: Mission, id: string): MissionTask | undefined => on.milestones.flatMap((x) => x.tasks).find((t) => t.id === id);
 
 /** Cut a task's worktree from the mission branch as it stands now and send its Wingman out. */
 const launch = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, cfg: MissionConfig): Promise<void> => {
@@ -1134,9 +1150,9 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     // The fork point is the branch just made, not the mission tip a moment later.
     task.base = await revParse(repo.path, task.branch);
     await claimed(mission,
-      () => { task.status = "flying"; task.started = new Date().toISOString(); task.attempts = 1; },
+      () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
       () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg.shared)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
-      (claudeId) => { task.claudeId = claudeId; });
+      (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; });
     agentCache.delete(project.path);
     await recordWingman(mission, task);
   } catch (err) {
@@ -1189,9 +1205,13 @@ export const runProof = (cwd: string, command: string, timeoutMs = 30 * 60_000):
 /** Proofs in flight, keyed by mission and milestone: a standing job the pass starts and later reads, never waits on. */
 const proving = new Map<string, { result?: Awaited<ReturnType<typeof runProof>> }>();
 
-/** Milestones merge in order, and only once sent: a later one whose tasks all passed early still waits for the ones before it. */
-export const mergeable = (mission: Pick<Mission, "milestones">, m: Milestone): boolean =>
-  Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && !m.hold && mission.milestones.every((x) => x.n >= m.n || x.merged);
+/** A milestone that is done with: merged, not held, and, where the project proves merges, proved. Nothing builds on, merges after, or lands past one that is not. */
+export const done = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean =>
+  Boolean(m.merged) && !m.hold && (!mission.proofRequired || Boolean(m.proof?.ok));
+
+/** Milestones merge in order, and only once sent: a later one whose tasks all passed early still waits for the ones before it to be done. */
+export const mergeable = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): boolean =>
+  Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && !m.hold && mission.milestones.every((x) => x.n >= m.n || done(mission, x));
 
 /** Mark a milestone sent and start every task of it that can start; the rest wait on their `needs`. */
 const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
@@ -1245,6 +1265,7 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
   await claimed(mission,
     () => {
       task.sessionId = undefined;
+      task.claudeId = undefined;
       task.status = "flying";
       task.attempts += 1;
       task.started = new Date().toISOString();
@@ -1255,7 +1276,7 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
       forget(task);
     },
     () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
-    (claudeId) => { task.claudeId = claudeId; });
+    (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; });
   if (previous) await patchSession(config.sessionsDir, `bg-${previous}`, { status: "handed-off", ended: new Date().toISOString(), handoff: findings.split("\n")[0] });
   await recordWingman(mission, task);
 };
@@ -1331,6 +1352,7 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
         task.sessionId = sessionId;
         seated = true;
       }
+      // A claim whose id has not landed yet (the spawn is in flight) is not an agent to judge.
       if (task.status === "flying" && task.claudeId && state.get(task.claudeId) === "blocked") waiting.push(`${task.title} is waiting on you in its own session`);
       if (task.status === "flying" && task.claudeId && isOver(state, task.claudeId, task.started)) {
         const repo = missionRepo(mission, task);
@@ -1347,7 +1369,7 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
           console.error(`mission ${mission.id}: could not diff ${task.id} against its touches:`, (err as Error).message);
         }
       }
-      if (task.status === "reviewing" && task.review) {
+      if (task.status === "reviewing" && task.review?.claudeId) {
         const findings = await readFile(task.review.file, "utf8").catch(() => null);
         const verdict = findings ? verdictOf(findings) : undefined;
         if (verdict && verdict !== "pending") {
@@ -1364,7 +1386,7 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
       }
     }
     // A Strike Lead sent in to reconcile a collision: look at the branch when it is done, not at what it said about itself.
-    if (m.resolve && isOver(state, m.resolve.claudeId, m.resolve.started)) {
+    if (m.resolve?.claudeId && isOver(state, m.resolve.claudeId, m.resolve.started)) {
       const repo = mission.repos.find((r) => r.label === m.resolve!.repo);
       const landed = repo ? await commitsAhead(repo.path, m.resolve.branch, repo.branch).catch(() => []) : [];
       if (landed.length) {
@@ -1376,11 +1398,11 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
       }
       m.resolve = undefined;
     }
-    // A proof that settled since the last pass.
+    // A proof that settled since the last pass. The job stays in the map until the record that
+    // carries its result has been written, so a pass refused as stale does not erase a verdict.
     const job = proving.get(`${mission.id}/${m.n}`);
-    if (job?.result) {
+    if (job?.result && !m.proof) {
       m.proof = job.result;
-      proving.delete(`${mission.id}/${m.n}`);
       if (!m.proof.ok) holdFor(m, "proof", `the proof failed after milestone ${m.n} merged: ${m.proof.output.split("\n").filter(Boolean).slice(-3).join(" | ")}`);
     }
   }
@@ -1416,7 +1438,7 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
         await claimed(mission,
           () => { task.reviews = reviews; task.status = "reviewing"; task.review = { claudeId: "", file, started: new Date().toISOString() }; },
           () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), file, previous), cfg.rioAgent, RIO_TOOLS),
-          (claudeId) => { task.review!.claudeId = claudeId; });
+          (on, claudeId) => { const t = taskOn(on, task.id); if (t?.review) t.review.claudeId = claudeId; });
         agentCache.delete(project.path);
         await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { audit: task.review });
       } catch (err) {
@@ -1458,7 +1480,7 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
         await claimed(mission,
           () => { m.resolveTried = true; m.resolve = { claudeId: "", repo: repo.label, branch: task.branch!, started: new Date().toISOString(), paths: m.conflicts! }; },
           () => spawnBackgroundAgent(repo.integration, `Strike Lead · resolve m${m.n}`, resolvePrompt(project, mission, m, repo, task.branch!, paths)),
-          (claudeId) => { m.resolve!.claudeId = claudeId; });
+          (on, claudeId) => { const x = on.milestones.find((y) => y.n === m.n); if (x?.resolve) x.resolve.claudeId = claudeId; });
         agentCache.delete(project.path);
       } catch (err) {
         if (err instanceof StaleMissionError) throw err;
@@ -1486,18 +1508,19 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
       proving.set(key, job);
       void runProof(walkRepo(mission, m)!.integration, cfg.proof).then((r) => { job.result = r; });
     }
-    if (cfg.proof && !m.proof?.ok) continue;
+    if (!done(mission, m)) continue;
     // A repo with nothing left to do lands now rather than at the close, so an earlier repo can
     // be reviewed and merged while the later ones are still flying. A base that never received
-    // the push holds the next milestone, which very often consumes what this one made.
-    if (mission.repos.some((r) => r.land !== "merge" && !r.landed)) {
+    // the push holds the next milestone, which very often consumes what this one made. Landing
+    // is the whole branch, so it waits until every merged milestone is done, not only this one.
+    if (mission.repos.some((r) => r.land !== "merge" && !r.landed) && mission.milestones.every((x) => !x.merged || done(mission, x))) {
       await writeMission(mission);
       const { failed } = await landTheWork(mission);
       if (failed.length) { holdFor(m, "landing", `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`); continue; }
     }
     if (!m.walkthrough) await commissionWalkthrough(project, mission, m);
   }
-  const next = mission.milestones.find((x) => !x.dispatched && !x.merged && mission.milestones.every((y) => y.n >= x.n || (y.merged && !y.hold)));
+  const next = mission.milestones.find((x) => !x.dispatched && !x.merged && mission.milestones.every((y) => y.n >= x.n || done(mission, y)));
   if (next) await dispatch(project, mission, next);
   await startReady(project, mission);
 };
@@ -1516,6 +1539,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
       continue;
     }
     try {
+      // The project may have set or removed its proof since approval; the record follows the project.
+      mission.proofRequired = Boolean(cfg.proof);
       const { waiting, seated } = await recordFinished(project, mission, agents, state);
       // Paused: what is running is recorded and nothing new starts. Everything else is step two and three.
       if (mission.status !== "paused") {
@@ -1529,6 +1554,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
       // which can be well after the formation was made; keep offering it the lead seat.
       await seatTheLead(mission).catch(() => undefined);
       await writeThenSync(project, mission);
+      for (const m of mission.milestones) if (m.proof) proving.delete(`${mission.id}/${m.n}`);
     } catch (err) {
       if (!(err instanceof StaleMissionError)) throw err;
       console.log(`mission sweep yielded ${mission.id} to a change made while it ran; the next pass picks it up`);
@@ -1641,19 +1667,26 @@ export const landAgain = async (project: Project, id: string): Promise<{ mission
 };
 
 /** Put a blocked task back in the air after Cory has had a look, with one more attempt. */
-export const retryTask = async (project: Project, id: string, taskId: string): Promise<Mission> =>
-  changeMission(project.id, id, async (mission) => {
-    const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId));
-    const task = m?.tasks.find((t) => t.id === taskId);
-    if (!m || !task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+export const retryTask = async (project: Project, id: string, taskId: string): Promise<Mission> => {
+  // The checks and the attempt count go through the retried change; the spawn does not, so a
+  // refused write never spawns twice.
+  const mission = await changeMission(project.id, id, (mission) => {
+    const task = taskOn(mission, taskId);
+    if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
     if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
     if (mission.status === "paused") throw new Error(`${mission.name} is paused; resume it first, and the retry goes out then`);
     if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
-    const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
     task.attempts = MAX_ATTEMPTS - 1;
-    await handBack(project, mission, m, task, findings);
-    return settle(mission);
-  }).then((mission) => recorded(project, mission, [`${taskId} sent back out by Cory`]));
+    return mission;
+  });
+  const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId))!;
+  const task = taskOn(mission, taskId)!;
+  const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
+  await handBack(project, mission, m, task, findings);
+  settle(mission);
+  await writeMission(mission);
+  return recorded(project, mission, [`${taskId} sent back out by Cory`]);
+};
 
 /**
  * Pause, do not end. Nothing new is spawned; what is running finishes and is recorded; the
@@ -1679,6 +1712,7 @@ export const pauseMission = async (project: Project, id: string, note: string): 
 export const releaseMilestone = async (project: Project, id: string, n: number, note: string): Promise<Mission> => {
   if (!note.trim()) throw new Error("say what you did to settle it; it is kept in the ledger");
   const mission = await changeMission(project.id, id, (mission) => {
+    if (!SWEPT.has(mission.status)) throw new Error(`${mission.name} is ${mission.status}; there is nothing to release`);
     const m = mission.milestones.find((x) => x.n === n);
     if (!m) throw new Error(`no milestone ${n} on ${mission.name}`);
     if (!m.hold) throw new Error(`milestone ${n} is not held`);

@@ -16,7 +16,7 @@ import { test } from "node:test";
 const dir = mkdtempSync(join(tmpdir(), "mv-store-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "p"), { recursive: true });
-const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, closeMission, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
+const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, claimed, closeMission, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
 const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
@@ -221,4 +221,26 @@ test("a held milestone is released by a person with a reason, and the mission is
   (l.milestones[0] as { hold?: unknown }).hold = { kind: "landing", reason: "could not land", at: "x" };
   await writeFile(file("landheld"), JSON.stringify(l), "utf8");
   await assert.rejects(() => releaseMilestone(project, "landheld", 1, "pushed it"), /"land again" is the release for that/);
+});
+
+test("a spawned agent's id is never lost: a write the record refuses puts the id on the fresh record and ends the pass", async () => {
+  const m = await seed("claim");
+  const task = m.milestones[0].tasks[0];
+  task.status = "pending";
+  await writeFile(file("claim"), JSON.stringify(m), "utf8");
+  const mission = (await readMission("p", "claim"))!;
+  await assert.rejects(() => claimed(mission,
+    () => { const t = mission.milestones[0].tasks[0]; t.status = "flying"; t.claudeId = undefined; },
+    async () => {
+      // A person acts while the spawn is in flight: the record moves under the pass.
+      const theirs = (await readMission("p", "claim"))!;
+      theirs.trouble = "a person was here";
+      await __writeMissionForTest(theirs);
+      return "agent-123";
+    },
+    (on, id) => { on.milestones[0].tasks[0].claudeId = id; }), StaleMissionError);
+  const fresh = (await readMission("p", "claim"))!;
+  assert.equal(fresh.milestones[0].tasks[0].claudeId, "agent-123", "the id landed on the record that is true");
+  assert.equal(fresh.milestones[0].tasks[0].status, "flying", "the claim written before the spawn stands");
+  assert.equal(fresh.trouble, "a person was here", "and the person's write was not undone");
 });

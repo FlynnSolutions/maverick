@@ -23,7 +23,7 @@ const REFUSING: ReadonlySet<CheckKind> = new Set(["tool", "runtime", "agent"]);
 export const refuses = (c: Pick<Check, "kind" | "status">): boolean => c.status === "fail" && REFUSING.has(c.kind);
 
 /** `- tool: docker`, `- credential: aws dev, the dev stack`, `- human: the sign-up email inbox`. Bold around the kind is tolerated; anything else is a problem. */
-const REQUIREMENT_LINE = /^\**(tool|runtime|credential|secret|human|duration)\**:?\**:?\s*(.+)$/i;
+const REQUIREMENT_LINE = /^\**(tool|runtime|credential|secret|human|duration)\**:\**\s*(.+)$/i;
 
 export const parseRequirements = (bullets: string[]): { requirements: Requirement[]; problems: string[] } => {
   const requirements: Requirement[] = [];
@@ -103,7 +103,8 @@ const awsCredential = async (profile?: string): Promise<{ who: string; expires?:
     const { stdout: who } = await run("aws", ["sts", "get-caller-identity", "--query", "Arn", "--output", "text"], { env, timeout: 15_000 });
     const exp = await run("aws", ["configure", "export-credentials", "--format", "process"], { env, timeout: 15_000 }).then(({ stdout }) => (JSON.parse(stdout) as { Expiration?: string }).Expiration).catch(() => undefined);
     // Neither the account nor the person's name reaches the page or anything pasted from it; that the call answered is the fact.
-    return { who: who.trim() ? "signed in" : "signed in", ...(exp ? { expires: new Date(exp) } : {}) };
+    void who;
+    return { who: "signed in", ...(exp ? { expires: new Date(exp) } : {}) };
   } catch {
     return undefined;
   }

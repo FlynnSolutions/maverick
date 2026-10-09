@@ -505,3 +505,19 @@ test("settle is the one derivation of a mission's status: paused is the person's
   const closed = settle({ ...base, status: "closed", milestones: [] } as Mission);
   assert.equal(closed.status, "closed", "an ended mission is not re-derived");
 });
+
+test("a merged milestone the project has not proved yet is not done: nothing builds on it, follows it, or counts it for review", () => {
+  const t = (id: string, status: MissionTask["status"], needs?: string[]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, ...(needs ? { needs } : {}) });
+  const merged = { n: 1, title: "a", done: "d", dispatched: "x", merged: "x", tasks: [t("m1-t1", "passed")] };
+  const later = { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending", ["m1-t1"])] };
+  assert.deepEqual(startable({ status: "flying", proofRequired: true, milestones: [merged, later] }), [], "the proof is still running");
+  assert.deepEqual(startable({ status: "flying", proofRequired: true, milestones: [{ ...merged, proof: { ok: true, at: "x", output: "" } }, later] }).map((s) => s.task.id), ["m2-t1"]);
+  assert.deepEqual(startable({ status: "flying", proofRequired: false, milestones: [merged, later] }).map((s) => s.task.id), ["m2-t1"], "a project without a proof is done at the merge");
+  const second = { n: 2, title: "b", done: "d", dispatched: "x", tasks: [t("m2-t1", "passed")] };
+  assert.equal(mergeable({ proofRequired: true, milestones: [merged, second] }, second), false, "the one before it is not proved");
+  assert.equal(mergeable({ proofRequired: true, milestones: [{ ...merged, proof: { ok: true, at: "x", output: "" } }, second] }, second), true);
+  // Two pending tasks that would clash with each other: one goes, the other waits.
+  const a = { ...t("m1-t2", "pending"), touches: ["src/a/"] };
+  const b = { ...t("m1-t3", "pending"), touches: ["SRC/A/b.ts"] };
+  assert.deepEqual(startable({ status: "flying", milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", tasks: [a, b] }] }).map((s) => s.task.id), ["m1-t2"]);
+});
