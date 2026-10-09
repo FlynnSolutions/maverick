@@ -86,3 +86,5 @@ seam the handoff leaves.
 - The CAG's boundary as its tool list, and no CAG reaching the console API: CAG, Strike Lead, Wingman: three levels of agent per project
 - A mission-sized idea handed to a Strike Lead interview rather than planned twice: The Strike Lead: grow the audit from a validator into an orchestrator
 - An agent whose only tools are the console API, filling forms rather than writing files: The manager agent
+
+<!-- approved: 2026-10-08 · commit: ac1acb4 -->
