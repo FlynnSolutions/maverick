@@ -91,11 +91,14 @@ const ownership = (ctx: BriefContext): string[] => {
   const out: string[] = [];
   if (task.touches?.length) out.push(`This task owns these paths and no others: ${task.touches.join(", ")}. A file outside them is a finding unless the commit that changes it says why in its message; if it needs more, add a new file rather than editing a shared one.`);
   for (const need of task.needs ?? []) {
-    const target = ctx.mission.milestones.flatMap((x) => x.tasks).find((t) => t.id === need);
+    const where = ctx.mission.milestones.find((x) => x.tasks.some((t) => t.id === need));
+    const target = where?.tasks.find((t) => t.id === need);
     const home = ctx.mission.repos.find((r) => r.label === target?.repo) ?? repo;
-    out.push(m.tasks.includes(target!)
-      ? `It builds on ${need} (${target!.title}), which flies beside it in this milestone on branch ${home.branch}-${need} in ${home.path}; read it there, and expect it to change until it passes.`
-      : `It builds on ${need}${target ? ` (${target.title})` : ""}, from an earlier milestone, already merged on ${home.branch} and checked out at ${home.integration}.`);
+    // A task starts when what it needs has passed, so the need is either merged on the mission
+    // branch (its milestone landed) or still on its own branch, passed and no longer changing.
+    out.push(where?.merged
+      ? `It builds on ${need}${target ? ` (${target.title})` : ""}, already merged on ${home.branch} and checked out at ${home.integration}.`
+      : `It builds on ${need}${target ? ` (${target.title})` : ""}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged; read it there.`);
   }
   return out.length ? ["", ...out] : [];
 };

@@ -297,6 +297,7 @@ const renderPlan = () => {
         el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
         ...m.tasks.map((t) => el("div", { class: "mv-plan-task" },
           el("h4", {}, t.title, t.repo ? el("span", { class: "mv-repo" }, t.repo) : null),
+          t.needs?.length || t.touches?.length ? el("p", { class: "muted small" }, [t.needs?.length ? `starts after ${t.needs.join(", ")}` : null, t.touches?.length ? `owns ${t.touches.join(", ")}` : null].filter(Boolean).join(" · ")) : null,
           el("p", {}, t.intent)))))));
   } else if (doc.text) {
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));

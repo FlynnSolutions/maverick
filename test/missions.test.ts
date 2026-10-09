@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, settleReview, strays } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, settleReview, startable, strays, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
@@ -362,4 +362,15 @@ test("the merge-with-notes rule: notes carry, a blocker stops, and retries come 
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass\n- BLOCKER: it does not build", "pass"), { status: "retry" }, "a pass with a blocker in it is a mixed");
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass\n- the deletion is keyed on the wrong id", "pass"), { status: "passed", carried: ["the deletion is keyed on the wrong id"] }, "on a pass an unsorted line rides as a note rather than vanishing");
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: a\n- UNVERIFIED: the deploy", "pass with notes"), { status: "passed", carried: ["a", "unverified: the deploy"] });
+});
+
+test("a task starts when what it needs has passed, wherever that is, and a task with no needs starts with its milestone", () => {
+  const t = (id: string, status: MissionTask["status"], needs?: string[]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 0, ...(needs ? { needs } : {}) });
+  const mission = { milestones: [
+    { n: 1, title: "a", done: "d", dispatched: "2026-10-09T00:00:00Z", tasks: [t("m1-t1", "passed"), t("m1-t2", "flying"), t("m1-t3", "pending", ["m1-t1"]), t("m1-t4", "pending", ["m1-t2"])] },
+    { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending", ["m1-t1"]), t("m2-t2", "pending"), t("m2-t3", "pending", ["m1-t1", "m1-t2"])] },
+  ] };
+  assert.deepEqual(startable(mission).map((s) => s.task.id), ["m1-t3", "m2-t1"], "a sibling whose need passed, and a later task whose need passed, start; m1-t4 and m2-t3 wait on m1-t2; m2-t2 waits for its milestone");
+  (mission.milestones[1] as { dispatched?: string }).dispatched = "2026-10-09T01:00:00Z";
+  assert.deepEqual(startable(mission).map((s) => s.task.id), ["m1-t3", "m2-t1", "m2-t2"], "once its milestone is sent, a task with no needs goes");
 });

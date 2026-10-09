@@ -25,7 +25,7 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 | **Item** | a `- [ ]` bullet, optionally carrying indented `key: value` fields. |
 | **Tracker** | the project's markdown work file. The source of truth for all board state. |
 | **Ship run** | a saved, resumable set of steps for one version, driving the project's own `SHIP_WORKFLOW.md`. |
-| **Milestone** | a group of a mission's tasks that fly together and merge together, the way a division or section of the package launches together. Tasks inside one are parallel; milestones are sequential. No agent holds one: the Strike Lead dispatches every task itself. |
+| **Milestone** | a group of a mission's tasks that fly together and merge together, the way a division or section of the package launches together. Tasks inside one fly in parallel unless a `needs` line says otherwise; a task that names what it builds on starts when that has passed, even before its milestone is sent. Milestones merge in order. No agent holds one: Maverick dispatches every task itself. |
 | **Ledger** | the plan on the mission branch once the mission flies, with where every task stands written under it and a `## Log` of transitions and decisions (M18). |
 | **Brief** | the prompt a Wingman or a RIO is launched with, generated from one template (`src/briefs.ts`) with the standing orders and the RIO's checklist. |
 | **Touches, needs** | two fields on a task in the plan: the paths it owns, and the tasks it builds on. An overlap inside a milestone is named at the gate; a change outside its paths is a stray the RIO is told about. |

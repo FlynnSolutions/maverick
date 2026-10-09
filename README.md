@@ -257,8 +257,10 @@ That plan is the first gate. Maverick shows it with what it will cost (how many 
 background sessions, and Factory's published numbers for a mission of this kind), and nothing
 has spawned yet. Approving writes the whole plan into your tracker as ordinary items carrying
 `mission` and `milestone` fields, cuts a `mission/<id>` branch, and sends the first milestone out:
-one **Wingman** per task, each in its own worktree, in parallel within a milestone and sequential
-across them.
+one **Wingman** per task, each in its own worktree. A task with no `needs` starts with its
+milestone; a task that names what it builds on starts the moment those tasks pass, even in a
+milestone not yet sent, so one straggler does not idle everything behind it. A milestone still
+merges as one, once every task in it has passed.
 
 When a Wingman finishes, a **RIO** climbs into its back seat: a separate session that did not
 write the code, reads every commit on the branch, runs the thing, and writes a verdict. It never

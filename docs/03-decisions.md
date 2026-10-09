@@ -421,5 +421,10 @@ discovers.
 `touches` and what it `needs`, an overlap inside a milestone is named at the gate, and a
 Wingman's strays outside its paths go to its RIO; the RIO is an installed agent whose tool
 list has no Edit or Write (`.claude/agents/rio.md`); and `bin/maverick` gives a mission flown
-by hand the same parser and the same briefs. Dispatching by `needs` rather than by milestone
-boundary is designed, not built.
+by hand the same parser and the same briefs.
+
+**Dispatch follows `needs`, not only the milestone boundary** (built the same day, after the
+first five). A task with no `needs` starts with its milestone; a task with `needs` starts when
+every task it names has passed, wherever that task is, a sibling or an earlier milestone that
+has not merged. The milestone still merges as one once all its tasks pass. On the first mission
+one straggler on its last retry idled eighteen tasks that did not need it.

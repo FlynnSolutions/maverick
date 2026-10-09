@@ -920,34 +920,55 @@ const recordWingman = async (mission: Mission, task: MissionTask): Promise<void>
   await writeSession(config.sessionsDir, record);
 };
 
-/** Send every task in a milestone out at once: parallelism is narrow, inside a milestone only. */
-const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
-  const cfg = await missionConfigFor(project.path);
-  // A repo's mission branch does not move while a milestone goes out, so every task in that
-  // repo is cut from the same commit; resolving it once is what makes the bases comparable.
-  const bases = new Map(await Promise.all(mission.repos.map(async (r) => [r.label, await revParse(r.path, r.branch)] as const)));
-  for (const task of m.tasks) {
-    if (task.status !== "pending") continue;
-    try {
-      const repo = missionRepo(mission, task);
-      ({ worktree: task.worktree, branch: task.branch } = taskLayout(project, cfg, mission.id, task, repo));
-      await ensureWorktree(repo.path, task.worktree, task.branch, repo.branch);
-      task.base = bases.get(repo.label);
-      task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo)), cfg.wingmanAgent);
-      task.status = "flying";
-      task.started = new Date().toISOString();
-      task.attempts = 1;
-      agentCache.delete(project.path);
-      await recordWingman(mission, task);
-    } catch (err) {
-      task.status = "handed-back";
-      task.note = `could not launch: ${(err as Error).message}`;
-    }
-    // Saved per task, not once at the end: a spawn that is not on disk is an agent nobody owns.
-    await writeMission(mission);
+/**
+ * Which pending tasks may start now. A task with no `needs` starts with its milestone. A task
+ * with `needs` starts when every task it names has passed, wherever that task is: a sibling in
+ * the same milestone, or a task in an earlier milestone that has not merged yet. So the plan's
+ * dependencies, not its milestone boundaries, decide when work can begin, and one straggler no
+ * longer idles everything behind it. The milestone still merges as one, once all its tasks pass.
+ */
+export const startable = (mission: Pick<Mission, "milestones">): Array<{ milestone: Milestone; task: MissionTask }> => {
+  const passed = new Set(mission.milestones.flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
+  return mission.milestones.flatMap((milestone) => milestone.tasks
+    .filter((task) => task.status === "pending" && (task.needs?.length ? task.needs.every((id) => passed.has(id)) : Boolean(milestone.dispatched)))
+    .map((task) => ({ milestone, task })));
+};
+
+/** Cut a task's worktree from the mission branch as it stands now and send its Wingman out. */
+const launch = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, cfg: MissionConfig): Promise<void> => {
+  try {
+    const repo = missionRepo(mission, task);
+    ({ worktree: task.worktree, branch: task.branch } = taskLayout(project, cfg, mission.id, task, repo));
+    await ensureWorktree(repo.path, task.worktree, task.branch, repo.branch);
+    task.base = await revParse(repo.path, repo.branch);
+    task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo)), cfg.wingmanAgent);
+    task.status = "flying";
+    task.started = new Date().toISOString();
+    task.attempts = 1;
+    agentCache.delete(project.path);
+    await recordWingman(mission, task);
+  } catch (err) {
+    task.status = "handed-back";
+    task.note = `could not launch: ${(err as Error).message}`;
   }
+  // Saved per task, not once at the end: a spawn that is not on disk is an agent nobody owns.
+  await writeMission(mission);
+};
+
+/** Mark a milestone sent and start every task of it that can start; the rest wait on their `needs`. */
+const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
   m.dispatched = new Date().toISOString();
+  await startReady(project, mission);
   return writeThenSync(project, mission);
+};
+
+/** Start whatever the plan's dependencies now allow, in any milestone, including one not yet sent. */
+const startReady = async (project: Project, mission: Mission): Promise<number> => {
+  const ready = startable(mission);
+  if (!ready.length) return 0;
+  const cfg = await missionConfigFor(project.path);
+  for (const { milestone, task } of ready) await launch(project, mission, milestone, task, cfg);
+  return ready.length;
 };
 
 /**
@@ -1213,6 +1234,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
         mission.trouble = m.tasks.filter((t) => t.status === "handed-back").map((t) => `${t.title}: ${t.note ?? `the RIO said ${t.verdict}`}`).join(" · ");
       }
     }
+    // A task whose needs passed this pass starts now, in its own milestone or one not yet sent.
+    if (mission.status === "flying") await startReady(project, mission);
     // Everything above is idempotent, so losing this write costs one pass, not the work.
     if (waiting.length && mission.status === "flying") mission.trouble = waiting.join(" · ");
     // One formation write per pass rather than one per task that gained a session id.
