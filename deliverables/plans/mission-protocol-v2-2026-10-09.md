@@ -44,6 +44,13 @@ they merge; spikes record units and semantics for every metric they touch; a RIO
 derived number against an independent source; a cost estimate at gate 1 outside the app; agent
 commits carry an agent identity or trailer, not only the human's.
 
+## Built 2026-10-09, on `feat/protocol-v2`
+
+Changes 1, 2, 4, 5, 6 and 12 of the table above, as five bricks with a test or a check each, each
+reviewed by an independent RIO before the next. Decisions M16 and M17. Not built: 3 (the
+contracts step), 7 to 11, 13 to 17, and dispatching by `needs`; those are the proposal that
+follows this branch.
+
 ## Keep exactly as it is
 
 The RIO's independence and depth. The Lead's split: enforce the fixed decision now, escalate the

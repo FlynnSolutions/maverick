@@ -144,6 +144,16 @@ format: checklist
 
 ## 🚧 In Progress
 
+- [~] `[ENG]` `[L]` **Mission protocol v2: the ledger, the brief template, the RIO agent, touches and needs, blocker and note**
+  - created: 2026-10-09
+  - source: the outside audit of the first overnight mission, 2026-10-09
+  - kind: feature
+  - plan: plans/mission-protocol-v2-2026-10-09.md
+  - status: built on `feat/protocol-v2`, PR pending
+  The first five of the ranked changes, one brick at a time, each reviewed by a RIO that did not
+  write it. Decisions M16 and M17. The rest (contracts step, shared-environment rules, preflight,
+  pause-not-end, report sections, dispatch by needs) is the proposal at the end of the plan.
+
 - [~] `[ENG]` `[L]` **Electron shell, and Maverick posted as a free, open-source download** —
   `server.ts` becomes the main process. **Cory, 2026-10-07:** make it an app people can download
   from GitHub, open source and free, with one completely honest statement on the front about

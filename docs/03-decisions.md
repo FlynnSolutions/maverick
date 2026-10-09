@@ -371,3 +371,55 @@ group does today. Living with it until a third kind of Priority group appears.
 **Rejected: per-item edits at the gate.** Whole-document approve, as missions have it; the fix
 for a wrong proposal is to propose again. One fewer place the page and the file can disagree.
 If dropping two bullets turns out to be a conversation too often, that is the next brick.
+
+## M16 — The plan on the mission branch is the ledger ✅ built
+
+Once a mission flies, Maverick writes each task's `status`, `attempt`, `verdict` and `commit`
+under it in the plan document and appends every transition and every decision a person made
+to a `## Log` section at the end, committed in the integration worktree after every change.
+`parsePlan` reads the state back and refuses a state it does not know. The record under
+`console-sessions/` keeps only what markdown cannot hold: session ids, worktrees, revisions. A
+person, or a Strike Lead that has lost its context, resumes from the file.
+
+**Supersedes** the clause in [M7](#m7--a-missions-plan-is-tracker-items-and-membership-is-a-field--built)
+that the approved copy "is never read back as state". M7's rule stands otherwise: the tasks are
+tracker items, and membership is a field.
+
+**Why:** on the first overnight mission a subagent's cleanup deleted half the Lead's ledger,
+which lived in a shared scratchpad, and recovery worked only because the Lead's context still
+held it. State that lives in one agent's head or in a folder other agents clean is state that
+is one compaction from gone.
+
+**Safety-load-bearing: the ledger only ever lands on a mission branch.** The commit is guarded
+on the checkout and the branch that take it, not on the path: the integration worktree must
+exist, be the repo the file is in, and have the mission branch out, or nothing is written and
+the record says so. A plan no mission repo holds goes on the first repo's mission branch. The
+Lead's copy in the main checkout is never committed to (M8). Its RIO found the first version
+committing to `main` twice; the guard and its test came from that.
+
+**Rejected: a state file beside the record.** It would be a second store (M1) and invisible to
+the agents working the branch.
+
+## M17 — A finding is a blocker or a note, and notes ride ✅ built
+
+A RIO's findings are lines that say what they are: `BLOCKER:` (the task does not pass until it
+is fixed) or `NOTE:` (fix if cheap, else carried). Its verdict may be `pass with notes`. A pass,
+with or without notes, passes with the notes carried on the task and shown on the result page.
+A fail or a mixed goes back out while attempts remain, with the findings verbatim and the rule
+that what passed must still pass. Out of retries, a task with no blocker open merges with its
+notes carried; one with a blocker open stops, and with it its milestone and everything that
+`needs` it. Findings a RIO did not sort are all blockers.
+
+**Why:** on the first mission a task out of retries with one low-severity finding open was
+merged by the Lead against the written rule, correctly, and three rounds were spent on
+hypotheticals that no current code path reached. The judgement call is now the rule, and the
+Wingman is given the RIO's checklist up front so the first review confirms rather than
+discovers.
+
+**Also decided here, as parts of the same protocol:** every brief comes from one template
+(`src/briefs.ts`), so a lesson learned once reaches every later agent; a task declares what it
+`touches` and what it `needs`, an overlap inside a milestone is named at the gate, and a
+Wingman's strays outside its paths go to its RIO; the RIO is an installed agent whose tool
+list has no Edit or Write (`.claude/agents/rio.md`); and `bin/maverick` gives a mission flown
+by hand the same parser and the same briefs. Dispatching by `needs` rather than by milestone
+boundary is designed, not built.

@@ -26,6 +26,10 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 | **Tracker** | the project's markdown work file. The source of truth for all board state. |
 | **Ship run** | a saved, resumable set of steps for one version, driving the project's own `SHIP_WORKFLOW.md`. |
 | **Milestone** | a group of a mission's tasks that fly together and merge together, the way a division or section of the package launches together. Tasks inside one are parallel; milestones are sequential. No agent holds one: the Strike Lead dispatches every task itself. |
+| **Ledger** | the plan on the mission branch once the mission flies: each task's status, attempt, verdict and commit under it, and a `## Log` of every transition and decision, committed after each (M16). |
+| **Brief** | the prompt a Wingman or a RIO is launched with, generated from one template (`src/briefs.ts`) with the standing orders and the RIO's checklist. |
+| **Touches, needs** | two fields on a task in the plan: the paths it owns, and the tasks it builds on. An overlap inside a milestone is named at the gate; a change outside its paths is a stray the RIO is told about. |
+| **Blocker, note** | the two kinds of finding a RIO writes. A blocker stops the task until fixed; a note is fixed if cheap, else carried to the result (M17). |
 | **Gate** | one of the two places a mission stops for Cory: the plan before anything spawns, and the result before anything ships. |
 | **Audit parent** | a session record with role `audit` that owns a group of task sessions and returns a verdict. |
 | **Callsign** | a project's short label, from its `maverick.json`, shown beside the name in the top bar. |
