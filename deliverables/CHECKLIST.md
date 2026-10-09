@@ -123,6 +123,25 @@ format: checklist
   Maverick will let you launch unattended into that repo.
   - blocked-by: agree the cache and re-score policy (scores go stale)
 
+### Brainstorm: what the breakdown step should look like
+
+- [ ] `[ENG]` **The breakdown writes items in the tracker's own tags and sizes**
+  - created: 2026-10-08
+  - source: brainstorm deliverables/brainstorms/2026-10-08-what-the-breakdown-step-should-look-like.md, 2026-10-08
+  - kind: chore
+  - size: S
+  `itemBlock` in `src/trackers.ts` stamps `[ENG]` on every bullet it writes, and `parseBreakdown`
+  accepts sizes from a constant (`SIZES`) rather than from the tracker. The checklist header
+  defines four source tags (`[ENG]` `[DEBT]` `[OSS]` `[DOC]`) and the proposer is told to use the
+  tracker's words, but the proposal format gives it no way to say the tag, so a `kind: doc` item
+  lands on the board as `[ENG]`. The mission writer in `src/missions.ts` shares the default.
+  What to do: read the tag and size vocabulary from the tracker being written into (its header
+  note, or the tags already on its items), let a proposed item carry its tag (a `tag:` field, or
+  a kind-to-tag mapping the tracker declares), write that tag instead of the constant, and have
+  the parser list a tag or size the tracker does not use as a problem. Why now rather than
+  later: it is the one piece of the just-built breakdown that writes something wrong rather than
+  something deferred, every approve from today on produces it, and the plan is a paragraph.
+
 ## 🚧 In Progress
 
 - [~] `[ENG]` `[L]` **Electron shell, and Maverick posted as a free, open-source download** —
@@ -272,6 +291,61 @@ format: checklist
   - created: 2026-09-24
   - source: Cory, 2026-09-24
   - kind: feature
+
+### Brainstorm: what the breakdown step should look like
+
+- [ ] `[ENG]` **Per-item edits at the breakdown gate**
+  - created: 2026-10-08
+  - source: brainstorm deliverables/brainstorms/2026-10-08-what-the-breakdown-step-should-look-like.md, 2026-10-08
+  - kind: feature
+  - size: M
+  Keep, drop, resize, re-kind, or move an item between now, backlog and mission on the breakdown
+  page before the one approve writes what is left. M15 rejected this for the first cut: the gate
+  is whole-document, as a mission's is, and the fix for a wrong proposal is *propose again*.
+  Proposed items are independent of each other, unlike milestones, so edits are sound here in a
+  way they are not on a mission plan. The design constraint a plan session has to hold: the
+  frozen artifact must be the *approved* list, so approve writes the edited proposal document
+  back before it stamps, or the page and the file disagree, which is the exact reason M15 said
+  no. Pull this up when dropping two bullets has turned into a conversation with the CAG too
+  often; until then the whole-document gate stands.
+
+- [ ] `[ENG]` **The board tells a release group from a Mission or Brainstorm group**
+  - created: 2026-10-08
+  - source: brainstorm deliverables/brainstorms/2026-10-08-what-the-breakdown-step-should-look-like.md, 2026-10-08
+  - kind: feature
+  - size: M
+  Every `###` group under Priority is treated as a release: ordering, the deploy-date drawer,
+  the release verbs. A `Mission:` group already bent that, and a `Brainstorm:` group now bends
+  it the same way. M15 recorded the consequence and Cory's call to live with it. The brick, when
+  it is picked up: read a Priority group's kind from its prefix (a release, a `Mission:`, a
+  `Brainstorm:`), withhold the release verbs and the deploy-date drawer from the named kinds, and
+  give a `Brainstorm:` group its own verbs (open the breakdown gate, read the brainstorm). The
+  prefix is the only signal the markdown carries, which is the point: no new field, no store.
+
+- [ ] `[ENG]` **The gate hands a now item straight to its plan session**
+  - created: 2026-10-08
+  - source: brainstorm deliverables/brainstorms/2026-10-08-what-the-breakdown-step-should-look-like.md, 2026-10-08
+  - kind: feature
+  - size: S
+  A *now* item arrives unplanned on purpose, and the gate says *plan it* is its next verb, but
+  that verb lives in the board drawer, so the path from the gate to the first plan session is a
+  tab switch and a search. The brainstorm's stronger version, approve opens a plan interview per
+  item, was turned down because six items would mean six sittings. The honest middle: after
+  approve, the breakdown page lists the roadmap items it just wrote, each with a *plan it* that
+  opens the same CAG plan session the drawer opens, one terminal at a time, nothing automatic.
+  The gate already knows the titles and the tracker; it is one list and one existing route.
+
+- [ ] `[ENG]` **A Strike Lead opened from a breakdown reads the brainstorm too**
+  - created: 2026-10-08
+  - source: brainstorm deliverables/brainstorms/2026-10-08-what-the-breakdown-step-should-look-like.md, 2026-10-08
+  - kind: chore
+  - size: S
+  `approveBreakdown` opens the mission with the proposal as its `from` document, and the
+  interview prompt says to read that document first because it holds the reasoning. It holds the
+  item's body; the reasoning is in the brainstorm one folder over, which the prompt never names.
+  Name both: the proposal for the item and its call, the brainstorm for the conversation that
+  produced it. One line in `interviewPrompt`, or `from` becomes the brainstorm and the proposal
+  is named beside it.
 
 ## ✅ Recently shipped, pending release
 
