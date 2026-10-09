@@ -134,6 +134,9 @@ export interface BrainstormView {
 }
 
 const STAMP = /^<!-- approved: (\S+) · commit: (\S+) -->$/m;
+/** A proposal that has been approved: the stamp is the record, and nothing proposes or approves it again. */
+export const isApproved = (proposalText: string): boolean => STAMP.test(proposalText);
+const proposing = (file: string): boolean => listTerminals().some((t) => t.title === proposerName(file) && t.exitCode === null);
 /** The proposer's terminal title is also how it is found again: a brainstorm with no proposal and a live terminal of this title is "proposing". */
 const proposerName = (file: string): string => `breakdown · ${basename(file, ".md")}`.slice(0, 60);
 
@@ -193,7 +196,9 @@ export const proposeItems = async (project: Project, file: string, trackerIndex 
   const tracker = project.trackers[trackerIndex];
   if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
   await readFile(join(project.path, file), "utf8").catch(() => { throw new Error(`no brainstorm at ${file}`); });
-  if (listTerminals().some((t) => t.title === proposerName(file) && t.exitCode === null)) throw new Error("a CAG is already proposing from this brainstorm");
+  if (proposing(file)) throw new Error("a CAG is already proposing from this brainstorm");
+  const stamped = await readFile(join(project.path, proposalPathFor(file)), "utf8").then(isApproved, () => false);
+  if (stamped) throw new Error("this brainstorm is already broken down; its items are on the board");
   return openTerminal(proposerName(file), ["claude", ...claudeArgs({ prompt: breakdownPrompt(project, file, proposalPathFor(file), tracker.path), tools: CAG_TOOLS })], project.path, 120, 36, undefined, "cag");
 };
 
@@ -221,7 +226,9 @@ export const approveBreakdown = async (project: Project, file: string, trackerIn
   if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
   const proposal = proposalPathFor(file);
   const ptext = await readFile(join(project.path, proposal), "utf8").catch(() => { throw new Error(`no proposal at ${proposal}; nothing has been proposed yet`); });
-  if (STAMP.test(ptext)) throw new Error(`${proposal} was already approved`);
+  if (isApproved(ptext)) throw new Error(`${proposal} was already approved`);
+  // A proposer still writing would overwrite the stamp a moment after it lands, and the next approve would write the items twice.
+  if (proposing(file)) throw new Error("a CAG is still proposing from this brainstorm; wait for it, or close its session, before approving");
   const breakdown = parseBreakdown(ptext, await existingTitles(project));
   if (breakdown.problems.length) throw new Error(`the proposal cannot be written as it stands: ${breakdown.problems.join("; ")}`);
   await writeFile(tracker.path, writeBreakdown(await readFile(tracker.path, "utf8"), tracker.label, breakdown, file), "utf8");

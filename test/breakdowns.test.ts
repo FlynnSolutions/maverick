@@ -97,3 +97,9 @@ test("approving writes now items to Priority and backlog items to Backlog under 
   assert.ok(!out.includes("Breakdown as a mission"), "the mission-sized item is the Strike Lead's to write");
   assert.deepEqual(priority.groups.map((g) => g.name), ["Open source, for real", group], "the existing group is untouched");
 });
+
+test("the stamp is the record: an approved proposal is recognised by it", async () => {
+  const { isApproved } = await import("../src/breakdowns.ts");
+  assert.equal(isApproved(PROPOSAL), false);
+  assert.equal(isApproved(`${PROPOSAL}\n<!-- approved: 2026-10-08 · commit: ac1acb4 -->\n`), true);
+});

@@ -93,7 +93,7 @@ const renderOne = (b) => {
     gate.push(el("p", { class: "why" }, "Nothing has been proposed from this brainstorm. A CAG reads it and the board and writes a proposal: items with a kind, a size, and a call of now, backlog or mission. It reads and writes one file; it runs nothing."),
       el("div", { class: "gate-actions" }, btn("propose items", () => act("propose", { file: b.file }, "a CAG is reading the brainstorm"), "primary"), el("a", { class: "button-link", target: "_blank", href: fileHref(b.file) }, "read the brainstorm ↗")));
   } else if (b.state === "proposing") {
-    gate.push(el("p", { class: "why" }, "A CAG is reading the brainstorm and the board now. The proposal shows here when it has written it; this page polls."));
+    gate.push(el("p", { class: "why" }, "A CAG is reading the brainstorm and the board now, in one of Maverick's terminals on the workspace. The proposal shows here when it has written it; this page polls. Nothing can be approved until it is done."));
   } else if (parsed?.problems?.length) {
     gate.push(el("p", { class: "why" }, "There is a proposal, but it cannot be written to the board as it stands:"),
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))),
