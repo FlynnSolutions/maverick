@@ -95,11 +95,12 @@ export const render = (md, { project, checks = {}, onCheck } = {}) => {
   const paragraph = [];
   while (i < lines.length) {
     const line = lines[i];
-    if (line.startsWith("```")) {
+    if (line.startsWith("```") || line.startsWith("~~~")) {
+      const fence = line.slice(0, 3);
       flushParagraph(paragraph);
       const code = [];
       i += 1;
-      while (i < lines.length && !lines[i].startsWith("```")) code.push(lines[i++]);
+      while (i < lines.length && !lines[i].startsWith(fence)) code.push(lines[i++]);
       i += 1;
       const pre = document.createElement("pre");
       pre.textContent = code.join("\n");

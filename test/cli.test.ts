@@ -5,13 +5,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { tempRepo } from "./fixtures.ts";
 
 const cli = join(import.meta.dirname, "..", "bin", "maverick");
 const { dir, git } = tempRepo("mv-cli");
+// The agents resolve from the project's own .claude/agents too, so the test does not depend on what this machine has installed.
+mkdirSync(join(dir, ".claude", "agents"), { recursive: true });
+await writeFile(join(dir, ".claude", "agents", "rio.md"), "---\nname: rio\n---\n", "utf8");
 mkdirSync(join(dir, "deliverables", "missions"), { recursive: true });
 const plan = join(dir, "deliverables", "missions", "orbit.md");
 await writeFile(plan, [
@@ -40,6 +43,11 @@ test("plan-check prints what each task touches and needs, and every overlap", as
   assert.match(stdout, /touches src\/a\.ts, src\/shared\n/);
   assert.match(stdout, /needs m1-t1\n/);
   assert.match(stdout, /overlap: milestone 1: m1-t1 and m1-t2 both touch src\/shared/);
+  assert.match(stdout, /warning: 1 task\(s\) build on others and the plan names no contracts/);
+  await writeFile(owned, `${await readFile(owned, "utf8")}\n## Contracts\n\n- **shared** (owner: m1-t1): the shape\n`, "utf8");
+  const again = run("plan-check", owned);
+  assert.match(again.stdout, /Contracts\n  shared  \(m1-t1\)  the shape/);
+  assert.ok(!again.stdout.includes("warning:"), again.stdout);
 });
 
 test("brief on the plan copy inside the integration worktree resolves the project, not the worktree", () => {
@@ -62,6 +70,16 @@ test("plan-check names every problem and exits 1", async () => {
   assert.match(stdout, /problem: milestone 1 has no "_done when/);
   assert.match(stdout, /problem: the document has no "# Mission/);
   assert.match(stdout, /^cannot fly:/m);
+});
+
+test("preflight prints every check and exits 1 when something the mission needs is not there", async () => {
+  const needy = join(dir, "deliverables", "missions", "needy.md");
+  await writeFile(needy, "# Mission: needy\n\nN.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  t\n\n## Preflight\n\n- tool: no-such-tool-xyz\n- human: a passkey\n", "utf8");
+  const { status, stdout } = run("preflight", needy);
+  assert.equal(status, 1, stdout);
+  assert.match(stdout, /^fail {2}no-such-tool-xyz: not on PATH/m);
+  assert.match(stdout, /^human a passkey:/m);
+  assert.match(stdout, /1 failing; 1 for a person to confirm/);
 });
 
 test("brief derives the worktree, branch and plan path the app would use, for either seat", () => {

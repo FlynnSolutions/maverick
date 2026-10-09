@@ -26,6 +26,13 @@
 .mv-problems li { margin: 2px 0; }
 .mv-overlaps { margin: 10px 0 0; padding-left: 18px; color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
+.mv-proof { font-size: 12px; white-space: pre-wrap; max-height: 320px; overflow: auto; }
+.mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; }
+.mv-preflight li { margin: 3px 0; display: flex; gap: 8px; align-items: baseline; }
+.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-faint); }
+.mv-preflight .pf-fail .pf-status { color: var(--threat); }
+.mv-preflight .pf-warn .pf-status { color: var(--caution); }
+.mv-preflight .pf-human .pf-status { color: var(--accent); }
 
 /* A milestone's tasks: the strip's columns, at the strip's density, in the page's own frame. */
 .mv-task {

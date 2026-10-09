@@ -39,16 +39,35 @@ test("both briefs carry what the task owns, what it builds on, and what strayed"
   const owned = { ...task, touches: ["src/two.ts", "src/shared"], needs: ["m1-t1"], strayed: ["src/one.ts"] };
   const wingman = wingmanBrief({ ...ctx, task: owned });
   assert.match(wingman, /owns these paths and no others: src\/two\.ts, src\/shared\./);
-  assert.match(wingman, /builds on m1-t1 \(The first thing\), which flies beside it in this milestone on branch mission\/x-m1-t1 in \/p\/app/);
+  assert.match(wingman, /builds on m1-t1 \(The first thing\), which has passed its review and sits on branch mission\/x-m1-t1 in \/p\/app, not yet merged/);
+  assert.match(wingman, /Merge that branch into yours \(`git merge mission\/x-m1-t1`\)/);
+  assert.match(rioBrief({ ...ctx, task: owned }, "/f.md"), /Files outside them: src\/one\.ts\. Each is a finding unless/);
   const across = { ...ctx.milestone, tasks: [{ ...sibling, repo: "contracts" }, owned] };
   const crossRepo = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other], milestones: [across] }, milestone: across, task: owned });
-  assert.match(crossRepo, /on branch mission\/x-m1-t1 in \/p\/contracts/, "a sibling in another repo is found there");
-  const rio = rioBrief({ ...ctx, task: owned }, "/f.md");
-  assert.match(rio, /Files outside them: src\/one\.ts\. Each is a finding unless/);
-  const later = wingmanBrief({ ...ctx, task: { ...owned, needs: ["m0-t1"] } });
-  assert.match(later, /builds on m0-t1, from an earlier milestone, already merged on mission\/x and checked out at/);
-  const earlierElsewhere = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other], milestones: [{ n: 0, title: "c", done: "d", tasks: [{ ...sibling, id: "m0-t1", title: "The contract", repo: "contracts" }] }, ctx.milestone] }, task: { ...owned, needs: ["m0-t1"] } });
-  assert.match(earlierElsewhere, /builds on m0-t1 \(The contract\), from an earlier milestone, already merged on mission\/x and checked out at \/p\/contracts\/\.claude/);
+  assert.match(crossRepo, /on branch mission\/x-m1-t1 in \/p\/contracts/, "a need in another repo is found there");
+  assert.match(crossRepo, /It is in another repo, so read it there/, "and is not told to merge a branch its repo does not have");
+  const landed = { n: 0, title: "c", done: "d", merged: "2026-10-09T00:00:00Z", tasks: [{ ...sibling, id: "m0-t1", title: "The contract", repo: "contracts", status: "passed" as const }] };
+  const earlierElsewhere = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other], milestones: [landed, ctx.milestone] }, task: { ...owned, needs: ["m0-t1"] } });
+  assert.match(earlierElsewhere, /builds on m0-t1 \(The contract\), already merged on mission\/x and checked out at \/p\/contracts\/\.claude/, "a need whose milestone landed is read on the mission branch");
+});
+
+test("a Wingman is told the contracts it owns and the ones it uses, and so is its RIO", () => {
+  const contracts = [{ name: "claimsCodec", owner: "m1-t1", shape: "encode/decode" }, { name: "Session", owner: "m1-t2", shape: "the cookie shape" }, { name: "unrelated", owner: "m0-t9", shape: "x" }];
+  const user = { ...task, needs: ["m1-t1"] };
+  const brief = wingmanBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: user });
+  assert.match(brief, /Contracts this task owns, which other tasks will read from your branch, so write them first and exactly as declared: Session \(the cookie shape\)\./);
+  assert.match(brief, /Contracts owned by other tasks, which you use as declared and never redefine: claimsCodec \(encode\/decode, owned by m1-t1\); unrelated \(x, owned by m0-t9\)\. If the owner's branch already has one, read it there; if not yet, stub it in a file of your own/);
+  const parallel = wingmanBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: { ...task, needs: undefined } });
+  assert.match(parallel, /claimsCodec \(encode\/decode, owned by m1-t1\)/, "a task flying beside the owner is told too; that is the case the step exists for");
+  assert.match(rioBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: user }, "/f.md"), /Contracts this task owns.*Session/);
+});
+
+test("a task is told what it alone deploys, and what nobody deploys from a task", () => {
+  const brief = wingmanBrief({ ...ctx, shared: ["dev", "staging"], task: { ...task, deploys: ["data"] } });
+  assert.match(brief, /This task alone deploys data in this milestone; no other task touches it\./);
+  assert.match(brief, /Shared environments, deployed only from the merged mission branch and never from a task's: dev, staging\./);
+  assert.match(brief, /named with the task id \(it is in MAVERICK_TASK\) and gone after it/, "the debris rule rides in the checklist, so every brief has it once");
+  assert.ok(!wingmanBrief(ctx).includes("Shared environments"), "a project that names none gets no such block");
 });
 
 test("a retry brief carries the findings verbatim and says what must still pass", () => {

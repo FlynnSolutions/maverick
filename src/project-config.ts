@@ -56,6 +56,10 @@ export interface MissionConfig {
   branchPrefix: string;
   /** `merge` lands milestones on the mission branch; `pr` opens one pull request per repo and stops. */
   land: Landing;
+  /** Environments only the merged mission branch may deploy to (a shared dev URL, say). A task that says it deploys one is refused at the gate. */
+  shared: string[];
+  /** A command run in the integration worktree after each milestone merges; a failure holds the milestone. The merged task's proofs and the milestone's done-when, in one line the project owns. */
+  proof?: string;
   /** Per repo, keyed by the label `reposUnder` gives it (a directory name, or "root"). */
   repos: Record<string, RepoConfig>;
 }
@@ -65,7 +69,20 @@ export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   worktrees: join(".claude", "worktrees"),
   branchPrefix: "mission/",
   land: "merge",
+  shared: [],
   repos: {},
+};
+
+/** A list of names, or nothing. A string where a list was meant is a mistake to name, not to swallow. */
+const sharedOf = (v: unknown): string[] => {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.some((s) => typeof s !== "string")) throw new Error(`maverick.json: missions.shared must be a list of environment names, got ${JSON.stringify(v)}`);
+  return v.map((s: string) => s.trim()).filter(Boolean);
+};
+const proofOf = (v: unknown): string | undefined => {
+  if (v === undefined) return undefined;
+  if (typeof v !== "string") throw new Error(`maverick.json: missions.proof must be a command string, got ${JSON.stringify(v)}`);
+  return v.trim() || undefined;
 };
 
 const isLanding = (v: unknown): v is Landing => v === "merge" || v === "pr" || v === "push";
@@ -129,6 +146,8 @@ export const missionConfigFor = async (projectPath: string): Promise<MissionConf
     ...(typeof m.wingmanAgent === "string" && AGENT.test(m.wingmanAgent) ? { wingmanAgent: m.wingmanAgent } : {}),
     rioAgent: typeof m.rioAgent === "string" && AGENT.test(m.rioAgent) ? m.rioAgent : DEFAULT_MISSION_CONFIG.rioAgent,
     worktrees,
+    shared: sharedOf(m.shared),
+    ...(proofOf(m.proof) ? { proof: proofOf(m.proof) } : {}),
     branchPrefix: branchPrefix(m.branchPrefix),
     land: missionLanding(m.land),
     repos: repoConfigs(m.repos),

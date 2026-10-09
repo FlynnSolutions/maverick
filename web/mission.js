@@ -168,11 +168,12 @@ const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${
 const walkState = (m) => mission.walk?.[m.n]?.state ?? "none";
 const needsWalking = (m) => Boolean(mission.walk?.[m.n]?.needed);
 /** Derived in one place: the nav and the detail head disagreed about a handed-back milestone. */
-const milestoneState = (m) => (m.merged ? (needsWalking(m) ? "walking" : "passed") : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending");
+const inTheAir = (m) => m.dispatched || tasksOf(m).some((t) => t.status !== "pending");
+const milestoneState = (m) => (m.merged ? (needsWalking(m) ? "walking" : "passed") : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : inTheAir(m) ? "flying" : "pending");
 const WALK_LABEL = { none: "merged · not walked", building: "merged · walkthrough on its way", failed: "merged · no walkthrough", waived: "merged · waived" };
 /** And its word, for the same reason: three places had spelled it three ways. */
 const milestoneLabel = (m) => {
-  if (!m.merged) return milestoneState(m) === "handed-back" ? "needs you" : m.dispatched ? "flying" : "not sent yet";
+  if (!m.merged) return milestoneState(m) === "handed-back" ? "needs you" : inTheAir(m) ? (m.dispatched ? "flying" : "started early") : "not sent yet";
   const w = walkState(m);
   if (!needsWalking(m)) return w === "waived" ? WALK_LABEL.waived : "merged";
   if (w === "walking") return `walk it · ${m.walkthrough.progress ? `${m.walkthrough.progress.answered} of ${m.walkthrough.progress.total}` : "not started"}`;
@@ -209,7 +210,7 @@ const renderNav = () => {
     items.push(entry(`m${m.n}`, String(m.n), m.title, el("span", { class: `verdict ${state}` }, milestoneLabel(m)), state));
   });
   const done = mission.status === "review" || mission.status === "closed";
-  items.push(el("h3", {}, "The result"), entry("review", "R", "What the mission built", el("span", { class: `verdict ${done ? "passed" : mission.status}` }, mission.status === "closed" ? "closed" : mission.status === "review" ? "ready" : "in flight")));
+  items.push(el("h3", {}, "The result"), entry("review", "R", "What the mission built", el("span", { class: `verdict ${done ? "passed" : mission.status}` }, mission.status === "closed" ? "closed" : mission.status === "review" ? "ready" : mission.status === "paused" ? "paused" : "in flight")));
   nav.replaceChildren(...items);
 };
 
@@ -235,6 +236,17 @@ const reposBand = (repos) => {
       : null);
 };
 
+/** What the host can and cannot give the mission, checked before the person approves and leaves. */
+const preflightBand = (checks) => {
+  if (!checks?.length) return null;
+  const failed = checks.filter((c) => c.status === "fail").length;
+  const warned = checks.filter((c) => c.status === "warn").length;
+  const refusing = checks.some((c) => c.refuses);
+  return el("div", { class: "mv-preflight" },
+    el("p", { class: failed || warned ? "mv-warn" : "muted small" }, refusing ? `${failed} thing(s) the mission cannot run without are not there; approving is refused until they are.` : failed ? `${failed} thing(s) the plan needs are not there. Settle them before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${warned} thing(s) this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
+    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), ` ${c.detail}`))));
+};
+
 const costBand = (cost) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "repos"), el("span", { class: "v" }, String(cost.repos ?? 1))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "milestones"), el("span", { class: "v" }, String(cost.milestones))),
@@ -249,9 +261,17 @@ const renderPlan = () => {
   const blocks = [
     el("div", { class: "detail-head" }, el("h1", {}, mission.name), el("span", { class: `verdict ${mission.status}` }, mission.status),
       mission.approved && !["closed", "abandoned"].includes(mission.status)
-        ? el("span", { class: "actions" }, btn("stop this mission", async () => {
+        ? el("span", { class: "actions" },
+          mission.status === "paused"
+            ? btn("resume", () => act("resume", {}, "mission resumed"), "primary")
+            : ["flying", "blocked"].includes(mission.status) ? btn("pause", async () => {
+              const note = window.prompt("Pause the mission. Nothing new starts; what is running finishes and is recorded. Why?");
+              if (note === null) return;
+              await act("pause", { note }, "mission paused");
+            }, "ghost") : null,
+          btn("stop this mission", async () => {
             const live = allTasks().filter((t) => t.status === "flying" || t.status === "reviewing").length;
-            if (!window.confirm(`Stop "${mission.name}"?\n\nThis stops ${live} running session(s). Every branch and worktree is left exactly as it is, so nothing built so far is lost. It cannot be resumed.`)) return;
+            if (!window.confirm(`Stop "${mission.name}"?\n\nThis stops ${live} running session(s) and ends the mission; pause is the one that can be resumed. Every branch and worktree is left exactly as it is, so nothing built so far is lost.`)) return;
             await act("abandon", {}, "mission stopped");
           }, "ghost danger"))
         : null),
@@ -271,16 +291,17 @@ const renderPlan = () => {
         el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
     } else {
       gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
-        parsed?.overlaps?.length ? el("div", {}, el("p", { class: "why" }, "Tasks that fly together in one milestone own the same paths. That is a collision planned in; the Strike Lead can serialise them or give the shared path one owner:"),
-          el("ul", { class: "mv-overlaps" }, ...parsed.overlaps.map((o) => el("li", {}, o)))) : null,
+        parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
+          el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
         costBand(doc.cost),
         reposBand(doc.repos ?? []),
+        preflightBand(doc.preflight),
         doc.wingmanAgent
           ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, which carries its standing orders: own one task, do not widen it, never push or merge, never grade its own work.`)
           : el("p", { class: "mv-warn" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
         el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
         el("div", { class: "gate-actions" },
-          btn("approve and fly", async () => {
+          doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : btn("approve and fly", async () => {
             const ok = window.confirm(`Approve "${mission.name}"?\n\nThis writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. It is the last thing you are asked until the result.`);
             if (!ok) return;
             await act("approve", {}, "approved; the first milestone is out");
@@ -290,6 +311,10 @@ const renderPlan = () => {
     blocks.push(el("section", { class: "panel mv-gate" }, el("h2", {}, "The gate"), ...gate));
   }
 
+  if (parsed?.contracts?.length) {
+    blocks.push(el("section", { class: "panel" }, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
+      el("ul", {}, ...parsed.contracts.map((c) => el("li", {}, el("strong", {}, c.name), ` (${c.owner}): ${c.shape}`)))));
+  }
   if (parsed?.milestones?.length) {
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "The plan"),
       ...parsed.milestones.map((m) => el("div", { class: "mv-milestone" },
@@ -297,6 +322,7 @@ const renderPlan = () => {
         el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
         ...m.tasks.map((t) => el("div", { class: "mv-plan-task" },
           el("h4", {}, t.title, t.repo ? el("span", { class: "mv-repo" }, t.repo) : null),
+          t.needs?.length || t.touches?.length ? el("p", { class: "muted small" }, [t.needs?.length ? `starts after ${t.needs.join(", ")}` : null, t.touches?.length ? `owns ${t.touches.join(", ")}` : null].filter(Boolean).join(" · ")) : null,
           el("p", {}, t.intent)))))));
   } else if (doc.text) {
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
@@ -436,12 +462,40 @@ const renderMilestone = (m) => {
     m.resolve ? el("section", { class: "panel" },
       el("h2", {}, "The Strike Lead is reconciling it", el("span", { class: "spacer" }), el("span", { class: "muted small mono" }, `session ${m.resolve.claudeId}`)),
       el("p", { class: "mv-plan" }, `Two tasks in this milestone touched the same lines in ${m.resolve.repo}: ${(m.resolve.paths ?? []).join(", ")}. The Strike Lead wrote the plan that put them together, so it is finishing the merge in the integration worktree. It keeps both behaviours or it aborts and says why; it never takes one side to make the conflict go away.`)) : null,
-    m.conflicts?.length && !m.resolve ? el("section", { class: "panel" }, el("h2", {}, "It will not merge"),
-      el("p", { class: "mv-plan" }, `These paths collided: ${m.conflicts.join(", ")}, each prefixed with the repo it is in. The merge was aborted, so nothing is half-applied, and the Strike Lead could not reconcile them either. Both sides are work this plan asked for, so the answer is a change to the plan rather than a better merge.`)) : null,
+    m.proof ? el("section", { class: "panel" }, el("h2", {}, m.proof.ok ? "The proof passed on the merged tree" : "The proof failed on the merged tree"),
+      el("p", { class: "muted small" }, `run ${fmtTime(m.proof.at)}`), el("pre", { class: "mv-proof" }, m.proof.output.split("\n").slice(-20).join("\n"))) : null,
+    m.hold ? el("section", { class: "panel" }, el("h2", {}, "Held, for you"),
+      el("p", { class: "mv-plan" }, m.hold.reason),
+      m.hold.kind === "collision" ? el("p", { class: "muted small" }, `The paths that collided: ${(m.conflicts ?? []).join(", ")}, each prefixed with the repo it is in. Nothing is half-applied. Reconcile them yourself in the integration worktree, or change the plan; then release the milestone and the sweep merges again.`) : null,
+      m.hold.kind === "proof" ? el("p", { class: "muted small" }, "Fix it in the integration worktree, then release the milestone: the proof runs again on what you fixed before anything lands.") : null,
+      m.hold.kind === "landing" ? el("p", { class: "muted small" }, "\"Land again\" on the result page is the release for this one, because landing pushes.") : null,
+      m.hold.kind !== "landing" ? btn("release it", async () => {
+        const note = window.prompt("What did you do to settle it? Kept in the ledger.");
+        if (!note) return;
+        await act(`milestones/${m.n}/release`, { note }, `milestone ${m.n} released`);
+      }, "primary") : null) : null,
     walkthroughSection(m),
     el("section", { class: "panel" },
       el("h2", {}, "Tasks", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "one Wingman each in its own worktree, with a RIO in the back seat that did not write the code")),
       tasks.length ? el("div", {}, ...tasks.map(taskRow)) : el("p", { class: "mv-empty" }, "No tasks in this milestone.")));
+};
+
+/** The report panel: fetched when opened, not on every repaint, and a server failure is said, not shown as a blank. */
+const reportSection = () => {
+  const box = el("div", {});
+  const details = el("details", { class: "mv-report" }, el("summary", { class: "muted small" }, "the report: what a person reads in the morning"),
+    el("p", { class: "muted small" }, "Generated from the record, the ledger and the RIOs' own findings, not written by the agent that flew it. ", el("a", { href: `${actionUrl("report")}`, target: "_blank" }, "raw markdown ↗")), box);
+  details.addEventListener("toggle", async () => {
+    if (!details.open || box.childElementCount) return;
+    try {
+      const r = await fetch(actionUrl("report"));
+      if (!r.ok) throw new Error((await r.json().catch(() => ({ error: r.statusText }))).error ?? r.statusText);
+      box.replaceChildren(renderMarkdown(await r.text(), { project: projectId }));
+    } catch (err) {
+      box.replaceChildren(el("p", { class: "mv-warn" }, `could not load the report: ${err.message}`));
+    }
+  });
+  return details;
 };
 
 /* ---------- the second gate: what the mission built ---------- */
@@ -473,6 +527,7 @@ const renderReview = () => {
             : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
       mission.status === "review" && unwalked.length ? el("div", { class: "gate-actions" },
         ...unwalked.map((m) => btn(`walk milestone ${m.n}`, () => goTo(`m${m.n}`), "primary"))) : null,
+      reportSection(),
       (mission.repos ?? []).some((r) => r.landed) ? el("div", { class: "mv-repos" }, el("span", { class: "muted" }, "landed:"),
         ...(mission.repos ?? []).filter((r) => r.landed).map((r) => (r.landed.startsWith("http")
           ? el("a", { href: r.landed, target: "_blank" }, `${r.label} ↗`)

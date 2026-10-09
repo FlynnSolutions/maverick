@@ -850,6 +850,7 @@ body.ask-open { overflow: hidden; }
 .verdict.pass, .verdict.passed { color: var(--ok); background: rgba(80, 200, 120, 0.16); }
 .verdict.mixed, .verdict.built { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
 .verdict.fail, .verdict.handed-back, .verdict.blocked { color: var(--threat); background: var(--threat-dim); }
+.verdict.paused { color: var(--ink-soft); background: var(--panel-lifted); }
 .verdict.rejected { text-decoration: line-through; opacity: 0.7; }
 .row .actions .verdict { align-self: center; }
 
