@@ -44,10 +44,11 @@ const mainCheckout = () => {
 };
 const projectPath = real(option("project") ?? mainCheckout());
 const inProject = planFile.startsWith(`${projectPath}/`) ? planFile : fail(`${planFile} is not inside the project at ${projectPath}`);
-// The plan's path relative to the project, whichever checkout it was read from.
-const planRelative = (await execFileSync("git", ["-C", dirname(planFile), "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim()) === projectPath
-  ? relative(projectPath, inProject)
-  : relative(execFileSync("git", ["-C", dirname(planFile), "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim(), inProject);
+// The plan's path relative to the project, whichever checkout it was read from: inside one of
+// the project's worktrees it is relative to that worktree; anywhere else, to the project.
+const checkoutOf = (dir) => { try { return execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return projectPath; } };
+const checkout = checkoutOf(dirname(planFile));
+const planRelative = relative(checkout.startsWith(`${projectPath}/`) ? checkout : projectPath, inProject);
 const project = { id: basename(projectPath), name: basename(projectPath), path: projectPath, trackers: [] };
 const cfg = await missionConfigFor(projectPath);
 const choices = await repoChoices(project, cfg);

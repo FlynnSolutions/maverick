@@ -165,14 +165,14 @@ export const ensureWorktree = async (repoPath: string, path: string, branch: str
 };
 
 /** Commit subjects on `branch` that `base` does not have, oldest first. Empty means the branch did nothing. */
-/** The paths a branch changed since it left its base. */
-export const changedFiles = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
-  const { stdout } = await run("git", ["-C", repoPath, "diff", "--name-only", `${base}..${branch}`]);
+export const commitsAhead = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
+  const { stdout } = await run("git", ["-C", repoPath, "log", "--reverse", "--format=%h %s", `${base}..${branch}`]);
   return stdout.split("\n").filter(Boolean);
 };
 
-export const commitsAhead = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
-  const { stdout } = await run("git", ["-C", repoPath, "log", "--reverse", "--format=%h %s", `${base}..${branch}`]);
+/** The paths a branch changed since it left its base. */
+export const changedFiles = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
+  const { stdout } = await run("git", ["-C", repoPath, "diff", "--name-only", `${base}..${branch}`]);
   return stdout.split("\n").filter(Boolean);
 };
 
