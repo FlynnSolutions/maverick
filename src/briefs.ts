@@ -9,7 +9,7 @@ import type { Milestone, Mission, MissionRepo, MissionTask } from "./missions.ts
 
 export interface BriefContext {
   projectPath: string;
-  mission: Pick<Mission, "id" | "name" | "plan" | "repos">;
+  mission: Pick<Mission, "id" | "name" | "plan" | "repos"> & Partial<Pick<Mission, "milestones">>;
   milestone: Pick<Milestone, "n" | "title" | "done" | "tasks">;
   task: MissionTask;
   repo: MissionRepo;
@@ -83,10 +83,11 @@ const ownership = (ctx: BriefContext): string[] => {
   if (task.touches?.length) out.push(`This task owns these paths and no others: ${task.touches.join(", ")}. A file outside them is a finding unless your final message says why it had to change; if it needs more, add a new file rather than editing a shared one.`);
   for (const need of task.needs ?? []) {
     const sibling = m.tasks.find((t) => t.id === need);
-    const home = (sibling && ctx.mission.repos.find((r) => r.label === sibling.repo)) ?? repo;
+    const earlier = ctx.mission.milestones?.flatMap((x) => x.tasks).find((t) => t.id === need);
+    const home = ctx.mission.repos.find((r) => r.label === (sibling ?? earlier)?.repo) ?? repo;
     out.push(sibling
       ? `It builds on ${need} (${sibling.title}), which flies beside it in this milestone on branch ${home.branch}-${need} in ${home.path}; read it there, and expect it to change until it passes.`
-      : `It builds on ${need}, from an earlier milestone, already merged on ${repo.branch} and checked out at ${repo.integration}.`);
+      : `It builds on ${need}${earlier ? ` (${earlier.title})` : ""}, from an earlier milestone, already merged on ${home.branch} and checked out at ${home.integration}.`);
   }
   return out.length ? ["", ...out] : [];
 };

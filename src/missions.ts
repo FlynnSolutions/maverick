@@ -313,7 +313,10 @@ const listField = (value: string | undefined, by: RegExp): string[] => [...new S
 
 /** A path a task may own: relative, plain, inside the repo. Globs and parent steps cannot be checked against a diff. */
 const badPath = (p: string): string | undefined =>
-  p.startsWith("/") ? "is absolute" : /[*?[\]{}]/.test(p) ? "is a glob" : p.includes("\\") ? "uses backslashes" : p.split("/").some((seg) => seg === "." || seg === "..") ? "steps through . or .." : undefined;
+  p.startsWith("/") || p.startsWith("~") ? "is absolute" : /[*?[\]{}]/.test(p) ? "is a glob" : p.includes("\\") ? "uses backslashes"
+    : p.split("/").some((seg) => seg === "." || seg === "..") ? "steps through . or .."
+    // Two paths with a space between them and no comma: a list written the wrong way, not one file.
+    : p.split(/\s+/).filter((part) => part.includes("/") || part.includes(".")).length > 1 ? "looks like several paths; separate them with commas" : undefined;
 
 /** Whether two owned paths are the same file, or one is inside the other. */
 const pathsOverlap = (a: string, b: string): boolean => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
@@ -394,16 +397,23 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
     else if (need === t.id) problems.push(`"${t.title}" in milestone ${m.n} needs itself`);
     else if (target.m > m.n) problems.push(`"${t.title}" in milestone ${m.n} needs ${need}, which flies later, in milestone ${target.m}`);
   }
-  // A cycle of any length, found by walking each task's needs; reported once, from its lowest id.
-  const cycles = new Set<string>();
-  const walk = (start: string, at: string, path: string[]): void => {
-    for (const next of where.get(at)?.t.needs ?? []) {
-      if (next === start) { if (path.every((p) => p >= start)) cycles.add([...path, next].join(" needs ")); }
-      else if (!path.includes(next)) walk(start, next, [...path, next]);
+  // A loop of any length: a depth-first walk that reports each back edge once, so a dense plan
+  // costs one pass over its edges rather than one per path through them.
+  const colour = new Map<string, "in" | "done">();
+  const stack: string[] = [];
+  const walk = (id: string): void => {
+    colour.set(id, "in");
+    stack.push(id);
+    for (const next of where.get(id)?.t.needs ?? []) {
+      if (next === id || !where.has(next)) continue;
+      const seen = colour.get(next);
+      if (seen === "in") problems.push(`${[...stack.slice(stack.indexOf(next)), next].join(" needs ")}: a loop, so none of them could ever start`);
+      else if (!seen) walk(next);
     }
+    stack.pop();
+    colour.set(id, "done");
   };
-  for (const id of where.keys()) walk(id, id, [id]);
-  for (const c of cycles) problems.push(`${c}: a loop, so none of them could ever start`);
+  for (const id of where.keys()) if (!colour.has(id)) walk(id);
   return { name, intro, milestones, log, problems, overlaps: overlapsIn(milestones) };
 };
 

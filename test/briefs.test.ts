@@ -47,6 +47,8 @@ test("both briefs carry what the task owns, what it builds on, and what strayed"
   assert.match(rio, /Files outside them: src\/one\.ts\. Each is a finding unless/);
   const later = wingmanBrief({ ...ctx, task: { ...owned, needs: ["m0-t1"] } });
   assert.match(later, /builds on m0-t1, from an earlier milestone, already merged on mission\/x and checked out at/);
+  const earlierElsewhere = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other], milestones: [{ n: 0, title: "c", done: "d", tasks: [{ ...sibling, id: "m0-t1", title: "The contract", repo: "contracts" }] }, ctx.milestone] }, task: { ...owned, needs: ["m0-t1"] } });
+  assert.match(earlierElsewhere, /builds on m0-t1 \(The contract\), from an earlier milestone, already merged on mission\/x and checked out at \/p\/contracts\/\.claude/);
 });
 
 test("a retry brief carries the findings verbatim and says what must still pass", () => {

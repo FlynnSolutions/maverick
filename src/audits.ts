@@ -98,9 +98,9 @@ export const runAudit = async (project: Project, childId: string): Promise<Audit
 export const verdictOf = (findings: string | undefined): Verdict =>
   (findings?.match(/^verdict:\s*(pass with notes|pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
 
-/** A list line: `- `, `* ` or `1. `, with any bold stripped, so a RIO's own markdown habits do not hide a finding. */
+/** A top-level list line: `- `, `* `, `+ ` or `1. `, with any bold stripped, so a RIO's own markdown habits do not hide a finding. Indented lines are evidence under one, not findings. */
 const listLine = (line: string): string | undefined => {
-  const m = line.match(/^\s*(?:[-*]|\d+[.)])\s+(.*)$/);
+  const m = line.match(/^(?:[-*+]|\d+[.)])\s*(.*)$/);
   return m ? m[1].replace(/\*\*/g, "").trim() : undefined;
 };
 
@@ -122,6 +122,8 @@ export const findingsOf = (findings: string, verdict: Verdict): { blockers: stri
     else if (sorted) notes.push(sorted[1].toUpperCase() === "UNVERIFIED" ? `unverified: ${sorted[2]}` : sorted[2]);
     else if (verdict === "fail" || verdict === "mixed") blockers.push(line);
   }
+  // A fail or a mixed that lists nothing (prose, a table, a bare verdict) has said nothing is safe to carry.
+  if (!blockers.length && !notes.length && (verdict === "fail" || verdict === "mixed")) blockers.push("the RIO wrote no sorted findings; read as a blocker");
   return { blockers, notes };
 };
 

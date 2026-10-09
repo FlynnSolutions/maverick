@@ -286,6 +286,22 @@ test("a need that is missing, itself, later, or mutual is a problem", () => {
   const three = OWNED.replace("- [ ] **Bravo**", "- [ ] **Delta**\n  - touches: src/delta.ts\n  - needs: m1-t1\n  Build delta.\n\n- [ ] **Bravo**").replace("  - touches: src/alpha.ts, src/shared/\n", "  - touches: src/alpha.ts, src/shared/\n  - needs: m1-t3\n").replace("- needs: m1-t1\n  Build bravo", "- needs: m1-t2\n  Build bravo");
   const loops = problems(three).filter((p) => /a loop/.test(p));
   assert.deepEqual(loops, ["m1-t1 needs m1-t3 needs m1-t2 needs m1-t1: a loop, so none of them could ever start"], problems(three).join("; "));
+  assert.equal(problems(OWNED.replace("- needs: m1-t1\n", "- needs: m1-t2\n")).filter((p) => /loop/.test(p)).length, 0, "needing itself is said once, as that");
+});
+
+test("a dense plan with no loop parses in milliseconds, and a dense loop is reported once per back edge", () => {
+  const dense = (n: number, loop: boolean) => ["# Mission: dense", "", "D.", "", "## Milestone 1 — all", "", "_done when: d._", "",
+    ...Array.from({ length: n }, (_, i) => {
+      const needs = Array.from({ length: i }, (_, j) => `m1-t${j + 1}`).concat(loop && i === 0 ? [`m1-t${n}`] : []);
+      return [`- [ ] **T${i + 1}**`, ...(needs.length ? [`  - needs: ${needs.join(" ")}`] : []), "  Build it."].join("\n");
+    })].join("\n\n") + "\n";
+  const started = Date.now();
+  const plan = parsePlan(dense(40, false), ["root"]);
+  assert.equal(plan.problems.length, 0, plan.problems.slice(0, 3).join("; "));
+  assert.ok(Date.now() - started < 500, `took ${Date.now() - started}ms`);
+  // t1 needs t12 and every other task needs t1: eleven back edges, eleven lines, not one per path.
+  const looped = parsePlan(dense(12, true), ["root"]).problems.filter((p) => /a loop/.test(p));
+  assert.equal(looped.length, 11, looped.join("\n"));
 });
 
 test("a touches path that cannot be checked against a diff is a problem, and a path may hold a space", () => {
@@ -294,6 +310,8 @@ test("a touches path that cannot be checked against a diff is a problem, and a p
   assert.ok(problems("src/*.ts").some((p) => /is a glob/.test(p)));
   assert.ok(problems("src/../x.ts").some((p) => /steps through/.test(p)));
   assert.ok(problems("src\\x.ts").some((p) => /backslashes/.test(p)));
+  assert.ok(problems("~/x.ts").some((p) => /is absolute/.test(p)));
+  assert.ok(problems("src/a.ts src/b.ts").some((p) => /separate them with commas/.test(p)), "two paths and no comma");
   const spaced = parsePlan(OWNED.replace("- touches: src/alpha.ts, src/shared/", "- touches: docs/my file.md, src/alpha.ts, src/alpha.ts"), ["root"]);
   assert.deepEqual(spaced.milestones[0].tasks[0].touches, ["docs/my file.md", "src/alpha.ts"], "comma separated, duplicates dropped");
 });
@@ -326,6 +344,11 @@ test("a RIO's verdict is one of four, and its findings sort into blockers and no
   assert.deepEqual(findingsOf("verdict: fail\n- the logger drops errors (major)\n- NOTE: stray log line\n- the deletion is keyed on the wrong id\n\nNote: I could not run the deploy.", "fail"), { blockers: ["the logger drops errors (major)", "the deletion is keyed on the wrong id"], notes: ["stray log line"] });
   assert.deepEqual(findingsOf("verdict: pass\n- Blocker or not, this was fine.", "pass"), { blockers: [], notes: [] }, "a sentence is not a finding; only a sorted list line is, on a pass");
   assert.deepEqual(findingsOf("verdict: pass\n", "pass"), { blockers: [], notes: [] });
+  // A fail that lists nothing is not a fail with nothing wrong.
+  for (const text of ["verdict: fail", "verdict: fail\nThe logger drops every error.", "verdict: mixed\n| BLOCKER | logger |", "verdict: fail\n## Blockers\n\nprose"]) {
+    assert.deepEqual(findingsOf(text, verdictOf(text)), { blockers: ["the RIO wrote no sorted findings; read as a blocker"], notes: [] }, text);
+  }
+  assert.deepEqual(findingsOf("verdict: mixed\n- NOTE: parent\n  - evidence: line 12\n+ BLOCKER: plus bullet\n-NOTE: no space", "mixed"), { blockers: ["plus bullet"], notes: ["parent", "no space"] }, "indented evidence belongs to its finding");
 });
 
 test("the merge-with-notes rule: notes carry, a blocker stops, and retries come first", () => {
@@ -338,6 +361,7 @@ test("the merge-with-notes rule: notes carry, a blocker stops, and retries come 
   assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, blocker, "fail"), { status: "handed-back", note: "the RIO said fail after 2 attempts with 1 blocker(s) open; this one is yours" });
   assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail\n- something unsorted", "fail").status, "handed-back", "unsorted findings are blockers");
   assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail\n- NOTE: tidy\n- the real defect\n\nNote: prose", "fail").status, "handed-back", "one sorted line does not let the rest through");
+  assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail", "fail").status, "handed-back", "a bare fail is a blocker");
   assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: mixed\n- NOTE: a", "mixed").status, "passed", "mixed, notes only, out of retries: merges");
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass\n- BLOCKER: it does not build", "pass"), { status: "retry" }, "a pass with a blocker in it is a mixed");
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: a\n- UNVERIFIED: the deploy", "pass with notes"), { status: "passed", carried: ["a", "unverified: the deploy"] });
