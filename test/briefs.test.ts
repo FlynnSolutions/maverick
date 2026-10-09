@@ -48,6 +48,16 @@ test("both briefs carry what the task owns, what it builds on, and what strayed"
   assert.match(earlierElsewhere, /builds on m0-t1 \(The contract\), already merged on mission\/x and checked out at \/p\/contracts\/\.claude/, "a need whose milestone landed is read on the mission branch");
 });
 
+test("a Wingman is told the contracts it owns and the ones it uses, and so is its RIO", () => {
+  const contracts = [{ name: "claimsCodec", owner: "m1-t1", shape: "encode/decode" }, { name: "Session", owner: "m1-t2", shape: "the cookie shape" }, { name: "unrelated", owner: "m0-t9", shape: "x" }];
+  const user = { ...task, needs: ["m1-t1"] };
+  const brief = wingmanBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: user });
+  assert.match(brief, /Contracts this task owns, which other tasks will read from your branch, so write them first and exactly as declared: Session \(the cookie shape\)\./);
+  assert.match(brief, /Contracts this task uses, owned elsewhere: claimsCodec \(encode\/decode, from m1-t1\)\. Read them from the owner's branch; if one is not there yet, stub it in a file of your own, never at the owner's path\./);
+  assert.ok(!brief.includes("unrelated"), "a contract owned by a task it does not need is not its business");
+  assert.match(rioBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: user }, "/f.md"), /Contracts this task owns.*Session/);
+});
+
 test("a retry brief carries the findings verbatim and says what must still pass", () => {
   const brief = wingmanBrief(ctx, "verdict: mixed\n- BLOCKER: the test is vacuous\n- NOTE: a stray log line");
   assert.ok(brief.includes("- BLOCKER: the test is vacuous"));

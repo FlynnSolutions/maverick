@@ -60,7 +60,9 @@ if (command === "plan-check") {
       if (t.needs?.length) console.log(`         needs ${t.needs.join(", ")}`);
     }
   }
+  if (plan.contracts.length) console.log(`\nContracts\n${plan.contracts.map((c) => `  ${c.name}  (${c.owner})  ${c.shape}`).join("\n")}`);
   for (const o of plan.overlaps) console.log(`\noverlap: ${o}`);
+  for (const w of plan.warnings) console.log(`\nwarning: ${w}`);
   if (plan.log.length) console.log(`\nLog (${plan.log.length}), last: ${plan.log[plan.log.length - 1]}`);
   process.exit(plan.problems.length ? 1 : 0);
 }

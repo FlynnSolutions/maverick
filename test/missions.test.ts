@@ -374,3 +374,42 @@ test("a task starts when what it needs has passed, wherever that is, and a task 
   (mission.milestones[1] as { dispatched?: string }).dispatched = "2026-10-09T01:00:00Z";
   assert.deepEqual(startable(mission).map((s) => s.task.id), ["m1-t3", "m2-t1", "m2-t2"], "once its milestone is sent, a task with no needs goes");
 });
+
+const CONTRACTED = `# Mission: contracted
+
+What they share is named first.
+
+## Milestone 1 — both
+
+_done when: both pass._
+
+- [ ] **The data module**
+  - touches: src/data/
+  Make the claims codec.
+
+- [ ] **The worker**
+  - touches: src/worker/
+  - needs: m1-t1
+  Read claims with the codec.
+
+## Contracts
+
+- **claimsCodec** (owner: m1-t1): encode(claim): string, decode(string): Claim, in src/data/claims.ts
+- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table
+`;
+
+test("contracts are named before fan-out: parsed with an owner and a shape, and a plan that builds on itself without them is warned", () => {
+  const plan = parsePlan(CONTRACTED, ["root"]);
+  assert.equal(plan.problems.length, 0, plan.problems.join("; "));
+  assert.deepEqual(plan.contracts, [
+    { name: "claimsCodec", owner: "m1-t1", shape: "encode(claim): string, decode(string): Claim, in src/data/claims.ts" },
+    { name: "CLAIMS_TABLE", owner: "m1-t1", shape: "the env flag naming the table" },
+  ]);
+  assert.deepEqual(plan.warnings, []);
+  const bare = parsePlan(CONTRACTED.slice(0, CONTRACTED.indexOf("## Contracts")), ["root"]);
+  assert.equal(bare.problems.length, 0);
+  assert.match(bare.warnings[0], /1 task\(s\) build on others and the plan names no contracts/);
+  assert.ok(parsePlan(CONTRACTED.replace("(owner: m1-t1): encode", "(owner: m9-t9): encode"), ["root"]).problems.some((p) => /owned by m9-t9, which is not a task/.test(p)));
+  assert.ok(parsePlan(CONTRACTED.replace(": the env flag naming the table", ""), ["root"]).problems.some((p) => /CLAIMS_TABLE" has no shape/.test(p)));
+  assert.ok(parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- just a line"), ["root"]).problems.some((p) => /is not "\*\*name\*\* \(owner/.test(p)));
+});

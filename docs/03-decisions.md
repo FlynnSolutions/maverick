@@ -428,3 +428,10 @@ first five). A task with no `needs` starts with its milestone; a task with `need
 every task it names has passed, wherever that task is, a sibling or an earlier milestone that
 has not merged. The milestone still merges as one once all its tasks pass. On the first mission
 one straggler on its last retry idled eighteen tasks that did not need it.
+
+**What tasks share is named before any of them starts.** A `## Contracts` section in the plan
+lists each type, id, codec, env flag or function one task makes and another uses, with its
+owner and its shape; a task that builds on another is warned at the gate when the plan names
+nothing between them. The owner writes it first and exactly as declared; a task that needs it
+before it exists stubs it in a file of its own, never at the owner's path. On the first mission
+parallel Wingmen invented the shared conventions apart and a reconcile task had to be added.

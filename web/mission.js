@@ -271,8 +271,8 @@ const renderPlan = () => {
         el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
     } else {
       gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
-        parsed?.overlaps?.length ? el("div", {}, el("p", { class: "why" }, "Tasks that fly together in one milestone own the same paths. That is a collision planned in; the Strike Lead can serialise them or give the shared path one owner:"),
-          el("ul", { class: "mv-overlaps" }, ...parsed.overlaps.map((o) => el("li", {}, o)))) : null,
+        parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
+          el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
         costBand(doc.cost),
         reposBand(doc.repos ?? []),
         doc.wingmanAgent
@@ -290,6 +290,10 @@ const renderPlan = () => {
     blocks.push(el("section", { class: "panel mv-gate" }, el("h2", {}, "The gate"), ...gate));
   }
 
+  if (parsed?.contracts?.length) {
+    blocks.push(el("section", { class: "panel" }, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
+      el("ul", {}, ...parsed.contracts.map((c) => el("li", {}, el("strong", {}, c.name), ` (${c.owner}): ${c.shape}`)))));
+  }
   if (parsed?.milestones?.length) {
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "The plan"),
       ...parsed.milestones.map((m) => el("div", { class: "mv-milestone" },

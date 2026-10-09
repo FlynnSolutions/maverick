@@ -114,6 +114,14 @@ export interface WalkView { state: WalkthroughState; needed: boolean }
 
 export interface WalkthroughPatch { progress?: WalkthroughProgress; waive?: { note: string } }
 
+/** A thing one task makes and another uses: a type, an id, a codec, an env flag, a function. Named before fan-out, with its owner and its shape. */
+export interface Contract {
+  name: string;
+  /** The task that writes it; everyone else reads it from that task's branch, or stubs it in a file of their own. */
+  owner: string;
+  shape: string;
+}
+
 export interface Milestone {
   n: number;
   title: string;
@@ -172,6 +180,8 @@ export interface Mission {
   /** The commit that wrote the plan into that tracker. */
   planCommit?: string;
   milestones: Milestone[];
+  /** What the tasks share, from the plan's `## Contracts` section, frozen at approval. */
+  contracts?: Contract[];
   /** Bumped on every write. A write carrying a stale one is refused; see `writeMission`. */
   rev?: number;
   /** How many milestones this mission has had to reconcile. A plan whose tasks overlap shows up here. */
@@ -297,12 +307,20 @@ _done when: <one testable line>_
 _done when: <one testable line>_
 
 - [ ] **<task title>**
-  <...>`;
+  <...>
+
+## Contracts
+
+- **<a type, an id, a codec, an env flag, a function one task makes and another uses>** (owner: m1-t1): <its signature or shape, one line>
+- **<the next one>** (owner: <task id>): <...>`;
 
 const MILESTONE_HEADING = /^Milestone\s+(\d+)\s*[—–:-]\s*(.+)$/;
 const DONE_LINE = /^_*\s*done when:\s*(.+?)\s*_*$/i;
 /** The section at the end of a flying plan where every transition and decision is appended. */
 const LOG_HEADING = /^Log$/i;
+/** The section where what tasks share is named before any of them starts. */
+const CONTRACTS_HEADING = /^Contracts$/i;
+const CONTRACT_LINE = /^\**(.+?)\**\s*\(owner:\s*([a-z0-9-]+)\)\s*:?\s*(.*)$/i;
 const TASK_STATUSES: readonly string[] = ["pending", "flying", "built", "reviewing", "passed", "handed-back"];
 const VERDICTS: readonly string[] = ["pass", "pass with notes", "fail", "mixed"];
 /** The fields Maverick writes under a task as it flies. A Strike Lead leaves them off; the ledger owns them. */
@@ -370,17 +388,26 @@ export const overlapsIn = (milestones: Milestone[]): string[] =>
   })));
 
 /** Parse the Strike Lead's plan document. Reuses the tracker parser, because the plan is written in its shape. */
-export const parsePlan = (text: string, repos: string[] = []): { name: string; intro: string; milestones: Milestone[]; log: string[]; problems: string[]; overlaps: string[] } => {
+export const parsePlan = (text: string, repos: string[] = []): { name: string; intro: string; milestones: Milestone[]; contracts: Contract[]; log: string[]; problems: string[]; overlaps: string[]; warnings: string[] } => {
   const lines = text.split("\n");
   const { title: name, intro } = documentHead(text, /^#\s*Mission:\s*(.+)$/m);
   const problems: string[] = [];
   if (!name) problems.push('the document has no "# Mission: <name>" heading');
 
   const milestones: Milestone[] = [];
+  const contracts: Contract[] = [];
   let log: string[] = [];
   for (const section of parseTracker(text).sections) {
     if (LOG_HEADING.test(section.heading)) {
       log = lines.slice(section.start + 1, section.end).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
+      continue;
+    }
+    if (CONTRACTS_HEADING.test(section.heading)) {
+      for (const line of lines.slice(section.start + 1, section.end).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim())) {
+        const m = line.match(CONTRACT_LINE);
+        if (m) contracts.push({ name: m[1].trim(), owner: m[2], shape: m[3].trim() });
+        else problems.push(`contract "${line.slice(0, 60)}" is not "**name** (owner: <task id>): <shape>"`);
+      }
       continue;
     }
     const m = section.heading.match(MILESTONE_HEADING);
@@ -429,7 +456,15 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
   if (!milestones.length) problems.push("the document has no milestones");
   milestones.sort((a, b) => a.n - b.n);
   problems.push(...needProblems(milestones));
-  return { name, intro, milestones, log, problems, overlaps: overlapsIn(milestones) };
+  const ids = new Set(milestones.flatMap((m) => m.tasks.map((t) => t.id)));
+  for (const c of contracts) if (!ids.has(c.owner)) problems.push(`contract "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
+  for (const c of contracts) if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
+  // Not a refusal: a plan whose tasks build on each other and names nothing they share is the
+  // plan the first mission had, where parallel Wingmen invented the shared conventions apart.
+  const warnings: string[] = [];
+  const dependent = milestones.flatMap((m) => m.tasks).filter((t) => t.needs?.length);
+  if (dependent.length && !contracts.length) warnings.push(`${dependent.length} task(s) build on others and the plan names no contracts: what they share (types, ids, codecs, env flags, functions) has no owner or shape yet`);
+  return { name, intro, milestones, contracts, log, problems, overlaps: overlapsIn(milestones), warnings };
 };
 
 /* ---------- the plan as the ledger ---------- */
@@ -645,14 +680,14 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
   "",
   PLAN_FORMAT,
   "",
-  "Rules for the plan. Each task is one unit of work for one session with no other context, so its body must carry everything that session needs: the files, the shape, what it must not touch, and how it proves itself. Tasks inside one milestone run in parallel, so no task in a milestone may depend on another in the same milestone; sequence goes across milestones. Keep milestones small enough that a failure costs one milestone, not the mission.",
+  "Rules for the plan. Each task is one unit of work for one session with no other context, so its body must carry everything that session needs: the files, the shape, what it must not touch, and how it proves itself. Say what each task owns (`touches`) and what it builds on (`needs`): a task starts when what it needs has passed, so a dependency inside a milestone is allowed and means after. Before any fan-out, every type, id, codec, env flag and function one task makes and another uses goes in `## Contracts` with its owner and its shape; a task that needs one the owner has not written yet stubs it in a file of its own, never at the owner's path. Keep milestones small enough that a failure costs one milestone, not the mission.",
   "",
   repos.length > 1
     ? [
         `This project holds ${repos.length} git repositories, so every task must carry a \`  - repo: <name>\` line naming the one it works in. They are:`,
         ...repos.map((r) => `  - ${r.label} (lands against ${r.base})`),
         "",
-        "A task works in exactly one repo. Where a change spans repos, that is more than one task, and if one has to land before another can start, they belong in different milestones, because tasks inside one milestone run at the same time.",
+        "A task works in exactly one repo. Where a change spans repos, that is more than one task, each naming what it needs from the other.",
       ].join("\n")
     : `This project is one git repository, so a task's \`repo\` line is optional; everything lands against ${repos[0]?.base ?? "its current branch"}.`,
   "",
@@ -768,6 +803,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   const parsed = parsePlan(text, choices.map((r) => r.label));
   if (parsed.problems.length) throw new Error(`the plan cannot be flown as written: ${parsed.problems.join("; ")}`);
   mission.milestones = parsed.milestones;
+  mission.contracts = parsed.contracts;
   mission.land = cfg.land;
   // Only the repos the plan actually names get a branch. A project with eleven repos does not
   // get eleven mission branches because one task touches one of them.

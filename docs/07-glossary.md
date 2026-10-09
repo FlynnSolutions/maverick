@@ -29,6 +29,7 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 | **Ledger** | the plan on the mission branch once the mission flies, with where every task stands written under it and a `## Log` of transitions and decisions (M18). |
 | **Brief** | the prompt a Wingman or a RIO is launched with, generated from one template (`src/briefs.ts`) with the standing orders and the RIO's checklist. |
 | **Touches, needs** | two fields on a task in the plan: the paths it owns, and the tasks it builds on. An overlap inside a milestone is named at the gate; a change outside its paths is a stray the RIO is told about. |
+| **Contract** | a thing one task makes and another uses (a type, an id, a codec, an env flag, a function), named in the plan's `## Contracts` section with its owner and shape before any task starts. |
 | **Blocker, note** | the two kinds of finding a RIO writes. A blocker stops the task until fixed; a note is fixed if cheap, else carried to the result (M19). |
 | **Gate** | one of the two places a mission stops for Cory: the plan before anything spawns, and the result before anything ships. |
 | **Audit parent** | a session record with role `audit` that owns a group of task sessions and returns a verdict. |
