@@ -21,7 +21,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionView, pauseMission, previewPlan, recordWalkthrough, reopenInterview, resumeMission, retryTask, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, reopenInterview, resumeMission, retryTask, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
@@ -603,7 +603,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, { mission, terminal });
     }
   }
-  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume))?$/);
+  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|report))?$/);
   if (missionAction) {
     const project = await requireProject(url);
     const [, id, action] = missionAction;
@@ -613,6 +613,10 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       // the plan on every poll of a mission that is already flying buys nothing.
       const view = await missionView(project, id);
       return sendJson(res, 200, view.approved ? view : { ...view, planDoc: await previewPlan(project, id) });
+    }
+    if (method === "GET" && action === "report") {
+      res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" });
+      return res.end(await missionReport(project, id));
     }
     if (method === "POST" && action === "approve") return sendJson(res, 200, await approveMission(project, id));
     if (method === "POST" && action === "interview") return sendJson(res, 200, await reopenInterview(project, id));

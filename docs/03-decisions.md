@@ -454,3 +454,12 @@ confirm; a missing tool or agent refuses approval, everything else is theirs to 
 approving. `bin/maverick preflight` prints the same checks. On the first mission Node 22 met a
 pin of 24, `timeout` was missing, a credential expired mid-mission and a real sign-in was never
 verified, each found by an agent at the wrong hour.
+
+**The report is generated, not written.** At close, and on the result page at any time, the
+report comes from the record, the ledger and the RIOs' own findings, in fixed sections: the
+decisions made without the person, theirs, what passed and what rode along with it, what is
+handed back, what is unfinished, what no RIO could verify, the notes carried, the files changed
+outside what a task owned, the held milestones, what Maverick does not record, and the findings
+unedited. It is committed beside the ledger on the mission branch. On the first mission the
+interim report missed three incidents and one line claimed an audit that had not run; a report
+the flying agent writes about itself is a self-report, and the RIO rule applies to it too.

@@ -34,6 +34,7 @@ import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { FIELD_LINE, MARKER, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
 import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, type Check, type Requirement } from "./preflight.ts";
+import { reportFor } from "./report.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -1619,6 +1620,20 @@ const landTheWork = async (mission: Mission): Promise<{ landed: string[]; failed
   return { landed: opened, failed };
 };
 
+/** The report, from the record, the RIO files and the ledger's log. Readable at any point; written to the mission branch at close. */
+export const missionReport = async (project: Project, id: string): Promise<string> => {
+  const mission = await missionOr404(project.id, id);
+  const findings: Record<string, string> = {};
+  for (const task of mission.milestones.flatMap((m) => m.tasks)) {
+    if (task.review) findings[task.id] = await readFile(task.review.file, "utf8").catch(() => "");
+  }
+  const log = await readFile(planOnBranch(project.path, mission.plan, mission.repos), "utf8").then((text) => parsePlan(text).log).catch(() => []);
+  return reportFor(mission, findings, log);
+};
+
+/** The report file beside the plan on the mission branch. */
+const reportPath = (project: Project, mission: Mission): string => planOnBranch(project.path, mission.plan, mission.repos).replace(/\.md$/, "-report.md");
+
 export const closeMission = async (project: Project, id: string): Promise<{ mission: Mission; commit: string; ticked: string[]; pullRequests: string[] }> => {
   const mission = await missionOr404(project.id, id);
   // The page only offers this at the review gate, but the page is not the guard: a stale tab
@@ -1654,6 +1669,15 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   mission.status = "closed";
   mission.finished = mission.finished ?? new Date().toISOString();
   await writeThenSync(project, mission, [`closed by Cory: ${ticked.length} item(s) ticked${pullRequests.length ? `, ${pullRequests.join(", ")}` : ""}`]);
+  // The report lands beside the ledger, on the mission branch, by the same guard; a failure to write it is noted, not fatal.
+  try {
+    const file = reportPath(project, mission);
+    await ledgerRepoFor(mission, file);
+    await writeFile(file, await missionReport(project, id), "utf8");
+    await commitFile(file, `mission ${mission.id}: the report`);
+  } catch (err) {
+    await changeMission(project.id, id, (fresh) => { fresh.trouble = [fresh.trouble, `the report could not be written: ${(err as Error).message.split("\n")[0]}`].filter(Boolean).join(" · "); }).catch(() => undefined);
+  }
   return { mission, commit, ticked, pullRequests };
 };
 

@@ -497,6 +497,9 @@ const renderReview = () => {
             : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
       mission.status === "review" && unwalked.length ? el("div", { class: "gate-actions" },
         ...unwalked.map((m) => btn(`walk milestone ${m.n}`, () => goTo(`m${m.n}`), "primary"))) : null,
+      el("details", { class: "mv-report" }, el("summary", { class: "muted small" }, "the report: what a person reads in the morning"),
+        el("p", { class: "muted small" }, "Generated from the record, the ledger and the RIOs' own findings, not written by the agent that flew it. ", el("a", { href: `${actionUrl("report")}`, target: "_blank" }, "raw markdown ↗")),
+        (() => { const box = el("div", {}); fetch(actionUrl("report")).then((r) => r.text()).then((md) => box.replaceChildren(renderMarkdown(md, { project: projectId }))).catch((err) => box.replaceChildren(el("p", { class: "mv-warn" }, `could not load the report: ${err.message}`))); return box; })()),
       (mission.repos ?? []).some((r) => r.landed) ? el("div", { class: "mv-repos" }, el("span", { class: "muted" }, "landed:"),
         ...(mission.repos ?? []).filter((r) => r.landed).map((r) => (r.landed.startsWith("http")
           ? el("a", { href: r.landed, target: "_blank" }, `${r.label} ↗`)

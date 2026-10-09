@@ -270,7 +270,8 @@ findings, twice, before it stops and asks you. A milestone whose tasks all pass 
 conflict aborts and names the paths.
 
 The second gate is the result: every task with its diff, its verdict and its findings, on a
-branch you can check out and test. Closing ticks the items in the tracker. **Maverick never merges
+branch you can check out and test, and a report generated from the record and the RIOs' own
+findings rather than written by the agent that flew it. Closing ticks the items in the tracker. **Maverick never merges
 a mission into main**: the ship wizard does, with you in it phase by phase.
 
 ### The Wingman and the RIO agents
