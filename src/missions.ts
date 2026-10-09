@@ -470,6 +470,30 @@ const repoChoices = async (project: Project, cfg: MissionConfig): Promise<Array<
   })));
 };
 
+/**
+ * The repos a mission gets in this project, branched and checked out the way `approveMission`
+ * does it. Only the repos the plan names: a project with eleven repos does not get eleven
+ * mission branches because one task touches one of them. Exported so a mission flown from a
+ * terminal (`bin/maverick`) uses the app's layout rather than a second one.
+ */
+export const missionLayout = async (project: Project, cfg: MissionConfig, id: string, named: Set<string>): Promise<MissionRepo[]> =>
+  (await repoChoices(project, cfg)).filter((r) => named.has(r.label)).map((r) => ({
+    label: r.label,
+    path: r.path,
+    base: r.base,
+    branch: `${cfg.branchPrefix}${id}`,
+    integration: join(project.path, cfg.worktrees, `${id}-integration-${r.label}`),
+    land: r.land,
+  }));
+
+/** Where one task works: a worktree of its own, on a sibling of the mission branch. */
+export const taskLayout = (project: Project, cfg: MissionConfig, missionId: string, task: Pick<MissionTask, "id">, repo: MissionRepo): { worktree: string; branch: string } => ({
+  worktree: join(project.path, cfg.worktrees, `${missionId}-${task.id}-${repo.label}`),
+  // A sibling of the mission branch, never a child: git cannot hold both `mission/x` and
+  // `mission/x/m1-t1`, because the first is a ref file where the second wants a directory.
+  branch: `${repo.branch}-${task.id}`,
+});
+
 const missionRepo = (mission: Mission, task: MissionTask): MissionRepo => {
   const repo = mission.repos.find((r) => r.label === task.repo);
   if (!repo) throw new Error(`task ${task.id} names repo "${task.repo}", which this mission does not hold`);
@@ -627,14 +651,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   // Only the repos the plan actually names get a branch. A project with eleven repos does not
   // get eleven mission branches because one task touches one of them.
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
-  mission.repos = choices.filter((r) => named.has(r.label)).map((r) => ({
-    label: r.label,
-    path: r.path,
-    base: r.base,
-    branch: `${cfg.branchPrefix}${mission.id}`,
-    integration: join(project.path, cfg.worktrees, `${mission.id}-integration-${r.label}`),
-    land: r.land,
-  }));
+  mission.repos = await missionLayout(project, cfg, mission.id, named);
   mission.planCommit = await writePlanToTracker(project, mission, parsed.intro);
   for (const repo of mission.repos) {
     // Before any worktree exists: the worktrees and the scratch folders inside them are ignored
@@ -797,10 +814,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
     if (task.status !== "pending") continue;
     try {
       const repo = missionRepo(mission, task);
-      task.worktree = join(project.path, cfg.worktrees, `${mission.id}-${task.id}-${repo.label}`);
-      // A sibling of the mission branch, never a child: git cannot hold both `mission/x` and
-      // `mission/x/m1-t1`, because the first is a ref file where the second wants a directory.
-      task.branch = `${repo.branch}-${task.id}`;
+      ({ worktree: task.worktree, branch: task.branch } = taskLayout(project, cfg, mission.id, task, repo));
       await ensureWorktree(repo.path, task.worktree, task.branch, repo.branch);
       task.base = bases.get(repo.label);
       task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanPrompt(project, mission, m, task, repo), cfg.wingmanAgent);
@@ -916,7 +930,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
           task.reviews = (task.reviews ?? 0) + 1;
           const file = reviewFile(mission, task);
           try {
-            // "auditor" is Claude Code's own agent name (`~/.claude/agents/auditor.md`), not our word for the role.
+            // The agent is installed in `~/.claude/agents/` (`rio.md` from this repo, by default); the brief says what to do, the tool list says what it cannot.
             const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, reviewPrompt(project, mission, m, task, missionRepo(mission, task), file), cfg.rioAgent);
             task.review = { claudeId, file, started: new Date().toISOString() };
             task.status = "reviewing";

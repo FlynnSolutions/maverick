@@ -78,7 +78,7 @@ test("junk in repos does not become a repo", async () => {
 test("an agent name that is not plainly a name never reaches the CLI", async () => {
   for (const bad of ["--dangerously-skip-permissions", "a b", "", "x/y", 7]) {
     assert.equal((await withConfig({ wingmanAgent: bad })).wingmanAgent, undefined);
-    assert.equal((await withConfig({ rioAgent: bad })).rioAgent, "auditor", "the RIO falls back rather than losing its agent");
+    assert.equal((await withConfig({ rioAgent: bad })).rioAgent, "rio", "the RIO falls back rather than losing its agent");
   }
   assert.equal((await withConfig({ wingmanAgent: "wingman" })).wingmanAgent, "wingman");
   assert.equal((await withConfig({ rioAgent: "reviewer-2" })).rioAgent, "reviewer-2");
@@ -86,5 +86,5 @@ test("an agent name that is not plainly a name never reaches the CLI", async () 
 
 test("a project that says nothing gets no Wingman agent, which is the state the gate warns about", async () => {
   assert.equal(DEFAULT_MISSION_CONFIG.wingmanAgent, undefined);
-  assert.equal(DEFAULT_MISSION_CONFIG.rioAgent, "auditor");
+  assert.equal(DEFAULT_MISSION_CONFIG.rioAgent, "rio");
 });

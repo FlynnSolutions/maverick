@@ -5,7 +5,7 @@
  */
 import { execFileSync } from "node:child_process";
 
-const files = execFileSync("git", ["ls-files", "-z", "--", "*.ts", "*.mjs", "*.js", ":!web/vendor"], { encoding: "utf8" }).split("\0").filter(Boolean);
+const files = execFileSync("git", ["ls-files", "-z", "--", "*.ts", "*.mjs", "*.js", "bin/maverick", ":!web/vendor"], { encoding: "utf8" }).split("\0").filter(Boolean);
 let failed = 0;
 for (const file of files) {
   try {
