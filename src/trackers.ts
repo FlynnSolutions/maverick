@@ -9,7 +9,7 @@
 export type ColumnId = "priority" | "in-progress" | "backlog" | "shipped";
 
 /** Structured lines an item may carry, as `  - key: value` under its bullet. */
-export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by", "mission", "milestone", "repo", "call"] as const;
+export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by", "mission", "milestone", "repo", "call", "attempt", "verdict", "commit", "touches", "needs"] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
 export interface Item {
@@ -112,14 +112,16 @@ const blockEnd = (lines: string[], start: number): number => {
 const titleOf = (firstLine: string): string => {
   const bold = firstLine.match(/\*\*(.+?)\*\*/);
   if (bold) return bold[1].replace(/~~/g, "");
-  const stripped = firstLine.replace(/^- \[[ x]\]\s*/, "").replace(/`\[[A-Z]+\]`\s*/g, "");
+  const stripped = firstLine.replace(MARKER, "").trimStart().replace(/`\[[A-Z]+\]`\s*/g, "");
   return stripped.length > 140 ? `${stripped.slice(0, 137)}...` : stripped;
 };
 
 const tagsOf = (firstLine: string): string[] =>
   [...firstLine.matchAll(/`\[([A-Za-z]+)\]`/g)].map((m) => m[1]);
 
-const FIELD_LINE = /^\s{2,}- ([a-z][a-z-]*):\s*(.*)$/;
+export const FIELD_LINE = /^\s{2,}- ([a-z][a-z-]*):\s*(.*)$/;
+/** A bullet's marker: todo, done, in progress, deferred, dropped. The one spelling of it. */
+export const MARKER = /^- \[[ x~!-]\]/i;
 
 const parseItem = (lines: string[], start: number): Item => {
   const end = blockEnd(lines, start);
@@ -133,7 +135,7 @@ const parseItem = (lines: string[], start: number): Item => {
   }
   // Legacy shape: `**Title** (em dash) _source, date._ prose...` all on the bullet line.
   const afterTitle = firstLine
-    .replace(/^- \[[ x]\]\s*/i, "")
+    .replace(MARKER, "").trimStart()
     .replace(/^.*?\*\*.+?\*\*\s*/, "") // drop everything through the bold title, emoji and tags included
     .replace(/`\[[A-Za-z]+\]`\s*/g, "")
     .replace(/^[\s\u2014:-]+/, ""); // legacy items join title and source with an em dash
@@ -225,7 +227,7 @@ const spliceBlock = (lines: string[], insertAt: number, block: string[], tight: 
 export const setChecked = (text: string, itemStart: number, itemFirstLine: string, done: boolean): string => {
   const lines = text.split("\n");
   if (lines[itemStart] !== itemFirstLine) throw new StaleMoveError(`line ${itemStart} is no longer "${itemFirstLine.slice(0, 60)}"; reload`);
-  lines[itemStart] = itemFirstLine.replace(/^- \[[ x]\]/i, done ? "- [x]" : "- [ ]");
+  lines[itemStart] = itemFirstLine.replace(MARKER, done ? "- [x]" : "- [ ]");
   return lines.join("\n");
 };
 

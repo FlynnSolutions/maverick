@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+/**
+ * The mission protocol from a terminal, for a Strike Lead flying a mission outside the app:
+ *
+ *   maverick plan-check <plan.md> [--project <path>]
+ *   maverick brief <plan.md> <task-id> --role wingman|rio [--project <path>] [--findings <file>]
+ *
+ * Same parser and the same briefs the app uses, with the app's branch and worktree layout, so
+ * a mission run by hand does not start by reverse-engineering the protocol.
+ */
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
+
+const src = (name) => join(dirname(fileURLToPath(import.meta.url)), "..", "src", name);
+const { missionLayout, parsePlan, repoChoices, taskLayout } = await import(src("missions.ts"));
+const { missionConfigFor } = await import(src("project-config.ts"));
+const { commonDirOf, toplevelOf } = await import(src("git.ts"));
+const { rioBrief, rioRole, scratchFor, wingmanBrief } = await import(src("briefs.ts"));
+
+const usage = () => {
+  console.error("usage: maverick plan-check <plan.md> [--project <path>]\n       maverick brief <plan.md> <task-id> --role wingman|rio [--project <path>] [--findings <file>]");
+  process.exit(2);
+};
+
+const [command, ...rest] = process.argv.slice(2);
+const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.startsWith("--"));
+const option = (name) => { const i = rest.indexOf(`--${name}`); return i >= 0 ? rest[i + 1] : undefined; };
+
+const fail = (message, code = 1) => { console.error(`maverick: ${message}`); process.exit(code); };
+const real = (path) => { try { return realpathSync.native(path); } catch { return fail(`no such path: ${path}`); } };
+// Real paths throughout: git reports the repo's real path, /var and /private/var must agree, and
+// this disk may fold case. The project is the main checkout, found from the common git dir, so
+// the plan copy on the mission branch (inside a worktree) resolves to the same project as the
+// Lead's copy does.
+const planFile = positional[0] ? real(positional[0]) : usage();
+const projectPath = real(option("project") ?? dirname(await commonDirOf(dirname(planFile)).catch(() => fail(`${planFile} is not inside a git repository; pass --project`))));
+if (!planFile.startsWith(`${projectPath}/`)) fail(`${planFile} is not inside the project at ${projectPath}`);
+// The plan's path relative to the project, whichever checkout it was read from: inside one of
+// the project's worktrees it is relative to that worktree; anywhere else, to the project.
+const checkout = await toplevelOf(dirname(planFile)).catch(() => projectPath);
+const planRelative = relative(checkout.startsWith(`${projectPath}/`) ? checkout : projectPath, planFile);
+const project = { id: basename(projectPath), name: basename(projectPath), path: projectPath, trackers: [] };
+const cfg = await missionConfigFor(projectPath);
+const choices = await repoChoices(project, cfg);
+const text = await readFile(planFile, "utf8");
+const plan = parsePlan(text, choices.map((r) => r.label));
+const missionId = basename(planFile, ".md");
+
+if (command === "plan-check") {
+  for (const p of plan.problems) console.log(`problem: ${p}`);
+  const tasks = plan.milestones.flatMap((m) => m.tasks);
+  console.log(`${plan.problems.length ? "cannot fly" : "flyable"}: ${plan.name || "(unnamed)"}: ${plan.milestones.length} milestone(s), ${tasks.length} task(s), repos ${[...new Set(tasks.map((t) => t.repo))].join(", ") || "(none)"}`);
+  for (const m of plan.milestones) {
+    console.log(`\nMilestone ${m.n}: ${m.title}\n  done when: ${m.done}`);
+    for (const t of m.tasks) {
+      console.log(`  ${[t.id, t.status.padEnd(11), t.attempts && `attempt ${t.attempts}`, t.verdict && `RIO ${t.verdict}`, t.head && `@${t.head}`, t.title].filter(Boolean).join(" ")}`);
+      if (t.touches?.length) console.log(`         touches ${t.touches.join(", ")}`);
+      if (t.needs?.length) console.log(`         needs ${t.needs.join(", ")}`);
+    }
+  }
+  for (const o of plan.overlaps) console.log(`\noverlap: ${o}`);
+  if (plan.log.length) console.log(`\nLog (${plan.log.length}), last: ${plan.log[plan.log.length - 1]}`);
+  process.exit(plan.problems.length ? 1 : 0);
+}
+
+if (command === "brief") {
+  const role = option("role");
+  const taskId = positional[1];
+  if (!taskId || !["wingman", "rio"].includes(role ?? "")) usage();
+  if (plan.problems.length) { for (const p of plan.problems) console.error(`problem: ${p}`); process.exit(1); }
+  const milestone = plan.milestones.find((m) => m.tasks.some((t) => t.id === taskId));
+  const task = milestone?.tasks.find((t) => t.id === taskId);
+  if (!milestone || !task) fail(`no task "${taskId}" in ${planFile}`);
+  const repos = missionLayout(choices, project, cfg, missionId, new Set(plan.milestones.flatMap((m) => m.tasks.map((t) => t.repo))));
+  const repo = repos.find((r) => r.label === task.repo);
+  if (!repo) fail(`task ${taskId} names repo "${task.repo}", which is not under ${projectPath}`);
+  Object.assign(task, taskLayout(project, cfg, missionId, task, repo));
+  const ctx = { projectPath, mission: { id: missionId, name: plan.name, plan: planRelative, repos, milestones: plan.milestones }, milestone, task, repo };
+  // The app keeps findings in its sessions dir; a mission flown by hand has none, so the task's own scratch folder stands in unless --findings says otherwise.
+  console.log(role === "wingman" ? wingmanBrief(ctx) : rioBrief(ctx, option("findings") ?? join(scratchFor(task, rioRole(task)), "findings.md")));
+  process.exit(0);
+}
+
+usage();

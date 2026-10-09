@@ -48,7 +48,7 @@ export interface MissionConfig {
    * Without one, a Wingman gets the mission's prompt and nothing else standing behind it.
    */
   wingmanAgent?: string;
-  /** The agent a RIO runs as. `auditor` by convention: it reads and judges, it never fixes. */
+  /** The agent a RIO runs as. `rio` (`.claude/agents/rio.md`, installed beside the Wingman): it reads and judges, and its tool list has no Edit or Write. */
   rioAgent: string;
   /** Where worktrees go, relative to the project root. */
   worktrees: string;
@@ -61,7 +61,7 @@ export interface MissionConfig {
 }
 
 export const DEFAULT_MISSION_CONFIG: MissionConfig = {
-  rioAgent: "auditor",
+  rioAgent: "rio",
   worktrees: join(".claude", "worktrees"),
   branchPrefix: "mission/",
   land: "merge",

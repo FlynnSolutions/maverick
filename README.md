@@ -270,22 +270,36 @@ The second gate is the result: every task with its diff, its verdict and its fin
 branch you can check out and test. Closing ticks the items in the tracker. **Maverick never merges
 a mission into main**: the ship wizard does, with you in it phase by phase.
 
-### The Wingman agent
+### The Wingman and the RIO agents
 
-A Wingman is a Claude Code subagent, and its definition lives in this repo at
-`.claude/agents/wingman.md`. Claude Code looks for agents in `~/.claude/agents/`, and a Wingman
-runs with its working directory in the *target project's* worktree rather than in Maverick, so a
-project-scoped copy here would never be found. Install it once:
+A Wingman and a RIO are Claude Code subagents, and their definitions live in this repo at
+`.claude/agents/wingman.md` and `.claude/agents/rio.md`. Claude Code looks for agents in
+`~/.claude/agents/`, and both run with their working directory in the *target project* rather
+than in Maverick, so a project-scoped copy here would never be found. Install them once:
 
 ```bash
 ln -s "$PWD/.claude/agents/wingman.md" ~/.claude/agents/wingman.md
+ln -s "$PWD/.claude/agents/rio.md" ~/.claude/agents/rio.md
 ```
 
 A symlink rather than a copy, so there is one source of truth and it moves with the repo. Which
-agent a project spawns is configurable, `missions.wingmanAgent` in that project's
-`maverick.json`, but whatever it is named has to exist in `~/.claude/agents/`. Without it
-Claude Code warns `no agent named …` and falls back to the default template, which is a Wingman
-with none of its boundaries.
+agents a project spawns is configurable, `missions.wingmanAgent` and `missions.rioAgent` in that
+project's `maverick.json`, but whatever they are named has to exist in `~/.claude/agents/`.
+Without it Claude Code warns `no agent named …` and falls back to the default template, which is
+a Wingman with none of its boundaries, or a RIO that can edit, which is the one thing it must not.
+
+### The protocol from a terminal
+
+A mission can be flown by hand, outside the app, with the same parser and the same briefs:
+
+```bash
+bin/maverick plan-check deliverables/missions/<id>.md                    # problems, and where every task stands
+bin/maverick brief deliverables/missions/<id>.md m1-t2 --role wingman    # the brief, with the app's worktree and branch layout
+bin/maverick brief deliverables/missions/<id>.md m1-t2 --role rio --findings <file>
+```
+
+Once a mission flies, the plan on the mission branch is the ledger: where every task stands is
+written under it, and a `## Log` records each transition and decision (`docs/03-decisions.md`, M18).
 
 ## Not built yet
 

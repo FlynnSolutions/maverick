@@ -271,6 +271,8 @@ const renderPlan = () => {
         el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
     } else {
       gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
+        parsed?.overlaps?.length ? el("div", {}, el("p", { class: "why" }, "Tasks that fly together in one milestone own the same paths. That is a collision planned in; the Strike Lead can serialise them or give the shared path one owner:"),
+          el("ul", { class: "mv-overlaps" }, ...parsed.overlaps.map((o) => el("li", {}, o)))) : null,
         costBand(doc.cost),
         reposBand(doc.repos ?? []),
         doc.wingmanAgent
@@ -369,7 +371,8 @@ const taskRow = (task) => {
     ].filter(Boolean).join(" · ")),
     task.note ? el("div", { class: "note" }, task.note) : null,
     diff ? el("pre", { class: "diffstat" }, diff) : null,
-    findings ? el("details", {}, el("summary", { class: "muted small" }, "what its RIO found"), renderMarkdown(findings.replace(/^verdict:.*\n?/i, ""), { project: projectId })) : null);
+    findings ? el("details", {}, el("summary", { class: "muted small" }, "what its RIO found"), renderMarkdown(findings.replace(/^verdict:.*\n?/i, ""), { project: projectId })) : null,
+    task.carried?.length ? el("details", {}, el("summary", { class: "muted small" }, `${task.carried.length} note(s) carried`), el("ul", {}, ...task.carried.map((n) => el("li", {}, n)))) : null);
   return row;
 };
 

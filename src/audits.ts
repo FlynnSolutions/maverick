@@ -20,7 +20,7 @@ export interface AuditInfo {
   file: string;
 }
 
-export type Verdict = "pass" | "fail" | "mixed" | "pending" | "none";
+export type Verdict = "pass" | "pass with notes" | "fail" | "mixed" | "pending" | "none";
 
 export interface AuditView {
   verdict: Verdict;
@@ -96,7 +96,41 @@ export const runAudit = async (project: Project, childId: string): Promise<Audit
 
 /** The auditor's contract: the first line of a findings file is its verdict. */
 export const verdictOf = (findings: string | undefined): Verdict =>
-  (findings?.match(/^verdict:\s*(pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
+  (findings?.match(/^verdict:\s*(pass with notes|pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
+
+/**
+ * A list line (`- `, `* `, `+ `, `1. `, bold stripped), so a RIO's own markdown habits do not
+ * hide a finding. Top-level only, unless the line names its kind: indented lines are evidence
+ * under a finding, but a BLOCKER written under a NOTE is still a blocker.
+ */
+const listLine = (line: string): string | undefined => {
+  const m = line.match(/^(\s*)(?:[-*+]|\d+[.)])(?:\s+|(?=\**[A-Z]))(.*)$/);
+  if (!m) return undefined;
+  const text = m[2].replace(/\*\*/g, "").trim();
+  return m[1] && !/^BLOCKER:/i.test(text) ? undefined : text;
+};
+
+export interface Findings { blockers: string[]; notes: string[]; unsorted: string[] }
+
+/**
+ * What a RIO wrote, sorted by the word each line starts with: `BLOCKER:`, `NOTE:`,
+ * `UNVERIFIED:` (carried with the notes, so it reaches the page), or none. What an unsorted
+ * line means is the verdict's business (`settleReview`); this only reads.
+ */
+export const findingsOf = (findings: string): Findings => {
+  const out: Findings = { blockers: [], notes: [], unsorted: [] };
+  for (const raw of findings.split(/\r?\n/)) {
+    const line = listLine(raw);
+    if (line === undefined || /^verdict:/i.test(line)) continue;
+    const sorted = line.match(/^(BLOCKER|NOTE|UNVERIFIED):\s*(.*)$/i);
+    const kind = sorted?.[1].toUpperCase();
+    if (kind === "BLOCKER") out.blockers.push(sorted![2]);
+    else if (kind === "NOTE") out.notes.push(sorted![2]);
+    else if (kind === "UNVERIFIED") out.notes.push(`unverified: ${sorted![2]}`);
+    else out.unsorted.push(line);
+  }
+  return out;
+};
 
 export const auditView = async (record: SessionRecord & { audit?: AuditInfo; decision?: string }, agentStates: Map<string, string>): Promise<AuditView> => {
   if (!record.audit) return { verdict: "none" };

@@ -1,14 +1,37 @@
 import { execFile } from "node:child_process";
-import { readdir, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { REPLY_FORMAT_ARGS } from "./reply-format.ts";
 
 const run = promisify(execFile);
 
-export const repoRootOf = async (filePath: string): Promise<string> => {
-  const { stdout } = await run("git", ["-C", dirname(filePath), "rev-parse", "--show-toplevel"]);
+/** The root of the checkout a directory is in: for a worktree, the worktree, not the main checkout. */
+export const toplevelOf = async (dir: string): Promise<string> => {
+  const { stdout } = await run("git", ["-C", dir, "rev-parse", "--show-toplevel"]);
   return stdout.trim();
+};
+
+export const repoRootOf = (filePath: string): Promise<string> => toplevelOf(dirname(filePath));
+
+/** The repository's own `.git`, absolute: for a worktree, the main checkout's, which its worktrees share. */
+export const commonDirOf = async (dir: string): Promise<string> => {
+  const { stdout } = await run("git", ["-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  return stdout.trim();
+};
+
+/** Whether `path` is `parent` or inside it. The one spelling of a prefix test, so `src/a.tsx` is never under `src/a.ts`. */
+export const underPath = (path: string, parent: string): boolean => path === parent || path.startsWith(`${parent}/`);
+
+/**
+ * Refuse unless the checkout at `worktree` exists, is its own checkout (not a plain folder
+ * inside another one), and has `branch` out. The precondition of every write that may only
+ * land on a mission branch (M8): the ledger, the milestone merge.
+ */
+export const assertCheckedOut = async (worktree: string, branch: string): Promise<string> => {
+  const [top, current] = await Promise.all([toplevelOf(worktree), currentBranch(worktree)]);
+  if (current !== branch) throw new Error(`${worktree} has ${current || "a detached HEAD"} checked out, not ${branch}`);
+  return top;
 };
 
 /**
@@ -24,13 +47,10 @@ export const uncommittedDiff = async (filePath: string): Promise<string> => {
 
 export const commitFile = async (filePath: string, message: string): Promise<string> => {
   const root = await repoRootOf(filePath);
-  // A no-op edit (an item dropped back where it was) must not try to commit nothing.
-  try {
-    await run("git", ["-C", root, "diff", "--quiet", "--", filePath]);
-    return "no change";
-  } catch {
-    /* exit 1: the file differs, commit it */
-  }
+  // A no-op edit (an item dropped back where it was) must not try to commit nothing. Status
+  // rather than diff, so a file written for the first time (a mission's ledger) counts as a change.
+  const { stdout: status } = await run("git", ["-C", root, "status", "--porcelain", "--", filePath]);
+  if (!status.trim()) return "no change";
   await run("git", ["-C", root, "add", "--", filePath]);
   await run("git", ["-C", root, "commit", "-q", "-m", message, "--", filePath]);
   const { stdout: sha } = await run("git", ["-C", root, "rev-parse", "--short", "HEAD"]);
@@ -131,6 +151,23 @@ const branchExists = async (repoPath: string, branch: string): Promise<boolean> 
 };
 
 /** Create `branch` at `from` unless it is already there. Never checks anything out. */
+/**
+ * Ignore paths in one repo without committing anything: `.git/info/exclude` is local, shared by
+ * the repo's worktrees, and read by every git command. The mission's worktrees and the scratch
+ * folders inside them go here before any are made, so a careless `git add -A` on a base branch
+ * cannot sweep a worktree in as an embedded repo. Idempotent.
+ */
+export const excludeLocally = async (repoPath: string, patterns: string[]): Promise<void> => {
+  const file = join(await commonDirOf(repoPath), "info", "exclude");
+  const existing = await readFile(file, "utf8").catch((err: NodeJS.ErrnoException) => { if (err.code === "ENOENT") return ""; throw err; });
+  const have = new Set(existing.split("\n").map((l) => l.trim()));
+  const missing = patterns.filter((p) => !have.has(p));
+  if (!missing.length) return;
+  await mkdir(dirname(file), { recursive: true });
+  // A file whose last line has no newline would otherwise have the first pattern glued onto it, un-ignoring both.
+  await appendFile(file, `${existing && !existing.endsWith("\n") ? "\n" : ""}${missing.join("\n")}\n`, "utf8");
+};
+
 export const ensureBranch = async (repoPath: string, branch: string, from = "HEAD"): Promise<void> => {
   if (await branchExists(repoPath, branch)) return;
   await run("git", ["-C", repoPath, "branch", branch, from]);
@@ -149,6 +186,12 @@ export const ensureWorktree = async (repoPath: string, path: string, branch: str
 /** Commit subjects on `branch` that `base` does not have, oldest first. Empty means the branch did nothing. */
 export const commitsAhead = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
   const { stdout } = await run("git", ["-C", repoPath, "log", "--reverse", "--format=%h %s", `${base}..${branch}`]);
+  return stdout.split("\n").filter(Boolean);
+};
+
+/** The paths a branch changed since it left its base. */
+export const changedFiles = async (repoPath: string, base: string, branch: string): Promise<string[]> => {
+  const { stdout } = await run("git", ["-C", repoPath, "diff", "--name-only", `${base}..${branch}`]);
   return stdout.split("\n").filter(Boolean);
 };
 

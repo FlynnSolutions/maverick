@@ -30,6 +30,11 @@ finished Wingman and a fail hands the task back twice before it becomes Cory's; 
 milestone merges into `mission/<id>`, never main. Verified end to end against a fixture project
 with real agents on 2026-09-16: plan, dispatch, review verdict, merge, close and tick.
 
+**Mission protocol v2, 2026-10-09** (M18, M19), built as five bricks each reviewed by an
+independent RIO before the next; every brick failed its first review and was fixed. Not yet:
+dispatching by `needs`, the preflight, pause-not-end, the shared-environment rules, the report
+sections.
+
 ## What does not
 
 - **Agent readiness: Level 1, 60%** (`npx @kodus/agent-readiness . --ci --no-web`, 2026-10-07; 6% on
