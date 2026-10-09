@@ -149,7 +149,8 @@ format: checklist
   - source: the outside audit of the first overnight mission, 2026-10-09
   - kind: feature
   - plan: plans/mission-protocol-v2-2026-10-09.md
-  - status: built on `feat/protocol-v2`, PR pending
+  - status: PR #11 open, not merged
+  - pr: https://github.com/FlynnSolutions/maverick/pull/11
   The first five of the ranked changes, one brick at a time, each reviewed by a RIO that did not
   write it. Decisions M18 and M19. The rest (contracts step, shared-environment rules, preflight,
   pause-not-end, report sections, dispatch by needs) is the proposal at the end of the plan.
