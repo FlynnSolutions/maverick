@@ -45,6 +45,7 @@ test("both briefs carry what the task owns, what it builds on, and what strayed"
   const across = { ...ctx.milestone, tasks: [{ ...sibling, repo: "contracts" }, owned] };
   const crossRepo = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other], milestones: [across] }, milestone: across, task: owned });
   assert.match(crossRepo, /on branch mission\/x-m1-t1 in \/p\/contracts/, "a need in another repo is found there");
+  assert.match(crossRepo, /It is in another repo, so read it there/, "and is not told to merge a branch its repo does not have");
   const landed = { n: 0, title: "c", done: "d", merged: "2026-10-09T00:00:00Z", tasks: [{ ...sibling, id: "m0-t1", title: "The contract", repo: "contracts", status: "passed" as const }] };
   const earlierElsewhere = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other], milestones: [landed, ctx.milestone] }, task: { ...owned, needs: ["m0-t1"] } });
   assert.match(earlierElsewhere, /builds on m0-t1 \(The contract\), already merged on mission\/x and checked out at \/p\/contracts\/\.claude/, "a need whose milestone landed is read on the mission branch");

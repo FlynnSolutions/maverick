@@ -444,3 +444,13 @@ flying again. `paused` is a person's call, with a reason the ledger keeps: nothi
 spawned, what is running finishes and is recorded, and resume picks up where the file says. On
 the first mission an expired credential ended the mission at milestone 6 and cut the central
 feature, whose own tasks needed none of it. Milestones still merge in order, once sent.
+
+**The gate checks the host before the person leaves.** The plan's `## Preflight` section says
+what the mission needs: how long it runs, the tools and runtimes, the credentials and secrets
+by name, and the steps only a person can do. Maverick checks what a machine can (the tools on
+the path, the agents it will spawn, a repo's Node pin against the host, an AWS credential and
+whether it outlives the mission, free disk) and shows the rest marked as the person's to
+confirm; a missing tool or agent refuses approval, everything else is theirs to settle by
+approving. `bin/maverick preflight` prints the same checks. On the first mission Node 22 met a
+pin of 24, `timeout` was missing, a credential expired mid-mission and a real sign-in was never
+verified, each found by an agent at the wrong hour.

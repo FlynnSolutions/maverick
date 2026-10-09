@@ -69,6 +69,16 @@ test("plan-check names every problem and exits 1", async () => {
   assert.match(stdout, /^cannot fly:/m);
 });
 
+test("preflight prints every check and exits 1 when something the mission needs is not there", async () => {
+  const needy = join(dir, "deliverables", "missions", "needy.md");
+  await writeFile(needy, "# Mission: needy\n\nN.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  t\n\n## Preflight\n\n- tool: no-such-tool-xyz\n- human: a passkey\n", "utf8");
+  const { status, stdout } = run("preflight", needy);
+  assert.equal(status, 1, stdout);
+  assert.match(stdout, /^fail {2}no-such-tool-xyz: not on PATH/m);
+  assert.match(stdout, /^human a passkey:/m);
+  assert.match(stdout, /1 failing; 1 for a person to confirm/);
+});
+
 test("brief derives the worktree, branch and plan path the app would use, for either seat", () => {
   const wingman = run("brief", plan, "m1-t2", "--role", "wingman");
   assert.equal(wingman.status, 0, wingman.stderr);

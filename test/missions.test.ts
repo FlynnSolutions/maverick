@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, mergeable, settleReview, startable, strays, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, mergeable, needsPerson, settleReview, startable, strays, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
@@ -415,6 +415,7 @@ test("contracts are named before fan-out: parsed with an owner and a shape, and 
   const odd = parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- `TABLE` (Owner: M1-T1) the env flag\n- plain name (owner: m1-t1): shape\n- **claimsCodec** (owner: m1-t1): again"), ["root"]);
   assert.deepEqual(odd.contracts.slice(1).map((c) => [c.name, c.owner, c.shape]), [["TABLE", "m1-t1", "the env flag"], ["plain name", "m1-t1", "shape"], ["claimsCodec", "m1-t1", "again"]], "backticks, plain names, any case, a missing colon");
   assert.ok(odd.problems.some((p) => /"claimsCodec" is named twice/.test(p)));
+  assert.ok(parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- `claimsCodec` (owner: m1-t2): the same thing in backticks"), ["root"]).problems.some((p) => /is named twice/.test(p)), "the same name in another markdown style is the same contract");
   assert.ok(parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- [ ] **X** (owner: m1-t1): s"), ["root"]).problems.some((p) => /is not "\*\*name/.test(p)), "a task bullet is not a contract");
 });
 
@@ -429,4 +430,12 @@ test("milestones merge in order, and only once sent: a later one whose tasks all
   const held = { ...sent, conflicts: ["root/a.ts"] };
   assert.equal(mergeable({ milestones: [{ ...first, merged: "x" }, held] }, held), false, "a held milestone is not merged again");
   assert.deepEqual(startable({ status: "paused", milestones: [{ ...first, tasks: [t("m1-t1", "pending")] }] }), [], "nothing starts while paused");
+});
+
+test("a person is needed for a handed-back task or a held milestone, and for nothing else", () => {
+  const t = (id: string, status: MissionTask["status"], note?: string) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, ...(note ? { note } : {}) });
+  assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", tasks: [t("m1-t1", "flying"), t("m1-t2", "passed")] }] }), []);
+  assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", tasks: [t("m1-t1", "handed-back", "the RIO said fail after 2 attempts")] }] }), ["m1-t1: the RIO said fail after 2 attempts"]);
+  assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", merged: "x", held: "could not land: svc", tasks: [t("m1-t1", "passed")] }] }), ["could not land: svc"], "a landing that failed holds its milestone");
+  assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", conflicts: ["root/a.ts"], held: "milestone 1 collided", tasks: [t("m1-t1", "passed")] }] }), ["milestone 1 collided"]);
 });

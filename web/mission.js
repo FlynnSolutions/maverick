@@ -210,7 +210,7 @@ const renderNav = () => {
     items.push(entry(`m${m.n}`, String(m.n), m.title, el("span", { class: `verdict ${state}` }, milestoneLabel(m)), state));
   });
   const done = mission.status === "review" || mission.status === "closed";
-  items.push(el("h3", {}, "The result"), entry("review", "R", "What the mission built", el("span", { class: `verdict ${done ? "passed" : mission.status}` }, mission.status === "closed" ? "closed" : mission.status === "review" ? "ready" : "in flight")));
+  items.push(el("h3", {}, "The result"), entry("review", "R", "What the mission built", el("span", { class: `verdict ${done ? "passed" : mission.status}` }, mission.status === "closed" ? "closed" : mission.status === "review" ? "ready" : mission.status === "paused" ? "paused" : "in flight")));
   nav.replaceChildren(...items);
 };
 
@@ -234,6 +234,15 @@ const reposBand = (repos) => {
     pushed.length
       ? el("p", { class: "mv-warn" }, `${pushed.map((r) => `${r.label} → ${r.base}`).join(", ")}: this one lands on a shared branch without another pair of eyes. It is only ever fast-forwarded, never forced, and it is set in this project's own maverick.json.`)
       : null);
+};
+
+/** What the host can and cannot give the mission, checked before the person approves and leaves. */
+const preflightBand = (checks) => {
+  if (!checks?.length) return null;
+  const failed = checks.filter((c) => c.status === "fail").length;
+  return el("div", { class: "mv-preflight" },
+    el("p", { class: failed ? "mv-warn" : "muted small" }, failed ? `${failed} thing(s) the mission needs are not there. Settle them before approving, or expect the Wingmen to find out at 2 a.m.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
+    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), ` ${c.detail}`))));
 };
 
 const costBand = (cost) => el("div", { class: "mv-band" },
@@ -260,7 +269,7 @@ const renderPlan = () => {
             }, "ghost") : null,
           btn("stop this mission", async () => {
             const live = allTasks().filter((t) => t.status === "flying" || t.status === "reviewing").length;
-            if (!window.confirm(`Stop "${mission.name}"?\n\nThis stops ${live} running session(s). Every branch and worktree is left exactly as it is, so nothing built so far is lost. It cannot be resumed.`)) return;
+            if (!window.confirm(`Stop "${mission.name}"?\n\nThis stops ${live} running session(s) and ends the mission; pause is the one that can be resumed. Every branch and worktree is left exactly as it is, so nothing built so far is lost.`)) return;
             await act("abandon", {}, "mission stopped");
           }, "ghost danger"))
         : null),
@@ -284,6 +293,7 @@ const renderPlan = () => {
           el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
         costBand(doc.cost),
         reposBand(doc.repos ?? []),
+        preflightBand(doc.preflight),
         doc.wingmanAgent
           ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, which carries its standing orders: own one task, do not widen it, never push or merge, never grade its own work.`)
           : el("p", { class: "mv-warn" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),

@@ -15,12 +15,13 @@ import { readFile } from "node:fs/promises";
 
 const src = (name) => join(dirname(fileURLToPath(import.meta.url)), "..", "src", name);
 const { missionLayout, parsePlan, repoChoices, taskLayout } = await import(src("missions.ts"));
+const { preflight } = await import(src("preflight.ts"));
 const { missionConfigFor } = await import(src("project-config.ts"));
 const { commonDirOf, toplevelOf } = await import(src("git.ts"));
 const { rioBrief, rioRole, scratchFor, wingmanBrief } = await import(src("briefs.ts"));
 
 const usage = () => {
-  console.error("usage: maverick plan-check <plan.md> [--project <path>]\n       maverick brief <plan.md> <task-id> --role wingman|rio [--project <path>] [--findings <file>]");
+  console.error("usage: maverick plan-check <plan.md> [--project <path>]\n       maverick preflight <plan.md> [--project <path>]\n       maverick brief <plan.md> <task-id> --role wingman|rio [--project <path>] [--findings <file>]");
   process.exit(2);
 };
 
@@ -65,6 +66,18 @@ if (command === "plan-check") {
   for (const w of plan.warnings) console.log(`\nwarning: ${w}`);
   if (plan.log.length) console.log(`\nLog (${plan.log.length}), last: ${plan.log[plan.log.length - 1]}`);
   process.exit(plan.problems.length ? 1 : 0);
+}
+
+if (command === "preflight") {
+  if (plan.problems.length) { for (const p of plan.problems) console.error(`problem: ${p}`); process.exit(1); }
+  const named = new Set(plan.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
+  const mine = choices.filter((r) => named.has(r.label));
+  const checks = await preflight({ projectPath, repoPaths: mine.map((r) => r.path), requirements: plan.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, landsRemotely: mine.some((r) => r.land !== "merge") });
+  for (const c of checks) console.log(`${c.status.padEnd(5)} ${c.name}: ${c.detail}`);
+  const failed = checks.filter((c) => c.status === "fail").length;
+  const human = checks.filter((c) => c.status === "human").length;
+  console.log(`\n${failed ? `${failed} failing; ` : ""}${human ? `${human} for a person to confirm; ` : ""}${checks.length - failed - human} ok`);
+  process.exit(failed ? 1 : 0);
 }
 
 if (command === "brief") {

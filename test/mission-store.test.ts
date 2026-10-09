@@ -16,7 +16,7 @@ import { test } from "node:test";
 const dir = mkdtempSync(join(tmpdir(), "mv-store-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "p"), { recursive: true });
-const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, closeMission, needsWalking, parsePlan, readMission, recordWalkthrough, walkthroughState } = await import("../src/missions.ts");
+const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, closeMission, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
 const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
@@ -173,4 +173,22 @@ test("a plan no mission repo holds lands on the first repo's mission branch, and
   assert.match(g(integration, "log", "--format=%s", "-1"), /^mission held:/);
   assert.equal(g(root, "log", "--format=%s", "-1").trim(), "the plan, on main", "main got no commit");
   assert.equal(await readFile(join(root, "deliverables", "missions", "held.md"), "utf8"), planText, "and the Lead's copy is untouched");
+});
+
+test("pause keeps its reason, refuses a retry, and resume comes back blocked when a person is still needed", async () => {
+  const m = await seed("pause");
+  (m.milestones[0] as { held?: string }).held = "milestone 1 collided in root and the Strike Lead could not reconcile it";
+  m.status = "blocked";
+  await writeFile(file("pause"), JSON.stringify(m), "utf8");
+  await assert.rejects(() => pauseMission(project, "pause", "  "), /say why/);
+  const paused = await pauseMission(project, "pause", "token expired");
+  assert.equal(paused.status, "paused");
+  assert.match(paused.trouble ?? "", /^paused: token expired/);
+  await assert.rejects(() => retryTask(project, "pause", "m1-t1"), /is paused; resume it first/);
+  await acceptTask(project, "pause", "m1-t1", "looked");
+  assert.equal((await readMission("p", "pause"))!.status, "paused", "accepting a task does not end a pause");
+  const resumed = await resumeMission(project, "pause");
+  assert.equal(resumed.status, "blocked", "the collision is still a person's to answer");
+  assert.match(resumed.trouble ?? "", /milestone 1 collided/);
+  await assert.rejects(() => resumeMission(project, "pause"), /not paused/);
 });

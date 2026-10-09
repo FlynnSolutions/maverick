@@ -673,12 +673,13 @@ export const mountCommandCenter = (root, ctx) => {
    * this is the page that holds those. A mission at its gate is waiting on the pilot, so it
    * wears the reticle and sorts above everything else, the way any other waiting thing does.
    */
-  const MISSION_LAMP = { interviewing: "waiting", planned: "waiting", flying: "busy", blocked: "blocked", review: "waiting", closed: "done" };
+  const MISSION_LAMP = { interviewing: "waiting", planned: "waiting", flying: "busy", blocked: "blocked", paused: "idle", review: "waiting", closed: "done" };
   const MISSION_SAYS = {
     interviewing: "the Strike Lead is interviewing you",
     planned: "waiting on your approval",
     flying: "flying",
     blocked: "needs you",
+    paused: "paused",
     review: "ready for you to read and test",
     closed: "closed",
   };
@@ -696,7 +697,7 @@ export const mountCommandCenter = (root, ctx) => {
     const tasks = m.milestones.flatMap((x) => x.tasks ?? []);
     const passed = tasks.filter((t) => t.status === "passed").length;
     const merged = m.milestones.filter((x) => x.merged).length;
-    const status = m.trouble ? "blocked" : MISSION_LAMP[m.status];
+    const status = m.status === "paused" ? "idle" : m.trouble ? "blocked" : MISSION_LAMP[m.status];
     const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
     const openMission = () => { location.href = href; };
     return pageStrip({ status, title: `${m.name} · ${MISSION_SAYS[m.status] ?? m.status}`, open: openMission }, stripLine({

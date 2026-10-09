@@ -297,6 +297,7 @@ A mission can be flown by hand, outside the app, with the same parser and the sa
 
 ```bash
 bin/maverick plan-check deliverables/missions/<id>.md                    # problems, and where every task stands
+bin/maverick preflight deliverables/missions/<id>.md                     # what the host has and lacks of what the plan needs
 bin/maverick brief deliverables/missions/<id>.md m1-t2 --role wingman    # the brief, with the app's worktree and branch layout
 bin/maverick brief deliverables/missions/<id>.md m1-t2 --role rio --findings <file>
 ```
