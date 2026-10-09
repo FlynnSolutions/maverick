@@ -3,17 +3,15 @@
  * the app's layout. A Strike Lead outside the app must not have to reimplement either.
  */
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { tempRepo } from "./fixtures.ts";
 
 const cli = join(import.meta.dirname, "..", "bin", "maverick");
-const dir = realpathSync(mkdtempSync(join(tmpdir(), "mv-cli-")));
-execFileSync("git", ["-C", dir, "init", "-q"]);
-execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "base"]);
+const { dir, git } = tempRepo("mv-cli");
 mkdirSync(join(dir, "deliverables", "missions"), { recursive: true });
 const plan = join(dir, "deliverables", "missions", "orbit.md");
 await writeFile(plan, [
@@ -29,8 +27,8 @@ test("plan-check prints where every task stands and exits 0 on a flyable plan", 
   const { status, stdout } = run("plan-check", plan);
   assert.equal(status, 0, stdout);
   assert.match(stdout, /^flyable: Orbit: 1 milestone\(s\), 2 task\(s\), repos root/m);
-  assert.match(stdout, /m1-t1  passed {6}attempt 1 RIO pass {2}Parse/);
-  assert.match(stdout, /m1-t2  pending {6}Write/);
+  assert.match(stdout, /m1-t1 passed {6}attempt 1 RIO pass Parse/);
+  assert.match(stdout, /m1-t2 pending {5}Write/);
   assert.match(stdout, /Log \(1\), last: 2026-10-09 10:00 m1-t1 Parse/);
 });
 
@@ -46,9 +44,9 @@ test("plan-check prints what each task touches and needs, and every overlap", as
 
 test("brief on the plan copy inside the integration worktree resolves the project, not the worktree", () => {
   const integration = join(dir, ".claude", "worktrees", "orbit-integration-root");
-  execFileSync("git", ["-C", dir, "add", "-A"]);
-  execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "plan"]);
-  execFileSync("git", ["-C", dir, "worktree", "add", "-q", "-b", "mission/orbit", integration, "HEAD"]);
+  git("add", "-A");
+  git("commit", "-q", "-m", "plan");
+  git("worktree", "add", "-q", "-b", "mission/orbit", integration, "HEAD");
   const { status, stdout, stderr } = run("brief", join(integration, "deliverables", "missions", "orbit.md"), "m1-t2", "--role", "wingman");
   assert.equal(status, 0, stderr);
   assert.ok(stdout.includes(`Your worktree is ${join(dir, ".claude", "worktrees", "orbit-m1-t2-root")}, on branch mission/orbit-m1-t2`), stdout);

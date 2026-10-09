@@ -30,12 +30,8 @@ finished Wingman and a fail hands the task back twice before it becomes Cory's; 
 milestone merges into `mission/<id>`, never main. Verified end to end against a fixture project
 with real agents on 2026-09-16: plan, dispatch, review verdict, merge, close and tick.
 
-**Mission protocol v2, 2026-10-09.** From the first overnight mission's audit: the plan on the
-mission branch is the ledger (M16), every brief comes from one template with the standing orders
-and the RIO's checklist, a read-only `rio.md` agent and `bin/maverick` for a mission flown by
-hand, `touches` and `needs` on every task with the overlap and stray checks, and blocker versus
-note verdicts with the merge-with-notes rule (M17). Each brick was reviewed by an independent
-RIO before the next; the first three failed their first review and were fixed. Not yet:
+**Mission protocol v2, 2026-10-09** (M18, M19), built as five bricks each reviewed by an
+independent RIO before the next; every brick failed its first review and was fixed. Not yet:
 dispatching by `needs`, the preflight, pause-not-end, the shared-environment rules, the report
 sections.
 

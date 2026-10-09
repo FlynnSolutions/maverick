@@ -7,9 +7,12 @@
 import { join, relative } from "node:path";
 import type { Milestone, Mission, MissionRepo, MissionTask } from "./missions.ts";
 
+/** The tools a RIO runs with: no Edit, no Write. Passed at spawn, so the fence holds whether or not `rio.md` is installed. */
+export const RIO_TOOLS = "Bash,Read,Grep,Glob";
+
 export interface BriefContext {
   projectPath: string;
-  mission: Pick<Mission, "id" | "name" | "plan" | "repos"> & Partial<Pick<Mission, "milestones">>;
+  mission: Pick<Mission, "id" | "name" | "plan" | "repos" | "milestones">;
   milestone: Pick<Milestone, "n" | "title" | "done" | "tasks">;
   task: MissionTask;
   repo: MissionRepo;
@@ -35,6 +38,12 @@ export const scratchFor = (task: Pick<MissionTask, "id" | "worktree">, role: str
   if (!task.worktree) throw new Error(`task ${task.id} has no worktree yet, so it has nowhere to work; a brief is written after dispatch`);
   return join(task.worktree, ".scratch", role);
 };
+
+/** The RIO's role name for a task, numbered by review, so two reviews never share a scratch folder. */
+export const rioRole = (task: Pick<MissionTask, "reviews">): string => `rio${task.reviews ?? 1}`;
+
+const planLine = (ctx: BriefContext, who: string): string =>
+  `The plan, with where every task stands, is on the mission branch at ${planOnBranch(ctx.projectPath, ctx.mission.plan, ctx.mission.repos)}. Read it; do not edit it${who}.`;
 
 /** A fact about this host, read from the host, so the brief stays true on another one. */
 const hostLine = (): string => process.platform === "darwin"
@@ -69,7 +78,7 @@ export const RIO_CHECKLIST: readonly string[] = [
   "Deployed state: where the task deploys or configures something live, the claim is verified against the live thing, not against the code.",
   "Accessibility, for anything a person looks at: keyboard focus, labels, contrast.",
   "Background processes: none left running, no port held.",
-  "Scope: the diff stays within the files the task was given; a file outside them is justified in the hand-back or is a finding.",
+  "Scope: the diff stays within the files the task was given; a file outside them is justified in the message of the commit that changes it, or is a finding.",
   "Generated output is read against its input: schema-valid is not the same as correct.",
   "The repo's own rules: its rulebook, its decision log, its design contract, before the task's own words.",
 ];
@@ -80,14 +89,13 @@ const list = (lines: readonly string[]): string[] => lines.map((l) => `- ${l}`);
 const ownership = (ctx: BriefContext): string[] => {
   const { task, milestone: m, repo } = ctx;
   const out: string[] = [];
-  if (task.touches?.length) out.push(`This task owns these paths and no others: ${task.touches.join(", ")}. A file outside them is a finding unless your final message says why it had to change; if it needs more, add a new file rather than editing a shared one.`);
+  if (task.touches?.length) out.push(`This task owns these paths and no others: ${task.touches.join(", ")}. A file outside them is a finding unless the commit that changes it says why in its message; if it needs more, add a new file rather than editing a shared one.`);
   for (const need of task.needs ?? []) {
-    const sibling = m.tasks.find((t) => t.id === need);
-    const earlier = ctx.mission.milestones?.flatMap((x) => x.tasks).find((t) => t.id === need);
-    const home = ctx.mission.repos.find((r) => r.label === (sibling ?? earlier)?.repo) ?? repo;
-    out.push(sibling
-      ? `It builds on ${need} (${sibling.title}), which flies beside it in this milestone on branch ${home.branch}-${need} in ${home.path}; read it there, and expect it to change until it passes.`
-      : `It builds on ${need}${earlier ? ` (${earlier.title})` : ""}, from an earlier milestone, already merged on ${home.branch} and checked out at ${home.integration}.`);
+    const target = ctx.mission.milestones.flatMap((x) => x.tasks).find((t) => t.id === need);
+    const home = ctx.mission.repos.find((r) => r.label === target?.repo) ?? repo;
+    out.push(m.tasks.includes(target!)
+      ? `It builds on ${need} (${target!.title}), which flies beside it in this milestone on branch ${home.branch}-${need} in ${home.path}; read it there, and expect it to change until it passes.`
+      : `It builds on ${need}${target ? ` (${target.title})` : ""}, from an earlier milestone, already merged on ${home.branch} and checked out at ${home.integration}.`);
   }
   return out.length ? ["", ...out] : [];
 };
@@ -101,13 +109,13 @@ const otherRepos = (ctx: BriefContext): string[] =>
     : [];
 
 /** The Wingman's brief; with `retry`, the brief for the fresh Wingman that follows a RIO's rejection. */
-export const wingmanBrief = (ctx: BriefContext, retry?: { findings: string }): string => {
+export const wingmanBrief = (ctx: BriefContext, findings?: string): string => {
   const { mission, milestone: m, task, repo } = ctx;
   return [
     `You are a Wingman on the mission "${mission.name}" in the project at ${ctx.projectPath}. You own one task and nothing else.`,
     "",
     `Your repo is ${repo.label}, at ${repo.path}. Your worktree is ${task.worktree}, on branch ${task.branch}, branched from ${repo.branch}. Work there and only there: do not touch the project's other repos, do not touch their main worktrees, do not switch branches, and do not merge anything.`,
-    `The plan, with where every task stands, is on the mission branch at ${planOnBranch(ctx.projectPath, mission.plan, mission.repos)}. Read it; do not edit it, Maverick writes it.`,
+    planLine(ctx, ", Maverick writes it"),
     `Your scratch path is ${scratchFor(task, "wingman")}; git ignores it.`,
     ...otherRepos(ctx),
     "",
@@ -118,8 +126,8 @@ export const wingmanBrief = (ctx: BriefContext, retry?: { findings: string }): s
     task.intent,
     ...ownership(ctx),
     "",
-    ...(retry ? [
-      `A RIO who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${retry.findings}\n\nStart from the code that is already on your branch. Fix every finding marked BLOCKER. Fix a NOTE when it is cheap; otherwise leave it and say why in your final message. Everything the RIO did not flag passed, and must still pass: re-run the repo's tests and the checks the RIO ran before you stop, because a retry that fixes the list and breaks what the list did not mention costs another full round. Do not argue with the RIO in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.`,
+    ...(findings ? [
+      `A RIO who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${findings}\n\nStart from the code that is already on your branch. Fix every finding marked BLOCKER. Fix a NOTE when it is cheap; otherwise leave it and say why in your final message. Everything the RIO did not flag passed, and must still pass: re-run the repo's tests and the checks the RIO ran before you stop, because a retry that fixes the list and breaks what the list did not mention costs another full round. Do not argue with the RIO in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.`,
       "",
     ] : []),
     "Read the repo's own rules before you write anything: its rulebook, its decision log and its design contract if it has them. Match the code around you.",
@@ -144,9 +152,9 @@ export const rioBrief = (ctx: BriefContext, file: string, previous?: string): st
   return [
     `You are the RIO for one Wingman on the mission "${mission.name}" in the project at ${ctx.projectPath}. You fly in its back seat: you read what it did and you call it. You did not write this code and you will not fix it.`,
     "",
-    `The work is in the ${repo.label} repo, on branch ${task.branch}, in the worktree at ${task.worktree}. Read every commit on it that ${repo.branch} does not have (\`git -C ${task.worktree} log ${repo.branch}..HEAD -p\`). Run things in that worktree; if you need a checkout of your own, make a detached one under ${scratchFor(task, `rio${task.reviews ?? 1}`)} and remove it when you are done.`,
-    `The plan, with where every task stands, is on the mission branch at ${planOnBranch(ctx.projectPath, mission.plan, mission.repos)}. Read it; do not edit it.`,
-    `Your scratch path is ${scratchFor(task, `rio${task.reviews ?? 1}`)}; git ignores it.`,
+    `The work is in the ${repo.label} repo, on branch ${task.branch}, in the worktree at ${task.worktree}. Read every commit on it that ${repo.branch} does not have (\`git -C ${task.worktree} log ${repo.branch}..HEAD -p\`). Run things in that worktree; if you need a checkout of your own, make a detached one under ${scratchFor(task, rioRole(task))} and remove it when you are done.`,
+    planLine(ctx, ""),
+    `Your scratch path is ${scratchFor(task, rioRole(task))}; git ignores it.`,
     "",
     `The task it was given: ${task.title}`,
     "",
@@ -154,7 +162,7 @@ export const rioBrief = (ctx: BriefContext, file: string, previous?: string): st
     "",
     `The milestone it belongs to is done when: ${m.done}`,
     ...ownership(ctx),
-    ...(task.strayed?.length ? ["", `Maverick diffed the branch against the paths the task owns. Files outside them: ${task.strayed.join(", ")}. Each is a finding unless the Wingman's final message justified it.`] : []),
+    ...(task.strayed?.length ? ["", `Maverick diffed the branch against the paths the task owns. Files outside them: ${task.strayed.join(", ")}. Each is a finding unless the commit that changed it says why in its message.`] : []),
     ...(previous ? ["", `This is a retry. The previous RIO's findings, verbatim, and the Wingman was told to fix every BLOCKER and any NOTE that was cheap, and to say in its final message which notes it left and why:\n\n${previous}\n\nCheck that each blocker is fixed and that nothing which passed before broke. A note the Wingman deliberately left stays a note unless it got worse.`] : []),
     ...(m.tasks.length > 1 ? ["", `Its siblings in this milestone, which will merge with it: ${m.tasks.filter((t) => t.id !== task.id).map((t) => t.title).join("; ")}. Say what happens when they land together.`] : []),
     "",

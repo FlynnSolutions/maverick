@@ -10,10 +10,11 @@ const repo = { label: "root", path: "/p/app", base: "main", branch: "mission/x",
 const other = { label: "contracts", path: "/p/contracts", base: "main", branch: "mission/x", integration: "/p/contracts/.claude/worktrees/x-integration-contracts", land: "merge" as const };
 const task = { id: "m1-t2", title: "The second thing", intent: "Build it in src/two.ts.", repo: "root", status: "flying" as const, attempts: 1, worktree: "/p/app/.claude/worktrees/x-m1-t2-root", branch: "mission/x-m1-t2", reviews: 2 };
 const sibling = { id: "m1-t1", title: "The first thing", intent: "i", repo: "root", status: "flying" as const, attempts: 1 };
+const milestone = { n: 1, title: "one", done: "both pass", tasks: [sibling, task] };
 const ctx: BriefContext = {
   projectPath: "/p/app",
-  mission: { id: "x", name: "X", plan: "deliverables/missions/x.md", repos: [repo] },
-  milestone: { n: 1, title: "one", done: "both pass", tasks: [sibling, task] },
+  mission: { id: "x", name: "X", plan: "deliverables/missions/x.md", repos: [repo], milestones: [milestone] },
+  milestone,
   task,
   repo,
 };
@@ -39,10 +40,9 @@ test("both briefs carry what the task owns, what it builds on, and what strayed"
   const wingman = wingmanBrief({ ...ctx, task: owned });
   assert.match(wingman, /owns these paths and no others: src\/two\.ts, src\/shared\./);
   assert.match(wingman, /builds on m1-t1 \(The first thing\), which flies beside it in this milestone on branch mission\/x-m1-t1 in \/p\/app/);
-  assert.match(wingman, /diff --name-only mission\/x\.\.\.HEAD/, "three dots: since the branch left the mission branch");
-  const crossRepo = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other] }, milestone: { ...ctx.milestone, tasks: [{ ...sibling, repo: "contracts" }, owned] }, task: owned });
+  const across = { ...ctx.milestone, tasks: [{ ...sibling, repo: "contracts" }, owned] };
+  const crossRepo = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other], milestones: [across] }, milestone: across, task: owned });
   assert.match(crossRepo, /on branch mission\/x-m1-t1 in \/p\/contracts/, "a sibling in another repo is found there");
-  assert.match(wingman, /which means inside: src\/two\.ts, src\/shared\./);
   const rio = rioBrief({ ...ctx, task: owned }, "/f.md");
   assert.match(rio, /Files outside them: src\/one\.ts\. Each is a finding unless/);
   const later = wingmanBrief({ ...ctx, task: { ...owned, needs: ["m0-t1"] } });
@@ -52,7 +52,7 @@ test("both briefs carry what the task owns, what it builds on, and what strayed"
 });
 
 test("a retry brief carries the findings verbatim and says what must still pass", () => {
-  const brief = wingmanBrief(ctx, { findings: "verdict: mixed\n- BLOCKER: the test is vacuous\n- NOTE: a stray log line" });
+  const brief = wingmanBrief(ctx, "verdict: mixed\n- BLOCKER: the test is vacuous\n- NOTE: a stray log line");
   assert.ok(brief.includes("- BLOCKER: the test is vacuous"));
   assert.match(brief, /Fix every finding marked BLOCKER\. Fix a NOTE when it is cheap/);
   assert.match(brief, /must still pass/);

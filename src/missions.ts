@@ -22,7 +22,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { FINISHED, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, toplevelOf } from "./git.ts";
+import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, toplevelOf, underPath } from "./git.ts";
 import { findingsOf, slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -31,8 +31,8 @@ import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
-import { FIELD_LINE, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
-import { planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
+import { FIELD_LINE, MARKER, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
+import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -311,19 +311,56 @@ const STATE_FIELDS: readonly string[] = ["status", "attempt", "verdict", "commit
 /** `touches` is comma separated (a path may hold a space); `needs` is ids, so any separator. Duplicates dropped. */
 const listField = (value: string | undefined, by: RegExp): string[] => [...new Set((value ?? "").split(by).map((v) => v.trim().replace(/^\.\//, "").replace(/\/+$/, "")).filter(Boolean))];
 
-/** A path a task may own: relative, plain, inside the repo. Globs and parent steps cannot be checked against a diff. */
-const badPath = (p: string): string | undefined =>
-  p.startsWith("/") || p.startsWith("~") ? "is absolute" : /[*?[\]{}]/.test(p) ? "is a glob" : p.includes("\\") ? "uses backslashes"
-    : p.split("/").some((seg) => seg === "." || seg === "..") ? "steps through . or .."
-    // Two paths with a space between them and no comma: a list written the wrong way, not one file.
-    : p.split(/\s+/).filter((part) => part.includes("/") || part.includes(".")).length > 1 ? "looks like several paths; separate them with commas" : undefined;
+/** A path a task may own: relative, plain, inside the repo. Anything a diff cannot be checked against is refused. */
+const PATH_RULES: Array<[test: (p: string) => boolean, why: string]> = [
+  [(p) => p.startsWith("/") || p.startsWith("~"), "is absolute"],
+  [(p) => /[*?[\]{}]/.test(p), "is a glob"],
+  [(p) => p.includes("\\"), "uses backslashes"],
+  [(p) => p.split("/").some((seg) => seg === "." || seg === ".."), "steps through . or .."],
+  // Two paths with a space between them and no comma: a list written the wrong way, not one file with a space in it.
+  [(p) => p.split(/\s+/).filter((part) => part.includes("/")).length > 1, "looks like several paths; separate them with commas"],
+];
+const badPath = (p: string): string | undefined => PATH_RULES.find(([bad]) => bad(p))?.[1];
 
 /** Whether two owned paths are the same file, or one is inside the other. */
-const pathsOverlap = (a: string, b: string): boolean => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+const pathsOverlap = (a: string, b: string): boolean => underPath(a, b) || underPath(b, a);
 
 /** Files a Wingman changed that none of its `touches` cover. Empty when the task owns nothing in particular. */
 export const strays = (files: string[], touches: string[] | undefined): string[] =>
-  touches?.length ? files.filter((f) => !touches.some((t) => f === t || f.startsWith(`${t}/`))) : [];
+  touches?.length ? files.filter((f) => !touches.some((t) => underPath(f, t))) : [];
+
+/**
+ * `needs` names tasks that exist, are not the task itself, are not in a later milestone (it
+ * would never be there in time), and do not lead back round to it. The loop check is one
+ * depth-first pass over the edges, reporting each back edge once, so a dense plan costs
+ * milliseconds rather than one walk per path.
+ */
+const needProblems = (milestones: Milestone[]): string[] => {
+  const problems: string[] = [];
+  const where = new Map(milestones.flatMap((m) => m.tasks.map((t) => [t.id, { m: m.n, t }] as const)));
+  for (const m of milestones) for (const t of m.tasks) for (const need of t.needs ?? []) {
+    const target = where.get(need);
+    if (!target) problems.push(`"${t.title}" in milestone ${m.n} needs "${need}", which is not a task in this plan`);
+    else if (need === t.id) problems.push(`"${t.title}" in milestone ${m.n} needs itself`);
+    else if (target.m > m.n) problems.push(`"${t.title}" in milestone ${m.n} needs ${need}, which flies later, in milestone ${target.m}`);
+  }
+  const colour = new Map<string, "in" | "done">();
+  const stack: string[] = [];
+  const walk = (id: string): void => {
+    colour.set(id, "in");
+    stack.push(id);
+    for (const next of where.get(id)?.t.needs ?? []) {
+      if (next === id || !where.has(next)) continue;
+      const seen = colour.get(next);
+      if (seen === "in") problems.push(`${[...stack.slice(stack.indexOf(next)), next].join(" needs ")}: a loop, so none of them could ever start`);
+      else if (!seen) walk(next);
+    }
+    stack.pop();
+    colour.set(id, "done");
+  };
+  for (const id of where.keys()) if (!colour.has(id)) walk(id);
+  return problems;
+};
 
 /** Tasks in one milestone whose `touches` overlap: they fly in parallel, so this is a collision planned in. */
 export const overlapsIn = (milestones: Milestone[]): string[] =>
@@ -356,18 +393,21 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
     if (!done) problems.push(`milestone ${n} has no "_done when: ..._" line`);
     const only = repos.length === 1 ? repos[0] : "";
     const tasks = section.groups.flatMap((g) => g.items).map((item, i) => {
-      const { status, attempt, verdict, commit, touches, needs } = item.fields;
-      if (status && !TASK_STATUSES.includes(status)) problems.push(`"${item.title}" in milestone ${n} has status "${status}", which is not one of: ${TASK_STATUSES.join(", ")}`);
-      if (attempt && !/^\d+$/.test(attempt)) problems.push(`"${item.title}" in milestone ${n} has attempt "${attempt}", which is not a count`);
-      if (verdict && !VERDICTS.includes(verdict)) problems.push(`"${item.title}" in milestone ${n} has verdict "${verdict}", which is not one of: ${VERDICTS.join(", ")}`);
+      const { status, attempt, verdict, commit, touches, needs, repo } = item.fields;
+      const okStatus = !status || TASK_STATUSES.includes(status);
+      const okAttempt = !attempt || /^\d+$/.test(attempt);
+      const okVerdict = !verdict || VERDICTS.includes(verdict);
+      if (!okStatus) problems.push(`"${item.title}" in milestone ${n} has status "${status}", which is not one of: ${TASK_STATUSES.join(", ")}`);
+      if (!okAttempt) problems.push(`"${item.title}" in milestone ${n} has attempt "${attempt}", which is not a count`);
+      if (!okVerdict) problems.push(`"${item.title}" in milestone ${n} has verdict "${verdict}", which is not one of: ${VERDICTS.join(", ")}`);
       return {
         id: `m${n}-t${i + 1}`,
         title: item.title,
         intent: item.description.trim(),
-        repo: item.fields.repo?.trim() || only,
-        status: (TASK_STATUSES.includes(status ?? "") ? status : "pending") as TaskStatus,
-        attempts: attempt && /^\d+$/.test(attempt) ? Number(attempt) : 0,
-        ...(verdict && VERDICTS.includes(verdict) ? { verdict: verdict as Verdict } : {}),
+        repo: repo?.trim() || only,
+        status: (okStatus && status ? status : "pending") as TaskStatus,
+        attempts: okAttempt && attempt ? Number(attempt) : 0,
+        ...(okVerdict && verdict ? { verdict: verdict as Verdict } : {}),
         ...(commit ? { head: commit } : {}),
         ...(touches ? { touches: listField(touches, /,/) } : {}),
         ...(needs ? { needs: listField(needs, /[,\s]+/) } : {}),
@@ -388,32 +428,7 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
   }
   if (!milestones.length) problems.push("the document has no milestones");
   milestones.sort((a, b) => a.n - b.n);
-  // `needs` names tasks that exist, that are not the task itself, that are not in a later
-  // milestone (it would never be there in time), and that do not lead back round to it.
-  const where = new Map(milestones.flatMap((m) => m.tasks.map((t) => [t.id, { m: m.n, t }] as const)));
-  for (const m of milestones) for (const t of m.tasks) for (const need of t.needs ?? []) {
-    const target = where.get(need);
-    if (!target) problems.push(`"${t.title}" in milestone ${m.n} needs "${need}", which is not a task in this plan`);
-    else if (need === t.id) problems.push(`"${t.title}" in milestone ${m.n} needs itself`);
-    else if (target.m > m.n) problems.push(`"${t.title}" in milestone ${m.n} needs ${need}, which flies later, in milestone ${target.m}`);
-  }
-  // A loop of any length: a depth-first walk that reports each back edge once, so a dense plan
-  // costs one pass over its edges rather than one per path through them.
-  const colour = new Map<string, "in" | "done">();
-  const stack: string[] = [];
-  const walk = (id: string): void => {
-    colour.set(id, "in");
-    stack.push(id);
-    for (const next of where.get(id)?.t.needs ?? []) {
-      if (next === id || !where.has(next)) continue;
-      const seen = colour.get(next);
-      if (seen === "in") problems.push(`${[...stack.slice(stack.indexOf(next)), next].join(" needs ")}: a loop, so none of them could ever start`);
-      else if (!seen) walk(next);
-    }
-    stack.pop();
-    colour.set(id, "done");
-  };
-  for (const id of where.keys()) if (!colour.has(id)) walk(id);
+  problems.push(...needProblems(milestones));
   return { name, intro, milestones, log, problems, overlaps: overlapsIn(milestones) };
 };
 
@@ -449,10 +464,9 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
       if (!task) return;
       const kept = lines.slice(item.start + 1, item.end).filter((l) => !STATE_FIELDS.includes(l.match(FIELD_LINE)?.[1] ?? ""));
       // State goes after the fields the Lead wrote and before the prose.
-      let at = 0;
-      kept.forEach((l, j) => { if (FIELD_LINE.test(l)) at = j + 1; });
+      const at = kept.findLastIndex((l) => FIELD_LINE.test(l)) + 1;
       const marker = task.status === "passed" ? "x" : task.status === "pending" ? " " : "~";
-      const bullet = lines[item.start].replace(/^- \[[ x~!-]\]/, `- [${marker}]`);
+      const bullet = lines[item.start].replace(MARKER, `- [${marker}]`);
       edits.push({ start: item.start, end: item.end, block: [bullet, ...kept.slice(0, at), ...stateLines(task), ...kept.slice(at)] });
     });
   }
@@ -476,30 +490,42 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
  * lost its context, can read where the mission stands from the file alone. The record under
  * `console-sessions/` keeps only what markdown cannot hold: session ids, worktrees, revisions.
  */
+/** The log lines for what changed between the ledger's last state and the mission's, timestamped locally. */
+const transitions = (was: Map<string, MissionTask>, mission: Mission, stamp: string): string[] =>
+  mission.milestones.flatMap((m) => m.tasks).filter((t) => {
+    const before = was.get(t.id);
+    return !before || before.status !== t.status || before.verdict !== t.verdict;
+  }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`);
+
+/**
+ * The checkout the ledger may be committed in, or an error. The commit lands wherever git
+ * finds a repo above the file, so the check is on the repo and the branch that will take it,
+ * not on the path: the integration worktree must exist, be the checkout the file is in, and
+ * have the mission branch out. Anything else is a commit on somebody's branch (M8), and a
+ * missing worktree is not something to mkdir into being.
+ */
+const ledgerRepoFor = async (mission: Mission, ledger: string): Promise<MissionRepo> => {
+  const repo = mission.repos.find((r) => underPath(ledger, r.integration));
+  if (!repo) throw new Error(`${ledger} is not in an integration worktree`);
+  const top = await assertCheckedOut(repo.integration, repo.branch);
+  if (top !== await toplevelOf(dirname(ledger)).catch(() => top)) throw new Error(`${ledger} is not inside the worktree at ${repo.integration}`);
+  return repo;
+};
+
 const syncPlan = async (project: Project, mission: Mission, decisions: string[] = []): Promise<string | undefined> => {
   const source = join(project.path, mission.plan);
   let ledger = "";
   try {
     ledger = planOnBranch(project.path, mission.plan, mission.repos);
-    // The commit lands wherever git finds a repo above the file, so the check is on the repo
-    // and the branch that will take it, not on the path: the integration worktree must exist,
-    // be the repo the file is in, and have the mission branch out. Anything else is a commit on
-    // somebody's branch (M8), and a missing worktree is not something to mkdir into being.
-    const repo = mission.repos.find((r) => ledger.startsWith(`${r.integration}/`));
-    if (!repo) throw new Error(`${ledger} is not in an integration worktree`);
-    const [top, branch] = await Promise.all([toplevelOf(repo.integration), currentBranch(repo.integration)]);
-    if (top !== await toplevelOf(dirname(ledger)).catch(() => top)) throw new Error(`${ledger} is not inside the worktree at ${repo.integration}`);
-    if (branch !== repo.branch) throw new Error(`${repo.integration} has ${branch || "a detached HEAD"} checked out, not ${repo.branch}`);
-    const current = await readFile(ledger, "utf8").catch(() => readFile(source, "utf8"));
+    // Read and diff first: a pass that changed nothing costs one read and no git.
+    const existing = await readFile(ledger, "utf8").catch(() => null);
+    const current = existing ?? await readFile(source, "utf8");
     const was = new Map(parsePlan(current).milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
     const d = new Date();
     const stamp = `${today()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    const moved = mission.milestones.flatMap((m) => m.tasks).filter((t) => {
-      const before = was.get(t.id);
-      return !before || before.status !== t.status || before.verdict !== t.verdict;
-    }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`);
-    const entries = [...moved, ...decisions.map((d) => `${stamp} ${d}`)];
-    if (!entries.length && (await readFile(ledger, "utf8").catch(() => null)) !== null) return undefined;
+    const entries = [...transitions(was, mission, stamp), ...decisions.map((x) => `${stamp} ${x}`)];
+    if (!entries.length && existing !== null) return undefined;
+    await ledgerRepoFor(mission, ledger);
     await mkdir(dirname(ledger), { recursive: true });
     await writeFile(ledger, applyPlanState(current, mission.milestones, entries), "utf8");
     await commitFile(ledger, `mission ${mission.id}: ${entries[0]?.replace(/^\S+ \S+ /, "") ?? "state"}${entries.length > 1 ? ` (+${entries.length - 1})` : ""}`);
@@ -521,9 +547,9 @@ const recorded = async (project: Project, mission: Mission, decisions: string[] 
   if (why) await changeMission(project.id, mission.id, (fresh) => { fresh.trouble = [fresh.trouble, why].filter(Boolean).join(" · "); }).catch(() => undefined);
   return mission;
 };
-const writeThenSync = async (project: Project, mission: Mission, decisions: string[] = []): Promise<void> => {
+const writeThenSync = async (project: Project, mission: Mission, decisions: string[] = []): Promise<Mission> => {
   await writeMission(mission);
-  await recorded(project, mission, decisions);
+  return recorded(project, mission, decisions);
 };
 
 /* ---------- what it costs, before it runs ---------- */
@@ -769,12 +795,6 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
 
 const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo): BriefContext => ({ projectPath: project.path, mission, milestone: m, task, repo });
 
-const wingmanPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, findings?: string): string =>
-  wingmanBrief(briefContext(project, mission, m, task, repo), findings ? { findings } : undefined);
-
-const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, file: string, previous?: string): string =>
-  rioBrief(briefContext(project, mission, m, task, repo), file, previous);
-
 /**
  * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:
  * a hand-driven retry rewinds that, and a colliding path meant the sweep read the previous
@@ -913,7 +933,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
       ({ worktree: task.worktree, branch: task.branch } = taskLayout(project, cfg, mission.id, task, repo));
       await ensureWorktree(repo.path, task.worktree, task.branch, repo.branch);
       task.base = bases.get(repo.label);
-      task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanPrompt(project, mission, m, task, repo), cfg.wingmanAgent);
+      task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo)), cfg.wingmanAgent);
       task.status = "flying";
       task.started = new Date().toISOString();
       task.attempts = 1;
@@ -927,8 +947,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
     await writeMission(mission);
   }
   m.dispatched = new Date().toISOString();
-  await writeThenSync(project, mission);
-  return mission;
+  return writeThenSync(project, mission);
 };
 
 /**
@@ -938,13 +957,18 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
  * blocker stops, and with it everything that needs it, because its milestone cannot merge.
  */
 export const settleReview = (task: Pick<MissionTask, "attempts">, findings: string, said: Verdict): { status: "passed" | "retry" | "handed-back"; note?: string; carried?: string[] } => {
-  const { blockers, notes } = findingsOf(findings, said);
-  // A pass with a blocker in it is a RIO contradicting itself; the blocker wins.
-  const verdict = (said === "pass" || said === "pass with notes") && blockers.length ? "mixed" : said;
-  if (verdict === "pass" || verdict === "pass with notes") return { status: "passed", ...(notes.length ? { carried: notes } : {}) };
+  const sorted = findingsOf(findings);
+  const passing = said === "pass" || said === "pass with notes";
+  // On a pass an unsorted line rides as a note; on a fail or a mixed it is a blocker, and a
+  // verdict that lists nothing at all has said nothing is safe to carry. A pass with a
+  // blocker in it is a RIO contradicting itself, and the blocker wins.
+  const notes = passing ? [...sorted.notes, ...sorted.unsorted] : sorted.notes;
+  const blockers = passing ? sorted.blockers : [...sorted.blockers, ...sorted.unsorted];
+  if (!passing && !blockers.length && !notes.length) blockers.push("the RIO wrote no sorted findings; read as a blocker");
+  if (passing && !blockers.length) return { status: "passed", ...(notes.length ? { carried: notes } : {}) };
   if (task.attempts < MAX_ATTEMPTS) return { status: "retry" };
-  if (!blockers.length) return { status: "passed", note: `the RIO said ${verdict} after ${task.attempts} attempts with no blocker open; merged with ${notes.length} note(s) carried`, carried: notes };
-  return { status: "handed-back", note: `the RIO said ${verdict} after ${task.attempts} attempts with ${blockers.length} blocker(s) open; this one is yours` };
+  if (!blockers.length) return { status: "passed", note: `the RIO said ${said} after ${task.attempts} attempts with no blocker open; merged with ${notes.length} note(s) carried`, carried: notes };
+  return { status: "handed-back", note: `the RIO said ${said} after ${task.attempts} attempts with ${blockers.length} blocker(s) open; this one is yours` };
 };
 
 /** What was remembered about a task's last attempt, cleared when it goes back in the air. */
@@ -959,7 +983,7 @@ const forget = (task: MissionTask): void => {
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
   const previous = task.claudeId;
   const cfg = await missionConfigFor(project.path);
-  task.claudeId = await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanPrompt(project, mission, m, task, missionRepo(mission, task), findings), cfg.wingmanAgent);
+  task.claudeId = await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task)), findings), cfg.wingmanAgent);
   task.sessionId = undefined;
   task.status = "flying";
   task.attempts += 1;
@@ -1041,14 +1065,15 @@ const sweepOnce = async (project: Project): Promise<void> => {
           waiting.push(`${task.title} is waiting on you in its own session`);
         }
         if (task.status === "flying" && task.claudeId && isOver(state, task.claudeId, task.started)) {
+          const repo = missionRepo(mission, task);
           task.status = "built";
           task.ended = new Date().toISOString();
-          task.commits = await commitsAhead(missionRepo(mission, task).path, missionRepo(mission, task).branch, task.branch!).catch(() => []);
-          task.head = await revParse(missionRepo(mission, task).path, task.branch!).then((sha) => sha.slice(0, 7)).catch(() => undefined);
+          task.commits = await commitsAhead(repo.path, repo.branch, task.branch!).catch(() => []);
+          task.head = await revParse(repo.path, task.branch!).then((sha) => sha.slice(0, 7)).catch(() => undefined);
           // Against the commit the task was cut from, not the mission tip: the ledger moves that tip
           // on every transition, and a two-dot diff against it would call the ledger a stray.
           try {
-            task.strayed = strays(await changedFiles(missionRepo(mission, task).path, task.base ?? missionRepo(mission, task).branch, task.branch!), task.touches);
+            task.strayed = strays(await changedFiles(repo.path, task.base ?? repo.branch, task.branch!), task.touches);
           } catch (err) {
             task.strayed = undefined;
             console.error(`mission ${mission.id}: could not diff ${task.id} against its touches:`, (err as Error).message);
@@ -1060,7 +1085,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
           try {
             // The agent is installed in `~/.claude/agents/` (`rio.md` from this repo, by default); the brief says what to do, the tool list says what it cannot.
             const previous = task.reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: task.reviews - 1 }), "utf8").catch(() => undefined) : undefined;
-            const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, reviewPrompt(project, mission, m, task, missionRepo(mission, task), file, previous), cfg.rioAgent);
+            // The tool list is the fence, passed here so it holds whether or not the agent file was installed (M19).
+            const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task)), file, previous), cfg.rioAgent, RIO_TOOLS);
             task.review = { claudeId, file, started: new Date().toISOString() };
             task.status = "reviewing";
             agentCache.delete(project.path);
@@ -1083,8 +1109,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
           }
           task.verdict = verdict;
           await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { status: "closed", ended: new Date().toISOString() });
-          const settled = settleReview(task, findings!, verdict);
-          if (settled.status === "retry") {
+          const outcome = settleReview(task, findings!, verdict);
+          if (outcome.status === "retry") {
             try {
               await handBack(project, mission, m, task, findings!);
             } catch (err) {
@@ -1092,9 +1118,9 @@ const sweepOnce = async (project: Project): Promise<void> => {
               task.note = `could not hand the task back: ${(err as Error).message}`;
             }
           } else {
-            task.status = settled.status;
-            task.note = settled.note;
-            task.carried = settled.carried;
+            task.status = outcome.status;
+            task.note = outcome.note;
+            task.carried = outcome.carried;
           }
         }
       }
@@ -1125,6 +1151,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
         for (const task of m.tasks) {
           if (!task.commits?.length) continue;
           const repo = missionRepo(mission, task);
+          // The same precondition as the ledger's: the merge lands on whatever is checked out there (M8).
+          await assertCheckedOut(repo.integration, repo.branch);
           const result = await mergeInto(repo.integration, task.branch!, `mission ${mission.id}: ${task.title}`);
           if (!result.merged) {
             const paths = result.conflicts ?? [];
@@ -1314,8 +1342,6 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
     if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
     const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
     task.attempts = MAX_ATTEMPTS - 1;
-    // Back in the air means what was remembered about the last attempt is no longer the truth.
-    forget(task);
     await handBack(project, mission, m, task, findings);
     task.note = undefined;
     mission.status = "flying";
@@ -1429,8 +1455,8 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
 };
 
 /** The page saving where the person has got to in a milestone's walkthrough, or waiving it. */
-export const recordWalkthrough = async (project: Project, id: string, n: number, patch: WalkthroughPatch): Promise<Mission> =>
-  changeMission(project.id, id, (mission) => {
+export const recordWalkthrough = async (project: Project, id: string, n: number, patch: WalkthroughPatch): Promise<Mission> => {
+  const mission = await changeMission(project.id, id, (mission) => {
     const m = mission.milestones.find((x) => x.n === n);
     if (!m) throw new Error(`no milestone ${n} in ${mission.name}`);
     if (patch.waive) {
@@ -1442,6 +1468,9 @@ export const recordWalkthrough = async (project: Project, id: string, n: number,
     }
     return mission;
   });
+  // A waiver is a decision a person made about the mission; it belongs in the ledger with the others.
+  return patch.waive ? recorded(project, mission, [`milestone ${n} walkthrough waived by Cory: ${patch.waive.note.trim()}`]) : mission;
+};
 
 /**
  * What the review gate reads. A task that has passed will not change again — its range is

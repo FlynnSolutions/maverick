@@ -46,17 +46,16 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 handed-off`; `StepStatus` is `pending | running | finished | done | failed | skipped`.
 `MissionStatus` is `interviewing | planned | flying | blocked | review | closed | abandoned`;
 `TaskStatus` is `pending | flying | built | reviewing | passed | handed-back`; a RIO's `Verdict`
-is `pass | pass with notes | fail | mixed` (M17).
+is `pass | pass with notes | fail | mixed` (M19).
 
 **A mission's plan is not in its record.** The milestones and tasks live in the tracker as items
 carrying `mission` and `milestone`; the record holds the run, and the record's `milestones[]` is
 what was parsed from the approved plan document plus what each task's sessions did. If the two
 disagree the tracker wins, exactly as everywhere else ([`03-decisions.md`](./03-decisions.md) M7).
 
-**The plan on the mission branch is the ledger.** Once the mission flies, each task in the plan
-document carries `status`, `attempt`, `verdict` and `commit` fields and the document ends with a
-`## Log` of transitions and decisions, committed in the integration worktree after every change
-(M16). The record keeps what markdown cannot hold: session ids, worktrees, the revision.
+**The plan on the mission branch is the ledger** (M18): where every task stands is written under
+it as fields, and a `## Log` ends it. The record keeps what markdown cannot hold: session ids,
+worktrees, the revision.
 
 **A session record's `mission` names its owner, and that is what keeps it out of the ship's
 audit step.** A mission reviews its own work, so `src/ships.ts` skips a develop record that has

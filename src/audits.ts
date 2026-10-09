@@ -98,33 +98,38 @@ export const runAudit = async (project: Project, childId: string): Promise<Audit
 export const verdictOf = (findings: string | undefined): Verdict =>
   (findings?.match(/^verdict:\s*(pass with notes|pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
 
-/** A top-level list line: `- `, `* `, `+ ` or `1. `, with any bold stripped, so a RIO's own markdown habits do not hide a finding. Indented lines are evidence under one, not findings. */
+/**
+ * A list line (`- `, `* `, `+ `, `1. `, bold stripped), so a RIO's own markdown habits do not
+ * hide a finding. Top-level only, unless the line names its kind: indented lines are evidence
+ * under a finding, but a BLOCKER written under a NOTE is still a blocker.
+ */
 const listLine = (line: string): string | undefined => {
-  const m = line.match(/^(?:[-*+]|\d+[.)])\s*(.*)$/);
-  return m ? m[1].replace(/\*\*/g, "").trim() : undefined;
+  const m = line.match(/^(\s*)(?:[-*+]|\d+[.)])(?:\s+|(?=\**[A-Z]))(.*)$/);
+  if (!m) return undefined;
+  const text = m[2].replace(/\*\*/g, "").trim();
+  return m[1] && !/^BLOCKER:/i.test(text) ? undefined : text;
 };
 
+export interface Findings { blockers: string[]; notes: string[]; unsorted: string[] }
+
 /**
- * A finding is a list line that says what it is: `BLOCKER:` (the task does not pass until it
- * is fixed), `NOTE:` (fix if cheap, else carried) or `UNVERIFIED:` (what the RIO could not
- * check; carried with the notes so it reaches the page). In a fail or a mixed, every other
- * list line is a blocker: a RIO that did not sort a finding has not said it is safe to carry,
- * and one sorted line must not switch that off for the rest.
+ * What a RIO wrote, sorted by the word each line starts with: `BLOCKER:`, `NOTE:`,
+ * `UNVERIFIED:` (carried with the notes, so it reaches the page), or none. What an unsorted
+ * line means is the verdict's business (`settleReview`); this only reads.
  */
-export const findingsOf = (findings: string, verdict: Verdict): { blockers: string[]; notes: string[] } => {
-  const blockers: string[] = [];
-  const notes: string[] = [];
+export const findingsOf = (findings: string): Findings => {
+  const out: Findings = { blockers: [], notes: [], unsorted: [] };
   for (const raw of findings.split(/\r?\n/)) {
     const line = listLine(raw);
     if (line === undefined || /^verdict:/i.test(line)) continue;
     const sorted = line.match(/^(BLOCKER|NOTE|UNVERIFIED):\s*(.*)$/i);
-    if (sorted?.[1].toUpperCase() === "BLOCKER") blockers.push(sorted[2]);
-    else if (sorted) notes.push(sorted[1].toUpperCase() === "UNVERIFIED" ? `unverified: ${sorted[2]}` : sorted[2]);
-    else if (verdict === "fail" || verdict === "mixed") blockers.push(line);
+    const kind = sorted?.[1].toUpperCase();
+    if (kind === "BLOCKER") out.blockers.push(sorted![2]);
+    else if (kind === "NOTE") out.notes.push(sorted![2]);
+    else if (kind === "UNVERIFIED") out.notes.push(`unverified: ${sorted![2]}`);
+    else out.unsorted.push(line);
   }
-  // A fail or a mixed that lists nothing (prose, a table, a bare verdict) has said nothing is safe to carry.
-  if (!blockers.length && !notes.length && (verdict === "fail" || verdict === "mixed")) blockers.push("the RIO wrote no sorted findings; read as a blocker");
-  return { blockers, notes };
+  return out;
 };
 
 export const auditView = async (record: SessionRecord & { audit?: AuditInfo; decision?: string }, agentStates: Map<string, string>): Promise<AuditView> => {

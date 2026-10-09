@@ -47,7 +47,7 @@ commits carry an agent identity or trailer, not only the human's.
 ## Built 2026-10-09, on `feat/protocol-v2`
 
 Changes 1, 2, 4, 5, 6 and 12 of the table above, as five bricks with a test or a check each, each
-reviewed by an independent RIO before the next. Decisions M16 and M17. Not built: 3 (the
+reviewed by an independent RIO before the next. Decisions M18 and M19. Not built: 3 (the
 contracts step), 7 to 11, 13 to 17, and dispatching by `needs`; those are the proposal that
 follows this branch.
 

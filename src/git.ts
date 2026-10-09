@@ -14,6 +14,26 @@ export const toplevelOf = async (dir: string): Promise<string> => {
 
 export const repoRootOf = (filePath: string): Promise<string> => toplevelOf(dirname(filePath));
 
+/** The repository's own `.git`, absolute: for a worktree, the main checkout's, which its worktrees share. */
+export const commonDirOf = async (dir: string): Promise<string> => {
+  const { stdout } = await run("git", ["-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  return stdout.trim();
+};
+
+/** Whether `path` is `parent` or inside it. The one spelling of a prefix test, so `src/a.tsx` is never under `src/a.ts`. */
+export const underPath = (path: string, parent: string): boolean => path === parent || path.startsWith(`${parent}/`);
+
+/**
+ * Refuse unless the checkout at `worktree` exists, is its own checkout (not a plain folder
+ * inside another one), and has `branch` out. The precondition of every write that may only
+ * land on a mission branch (M8): the ledger, the milestone merge.
+ */
+export const assertCheckedOut = async (worktree: string, branch: string): Promise<string> => {
+  const [top, current] = await Promise.all([toplevelOf(worktree), currentBranch(worktree)]);
+  if (current !== branch) throw new Error(`${worktree} has ${current || "a detached HEAD"} checked out, not ${branch}`);
+  return top;
+};
+
 /**
  * Stage exactly this file and commit it. Every console edit commits immediately so other
  * sessions see it on their next read (Cory, 2026-09-14). Never `git add -A`.
@@ -138,8 +158,7 @@ const branchExists = async (repoPath: string, branch: string): Promise<boolean> 
  * cannot sweep a worktree in as an embedded repo. Idempotent.
  */
 export const excludeLocally = async (repoPath: string, patterns: string[]): Promise<void> => {
-  const { stdout } = await run("git", ["-C", repoPath, "rev-parse", "--git-common-dir"]);
-  const file = join(stdout.trim().startsWith("/") ? stdout.trim() : join(repoPath, stdout.trim()), "info", "exclude");
+  const file = join(await commonDirOf(repoPath), "info", "exclude");
   const existing = await readFile(file, "utf8").catch((err: NodeJS.ErrnoException) => { if (err.code === "ENOENT") return ""; throw err; });
   const have = new Set(existing.split("\n").map((l) => l.trim()));
   const missing = patterns.filter((p) => !have.has(p));

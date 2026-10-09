@@ -372,7 +372,7 @@ group does today. Living with it until a third kind of Priority group appears.
 for a wrong proposal is to propose again. One fewer place the page and the file can disagree.
 If dropping two bullets turns out to be a conversation too often, that is the next brick.
 
-## M16 — The plan on the mission branch is the ledger ✅ built
+## M18 — The plan on the mission branch is the ledger ✅ built
 
 Once a mission flies, Maverick writes each task's `status`, `attempt`, `verdict` and `commit`
 under it in the plan document and appends every transition and every decision a person made
@@ -400,7 +400,7 @@ committing to `main` twice; the guard and its test came from that.
 **Rejected: a state file beside the record.** It would be a second store (M1) and invisible to
 the agents working the branch.
 
-## M17 — A finding is a blocker or a note, and notes ride ✅ built
+## M19 — A finding is a blocker or a note, and notes ride ✅ built
 
 A RIO's findings are lines that say what they are: `BLOCKER:` (the task does not pass until it
 is fixed) or `NOTE:` (fix if cheap, else carried). Its verdict may be `pass with notes`. A pass,

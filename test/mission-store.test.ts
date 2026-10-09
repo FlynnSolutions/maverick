@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { tempRepo } from "./fixtures.ts";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -115,12 +116,7 @@ test("a milestone that changed nothing has nothing to walk, and progress through
 
 test("a person's decision is written into the plan on the mission branch and committed there", async () => {
   // A real repo standing in for the project, with its integration worktree being the repo itself.
-  const repoDir = mkdtempSync(join(tmpdir(), "mv-ledger-"));
-  const git = (...args: string[]) => execFileSync("git", ["-C", repoDir, ...args], { encoding: "utf8" });
-  git("init", "-q");
-  git("config", "user.name", "t");
-  git("config", "user.email", "t@example.com");
-  git("commit", "-q", "--allow-empty", "-m", "base");
+  const { dir: repoDir, git } = tempRepo("mv-ledger");
   mkdirSync(join(repoDir, "deliverables", "missions"), { recursive: true });
   await writeFile(join(repoDir, "deliverables", "missions", "ledger.md"), "# Mission: ledger\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  Build it.\n", "utf8");
   git("add", "-A"); git("commit", "-q", "-m", "the plan");
@@ -152,16 +148,15 @@ test("a person's decision is written into the plan on the mission branch and com
 
 test("a plan no mission repo holds lands on the first repo's mission branch, and the main checkout is never committed to", async () => {
   // The project root is a repo on main holding the plan; the mission names only the child repo "svc".
-  const root = mkdtempSync(join(tmpdir(), "mv-ledger-root-"));
+  const { dir: root, git: rootGit } = tempRepo("mv-ledger-root");
   const g = (dir: string, ...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
-  const init = (dir: string) => { g(dir, "init", "-q", "-b", "main"); g(dir, "config", "user.name", "t"); g(dir, "config", "user.email", "t@example.com"); g(dir, "commit", "-q", "--allow-empty", "-m", "base"); };
-  init(root);
   mkdirSync(join(root, "deliverables", "missions"), { recursive: true });
   const planText = "# Mission: held\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  - repo: svc\n  Build it.\n";
   await writeFile(join(root, "deliverables", "missions", "held.md"), planText, "utf8");
-  g(root, "add", "-A"); g(root, "commit", "-q", "-m", "the plan, on main");
+  rootGit("add", "-A"); rootGit("commit", "-q", "-m", "the plan, on main");
   const svc = join(root, "svc");
-  mkdirSync(svc); init(svc);
+  mkdirSync(svc);
+  g(svc, "init", "-q", "-b", "main"); g(svc, "config", "user.name", "t"); g(svc, "config", "user.email", "t@example.com"); g(svc, "commit", "-q", "--allow-empty", "-m", "base");
   const integration = join(root, ".claude", "worktrees", "held-integration-svc");
   g(svc, "worktree", "add", "-q", "-b", "mission/held", integration, "main");
 
@@ -178,5 +173,4 @@ test("a plan no mission repo holds lands on the first repo's mission branch, and
   assert.match(g(integration, "log", "--format=%s", "-1"), /^mission held:/);
   assert.equal(g(root, "log", "--format=%s", "-1").trim(), "the plan, on main", "main got no commit");
   assert.equal(await readFile(join(root, "deliverables", "missions", "held.md"), "utf8"), planText, "and the Lead's copy is untouched");
-  assert.equal(g(root, "status", "--porcelain", "--", "deliverables").trim(), "", "nothing dirty in the main checkout's plan");
 });

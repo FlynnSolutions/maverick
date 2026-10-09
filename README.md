@@ -298,9 +298,8 @@ bin/maverick brief deliverables/missions/<id>.md m1-t2 --role wingman    # the b
 bin/maverick brief deliverables/missions/<id>.md m1-t2 --role rio --findings <file>
 ```
 
-The plan on the mission branch is the ledger: once a mission flies, Maverick writes each task's
-status, attempt, verdict and commit under it and appends every transition and decision to a
-`## Log` section, committed in the integration worktree after every change.
+Once a mission flies, the plan on the mission branch is the ledger: where every task stands is
+written under it, and a `## Log` records each transition and decision (`docs/03-decisions.md`, M18).
 
 ## Not built yet
 

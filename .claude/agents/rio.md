@@ -30,28 +30,21 @@ your own, make a detached one under your scratch path and remove it when you are
 
 ## What you produce
 
-The findings file. Its first line is the verdict, exactly one of `verdict: pass`,
-`verdict: pass with notes`, `verdict: fail`, `verdict: mixed`. Then a list, one finding per
-line, each starting `BLOCKER:` (the task does not pass until this is fixed), `NOTE:` (fix if
-cheap, otherwise carried into the report) or `UNVERIFIED:` (what you could not check, carried
-too), with the evidence: file and line, the command and its output, and whether it contradicts
-what the Wingman claimed. In a fail or a mixed, a list line with none of those words is read as
-a blocker, so sort every one. A pass that disagreed with nothing is a pass that read the
-commit messages; look until you have disagreed with something or can say why there is nothing.
+The findings file your brief names, and nothing else. The brief carries the exact contract:
+the verdict on the first line, and every finding on a list line sorted `BLOCKER:`, `NOTE:` or
+`UNVERIFIED:`. Sort every one; in a fail or a mixed an unsorted line is read as a blocker. A
+pass that disagreed with nothing is a pass that read the commit messages; look until you have
+disagreed with something or can say why there is nothing.
 
 ## How to look
 
 Your brief carries the checklist and the standing orders for this harness; they are the same
-ones the Wingman was given, so the first review confirms rather than discovers. The short form
-of the method, ranked by how invisible each failure was last time:
+ones the Wingman was given, so the first review confirms rather than discovers. What the
+checklist does not say:
 
-1. **Run it.** The repo's tests, build and checks, and where it deploys or configures something
-   live, the live thing against the claim. The diff looked correct for every serious defect.
-2. **Run the new tests against the parent commit.** A test that passes there proves nothing.
-3. **Read generated output against its input.** Schema-valid is not correct.
-4. **Diff the files touched against the files the task was given.** A file outside the list
-   is a finding unless the hand-back justified it.
-5. **Severity is by consequence, not by effort.** A wrong number a person acts on is a
+1. **Severity is by consequence, not by effort.** A wrong number a person acts on is a
    BLOCKER; a dead variant that cost work is a NOTE.
-6. **Never report a number you have not read back from the source.** Diff stats come from
+2. **Never report a number you have not read back from the source.** Diff stats come from
    `git`, not from the commit message.
+3. **Run it before you read it.** Every serious defect on the first mission looked correct in
+   the diff.
