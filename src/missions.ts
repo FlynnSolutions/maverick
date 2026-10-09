@@ -409,26 +409,47 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
  * lost its context, can read where the mission stands from the file alone. The record under
  * `console-sessions/` keeps only what markdown cannot hold: session ids, worktrees, revisions.
  */
-const syncPlan = async (project: Project, mission: Mission, decisions: string[] = []): Promise<void> => {
+const syncPlan = async (project: Project, mission: Mission, decisions: string[] = []): Promise<string | undefined> => {
   const source = join(project.path, mission.plan);
-  const ledger = planOnBranch(project.path, mission.plan, mission.repos);
+  let ledger = "";
   try {
+    ledger = planOnBranch(project.path, mission.plan, mission.repos);
+    // A ledger that is not inside an integration worktree is a commit on somebody's branch.
+    if (!mission.repos.some((r) => ledger.startsWith(`${r.integration}/`))) throw new Error(`${ledger} is not in an integration worktree`);
     const current = await readFile(ledger, "utf8").catch(() => readFile(source, "utf8"));
     const was = new Map(parsePlan(current).milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
-    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+    const d = new Date();
+    const stamp = `${today()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     const moved = mission.milestones.flatMap((m) => m.tasks).filter((t) => {
       const before = was.get(t.id);
       return !before || before.status !== t.status || before.verdict !== t.verdict;
     }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}`);
     const entries = [...moved, ...decisions.map((d) => `${stamp} ${d}`)];
-    if (!entries.length && (await readFile(ledger, "utf8").catch(() => null)) !== null) return;
+    if (!entries.length && (await readFile(ledger, "utf8").catch(() => null)) !== null) return undefined;
     await mkdir(join(ledger, ".."), { recursive: true });
     await writeFile(ledger, applyPlanState(current, mission.milestones, entries), "utf8");
     await commitFile(ledger, `mission ${mission.id}: ${entries[0]?.replace(/^\S+ \S+ /, "") ?? "state"}${entries.length > 1 ? ` (+${entries.length - 1})` : ""}`);
+    return undefined;
   } catch (err) {
-    console.error(`mission ${mission.id}: could not write its ledger at ${ledger}:`, (err as Error).message);
-    mission.trouble = [mission.trouble, `the ledger at ${relative(project.path, ledger)} could not be written: ${(err as Error).message.split("\n")[0]}`].filter(Boolean).join(" · ");
+    const why = `the ledger ${ledger ? `at ${relative(project.path, ledger)} ` : ""}could not be written: ${(err as Error).message.split("\n")[0]}`;
+    console.error(`mission ${mission.id}: ${why}`);
+    return why;
   }
+};
+
+/**
+ * The record is written first and the ledger follows it, so what the file says is what landed
+ * (M11: a write the record refuses must not already be in the ledger). A ledger that could not
+ * be written is noted on the record afterwards, in its own small write, so the page can say it.
+ */
+const recorded = async (project: Project, mission: Mission, decisions: string[] = []): Promise<Mission> => {
+  const why = await syncPlan(project, mission, decisions);
+  if (why) await changeMission(project.id, mission.id, (fresh) => { fresh.trouble = [fresh.trouble, why].filter(Boolean).join(" · "); }).catch(() => undefined);
+  return mission;
+};
+const writeThenSync = async (project: Project, mission: Mission, decisions: string[] = []): Promise<void> => {
+  await writeMission(mission);
+  await recorded(project, mission, decisions);
 };
 
 /* ---------- what it costs, before it runs ---------- */
@@ -831,8 +852,7 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
     await writeMission(mission);
   }
   m.dispatched = new Date().toISOString();
-  await writeMission(mission);
-  await syncPlan(project, mission);
+  await writeThenSync(project, mission);
   return mission;
 };
 
@@ -985,7 +1005,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
           mission.status = "blocked";
           mission.trouble = `milestone ${m.n} collided in ${m.resolve.repo} and the Strike Lead could not reconcile it: ${(m.resolve.paths ?? []).join(", ")}. Both sides are work the plan asked for, so this is a question about the plan.`;
           m.resolve = undefined;
-          await writeMission(mission).catch(() => undefined);
+          await writeThenSync(project, mission, [mission.trouble]).catch(() => undefined);
           return;
         }
       }
@@ -1021,7 +1041,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
             if ((mission.conflictsSeen ?? 0) >= 3) {
               mission.escalation = `${mission.conflictsSeen} milestones of this mission have collided. That is the plan putting work that touches the same lines into one milestone, not a merge that needs redoing. The plan is the thing to change.`;
             }
-            await writeMission(mission).catch(() => undefined);
+            await writeThenSync(project, mission, [mission.trouble ?? `milestone ${m.n} collided`]).catch(() => undefined);
             return;
           }
           if (result.sha) m.mergeShas[repo.label] = result.sha;
@@ -1039,7 +1059,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
             // against the old thing and look correct doing it. It waits for a person instead.
             mission.status = "blocked";
             mission.trouble = `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`;
-            await writeMission(mission).catch(() => undefined);
+            await writeThenSync(project, mission, [mission.trouble]).catch(() => undefined);
             return;
           }
         }
@@ -1064,13 +1084,11 @@ const sweepOnce = async (project: Project): Promise<void> => {
     // which can be well after the formation was made; keep offering it the lead seat.
     await seatTheLead(mission).catch(() => undefined);
     try {
-      await writeMission(mission);
+      await writeThenSync(project, mission);
     } catch (err) {
       if (!(err instanceof StaleMissionError)) throw err;
       console.log(`mission sweep yielded ${mission.id} to a change made while it ran; the next pass picks it up`);
-      continue;
     }
-    await syncPlan(project, mission);
   }
 };
 
@@ -1121,6 +1139,7 @@ export const abandonMission = async (project: Project, id: string, stop: (claude
     mission.trouble = `abandoned; ${stopped.length} session(s) stopped. The branches and worktrees are untouched.`;
     return mission;
   });
+  await recorded(project, mission, [`abandoned by Cory; ${stopped.length} session(s) stopped`]);
   return { mission, stopped };
 };
 
@@ -1192,9 +1211,8 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
     task.note = undefined;
     mission.status = "flying";
     mission.trouble = undefined;
-    await syncPlan(project, mission, [`${task.id} sent back out by Cory`]);
     return mission;
-  });
+  }).then((mission) => recorded(project, mission, [`${taskId} sent back out by Cory`]));
 
 /** Accept a task Cory has looked at himself, so a milestone its RIO failed can still merge. */
 export const acceptTask = async (project: Project, id: string, taskId: string, note: string): Promise<Mission> =>
@@ -1207,9 +1225,8 @@ export const acceptTask = async (project: Project, id: string, taskId: string, n
     if (task.claudeId) await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { decision: "accepted" });
     mission.status = "flying";
     mission.trouble = undefined;
-    await syncPlan(project, mission, [`${task.id} ${task.note}`]);
     return mission;
-  });
+  }).then((mission) => recorded(project, mission, [`${taskId} accepted by Cory over the RIO: ${note}`.trim()]));
 
 /**
  * Close the mission: tick every passed task's item in the tracker, in one commit, and hand the
@@ -1298,7 +1315,7 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   const commit = ticked.length ? await commitFile(tracker.path, `console: mission "${mission.name}" done (${ticked.length} items)`) : "no change";
   mission.status = "closed";
   mission.finished = mission.finished ?? new Date().toISOString();
-  await writeMission(mission);
+  await writeThenSync(project, mission, [`closed by Cory: ${ticked.length} item(s) ticked${pullRequests.length ? `, ${pullRequests.join(", ")}` : ""}`]);
   return { mission, commit, ticked, pullRequests };
 };
 

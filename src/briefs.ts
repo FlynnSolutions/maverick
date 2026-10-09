@@ -15,11 +15,19 @@ export interface BriefContext {
   repo: MissionRepo;
 }
 
-/** The plan as it lives on the mission branch: in the integration worktree of the repo that holds it, else where the Lead wrote it. */
+/**
+ * The plan as it lives on the mission branch: in the integration worktree of the repo that holds
+ * it, at the same relative path. A plan no mission repo holds (a multi-repo project whose root is
+ * not a repo, or is not named by the plan) goes on the first repo's mission branch, at its path
+ * relative to the project. It never stays where the Lead wrote it: that is the main checkout, on
+ * whatever branch it has out, and a ledger committed there is a commit on a base branch (M8).
+ */
 export const planOnBranch = (projectPath: string, plan: string, repos: MissionRepo[]): string => {
   const source = join(projectPath, plan);
-  const repo = repos.filter((r) => source.startsWith(`${r.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
-  return repo ? join(repo.integration, relative(repo.path, source)) : source;
+  const holder = repos.filter((r) => source.startsWith(`${r.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
+  if (holder) return join(holder.integration, relative(holder.path, source));
+  if (!repos.length) throw new Error(`the plan ${plan} has no mission branch to live on: the mission names no repos`);
+  return join(repos[0].integration, relative(projectPath, source));
 };
 
 /** Where an agent may make a mess: inside its own worktree, in a folder git ignores (see `excludeLocally`). */

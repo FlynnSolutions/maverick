@@ -118,7 +118,9 @@ test("a person's decision is written into the plan on the mission branch and com
   const repoDir = mkdtempSync(join(tmpdir(), "mv-ledger-"));
   const git = (...args: string[]) => execFileSync("git", ["-C", repoDir, ...args], { encoding: "utf8" });
   git("init", "-q");
-  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "base");
+  git("config", "user.name", "t");
+  git("config", "user.email", "t@example.com");
+  git("commit", "-q", "--allow-empty", "-m", "base");
   mkdirSync(join(repoDir, "deliverables", "missions"), { recursive: true });
   await writeFile(join(repoDir, "deliverables", "missions", "ledger.md"), "# Mission: ledger\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  Build it.\n", "utf8");
   const m = await seed("ledger");
@@ -135,4 +137,35 @@ test("a person's decision is written into the plan on the mission branch and com
   assert.match(plan.log[1], /accepted by Cory over the RIO: read the diff myself/, "and so is the decision");
   assert.match(git("log", "--format=%s", "-1"), /^mission ledger: m1-t1 t: pending to passed \(\+1\)/, "committed on the mission branch's worktree");
   assert.equal(git("status", "--porcelain").trim(), "", "nothing left uncommitted");
+});
+
+test("a plan no mission repo holds lands on the first repo's mission branch, and the main checkout is never committed to", async () => {
+  // The project root is a repo on main holding the plan; the mission names only the child repo "svc".
+  const root = mkdtempSync(join(tmpdir(), "mv-ledger-root-"));
+  const g = (dir: string, ...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  const init = (dir: string) => { g(dir, "init", "-q", "-b", "main"); g(dir, "config", "user.name", "t"); g(dir, "config", "user.email", "t@example.com"); g(dir, "commit", "-q", "--allow-empty", "-m", "base"); };
+  init(root);
+  mkdirSync(join(root, "deliverables", "missions"), { recursive: true });
+  const planText = "# Mission: held\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  - repo: svc\n  Build it.\n";
+  await writeFile(join(root, "deliverables", "missions", "held.md"), planText, "utf8");
+  g(root, "add", "-A"); g(root, "commit", "-q", "-m", "the plan, on main");
+  const svc = join(root, "svc");
+  mkdirSync(svc); init(svc);
+  const integration = join(root, ".claude", "worktrees", "held-integration-svc");
+  g(svc, "worktree", "add", "-q", "-b", "mission/held", integration, "main");
+
+  const m = await seed("held");
+  m.plan = "deliverables/missions/held.md";
+  m.milestones[0].tasks[0].repo = "svc";
+  m.milestones[0].tasks[0].status = "handed-back";
+  m.repos = [{ label: "svc", path: svc, base: "main", branch: "mission/held", integration, land: "merge" }];
+  await writeFile(file("held"), JSON.stringify(m), "utf8");
+  await acceptTask({ id: "p", name: "P", path: root, trackers: [] } as never, "held", "m1-t1", "fine");
+
+  const ledger = await readFile(join(integration, "deliverables", "missions", "held.md"), "utf8");
+  assert.equal(parsePlan(ledger, ["svc"]).milestones[0].tasks[0].status, "passed", "the ledger is on svc's mission branch");
+  assert.match(g(integration, "log", "--format=%s", "-1"), /^mission held:/);
+  assert.equal(g(root, "log", "--format=%s", "-1").trim(), "the plan, on main", "main got no commit");
+  assert.equal(await readFile(join(root, "deliverables", "missions", "held.md"), "utf8"), planText, "and the Lead's copy is untouched");
+  assert.equal(g(root, "status", "--porcelain", "--", "deliverables").trim(), "", "nothing dirty in the main checkout's plan");
 });

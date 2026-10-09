@@ -235,3 +235,15 @@ test("applyPlanState writes the state under each task and reads back equal, leav
   assert.deepEqual(parsePlan(twice, ["root"]).log.map((l) => l.slice(0, 16)), ["2026-10-09 10:00", "2026-10-09 10:05"]);
   assert.ok(twice.endsWith("(RIO: pass)\n"), JSON.stringify(twice.slice(-80)));
 });
+
+test("a task whose title is not bold survives the marker the ledger puts on it", () => {
+  const plain = "# Mission: plain\n\nP.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] Plain title task\n  Do the plain thing.\n";
+  const { milestones } = parsePlan(plain, ["root"]);
+  milestones[0].tasks[0] = { ...milestones[0].tasks[0], status: "flying", attempts: 1 };
+  const back = parsePlan(applyPlanState(plain, milestones), ["root"]);
+  assert.equal(back.milestones[0].tasks[0].title, "Plain title task");
+  // A plain title has always been read into the intent as well (the legacy one-line shape); what matters is that the marker is not.
+  assert.equal(back.milestones[0].tasks[0].intent, parsePlan(plain, ["root"]).milestones[0].tasks[0].intent);
+  assert.doesNotMatch(back.milestones[0].tasks[0].intent, /\[~\]/);
+  assert.equal(back.milestones[0].tasks[0].status, "flying");
+});

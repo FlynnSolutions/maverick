@@ -20,8 +20,9 @@ const ctx: BriefContext = {
 
 test("the plan an agent is pointed at is the one on the mission branch, not the one on main", () => {
   assert.equal(planOnBranch("/p/app", "deliverables/missions/x.md", [repo]), "/p/app/.claude/worktrees/x-integration-root/deliverables/missions/x.md");
-  // A plan under the project root of a multi-repo project, where no repo holds it, stays where the Lead wrote it.
-  assert.equal(planOnBranch("/p", "deliverables/missions/x.md", [repo, other]), "/p/deliverables/missions/x.md");
+  // A plan no mission repo holds goes on the first repo's mission branch, never where the Lead wrote it (M8).
+  assert.equal(planOnBranch("/p", "deliverables/missions/x.md", [repo, other]), `${repo.integration}/deliverables/missions/x.md`);
+  assert.throws(() => planOnBranch("/p", "deliverables/missions/x.md", []), /names no repos/);
 });
 
 test("a Wingman's brief carries every absolute path, the standing orders and the RIO's checklist", () => {
