@@ -12,6 +12,8 @@ export const RIO_TOOLS = "Bash,Read,Grep,Glob";
 
 export interface BriefContext {
   projectPath: string;
+  /** Environments only the merged mission branch may deploy to, from the project's maverick.json. */
+  shared?: string[];
   mission: Pick<Mission, "id" | "name" | "plan" | "repos" | "milestones" | "contracts">;
   milestone: Pick<Milestone, "n" | "title" | "done" | "tasks">;
   task: MissionTask;
@@ -106,6 +108,8 @@ const ownership = (ctx: BriefContext): string[] => {
   const used = (ctx.mission.contracts ?? []).filter((c) => c.owner !== task.id);
   if (owned.length) out.push(`Contracts this task owns, which other tasks will read from your branch, so write them first and exactly as declared: ${owned.map((c) => `${c.name} (${c.shape})`).join("; ")}.`);
   if (used.length) out.push(`Contracts owned by other tasks, which you use as declared and never redefine: ${used.map((c) => `${c.name} (${c.shape}, owned by ${c.owner})`).join("; ")}. If the owner's branch already has one, read it there; if not yet, stub it in a file of your own at the declared shape, never at the owner's path, and say so in your final message.`);
+  if (task.deploys?.length) out.push(`This task alone deploys ${task.deploys.join(", ")} in this milestone; no other task touches ${task.deploys.length > 1 ? "them" : "it"}. Deploy from your branch and say so in your final message.`);
+  if (ctx.shared?.length) out.push(`Shared environments, deployed only from the merged mission branch and never from a task's: ${ctx.shared.join(", ")}. Do not deploy app code there, do not flip a knob there by hand (knobs live in the stack); anything you create for a test (a queue, a tenant, a table, a user) is named with ${task.id} and deleted by the test that made it.`);
   return out.length ? ["", ...out] : [];
 };
 

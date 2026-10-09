@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, mergeable, needsPerson, settleReview, startable, strays, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, mergeable, needsPerson, runProof, settleReview, startable, strays, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
@@ -438,4 +438,31 @@ test("a person is needed for a handed-back task or a held milestone, and for not
   assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", tasks: [t("m1-t1", "handed-back", "the RIO said fail after 2 attempts")] }] }), ["m1-t1: the RIO said fail after 2 attempts"]);
   assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", merged: "x", held: "could not land: svc", tasks: [t("m1-t1", "passed")] }] }), ["could not land: svc"], "a landing that failed holds its milestone");
   assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", conflicts: ["root/a.ts"], held: "milestone 1 collided", tasks: [t("m1-t1", "passed")] }] }), ["milestone 1 collided"]);
+});
+
+test("one deployer per stack per milestone, and a shared environment is nobody's to deploy from a task", () => {
+  const plan = (deploys: string) => `# Mission: d\n\nD.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **Infra**\n  - deploys: data, compute\n  a\n\n- [ ] **App**\n  - deploys: ${deploys}\n  b\n`;
+  const fine = parsePlan(plan("api"), ["root"], ["dev"]);
+  assert.equal(fine.problems.length, 0, fine.problems.join("; "));
+  assert.deepEqual(fine.milestones[0].tasks[0].deploys, ["data", "compute"]);
+  assert.ok(parsePlan(plan("compute"), ["root"], ["dev"]).problems.some((p) => /m1-t1 and m1-t2 both deploy compute; one deployer per stack per milestone/.test(p)));
+  assert.ok(parsePlan(plan("dev"), ["root"], ["dev"]).problems.some((p) => /deploys dev, which this project lists as shared; only the merged mission branch deploys there/.test(p)));
+  assert.equal(parsePlan(plan("dev"), ["root"]).problems.length, 0, "a project that names nothing shared has no such rule");
+});
+
+test("the proof runs where the milestone merged, and a proof that cannot run is a failed proof", async () => {
+  const ok = await runProof(import.meta.dirname, "echo proven");
+  assert.deepEqual({ ok: ok.ok, output: ok.output.trim() }, { ok: true, output: "proven" });
+  const bad = await runProof(import.meta.dirname, "echo broke; exit 3");
+  assert.equal(bad.ok, false);
+  assert.match(bad.output, /broke/);
+  assert.equal((await runProof("/nowhere/at/all", "true")).ok, false);
+});
+
+test("a need in a held milestone is not a base to build on", () => {
+  const t = (id: string, status: MissionTask["status"], needs?: string[]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, ...(needs ? { needs } : {}) });
+  const held = { n: 1, title: "a", done: "d", dispatched: "x", merged: "x", held: "could not land: svc", tasks: [t("m1-t1", "passed")] };
+  const later = { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending", ["m1-t1"])] };
+  assert.deepEqual(startable({ status: "blocked", milestones: [held, later] }), [], "the push never landed, so nothing builds on it");
+  assert.deepEqual(startable({ status: "flying", milestones: [{ ...held, held: undefined }, later] }).map((s) => s.task.id), ["m2-t1"]);
 });

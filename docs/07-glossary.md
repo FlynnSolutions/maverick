@@ -29,6 +29,7 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 | **Ledger** | the plan on the mission branch once the mission flies, with where every task stands written under it and a `## Log` of transitions and decisions (M18). |
 | **Brief** | the prompt a Wingman or a RIO is launched with, generated from one template (`src/briefs.ts`) with the standing orders and the RIO's checklist. |
 | **Touches, needs** | two fields on a task in the plan: the paths it owns, and the tasks it builds on. An overlap inside a milestone is named at the gate; a change outside its paths is a stray the RIO is told about. |
+| **Shared environment, proof** | what a project's `maverick.json` names as deployed only from the merged mission branch, and the command run on the merged tree after each milestone; a failing proof holds the milestone. |
 | **Report** | the morning read: generated from the record, the ledger and the RIO findings in fixed sections, never written by the agent that flew the mission; committed beside the ledger at close. |
 | **Preflight** | the plan's `## Preflight` section and the checks the gate runs from it: tools, runtimes, agents, credentials and their lifetime, disk, and the steps marked as a person's. |
 | **Paused** | a mission a person has stopped spawning for, with a reason in the ledger; what runs finishes and is recorded, and it resumes from the file. Distinct from **blocked**, where a person is needed for one task and the rest flies on, and from **abandoned**, which ends it. |

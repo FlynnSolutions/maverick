@@ -88,3 +88,11 @@ test("a project that says nothing gets no Wingman agent, which is the state the 
   assert.equal(DEFAULT_MISSION_CONFIG.wingmanAgent, undefined);
   assert.equal(DEFAULT_MISSION_CONFIG.rioAgent, "rio");
 });
+
+test("a project names its shared environments and its proof, and junk in either is dropped", async () => {
+  const cfg = await withConfig({ shared: ["dev", "", 3, " staging "], proof: "  npm test " } as never);
+  assert.deepEqual(cfg.shared, ["dev", "staging"]);
+  assert.equal(cfg.proof, "npm test");
+  assert.deepEqual((await withConfig({})).shared, []);
+  assert.equal((await withConfig({ proof: "   " } as never)).proof, undefined);
+});

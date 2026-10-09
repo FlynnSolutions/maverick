@@ -463,3 +463,14 @@ outside what a task owned, the held milestones, what Maverick does not record, a
 unedited. It is committed beside the ledger on the mission branch. On the first mission the
 interim report missed three incidents and one line claimed an audit that had not run; a report
 the flying agent writes about itself is a self-report, and the RIO rule applies to it too.
+
+**Shared environments are the merged branch's, and a merge is proved.** A project names in
+`maverick.json` the environments only the merged mission branch may deploy to (`shared`) and a
+`proof` command; a task that says it deploys a shared environment is refused at the gate, two
+tasks deploying one stack in one milestone are refused, each Wingman is told what it alone
+deploys and that anything it makes for a test is named with its task id and deleted by that
+test, and after every milestone merges the proof runs on the merged tree and a failure holds
+the milestone. The Strike Lead sent in on a collision keeps both sides, including a rule or a
+test one side added, and writes no product code. On the first mission the shared dev URL ran
+an unmerged task branch twice, two deployers flipped one knob, a lint rule was dropped at a
+merge, and the Lead's unreviewed wiring broke tests within minutes.

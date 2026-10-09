@@ -100,6 +100,8 @@ first is what the tooling was usually written to stop.
 | `worktrees` | `.claude/worktrees` | where task and integration worktrees go, relative to the project |
 | `branchPrefix` | `mission/` | a task's branch is `<prefix><mission>-<task>` |
 | `land` | `merge` | the default for every repo: `merge` leaves the work on that repo's mission branch, `pr` pushes and opens a pull request against its base, `push` fast-forwards the base to it |
+| `shared` | none | environments only the merged mission branch may deploy to; a task that claims one is refused at the gate, and every brief names them |
+| `proof` | none | a command run in the integration worktree after each milestone merges (`npm test`, say); a failure holds the milestone |
 | `repos.<dir>.base` | that repo's current branch | what its work is cut from and lands against |
 | `repos.<dir>.land` | the mission's `land` | overrides it for that repo alone |
 

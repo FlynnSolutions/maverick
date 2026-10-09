@@ -56,6 +56,10 @@ export interface MissionConfig {
   branchPrefix: string;
   /** `merge` lands milestones on the mission branch; `pr` opens one pull request per repo and stops. */
   land: Landing;
+  /** Environments only the merged mission branch may deploy to (a shared dev URL, say). A task that says it deploys one is refused at the gate. */
+  shared: string[];
+  /** A command run in the integration worktree after each milestone merges; a failure holds the milestone. The merged task's proofs and the milestone's done-when, in one line the project owns. */
+  proof?: string;
   /** Per repo, keyed by the label `reposUnder` gives it (a directory name, or "root"). */
   repos: Record<string, RepoConfig>;
 }
@@ -65,6 +69,7 @@ export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   worktrees: join(".claude", "worktrees"),
   branchPrefix: "mission/",
   land: "merge",
+  shared: [],
   repos: {},
 };
 
@@ -129,6 +134,8 @@ export const missionConfigFor = async (projectPath: string): Promise<MissionConf
     ...(typeof m.wingmanAgent === "string" && AGENT.test(m.wingmanAgent) ? { wingmanAgent: m.wingmanAgent } : {}),
     rioAgent: typeof m.rioAgent === "string" && AGENT.test(m.rioAgent) ? m.rioAgent : DEFAULT_MISSION_CONFIG.rioAgent,
     worktrees,
+    shared: Array.isArray(m.shared) ? m.shared.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()) : [],
+    ...(typeof m.proof === "string" && m.proof.trim() ? { proof: m.proof.trim() } : {}),
     branchPrefix: branchPrefix(m.branchPrefix),
     land: missionLanding(m.land),
     repos: repoConfigs(m.repos),

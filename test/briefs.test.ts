@@ -62,6 +62,14 @@ test("a Wingman is told the contracts it owns and the ones it uses, and so is it
   assert.match(rioBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: user }, "/f.md"), /Contracts this task owns.*Session/);
 });
 
+test("a task is told what it alone deploys, and what nobody deploys from a task", () => {
+  const brief = wingmanBrief({ ...ctx, shared: ["dev", "staging"], task: { ...task, deploys: ["data"] } });
+  assert.match(brief, /This task alone deploys data in this milestone; no other task touches it\./);
+  assert.match(brief, /Shared environments, deployed only from the merged mission branch and never from a task's: dev, staging\./);
+  assert.match(brief, /named with m1-t2 and deleted by the test that made it/);
+  assert.ok(!wingmanBrief(ctx).includes("Shared environments"), "a project that names none gets no such block");
+});
+
 test("a retry brief carries the findings verbatim and says what must still pass", () => {
   const brief = wingmanBrief(ctx, "verdict: mixed\n- BLOCKER: the test is vacuous\n- NOTE: a stray log line");
   assert.ok(brief.includes("- BLOCKER: the test is vacuous"));
