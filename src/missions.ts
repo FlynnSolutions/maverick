@@ -308,7 +308,12 @@ const VERDICTS: readonly string[] = ["pass", "pass with notes", "fail", "mixed"]
 /** The fields Maverick writes under a task as it flies. A Strike Lead leaves them off; the ledger owns them. */
 const STATE_FIELDS: readonly string[] = ["status", "attempt", "verdict", "commit"];
 
-const listField = (value: string | undefined): string[] => (value ?? "").split(/[,\s]+/).map((v) => v.trim().replace(/^\.\//, "").replace(/\/+$/, "")).filter(Boolean);
+/** `touches` is comma separated (a path may hold a space); `needs` is ids, so any separator. Duplicates dropped. */
+const listField = (value: string | undefined, by: RegExp): string[] => [...new Set((value ?? "").split(by).map((v) => v.trim().replace(/^\.\//, "").replace(/\/+$/, "")).filter(Boolean))];
+
+/** A path a task may own: relative, plain, inside the repo. Globs and parent steps cannot be checked against a diff. */
+const badPath = (p: string): string | undefined =>
+  p.startsWith("/") ? "is absolute" : /[*?[\]{}]/.test(p) ? "is a glob" : p.includes("\\") ? "uses backslashes" : p.split("/").some((seg) => seg === "." || seg === "..") ? "steps through . or .." : undefined;
 
 /** Whether two owned paths are the same file, or one is inside the other. */
 const pathsOverlap = (a: string, b: string): boolean => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
@@ -361,10 +366,14 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
         attempts: attempt && /^\d+$/.test(attempt) ? Number(attempt) : 0,
         ...(verdict && VERDICTS.includes(verdict) ? { verdict: verdict as Verdict } : {}),
         ...(commit ? { head: commit } : {}),
-        ...(touches ? { touches: listField(touches) } : {}),
-        ...(needs ? { needs: listField(needs) } : {}),
+        ...(touches ? { touches: listField(touches, /,/) } : {}),
+        ...(needs ? { needs: listField(needs, /[,\s]+/) } : {}),
       };
     });
+    for (const t of tasks) for (const p of t.touches ?? []) {
+      const why = badPath(p);
+      if (why) problems.push(`"${t.title}" in milestone ${n} touches "${p}", which ${why}`);
+    }
     if (!tasks.length) problems.push(`milestone ${n} has no tasks`);
     for (const t of tasks) if (!t.intent) problems.push(`"${t.title}" in milestone ${n} says only its title; a Wingman gets no other context`);
     // Which repo a task works in is only guessable when the project has exactly one.
@@ -377,15 +386,24 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
   if (!milestones.length) problems.push("the document has no milestones");
   milestones.sort((a, b) => a.n - b.n);
   // `needs` names tasks that exist, that are not the task itself, that are not in a later
-  // milestone (it would never be there in time), and that do not need it back.
+  // milestone (it would never be there in time), and that do not lead back round to it.
   const where = new Map(milestones.flatMap((m) => m.tasks.map((t) => [t.id, { m: m.n, t }] as const)));
   for (const m of milestones) for (const t of m.tasks) for (const need of t.needs ?? []) {
     const target = where.get(need);
     if (!target) problems.push(`"${t.title}" in milestone ${m.n} needs "${need}", which is not a task in this plan`);
     else if (need === t.id) problems.push(`"${t.title}" in milestone ${m.n} needs itself`);
     else if (target.m > m.n) problems.push(`"${t.title}" in milestone ${m.n} needs ${need}, which flies later, in milestone ${target.m}`);
-    else if (target.t.needs?.includes(t.id)) problems.push(`${t.id} and ${need} need each other`);
   }
+  // A cycle of any length, found by walking each task's needs; reported once, from its lowest id.
+  const cycles = new Set<string>();
+  const walk = (start: string, at: string, path: string[]): void => {
+    for (const next of where.get(at)?.t.needs ?? []) {
+      if (next === start) { if (path.every((p) => p >= start)) cycles.add([...path, next].join(" needs ")); }
+      else if (!path.includes(next)) walk(start, next, [...path, next]);
+    }
+  };
+  for (const id of where.keys()) walk(id, id, [id]);
+  for (const c of cycles) problems.push(`${c}: a loop, so none of them could ever start`);
   return { name, intro, milestones, log, problems, overlaps: overlapsIn(milestones) };
 };
 
@@ -1006,7 +1024,14 @@ const sweepOnce = async (project: Project): Promise<void> => {
           task.ended = new Date().toISOString();
           task.commits = await commitsAhead(missionRepo(mission, task).path, missionRepo(mission, task).branch, task.branch!).catch(() => []);
           task.head = await revParse(missionRepo(mission, task).path, task.branch!).then((sha) => sha.slice(0, 7)).catch(() => undefined);
-          task.strayed = strays(await changedFiles(missionRepo(mission, task).path, missionRepo(mission, task).branch, task.branch!).catch(() => []), task.touches);
+          // Against the commit the task was cut from, not the mission tip: the ledger moves that tip
+          // on every transition, and a two-dot diff against it would call the ledger a stray.
+          try {
+            task.strayed = strays(await changedFiles(missionRepo(mission, task).path, task.base ?? missionRepo(mission, task).branch, task.branch!), task.touches);
+          } catch (err) {
+            task.strayed = undefined;
+            console.error(`mission ${mission.id}: could not diff ${task.id} against its touches:`, (err as Error).message);
+          }
         }
         if (task.status === "built") {
           task.reviews = (task.reviews ?? 0) + 1;

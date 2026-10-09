@@ -24,6 +24,8 @@
 .mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 .mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--threat); font-size: 13px; }
 .mv-problems li { margin: 2px 0; }
+.mv-overlaps { margin: 10px 0 0; padding-left: 18px; color: var(--caution); font-size: 13px; }
+.mv-overlaps li { margin: 2px 0; }
 
 /* A milestone's tasks: the strip's columns, at the strip's density, in the page's own frame. */
 .mv-task {

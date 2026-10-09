@@ -281,7 +281,21 @@ test("a need that is missing, itself, later, or mutual is a problem", () => {
   assert.ok(problems(OWNED.replace("- needs: m1-t1\n", "- needs: m9-t9\n")).some((p) => /needs "m9-t9", which is not a task/.test(p)));
   assert.ok(problems(OWNED.replace("- needs: m1-t1\n", "- needs: m1-t2\n")).some((p) => /needs itself/.test(p)));
   assert.ok(problems(OWNED.replace("- needs: m1-t1\n", "- needs: m2-t1\n")).some((p) => /flies later, in milestone 2/.test(p)));
-  assert.ok(problems(OWNED.replace("  - touches: src/alpha.ts, src/shared/\n", "  - touches: src/alpha.ts, src/shared/\n  - needs: m1-t2\n")).some((p) => /need each other/.test(p)));
+  assert.ok(problems(OWNED.replace("  - touches: src/alpha.ts, src/shared/\n", "  - touches: src/alpha.ts, src/shared/\n  - needs: m1-t2\n")).some((p) => /m1-t1 needs m1-t2 needs m1-t1: a loop/.test(p)));
+  // A loop of three, which a check on pairs would let through, reported once.
+  const three = OWNED.replace("- [ ] **Bravo**", "- [ ] **Delta**\n  - touches: src/delta.ts\n  - needs: m1-t1\n  Build delta.\n\n- [ ] **Bravo**").replace("  - touches: src/alpha.ts, src/shared/\n", "  - touches: src/alpha.ts, src/shared/\n  - needs: m1-t3\n").replace("- needs: m1-t1\n  Build bravo", "- needs: m1-t2\n  Build bravo");
+  const loops = problems(three).filter((p) => /a loop/.test(p));
+  assert.deepEqual(loops, ["m1-t1 needs m1-t3 needs m1-t2 needs m1-t1: a loop, so none of them could ever start"], problems(three).join("; "));
+});
+
+test("a touches path that cannot be checked against a diff is a problem, and a path may hold a space", () => {
+  const problems = (touches: string) => parsePlan(OWNED.replace("- touches: src/alpha.ts, src/shared/", `- touches: ${touches}`), ["root"]).problems;
+  assert.ok(problems("/abs/path.ts").some((p) => /is absolute/.test(p)));
+  assert.ok(problems("src/*.ts").some((p) => /is a glob/.test(p)));
+  assert.ok(problems("src/../x.ts").some((p) => /steps through/.test(p)));
+  assert.ok(problems("src\\x.ts").some((p) => /backslashes/.test(p)));
+  const spaced = parsePlan(OWNED.replace("- touches: src/alpha.ts, src/shared/", "- touches: docs/my file.md, src/alpha.ts, src/alpha.ts"), ["root"]);
+  assert.deepEqual(spaced.milestones[0].tasks[0].touches, ["docs/my file.md", "src/alpha.ts"], "comma separated, duplicates dropped");
 });
 
 test("strays are the files a Wingman changed that none of its touches cover", () => {

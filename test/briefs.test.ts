@@ -27,7 +27,7 @@ test("the plan an agent is pointed at is the one on the mission branch, not the 
 
 test("a Wingman's brief carries every absolute path, the standing orders and the RIO's checklist", () => {
   const brief = wingmanBrief(ctx);
-  for (const needle of [task.worktree, repo.path, "/p/app/.claude/worktrees/x-integration-root/deliverables/missions/x.md", `${task.worktree}/.scratch/wingman`, "done when: both pass", task.intent, `git -C ${task.worktree} diff --name-only mission/x..HEAD`]) {
+  for (const needle of [task.worktree, repo.path, "/p/app/.claude/worktrees/x-integration-root/deliverables/missions/x.md", `${task.worktree}/.scratch/wingman`, "done when: both pass", task.intent, `git -C ${task.worktree} diff --name-only mission/x...HEAD`]) {
     assert.ok(brief.includes(needle), `missing: ${needle}`);
   }
   for (const line of [...STANDING_ORDERS, ...RIO_CHECKLIST]) assert.ok(brief.includes(`- ${line}`), `missing order: ${line.slice(0, 40)}`);
@@ -38,7 +38,10 @@ test("both briefs carry what the task owns, what it builds on, and what strayed"
   const owned = { ...task, touches: ["src/two.ts", "src/shared"], needs: ["m1-t1"], strayed: ["src/one.ts"] };
   const wingman = wingmanBrief({ ...ctx, task: owned });
   assert.match(wingman, /owns these paths and no others: src\/two\.ts, src\/shared\./);
-  assert.match(wingman, /builds on m1-t1 \(The first thing\), which flies beside it in this milestone on branch mission\/x-m1-t1/);
+  assert.match(wingman, /builds on m1-t1 \(The first thing\), which flies beside it in this milestone on branch mission\/x-m1-t1 in \/p\/app/);
+  assert.match(wingman, /diff --name-only mission\/x\.\.\.HEAD/, "three dots: since the branch left the mission branch");
+  const crossRepo = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other] }, milestone: { ...ctx.milestone, tasks: [{ ...sibling, repo: "contracts" }, owned] }, task: owned });
+  assert.match(crossRepo, /on branch mission\/x-m1-t1 in \/p\/contracts/, "a sibling in another repo is found there");
   assert.match(wingman, /which means inside: src\/two\.ts, src\/shared\./);
   const rio = rioBrief({ ...ctx, task: owned }, "/f.md");
   assert.match(rio, /Files outside them: src\/one\.ts\. Each is a finding unless/);

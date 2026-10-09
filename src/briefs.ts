@@ -83,8 +83,9 @@ const ownership = (ctx: BriefContext): string[] => {
   if (task.touches?.length) out.push(`This task owns these paths and no others: ${task.touches.join(", ")}. A file outside them is a finding unless your final message says why it had to change; if it needs more, add a new file rather than editing a shared one.`);
   for (const need of task.needs ?? []) {
     const sibling = m.tasks.find((t) => t.id === need);
+    const home = (sibling && ctx.mission.repos.find((r) => r.label === sibling.repo)) ?? repo;
     out.push(sibling
-      ? `It builds on ${need} (${sibling.title}), which flies beside it in this milestone on branch ${repo.branch}-${need}; read it there, and expect it to change until it passes.`
+      ? `It builds on ${need} (${sibling.title}), which flies beside it in this milestone on branch ${home.branch}-${need} in ${home.path}; read it there, and expect it to change until it passes.`
       : `It builds on ${need}, from an earlier milestone, already merged on ${repo.branch} and checked out at ${repo.integration}.`);
   }
   return out.length ? ["", ...out] : [];
@@ -128,7 +129,7 @@ export const wingmanBrief = (ctx: BriefContext, retry?: { findings: string }): s
     "A RIO that is not you will check the work against this list; check it yourself first, so its review confirms rather than discovers:",
     ...list(RIO_CHECKLIST),
     "",
-    `Before you stop, run \`git -C ${task.worktree} diff --name-only ${repo.branch}..HEAD\` and make sure every file in it belongs to this task${task.touches?.length ? ", which means inside: " + task.touches.join(", ") : ""}.`,
+    `Before you stop, run \`git -C ${task.worktree} diff --name-only ${repo.branch}...HEAD\` (three dots: your branch since it left the mission branch) and make sure every file in it belongs to this task${task.touches?.length ? ", which means inside: " + task.touches.join(", ") : ""}.`,
     "",
     "Do not write to the project's trackers; Maverick owns those for this mission. Do not open a pull request. Do not spawn other agents.",
     "",
