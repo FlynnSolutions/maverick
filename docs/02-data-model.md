@@ -44,7 +44,7 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 
 `SessionRole` is `driver | develop | audit | plan`; `SessionStatus` is `open | closed |
 handed-off`; `StepStatus` is `pending | running | finished | done | failed | skipped`.
-`MissionStatus` is `interviewing | planned | flying | blocked | review | closed | abandoned`;
+`MissionStatus` is `interviewing | planned | flying | blocked | paused | review | closed | abandoned`;
 `TaskStatus` is `pending | flying | built | reviewing | passed | handed-back`; a RIO's `Verdict`
 is `pass | pass with notes | fail | mixed` (M19).
 

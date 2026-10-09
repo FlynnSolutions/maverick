@@ -40,6 +40,8 @@ test("both briefs carry what the task owns, what it builds on, and what strayed"
   const wingman = wingmanBrief({ ...ctx, task: owned });
   assert.match(wingman, /owns these paths and no others: src\/two\.ts, src\/shared\./);
   assert.match(wingman, /builds on m1-t1 \(The first thing\), which has passed its review and sits on branch mission\/x-m1-t1 in \/p\/app, not yet merged/);
+  assert.match(wingman, /Merge that branch into yours \(`git merge mission\/x-m1-t1`\)/);
+  assert.match(rioBrief({ ...ctx, task: owned }, "/f.md"), /Files outside them: src\/one\.ts\. Each is a finding unless/);
   const across = { ...ctx.milestone, tasks: [{ ...sibling, repo: "contracts" }, owned] };
   const crossRepo = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other], milestones: [across] }, milestone: across, task: owned });
   assert.match(crossRepo, /on branch mission\/x-m1-t1 in \/p\/contracts/, "a need in another repo is found there");

@@ -98,7 +98,7 @@ const ownership = (ctx: BriefContext): string[] => {
     // branch (its milestone landed) or still on its own branch, passed and no longer changing.
     out.push(where?.merged
       ? `It builds on ${need}${target ? ` (${target.title})` : ""}, already merged on ${home.branch} and checked out at ${home.integration}.`
-      : `It builds on ${need}${target ? ` (${target.title})` : ""}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged; read it there.`);
+      : `It builds on ${need}${target ? ` (${target.title})` : ""}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. Merge that branch into yours (\`git merge ${home.branch}-${need}\`) so you build and test against it; its files are the owner's, not yours to change.`);
   }
   const owned = (ctx.mission.contracts ?? []).filter((c) => c.owner === task.id);
   const used = (ctx.mission.contracts ?? []).filter((c) => c.owner !== task.id && task.needs?.includes(c.owner));

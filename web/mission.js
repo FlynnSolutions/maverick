@@ -168,11 +168,12 @@ const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${
 const walkState = (m) => mission.walk?.[m.n]?.state ?? "none";
 const needsWalking = (m) => Boolean(mission.walk?.[m.n]?.needed);
 /** Derived in one place: the nav and the detail head disagreed about a handed-back milestone. */
-const milestoneState = (m) => (m.merged ? (needsWalking(m) ? "walking" : "passed") : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : m.dispatched ? "flying" : "pending");
+const inTheAir = (m) => m.dispatched || tasksOf(m).some((t) => t.status !== "pending");
+const milestoneState = (m) => (m.merged ? (needsWalking(m) ? "walking" : "passed") : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : inTheAir(m) ? "flying" : "pending");
 const WALK_LABEL = { none: "merged · not walked", building: "merged · walkthrough on its way", failed: "merged · no walkthrough", waived: "merged · waived" };
 /** And its word, for the same reason: three places had spelled it three ways. */
 const milestoneLabel = (m) => {
-  if (!m.merged) return milestoneState(m) === "handed-back" ? "needs you" : m.dispatched ? "flying" : "not sent yet";
+  if (!m.merged) return milestoneState(m) === "handed-back" ? "needs you" : inTheAir(m) ? (m.dispatched ? "flying" : "started early") : "not sent yet";
   const w = walkState(m);
   if (!needsWalking(m)) return w === "waived" ? WALK_LABEL.waived : "merged";
   if (w === "walking") return `walk it · ${m.walkthrough.progress ? `${m.walkthrough.progress.answered} of ${m.walkthrough.progress.total}` : "not started"}`;
@@ -249,7 +250,15 @@ const renderPlan = () => {
   const blocks = [
     el("div", { class: "detail-head" }, el("h1", {}, mission.name), el("span", { class: `verdict ${mission.status}` }, mission.status),
       mission.approved && !["closed", "abandoned"].includes(mission.status)
-        ? el("span", { class: "actions" }, btn("stop this mission", async () => {
+        ? el("span", { class: "actions" },
+          mission.status === "paused"
+            ? btn("resume", () => act("resume", {}, "mission resumed"), "primary")
+            : ["flying", "blocked"].includes(mission.status) ? btn("pause", async () => {
+              const note = window.prompt("Pause the mission. Nothing new starts; what is running finishes and is recorded. Why?");
+              if (note === null) return;
+              await act("pause", { note }, "mission paused");
+            }, "ghost") : null,
+          btn("stop this mission", async () => {
             const live = allTasks().filter((t) => t.status === "flying" || t.status === "reviewing").length;
             if (!window.confirm(`Stop "${mission.name}"?\n\nThis stops ${live} running session(s). Every branch and worktree is left exactly as it is, so nothing built so far is lost. It cannot be resumed.`)) return;
             await act("abandon", {}, "mission stopped");

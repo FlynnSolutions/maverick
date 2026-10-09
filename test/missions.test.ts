@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, settleReview, startable, strays, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, mergeable, settleReview, startable, strays, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
@@ -412,4 +412,17 @@ test("contracts are named before fan-out: parsed with an owner and a shape, and 
   assert.ok(parsePlan(CONTRACTED.replace("(owner: m1-t1): encode", "(owner: m9-t9): encode"), ["root"]).problems.some((p) => /owned by m9-t9, which is not a task/.test(p)));
   assert.ok(parsePlan(CONTRACTED.replace(": the env flag naming the table", ""), ["root"]).problems.some((p) => /CLAIMS_TABLE" has no shape/.test(p)));
   assert.ok(parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- just a line"), ["root"]).problems.some((p) => /is not "\*\*name\*\* \(owner/.test(p)));
+});
+
+test("milestones merge in order, and only once sent: a later one whose tasks all passed early waits", () => {
+  const t = (id: string, status: MissionTask["status"]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1 });
+  const first = { n: 1, title: "a", done: "d", dispatched: "x", tasks: [t("m1-t1", "flying")] };
+  const second = { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "passed")] };
+  assert.equal(mergeable({ milestones: [first, second] }, second), false, "not sent, and the one before it is still flying");
+  const sent = { ...second, dispatched: "x" };
+  assert.equal(mergeable({ milestones: [first, sent] }, sent), false, "sent, but the one before it has not merged");
+  assert.equal(mergeable({ milestones: [{ ...first, merged: "x" }, sent] }, sent), true);
+  const held = { ...sent, conflicts: ["root/a.ts"] };
+  assert.equal(mergeable({ milestones: [{ ...first, merged: "x" }, held] }, held), false, "a held milestone is not merged again");
+  assert.deepEqual(startable({ status: "paused", milestones: [{ ...first, tasks: [t("m1-t1", "pending")] }] }), [], "nothing starts while paused");
 });

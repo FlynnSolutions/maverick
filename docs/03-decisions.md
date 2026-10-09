@@ -435,3 +435,11 @@ owner and its shape; a task that builds on another is warned at the gate when th
 nothing between them. The owner writes it first and exactly as declared; a task that needs it
 before it exists stubs it in a file of its own, never at the owner's path. On the first mission
 parallel Wingmen invented the shared conventions apart and a reconcile task had to be added.
+
+**Pause, do not end.** `blocked` means a person is needed somewhere, not that everything stops:
+the milestone that holds the handed-back task or the unresolved collision waits, and every
+other task keeps flying and starting; when nothing is left for a person the mission is simply
+flying again. `paused` is a person's call, with a reason the ledger keeps: nothing new is
+spawned, what is running finishes and is recorded, and resume picks up where the file says. On
+the first mission an expired credential ended the mission at milestone 6 and cut the central
+feature, whose own tasks needed none of it. Milestones still merge in order, once sent.

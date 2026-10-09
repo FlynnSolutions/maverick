@@ -37,7 +37,16 @@ import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } fr
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
 
-export type MissionStatus = "interviewing" | "planned" | "flying" | "blocked" | "review" | "closed" | "abandoned";
+export type MissionStatus = "interviewing" | "planned" | "flying" | "blocked" | "paused" | "review" | "closed" | "abandoned";
+/**
+ * The statuses the sweep keeps working. `blocked` means a person is needed somewhere, not that
+ * everything stops: tasks that do not need the blocked one keep flying and starting, and the
+ * milestone that holds it waits. `paused` is a person's call: nothing new is spawned, what is
+ * running finishes and is recorded, and the ledger says why. On the first mission a credential
+ * expiring ended the mission at milestone 6 and cut the central feature, whose own tasks needed
+ * none of it.
+ */
+const SWEPT: ReadonlySet<MissionStatus> = new Set(["flying", "blocked", "paused"]);
 export type TaskStatus = "pending" | "flying" | "built" | "reviewing" | "passed" | "handed-back";
 
 export interface MissionTask {
@@ -64,7 +73,7 @@ export interface MissionTask {
   head?: string;
   /** The paths this task owns, relative to its repo, from the plan's `touches:` line. A file or a directory. */
   touches?: string[];
-  /** The tasks this one builds on, by id, from the plan's `needs:` line. Validated at parse; not yet what the scheduler dispatches by. */
+  /** The tasks this one builds on, by id, from the plan's `needs:` line. The task starts when every one of them has passed. */
   needs?: string[];
   /** Files the Wingman changed outside `touches`, found when it stopped. The RIO is told; a stray is a finding unless the hand-back justified it. */
   strayed?: string[];
@@ -963,7 +972,8 @@ const recordWingman = async (mission: Mission, task: MissionTask): Promise<void>
  * dependencies, not its milestone boundaries, decide when work can begin, and one straggler no
  * longer idles everything behind it. The milestone still merges as one, once all its tasks pass.
  */
-export const startable = (mission: Pick<Mission, "milestones">): Array<{ milestone: Milestone; task: MissionTask }> => {
+export const startable = (mission: Pick<Mission, "milestones" | "status">): Array<{ milestone: Milestone; task: MissionTask }> => {
+  if (mission.status === "paused") return [];
   const passed = new Set(mission.milestones.flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
   return mission.milestones.flatMap((milestone) => milestone.tasks
     .filter((task) => task.status === "pending" && (task.needs?.length ? task.needs.every((id) => passed.has(id)) : Boolean(milestone.dispatched)))
@@ -976,7 +986,8 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     const repo = missionRepo(mission, task);
     ({ worktree: task.worktree, branch: task.branch } = taskLayout(project, cfg, mission.id, task, repo));
     await ensureWorktree(repo.path, task.worktree, task.branch, repo.branch);
-    task.base = await revParse(repo.path, repo.branch);
+    // The fork point is the branch just made, not the mission tip a moment later.
+    task.base = await revParse(repo.path, task.branch);
     task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo)), cfg.wingmanAgent);
     task.status = "flying";
     task.started = new Date().toISOString();
@@ -991,6 +1002,10 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
   await writeMission(mission);
 };
 
+/** Milestones merge in order: a later one whose tasks all passed early still waits for the ones before it. */
+export const mergeable = (mission: Pick<Mission, "milestones">, m: Milestone): boolean =>
+  Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && mission.milestones.every((x) => x.n >= m.n || x.merged);
+
 /** Mark a milestone sent and start every task of it that can start; the rest wait on their `needs`. */
 const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
   m.dispatched = new Date().toISOString();
@@ -998,13 +1013,24 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
   return writeThenSync(project, mission);
 };
 
-/** Start whatever the plan's dependencies now allow, in any milestone, including one not yet sent. */
+/**
+ * Start whatever the plan's dependencies now allow, in any milestone, including one not yet
+ * sent. The brake is checked before every launch (M11): a person may have stopped, paused or
+ * changed the mission while the pass was busy, and a Wingman spawned after that is one no
+ * record owns. A stale record ends the launches; the next pass sees the truth.
+ */
 const startReady = async (project: Project, mission: Mission): Promise<number> => {
   const ready = startable(mission);
   if (!ready.length) return 0;
   const cfg = await missionConfigFor(project.path);
-  for (const { milestone, task } of ready) await launch(project, mission, milestone, task, cfg);
-  return ready.length;
+  let started = 0;
+  for (const { milestone, task } of ready) {
+    const fresh = await readMission(mission.project, mission.id);
+    if (!fresh || fresh.status === "paused" || !SWEPT.has(fresh.status) || (fresh.rev ?? 0) !== (mission.rev ?? 0)) break;
+    await launch(project, mission, milestone, task, cfg);
+    started += 1;
+  }
+  return started;
 };
 
 /**
@@ -1091,26 +1117,29 @@ export const sweepMissions = async (project: Project): Promise<void> => {
 
 const sweepOnce = async (project: Project): Promise<void> => {
   // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough being written.
-  const missions = (await listMissions(project.id)).filter((m) => m.status === "flying" || m.milestones.some(building));
+  const missions = (await listMissions(project.id)).filter((m) => SWEPT.has(m.status) || m.milestones.some(building));
   if (!missions.length) return;
   const cfg = await missionConfigFor(project.path);
   const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
   const state = new Map([...agents].map(([id, a]) => [id, a.state ?? ""]));
   for (const mission of missions) {
     const settled = await settleWalkthroughs(project, mission, state);
-    if (mission.status !== "flying") {
+    if (!SWEPT.has(mission.status)) {
       if (settled) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
       continue;
     }
+    const paused = mission.status === "paused";
     const waiting: string[] = [];
     let seated = false;
-    mission.trouble = undefined;
+    mission.trouble = paused ? mission.trouble : undefined;
     for (const m of mission.milestones) {
-      if (!m.dispatched || m.merged) continue;
+      // A milestone with a task in the air is watched whether or not it has been sent: a task
+      // may start early on its needs, and a Wingman nobody watches never gets its RIO.
+      if (m.merged || !(m.dispatched || m.tasks.some((t) => t.status !== "pending"))) continue;
       for (const task of m.tasks) {
         // Between two expensive steps Cory may have pulled the brake; nothing more is spawned
         // for a mission that is no longer flying, whatever this pass still believes.
-        if ((await readMission(mission.project, mission.id))?.status !== "flying") return;
+        if (!SWEPT.has((await readMission(mission.project, mission.id))?.status ?? "closed")) return;
         // A session id only exists once the agent listing knows about it; the formation wants
         // that one. An agent can be listed without one, so read it rather than test for the key.
         const sessionId = task.claudeId ? agents.get(task.claudeId)?.sessionId : undefined;
@@ -1130,13 +1159,15 @@ const sweepOnce = async (project: Project): Promise<void> => {
           // Against the commit the task was cut from, not the mission tip: the ledger moves that tip
           // on every transition, and a two-dot diff against it would call the ledger a stray.
           try {
-            task.strayed = strays(await changedFiles(repo.path, task.base ?? repo.branch, task.branch!), task.touches);
+            // A task that merged what it needs carries the owner's files on its branch; they are not strays of its own.
+            const inherited = m.tasks.concat(mission.milestones.flatMap((x) => x.tasks)).filter((t) => task.needs?.includes(t.id)).flatMap((t) => t.touches ?? []);
+            task.strayed = strays(await changedFiles(repo.path, task.base ?? repo.branch, task.branch!), task.touches?.length ? [...task.touches, ...inherited] : undefined);
           } catch (err) {
             task.strayed = undefined;
             console.error(`mission ${mission.id}: could not diff ${task.id} against its touches:`, (err as Error).message);
           }
         }
-        if (task.status === "built") {
+        if (task.status === "built" && !paused) {
           task.reviews = (task.reviews ?? 0) + 1;
           const file = reviewFile(mission, task);
           try {
@@ -1167,7 +1198,11 @@ const sweepOnce = async (project: Project): Promise<void> => {
           task.verdict = verdict;
           await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { status: "closed", ended: new Date().toISOString() });
           const outcome = settleReview(task, findings!, verdict);
-          if (outcome.status === "retry") {
+          if (outcome.status === "retry" && paused) {
+            // The verdict is recorded; the fresh Wingman goes out when the mission resumes.
+            task.status = "built";
+            task.note = `the RIO said ${verdict}; the retry waits for the mission to resume`;
+          } else if (outcome.status === "retry") {
             try {
               await handBack(project, mission, m, task, findings!);
             } catch (err) {
@@ -1198,10 +1233,10 @@ const sweepOnce = async (project: Project): Promise<void> => {
           mission.trouble = `milestone ${m.n} collided in ${m.resolve.repo} and the Strike Lead could not reconcile it: ${(m.resolve.paths ?? []).join(", ")}. Both sides are work the plan asked for, so this is a question about the plan.`;
           m.resolve = undefined;
           await writeThenSync(project, mission, [mission.trouble]).catch(() => undefined);
-          return;
+          continue;
         }
       }
-      if (m.tasks.length && m.tasks.every((t) => t.status === "passed")) {
+      if (mergeable(mission, m)) {
         // Each task lands on its own repo's mission branch: a milestone can span repos, and
         // a conflict in one must not leave another half-applied.
         m.mergeShas = m.mergeShas ?? {};
@@ -1217,7 +1252,7 @@ const sweepOnce = async (project: Project): Promise<void> => {
             mission.conflictsSeen = (mission.conflictsSeen ?? 0) + 1;
             // One attempt by the Strike Lead per milestone. A second is not more likely to work
             // and a loop of agents on a collision is exactly what nobody asked for.
-            if (!m.resolve) {
+            if (!m.resolve && !paused) {
               try {
                 const claudeId = await spawnBackgroundAgent(repo.integration, `Strike Lead · resolve m${m.n}`, resolvePrompt(project, mission, m, repo, task.branch!, paths));
                 m.resolve = { claudeId, repo: repo.label, branch: task.branch!, started: new Date().toISOString(), paths: m.conflicts };
@@ -1235,13 +1270,14 @@ const sweepOnce = async (project: Project): Promise<void> => {
             if ((mission.conflictsSeen ?? 0) >= 3) {
               mission.escalation = `${mission.conflictsSeen} milestones of this mission have collided. That is the plan putting work that touches the same lines into one milestone, not a merge that needs redoing. The plan is the thing to change.`;
             }
+            // The milestone is held (its conflicts stay on it, so it is not merged again); the rest of the mission flies on.
             await writeThenSync(project, mission, [mission.trouble ?? `milestone ${m.n} collided`]).catch(() => undefined);
-            return;
+            break;
           }
           if (result.sha) m.mergeShas[repo.label] = result.sha;
         }
         m.merged = new Date().toISOString();
-        await commissionWalkthrough(project, mission, m);
+        if (!paused) await commissionWalkthrough(project, mission, m);
         // A repo with nothing left to do gets its pull request now rather than at the close, so
         // an earlier repo can be reviewed and merged while the later ones are still flying.
         if (mission.repos.some((r) => r.land !== "merge")) {
@@ -1254,24 +1290,26 @@ const sweepOnce = async (project: Project): Promise<void> => {
             mission.status = "blocked";
             mission.trouble = `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`;
             await writeThenSync(project, mission, [mission.trouble]).catch(() => undefined);
-            return;
+            continue;
           }
         }
         const next = mission.milestones.find((x) => x.n > m.n && !x.dispatched);
-        if (next) await dispatch(project, mission, next);
+        if (next && !paused) await dispatch(project, mission, next);
         else if (mission.milestones.every((x) => x.merged)) {
           mission.status = "review";
           mission.finished = new Date().toISOString();
         }
       }
-      // A milestone with any task that needs Cory stops the mission rather than flying past it.
-      if (m.tasks.some((t) => t.status === "handed-back")) {
+      // A milestone with a task that needs Cory holds that milestone and marks the mission; the rest flies on.
+      if (m.tasks.some((t) => t.status === "handed-back") && !paused) {
         mission.status = "blocked";
         mission.trouble = m.tasks.filter((t) => t.status === "handed-back").map((t) => `${t.title}: ${t.note ?? `the RIO said ${t.verdict}`}`).join(" · ");
       }
     }
+    // Nothing a person was needed for is still open: the mission is simply flying again.
+    if (mission.status === "blocked" && !mission.milestones.some((m) => m.tasks.some((t) => t.status === "handed-back") || (m.conflicts?.length && !m.merged))) mission.status = "flying";
     // A task whose needs passed this pass starts now, in its own milestone or one not yet sent.
-    if (mission.status === "flying") await startReady(project, mission);
+    if (!paused) await startReady(project, mission);
     // Everything above is idempotent, so losing this write costs one pass, not the work.
     if (waiting.length && mission.status === "flying") mission.trouble = waiting.join(" · ");
     // One formation write per pass rather than one per task that gained a session id.
@@ -1407,6 +1445,32 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
     mission.trouble = undefined;
     return mission;
   }).then((mission) => recorded(project, mission, [`${taskId} sent back out by Cory`]));
+
+/**
+ * Pause, do not end. Nothing new is spawned; what is running finishes and is recorded; the
+ * branches and worktrees stay. The reason goes into the ledger, so a mission paused for an
+ * expired credential resumes from the file with the reason beside it.
+ */
+export const pauseMission = async (project: Project, id: string, note: string): Promise<Mission> => {
+  if (!note.trim()) throw new Error("say why the mission is being paused; it is kept in the ledger");
+  const mission = await changeMission(project.id, id, (mission) => {
+    if (mission.status !== "flying" && mission.status !== "blocked") throw new Error(`${mission.name} is ${mission.status}; only a flying or blocked mission can be paused`);
+    mission.status = "paused";
+    mission.trouble = `paused: ${note.trim()}`;
+    return mission;
+  });
+  return recorded(project, mission, [`paused by Cory: ${note.trim()}`]);
+};
+
+export const resumeMission = async (project: Project, id: string): Promise<Mission> => {
+  const mission = await changeMission(project.id, id, (mission) => {
+    if (mission.status !== "paused") throw new Error(`${mission.name} is ${mission.status}, not paused`);
+    mission.status = mission.milestones.some((m) => m.tasks.some((t) => t.status === "handed-back")) ? "blocked" : "flying";
+    mission.trouble = undefined;
+    return mission;
+  });
+  return recorded(project, mission, ["resumed by Cory"]);
+};
 
 /** Accept a task Cory has looked at himself, so a milestone its RIO failed can still merge. */
 export const acceptTask = async (project: Project, id: string, taskId: string, note: string): Promise<Mission> =>

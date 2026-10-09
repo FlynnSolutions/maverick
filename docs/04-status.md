@@ -32,7 +32,7 @@ with real agents on 2026-09-16: plan, dispatch, review verdict, merge, close and
 
 **Mission protocol v2, 2026-10-09** (M18, M19), built as five bricks each reviewed by an
 independent RIO before the next; every brick failed its first review and was fixed. Dispatch
-by `needs` and the contracts section followed. Not yet: the preflight, pause-not-end, the
+by `needs`, the contracts section and pause-not-end followed. Not yet: the preflight, the
 shared-environment rules, the report sections.
 
 ## What does not
