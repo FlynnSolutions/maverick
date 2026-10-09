@@ -55,8 +55,9 @@ test("a Wingman is told the contracts it owns and the ones it uses, and so is it
   const user = { ...task, needs: ["m1-t1"] };
   const brief = wingmanBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: user });
   assert.match(brief, /Contracts this task owns, which other tasks will read from your branch, so write them first and exactly as declared: Session \(the cookie shape\)\./);
-  assert.match(brief, /Contracts this task uses, owned elsewhere: claimsCodec \(encode\/decode, from m1-t1\)\. Read them from the owner's branch; if one is not there yet, stub it in a file of your own, never at the owner's path\./);
-  assert.ok(!brief.includes("unrelated"), "a contract owned by a task it does not need is not its business");
+  assert.match(brief, /Contracts owned by other tasks, which you use as declared and never redefine: claimsCodec \(encode\/decode, owned by m1-t1\); unrelated \(x, owned by m0-t9\)\. If the owner's branch already has one, read it there; if not yet, stub it in a file of your own/);
+  const parallel = wingmanBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: { ...task, needs: undefined } });
+  assert.match(parallel, /claimsCodec \(encode\/decode, owned by m1-t1\)/, "a task flying beside the owner is told too; that is the case the step exists for");
   assert.match(rioBrief({ ...ctx, mission: { ...ctx.mission, contracts }, task: user }, "/f.md"), /Contracts this task owns.*Session/);
 });
 

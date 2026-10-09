@@ -412,6 +412,10 @@ test("contracts are named before fan-out: parsed with an owner and a shape, and 
   assert.ok(parsePlan(CONTRACTED.replace("(owner: m1-t1): encode", "(owner: m9-t9): encode"), ["root"]).problems.some((p) => /owned by m9-t9, which is not a task/.test(p)));
   assert.ok(parsePlan(CONTRACTED.replace(": the env flag naming the table", ""), ["root"]).problems.some((p) => /CLAIMS_TABLE" has no shape/.test(p)));
   assert.ok(parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- just a line"), ["root"]).problems.some((p) => /is not "\*\*name\*\* \(owner/.test(p)));
+  const odd = parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- `TABLE` (Owner: M1-T1) the env flag\n- plain name (owner: m1-t1): shape\n- **claimsCodec** (owner: m1-t1): again"), ["root"]);
+  assert.deepEqual(odd.contracts.slice(1).map((c) => [c.name, c.owner, c.shape]), [["TABLE", "m1-t1", "the env flag"], ["plain name", "m1-t1", "shape"], ["claimsCodec", "m1-t1", "again"]], "backticks, plain names, any case, a missing colon");
+  assert.ok(odd.problems.some((p) => /"claimsCodec" is named twice/.test(p)));
+  assert.ok(parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- [ ] **X** (owner: m1-t1): s"), ["root"]).problems.some((p) => /is not "\*\*name/.test(p)), "a task bullet is not a contract");
 });
 
 test("milestones merge in order, and only once sent: a later one whose tasks all passed early waits", () => {

@@ -432,8 +432,9 @@ one straggler on its last retry idled eighteen tasks that did not need it.
 **What tasks share is named before any of them starts.** A `## Contracts` section in the plan
 lists each type, id, codec, env flag or function one task makes and another uses, with its
 owner and its shape; a task that builds on another is warned at the gate when the plan names
-nothing between them. The owner writes it first and exactly as declared; a task that needs it
-before it exists stubs it in a file of its own, never at the owner's path. On the first mission
+nothing between them. The owner writes it first and exactly as declared; every other task is
+told the shape, and one flying beside the owner before it exists stubs it in a file of its own,
+never at the owner's path. On the first mission
 parallel Wingmen invented the shared conventions apart and a reconcile task had to be added.
 
 **Pause, do not end.** `blocked` means a person is needed somewhere, not that everything stops:

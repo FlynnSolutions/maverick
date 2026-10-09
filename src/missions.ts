@@ -329,7 +329,7 @@ const DONE_LINE = /^_*\s*done when:\s*(.+?)\s*_*$/i;
 const LOG_HEADING = /^Log$/i;
 /** The section where what tasks share is named before any of them starts. */
 const CONTRACTS_HEADING = /^Contracts$/i;
-const CONTRACT_LINE = /^\**(.+?)\**\s*\(owner:\s*([a-z0-9-]+)\)\s*:?\s*(.*)$/i;
+const CONTRACT_LINE = /^(?:\*\*([^*]+)\*\*|`([^`]+)`|([^*`(]+?))\s*\(owner:\s*([a-z0-9-]+)\)\s*:?\s*(.*)$/i;
 const TASK_STATUSES: readonly string[] = ["pending", "flying", "built", "reviewing", "passed", "handed-back"];
 const VERDICTS: readonly string[] = ["pass", "pass with notes", "fail", "mixed"];
 /** The fields Maverick writes under a task as it flies. A Strike Lead leaves them off; the ledger owns them. */
@@ -414,7 +414,7 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
     if (CONTRACTS_HEADING.test(section.heading)) {
       for (const line of lines.slice(section.start + 1, section.end).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim())) {
         const m = line.match(CONTRACT_LINE);
-        if (m) contracts.push({ name: m[1].trim(), owner: m[2], shape: m[3].trim() });
+        if (m) contracts.push({ name: (m[1] ?? m[2] ?? m[3]).trim(), owner: m[4].toLowerCase(), shape: m[5].trim() });
         else problems.push(`contract "${line.slice(0, 60)}" is not "**name** (owner: <task id>): <shape>"`);
       }
       continue;
@@ -468,6 +468,7 @@ export const parsePlan = (text: string, repos: string[] = []): { name: string; i
   const ids = new Set(milestones.flatMap((m) => m.tasks.map((t) => t.id)));
   for (const c of contracts) if (!ids.has(c.owner)) problems.push(`contract "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
   for (const c of contracts) if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
+  for (const [i, c] of contracts.entries()) if (contracts.findIndex((x) => x.name === c.name) !== i) problems.push(`contract "${c.name}" is named twice`);
   // Not a refusal: a plan whose tasks build on each other and names nothing they share is the
   // plan the first mission had, where parallel Wingmen invented the shared conventions apart.
   const warnings: string[] = [];
@@ -689,7 +690,7 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
   "",
   PLAN_FORMAT,
   "",
-  "Rules for the plan. Each task is one unit of work for one session with no other context, so its body must carry everything that session needs: the files, the shape, what it must not touch, and how it proves itself. Say what each task owns (`touches`) and what it builds on (`needs`): a task starts when what it needs has passed, so a dependency inside a milestone is allowed and means after. Before any fan-out, every type, id, codec, env flag and function one task makes and another uses goes in `## Contracts` with its owner and its shape; a task that needs one the owner has not written yet stubs it in a file of its own, never at the owner's path. Keep milestones small enough that a failure costs one milestone, not the mission.",
+  "Rules for the plan. Each task is one unit of work for one session with no other context, so its body must carry everything that session needs: the files, the shape, what it must not touch, and how it proves itself. Say what each task owns (`touches`) and what it builds on (`needs`): a task starts when what it needs has passed, so a dependency inside a milestone is allowed and means after. Before any fan-out, every type, id, codec, env flag and function one task makes and another uses goes in `## Contracts` with its owner and its shape; a task flying beside the owner, before the owner has written it, stubs it in a file of its own at the declared shape, never at the owner's path. Keep milestones small enough that a failure costs one milestone, not the mission.",
   "",
   repos.length > 1
     ? [

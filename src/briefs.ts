@@ -100,10 +100,12 @@ const ownership = (ctx: BriefContext): string[] => {
       ? `It builds on ${need}${target ? ` (${target.title})` : ""}, already merged on ${home.branch} and checked out at ${home.integration}.`
       : `It builds on ${need}${target ? ` (${target.title})` : ""}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. Merge that branch into yours (\`git merge ${home.branch}-${need}\`) so you build and test against it; its files are the owner's, not yours to change.`);
   }
+  // Every contract the task does not own is one it may use, and the owner may be flying beside
+  // it right now: that parallel consumer is the case the contracts step exists for.
   const owned = (ctx.mission.contracts ?? []).filter((c) => c.owner === task.id);
-  const used = (ctx.mission.contracts ?? []).filter((c) => c.owner !== task.id && task.needs?.includes(c.owner));
+  const used = (ctx.mission.contracts ?? []).filter((c) => c.owner !== task.id);
   if (owned.length) out.push(`Contracts this task owns, which other tasks will read from your branch, so write them first and exactly as declared: ${owned.map((c) => `${c.name} (${c.shape})`).join("; ")}.`);
-  if (used.length) out.push(`Contracts this task uses, owned elsewhere: ${used.map((c) => `${c.name} (${c.shape}, from ${c.owner})`).join("; ")}. Read them from the owner's branch; if one is not there yet, stub it in a file of your own, never at the owner's path.`);
+  if (used.length) out.push(`Contracts owned by other tasks, which you use as declared and never redefine: ${used.map((c) => `${c.name} (${c.shape}, owned by ${c.owner})`).join("; ")}. If the owner's branch already has one, read it there; if not yet, stub it in a file of your own at the declared shape, never at the owner's path, and say so in your final message.`);
   return out.length ? ["", ...out] : [];
 };
 
