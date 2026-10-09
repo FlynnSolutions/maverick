@@ -9,7 +9,7 @@
 export type ColumnId = "priority" | "in-progress" | "backlog" | "shipped";
 
 /** Structured lines an item may carry, as `  - key: value` under its bullet. */
-export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by", "mission", "milestone", "repo", "call"] as const;
+export const FIELD_KEYS = ["created", "source", "due", "release", "size", "kind", "status", "owner", "plan", "pr", "links", "blocked-by", "mission", "milestone", "repo", "call", "attempt", "verdict", "commit"] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
 export interface Item {
@@ -119,7 +119,7 @@ const titleOf = (firstLine: string): string => {
 const tagsOf = (firstLine: string): string[] =>
   [...firstLine.matchAll(/`\[([A-Za-z]+)\]`/g)].map((m) => m[1]);
 
-const FIELD_LINE = /^\s{2,}- ([a-z][a-z-]*):\s*(.*)$/;
+export const FIELD_LINE = /^\s{2,}- ([a-z][a-z-]*):\s*(.*)$/;
 
 const parseItem = (lines: string[], start: number): Item => {
   const end = blockEnd(lines, start);

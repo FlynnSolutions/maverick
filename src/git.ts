@@ -24,13 +24,10 @@ export const uncommittedDiff = async (filePath: string): Promise<string> => {
 
 export const commitFile = async (filePath: string, message: string): Promise<string> => {
   const root = await repoRootOf(filePath);
-  // A no-op edit (an item dropped back where it was) must not try to commit nothing.
-  try {
-    await run("git", ["-C", root, "diff", "--quiet", "--", filePath]);
-    return "no change";
-  } catch {
-    /* exit 1: the file differs, commit it */
-  }
+  // A no-op edit (an item dropped back where it was) must not try to commit nothing. Status
+  // rather than diff, so a file written for the first time (a mission's ledger) counts as a change.
+  const { stdout: status } = await run("git", ["-C", root, "status", "--porcelain", "--", filePath]);
+  if (!status.trim()) return "no change";
   await run("git", ["-C", root, "add", "--", filePath]);
   await run("git", ["-C", root, "commit", "-q", "-m", message, "--", filePath]);
   const { stdout: sha } = await run("git", ["-C", root, "rev-parse", "--short", "HEAD"]);

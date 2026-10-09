@@ -5,6 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +15,7 @@ import { test } from "node:test";
 const dir = mkdtempSync(join(tmpdir(), "mv-store-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "p"), { recursive: true });
-const { StaleMissionError, __writeMissionForTest, abandonMission, closeMission, needsWalking, readMission, recordWalkthrough, walkthroughState } = await import("../src/missions.ts");
+const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, closeMission, needsWalking, parsePlan, readMission, recordWalkthrough, walkthroughState } = await import("../src/missions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
 const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
@@ -110,4 +111,28 @@ test("a milestone that changed nothing has nothing to walk, and progress through
   assert.equal(walkthroughState((await readMission("p", "counted"))!.milestones[0]), "walking");
   await recordWalkthrough(project, "counted", 1, { progress: { total: 2, answered: 2, verdicts: { a: "pass", b: "fail" }, updatedAt: "2026-01-02T00:20:00Z" } });
   assert.equal(walkthroughState((await readMission("p", "counted"))!.milestones[0]), "walked", "every case answered is walked, whatever the verdicts were; the verdicts are for the person");
+});
+
+test("a person's decision is written into the plan on the mission branch and committed there", async () => {
+  // A real repo standing in for the project, with its integration worktree being the repo itself.
+  const repoDir = mkdtempSync(join(tmpdir(), "mv-ledger-"));
+  const git = (...args: string[]) => execFileSync("git", ["-C", repoDir, ...args], { encoding: "utf8" });
+  git("init", "-q");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "base");
+  mkdirSync(join(repoDir, "deliverables", "missions"), { recursive: true });
+  await writeFile(join(repoDir, "deliverables", "missions", "ledger.md"), "# Mission: ledger\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  Build it.\n", "utf8");
+  const m = await seed("ledger");
+  m.plan = "deliverables/missions/ledger.md";
+  m.repos = [{ label: "root", path: repoDir, base: "main", branch: "mission/ledger", integration: repoDir, land: "merge" }];
+  m.milestones[0].tasks[0].status = "handed-back";
+  await writeFile(file("ledger"), JSON.stringify(m), "utf8");
+
+  await acceptTask({ id: "p", name: "P", path: repoDir, trackers: [] } as never, "ledger", "m1-t1", "read the diff myself");
+  const text = await readFile(join(repoDir, "deliverables", "missions", "ledger.md"), "utf8");
+  const plan = parsePlan(text, ["root"]);
+  assert.equal(plan.milestones[0].tasks[0].status, "passed", text);
+  assert.match(plan.log[0], /m1-t1 t: pending to passed/, "the transition is logged");
+  assert.match(plan.log[1], /accepted by Cory over the RIO: read the diff myself/, "and so is the decision");
+  assert.match(git("log", "--format=%s", "-1"), /^mission ledger: m1-t1 t: pending to passed \(\+1\)/, "committed on the mission branch's worktree");
+  assert.equal(git("status", "--porcelain").trim(), "", "nothing left uncommitted");
 });

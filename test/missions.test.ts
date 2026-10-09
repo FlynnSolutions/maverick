@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { costOf, parsePlan } from "../src/missions.ts";
+import { applyPlanState, costOf, parsePlan } from "../src/missions.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
 const PLAN = `# Mission: the Strike Lead
@@ -169,4 +169,69 @@ test("a single-repo project may leave the repo line off, and every task gets tha
   const plan = parsePlan(PLAN, ["root"]);
   assert.equal(plan.problems.length, 0, plan.problems.join("; "));
   assert.ok(plan.milestones.flatMap((m) => m.tasks).every((t) => t.repo === "root"));
+});
+
+const FLOWN = `# Mission: flown
+
+Half way through.
+
+## Milestone 1 — the first
+
+_done when: both tasks pass._
+
+- [x] **Already passed**
+  - repo: root
+  - status: passed
+  - attempt: 1
+  - verdict: pass
+  - commit: abc1234
+  Build the first thing.
+
+- [~] **In review now**
+  - status: reviewing
+  - attempt: 2
+  Build the second thing.
+
+## Log
+
+- 2026-10-09 08:00 m1-t1 Already passed: pending to flying
+- 2026-10-09 09:00 m1-t1 Already passed: reviewing to passed (RIO: pass)
+`;
+
+test("the plan on the mission branch is the ledger: parsePlan reads the state and the log back", () => {
+  const plan = parsePlan(FLOWN, ["root"]);
+  assert.equal(plan.problems.length, 0, plan.problems.join("; "));
+  const [done, reviewing] = plan.milestones[0].tasks;
+  assert.deepEqual({ status: done.status, attempts: done.attempts, verdict: done.verdict, head: done.head }, { status: "passed", attempts: 1, verdict: "pass", head: "abc1234" });
+  assert.deepEqual({ status: reviewing.status, attempts: reviewing.attempts, verdict: reviewing.verdict }, { status: "reviewing", attempts: 2, verdict: undefined });
+  assert.equal(reviewing.intent, "Build the second thing.");
+  assert.equal(plan.log.length, 2);
+  assert.match(plan.log[1], /reviewing to passed/);
+});
+
+test("a state the ledger cannot have is a problem, not a guess", () => {
+  const plan = parsePlan(FLOWN.replace("- status: reviewing", "- status: flown"), ["root"]);
+  assert.ok(plan.problems.some((p) => /status "flown"/.test(p)), plan.problems.join("; "));
+  const verdict = parsePlan(FLOWN.replace("- verdict: pass", "- verdict: maybe"), ["root"]);
+  assert.ok(verdict.problems.some((p) => /verdict "maybe"/.test(p)), verdict.problems.join("; "));
+});
+
+test("applyPlanState writes the state under each task and reads back equal, leaving the Lead's words alone", () => {
+  const { milestones } = parsePlan(PLAN, ["root"]);
+  milestones[0].tasks[0] = { ...milestones[0].tasks[0], status: "passed", attempts: 1, verdict: "pass", head: "deadbee" };
+  milestones[0].tasks[1] = { ...milestones[0].tasks[1], status: "reviewing", attempts: 2 };
+  const once = applyPlanState(PLAN, milestones, ["2026-10-09 10:00 m1-t1 Parse the plan document: reviewing to passed (RIO: pass)"]);
+  const back = parsePlan(once, ["root"]);
+  assert.equal(back.problems.length, 0, back.problems.join("; "));
+  assert.deepEqual(back.milestones.map((m) => m.tasks.map((t) => [t.status, t.attempts, t.verdict, t.head])), [[["passed", 1, "pass", "deadbee"], ["reviewing", 2, undefined, undefined]], [["pending", 0, undefined, undefined]]]);
+  // The prose, the done lines and the intro are untouched; only the state moved.
+  assert.deepEqual(back.milestones.map((m) => m.tasks.map((t) => t.intent)), parsePlan(PLAN, ["root"]).milestones.map((m) => m.tasks.map((t) => t.intent)));
+  assert.equal(back.intro, parsePlan(PLAN, ["root"]).intro);
+  assert.match(once, /^- \[x\] \*\*Parse the plan document\*\*\n  - status: passed\n  - attempt: 1\n  - verdict: pass\n  - commit: deadbee\n  Read the Strike Lead's/m);
+  assert.deepEqual(back.log, ["2026-10-09 10:00 m1-t1 Parse the plan document: reviewing to passed (RIO: pass)"]);
+  // Writing the same state again changes nothing, and a new entry lands after the old one.
+  assert.equal(applyPlanState(once, milestones), once);
+  const twice = applyPlanState(once, milestones, ["2026-10-09 10:05 m1-t2 Write the plan into the tracker: reviewing to passed (RIO: pass)"]);
+  assert.deepEqual(parsePlan(twice, ["root"]).log.map((l) => l.slice(0, 16)), ["2026-10-09 10:00", "2026-10-09 10:05"]);
+  assert.ok(twice.endsWith("(RIO: pass)\n"), JSON.stringify(twice.slice(-80)));
 });
