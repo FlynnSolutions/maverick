@@ -22,7 +22,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { FINISHED, backgroundAgents, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
+import { FINISHED, backgroundAgents, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent } from "./git.ts";
 import { slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -32,6 +32,7 @@ import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { FIELD_LINE, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
+import { planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -410,8 +411,7 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
  */
 const syncPlan = async (project: Project, mission: Mission, decisions: string[] = []): Promise<void> => {
   const source = join(project.path, mission.plan);
-  const repo = mission.repos.filter((r) => source.startsWith(`${r.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
-  const ledger = repo ? join(repo.integration, relative(repo.path, source)) : source;
+  const ledger = planOnBranch(project.path, mission.plan, mission.repos);
   try {
     const current = await readFile(ledger, "utf8").catch(() => readFile(source, "utf8"));
     const was = new Map(parsePlan(current).milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
@@ -637,6 +637,9 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   }));
   mission.planCommit = await writePlanToTracker(project, mission, parsed.intro);
   for (const repo of mission.repos) {
+    // Before any worktree exists: the worktrees and the scratch folders inside them are ignored
+    // locally, so nothing on a base branch can sweep them in (M8).
+    await excludeLocally(repo.path, [`${cfg.worktrees}/`, ".scratch/"]);
     await ensureBranch(repo.path, repo.branch, repo.base);
     await ensureWorktree(repo.path, repo.integration, repo.branch, repo.base);
   }
@@ -651,49 +654,13 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
 
 /* ---------- the flight ---------- */
 
-const wingmanPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, findings?: string): string => [
-  `You are a Wingman on the mission "${mission.name}" in the project at ${project.path}. You own one task and nothing else.`,
-  "",
-  `Your repo is ${repo.label}, at ${repo.path}. Your worktree is ${task.worktree}, on branch ${task.branch}, branched from ${repo.branch}. Work there and only there: do not touch the project's other repos, do not touch their main worktrees, do not switch branches, and do not merge anything.`,
-  ...(mission.repos.length > 1
-    ? ["", [
-        "This mission spans more than one repo, and the milestones before yours have already landed their work on their own branches. **None of it has been merged to a base branch**, so do not expect to find it on main or develop. Where you need to read what an earlier milestone did, read it there:",
-        ...mission.repos.filter((r) => r.label !== repo.label).map((r) => `  - ${r.label}: branch ${r.branch} in ${r.path}, checked out at ${r.integration}`),
-        "If your task depends on something upstream that is not on that branch either, stop and say so rather than inventing it.",
-      ].join("\n")]
-    : []),
-  "",
-  `Milestone ${m.n} — ${m.title}. That milestone is done when: ${m.done}`,
-  "",
-  `Your task: ${task.title}`,
-  "",
-  task.intent,
-  "",
-  ...(findings ? [`A RIO who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${findings}\n\nStart from the code that is already on your branch and fix what the findings name. Do not argue with the RIO in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.`, ""] : []),
-  "Read the repo's own rules before you write anything: its rulebook, its decision log and its design contract if it has them. Match the code around you.",
-  "",
-  "Commit your work in your worktree, in small commits with plain lowercase subjects. Do not write to the project's trackers; Maverick owns those for this mission. Do not open a pull request. Do not spawn other agents.",
-  "",
-  "When you are done, stop. A RIO that is not you will check the work, so do not grade yourself in the commit messages: say what you did and what you could not verify.",
-].join("\n");
+const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo): BriefContext => ({ projectPath: project.path, mission, milestone: m, task, repo });
 
-const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, file: string): string => [
-  `You are the RIO for one Wingman on the mission "${mission.name}" in the project at ${project.path}. You fly in its back seat: you read what it did and you call it. You did not write this code and you will not fix it.`,
-  "",
-  `The work is in the ${repo.label} repo, on branch ${task.branch}, in the worktree at ${task.worktree}. Read every commit on it that ${repo.branch} does not have (\`git -C ${task.worktree} log ${repo.branch}..HEAD -p\`).`,
-  "",
-  `The task it was given: ${task.title}`,
-  "",
-  task.intent,
-  "",
-  `The milestone it belongs to is done when: ${m.done}`,
-  "",
-  "Judge whether the work does what the task says, in the repo's own terms. Run the thing: its tests, its build, its checks, whatever the repo actually has. Where it has none, say so and verify by reading and by running the code by hand. Check it against the repo's binding rules, not only against the task.",
-  "",
-  `Write your findings to ${file}. The FIRST line must be exactly one of: "verdict: pass", "verdict: fail", "verdict: mixed". Then a markdown list of findings, each with a severity (blocker / major / minor / note), the evidence (file, line, command output), and whether it contradicts what the session claimed about itself. Say plainly what you could not verify.`,
-  "",
-  "Do not fix anything. Do not commit. Do not touch the trackers. Do not spawn other agents.",
-].join("\n");
+const wingmanPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, findings?: string): string =>
+  wingmanBrief(briefContext(project, mission, m, task, repo), findings ? { findings } : undefined);
+
+const reviewPrompt = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, file: string): string =>
+  rioBrief(briefContext(project, mission, m, task, repo), file);
 
 /**
  * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:

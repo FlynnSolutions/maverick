@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readdir, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { REPLY_FORMAT_ARGS } from "./reply-format.ts";
@@ -128,6 +128,22 @@ const branchExists = async (repoPath: string, branch: string): Promise<boolean> 
 };
 
 /** Create `branch` at `from` unless it is already there. Never checks anything out. */
+/**
+ * Ignore paths in one repo without committing anything: `.git/info/exclude` is local, shared by
+ * the repo's worktrees, and read by every git command. The mission's worktrees and the scratch
+ * folders inside them go here before any are made, so a careless `git add -A` on a base branch
+ * cannot sweep a worktree in as an embedded repo. Idempotent.
+ */
+export const excludeLocally = async (repoPath: string, patterns: string[]): Promise<void> => {
+  const { stdout } = await run("git", ["-C", repoPath, "rev-parse", "--git-common-dir"]);
+  const file = join(stdout.trim().startsWith("/") ? stdout.trim() : join(repoPath, stdout.trim()), "info", "exclude");
+  const have = new Set((await readFile(file, "utf8").catch(() => "")).split("\n").map((l) => l.trim()));
+  const missing = patterns.filter((p) => !have.has(p));
+  if (!missing.length) return;
+  await mkdir(dirname(file), { recursive: true });
+  await appendFile(file, `${missing.join("\n")}\n`, "utf8");
+};
+
 export const ensureBranch = async (repoPath: string, branch: string, from = "HEAD"): Promise<void> => {
   if (await branchExists(repoPath, branch)) return;
   await run("git", ["-C", repoPath, "branch", branch, from]);
