@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, mergeable, needsPerson, runProof, settleReview, startable, strays, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, parsePlan, mergeable, needsPerson, runProof, settle, settleReview, startable, strays, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 
@@ -427,7 +427,7 @@ test("milestones merge in order, and only once sent: a later one whose tasks all
   const sent = { ...second, dispatched: "x" };
   assert.equal(mergeable({ milestones: [first, sent] }, sent), false, "sent, but the one before it has not merged");
   assert.equal(mergeable({ milestones: [{ ...first, merged: "x" }, sent] }, sent), true);
-  const held = { ...sent, conflicts: ["root/a.ts"] };
+  const held = { ...sent, conflicts: ["root/a.ts"], hold: { kind: "collision", reason: "collided", at: "2026-10-09T00:00:00Z" } };
   assert.equal(mergeable({ milestones: [{ ...first, merged: "x" }, held] }, held), false, "a held milestone is not merged again");
   assert.deepEqual(startable({ status: "paused", milestones: [{ ...first, tasks: [t("m1-t1", "pending")] }] }), [], "nothing starts while paused");
 });
@@ -436,8 +436,8 @@ test("a person is needed for a handed-back task or a held milestone, and for not
   const t = (id: string, status: MissionTask["status"], note?: string) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, ...(note ? { note } : {}) });
   assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", tasks: [t("m1-t1", "flying"), t("m1-t2", "passed")] }] }), []);
   assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", tasks: [t("m1-t1", "handed-back", "the RIO said fail after 2 attempts")] }] }), ["m1-t1: the RIO said fail after 2 attempts"]);
-  assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", merged: "x", held: "could not land: svc", tasks: [t("m1-t1", "passed")] }] }), ["could not land: svc"], "a landing that failed holds its milestone");
-  assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", conflicts: ["root/a.ts"], held: "milestone 1 collided", tasks: [t("m1-t1", "passed")] }] }), ["milestone 1 collided"]);
+  assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", merged: "x", hold: { kind: "landing", reason: "could not land: svc", at: "2026-10-09T00:00:00Z" }, tasks: [t("m1-t1", "passed")] }] }), ["could not land: svc"], "a landing that failed holds its milestone");
+  assert.deepEqual(needsPerson({ milestones: [{ n: 1, title: "a", done: "d", conflicts: ["root/a.ts"], hold: { kind: "collision", reason: "milestone 1 collided", at: "2026-10-09T00:00:00Z" }, tasks: [t("m1-t1", "passed")] }] }), ["milestone 1 collided"]);
 });
 
 test("one deployer per stack per milestone, and a shared environment is nobody's to deploy from a task", () => {
@@ -459,14 +459,17 @@ test("the proof runs where the milestone merged, and a proof that cannot run is 
   assert.equal(bad.ok, false);
   assert.match(bad.output, /broke/);
   assert.equal((await runProof("/nowhere/at/all", "true")).ok, false);
-  // A server started in the background does not hold the proof open, and does not outlive it.
+  // A server started in the background does not hold the proof open, and does not outlive it:
+  // the proof prints its background pid and the test watches that one pid, nothing else on the host.
   const started = Date.now();
-  const bg = await runProof(import.meta.dirname, "sleep 30 & echo started");
+  const bg = await runProof(import.meta.dirname, "sleep 31.4159 & echo pid=$!");
   assert.equal(bg.ok, true);
   assert.ok(Date.now() - started < 5000, `took ${Date.now() - started}ms: judged by the shell's exit, not its pipes`);
-  await new Promise((r) => setTimeout(r, 700));
-  const { execFileSync } = await import("node:child_process");
-  assert.ok(!execFileSync("ps", ["-eo", "command"], { encoding: "utf8" }).split("\n").some((l) => l === "sleep 30"), "the group was killed after the proof");
+  const pid = Number(bg.output.match(/pid=(\d+)/)?.[1]);
+  assert.ok(pid > 0, bg.output);
+  const alive = (): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  for (let i = 0; i < 40 && alive(); i += 1) await new Promise((r) => setTimeout(r, 50));
+  assert.equal(alive(), false, "the group was killed after the proof");
   const slow = await runProof(import.meta.dirname, "sleep 20", 300);
   assert.equal(slow.ok, false);
   assert.match(slow.output, /timed out/);
@@ -474,8 +477,31 @@ test("the proof runs where the milestone merged, and a proof that cannot run is 
 
 test("a need in a held milestone is not a base to build on", () => {
   const t = (id: string, status: MissionTask["status"], needs?: string[]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, ...(needs ? { needs } : {}) });
-  const held = { n: 1, title: "a", done: "d", dispatched: "x", merged: "x", held: "could not land: svc", tasks: [t("m1-t1", "passed")] };
+  const held = { n: 1, title: "a", done: "d", dispatched: "x", merged: "x", hold: { kind: "landing", reason: "could not land: svc", at: "2026-10-09T00:00:00Z" }, tasks: [t("m1-t1", "passed")] };
   const later = { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending", ["m1-t1"])] };
   assert.deepEqual(startable({ status: "blocked", milestones: [held, later] }), [], "the push never landed, so nothing builds on it");
-  assert.deepEqual(startable({ status: "flying", milestones: [{ ...held, held: undefined }, later] }).map((s) => s.task.id), ["m2-t1"]);
+  assert.deepEqual(startable({ status: "flying", milestones: [{ ...held, hold: undefined }, later] }).map((s) => s.task.id), ["m2-t1"]);
+  // One deployer per stack in the air, and one owner per path in the air, whatever the milestones say.
+  const flyer = { ...t("m1-t1", "flying"), deploys: ["compute"], touches: ["src/a/"] };
+  const sameStack = { ...t("m1-t2", "pending"), deploys: ["Compute"] };
+  const samePath = { ...t("m1-t3", "pending"), touches: ["src/a/b.ts"] };
+  const apart = { ...t("m1-t4", "pending"), deploys: ["data"], touches: ["src/z.ts"] };
+  assert.deepEqual(startable({ status: "flying", milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", tasks: [flyer, sameStack, samePath, apart] }] }).map((s) => s.task.id), ["m1-t4"], "the two that would clash with the flyer wait their turn");
+});
+
+test("settle is the one derivation of a mission's status: paused is the person's word, review is all merged and unheld, blocked is a person needed", () => {
+  const t = (id: string, status: MissionTask["status"]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1 });
+  const base = { id: "x", project: "p", name: "X", brief: "b", created: "x", plan: "p.md", trackerIndex: 0, land: "merge", repos: [], status: "flying" } as unknown as Mission;
+  const flying = settle({ ...base, milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", tasks: [t("m1-t1", "flying")] }] });
+  assert.deepEqual([flying.status, flying.trouble], ["flying", undefined]);
+  const blocked = settle({ ...base, milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", tasks: [{ ...t("m1-t1", "handed-back"), note: "yours" }] }] }, ["m1-t2 is waiting on you"]);
+  assert.deepEqual([blocked.status, blocked.trouble], ["blocked", "m1-t1: yours · m1-t2 is waiting on you"]);
+  const paused = settle({ ...base, pausedFor: "token expired", milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", tasks: [{ ...t("m1-t1", "handed-back"), note: "yours" }] }] });
+  assert.deepEqual([paused.status, paused.trouble], ["paused", "paused: token expired · m1-t1: yours"]);
+  const review = settle({ ...base, milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", merged: "x", tasks: [t("m1-t1", "passed")] }] });
+  assert.equal(review.status, "review");
+  const heldMerged = settle({ ...base, milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", merged: "x", hold: { kind: "proof", reason: "the proof failed", at: "x" }, tasks: [t("m1-t1", "passed")] }] });
+  assert.deepEqual([heldMerged.status, heldMerged.trouble], ["blocked", "the proof failed"], "merged but held is not review");
+  const closed = settle({ ...base, status: "closed", milestones: [] } as Mission);
+  assert.equal(closed.status, "closed", "an ended mission is not re-derived");
 });

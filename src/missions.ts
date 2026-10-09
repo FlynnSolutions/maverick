@@ -18,9 +18,8 @@
  * RIO said, which gates opened — at `~/.claude/console-sessions/missions/<project>/<id>.json`,
  * the same named exception `ships/` already uses.
  */
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { promisify } from "node:util";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
@@ -35,7 +34,7 @@ import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { FIELD_LINE, MARKER, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
 import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
-import { parseRequirements, preflight, type Check, type Requirement } from "./preflight.ts";
+import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
@@ -90,8 +89,6 @@ export interface MissionTask {
   verdict?: Verdict;
   /** Why this task stopped needing an agent, in words, when it did not simply pass. */
   note?: string;
-  /** A retry its RIO asked for while the mission was paused: the findings file to send the fresh Wingman out with on resume. */
-  retry?: string;
   /** NOTE-level findings the task passed with, or merged with when it ran out of retries. They ride to the result page and the report. */
   carried?: string[];
 }
@@ -131,6 +128,10 @@ export interface WalkView { state: WalkthroughState; needed: boolean }
 
 export interface WalkthroughPatch { progress?: WalkthroughProgress; waive?: { note: string } }
 
+/** What holds a milestone for a person: a collision nobody could reconcile, a landing that failed, a proof that failed on the merged tree. */
+export type HoldKind = "collision" | "landing" | "proof";
+export interface Hold { kind: HoldKind; reason: string; at: string }
+
 /** A thing one task makes and another uses: a type, an id, a codec, an env flag, a function. Named before fan-out, with its owner and its shape. */
 export interface Contract {
   name: string;
@@ -151,8 +152,8 @@ export interface Milestone {
   /** The merge commit per repo, since a milestone can land work in more than one. */
   mergeShas?: Record<string, string>;
   conflicts?: string[];
-  /** Why this milestone waits for a person: a collision nobody could reconcile, or a landing that failed. Kept until they act, so the reason survives the pass. */
-  held?: string;
+  /** Why this milestone waits for a person, and since when. Kept until they act, so the reason survives the pass; the kind says what release means. */
+  hold?: Hold;
   /** The one Strike Lead attempt a collision gets has been spent. */
   resolveTried?: boolean;
   /** The project's proof command, run in the integration worktree after this milestone merged. */
@@ -207,6 +208,8 @@ export interface Mission {
   contracts?: Contract[];
   /** What the mission needs of the host and the person, from the plan's `## Preflight` section. */
   requirements?: Requirement[];
+  /** The project sets a proof command, so a merged milestone is not done until its proof passed. Frozen at approval. */
+  proofRequired?: boolean;
   /** Bumped on every write. A write carrying a stale one is refused; see `writeMission`. */
   rev?: number;
   /** How many milestones this mission has had to reconcile. A plan whose tasks overlap shows up here. */
@@ -446,11 +449,11 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
       continue;
     }
     if (LOG_HEADING.test(section.heading)) {
-      log = lines.slice(section.start + 1, section.end).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
+      log = bulletsOf(section);
       continue;
     }
     if (CONTRACTS_HEADING.test(section.heading)) {
-      for (const line of lines.slice(section.start + 1, section.end).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim())) {
+      for (const line of bulletsOf(section)) {
         const m = line.match(CONTRACT_LINE);
         if (m) contracts.push({ name: (m[1] ?? m[2] ?? m[3]).trim(), owner: m[4].toLowerCase(), shape: m[5].trim() });
         else problems.push(`contract "${line.slice(0, 60)}" is not "**name** (owner: <task id>): <shape>"`);
@@ -485,12 +488,12 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
         ...(commit ? { head: commit } : {}),
         ...(touches ? { touches: listField(touches, /,/) } : {}),
         ...(needs ? { needs: listField(needs, /[,\s]+/) } : {}),
-        ...(deploys ? { deploys: listField(deploys.replace(/[`*]/g, "").toLowerCase(), /[,;]/) } : {}),
+        ...(deploys ? { deploys: listField(deploys.replace(/[`*]/g, ""), /[,;]/) } : {}),
       };
     });
     // One deployer per stack per milestone: two tasks flying together deploying one stack raced on the first mission.
     const deployers = new Map<string, string[]>();
-    for (const t of tasks) for (const stack of t.deploys ?? []) deployers.set(stack, [...(deployers.get(stack) ?? []), t.id]);
+    for (const t of tasks) for (const stack of t.deploys ?? []) deployers.set(stack.toLowerCase(), [...(deployers.get(stack.toLowerCase()) ?? []), t.id]);
     for (const [stack, ids] of deployers) if (ids.length > 1) problems.push(`milestone ${n}: ${ids.join(" and ")} both deploy ${stack}; one deployer per stack per milestone`);
     for (const t of tasks) for (const p of t.touches ?? []) {
       const why = badPath(p);
@@ -511,12 +514,14 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   const ids = new Set(milestones.flatMap((m) => m.tasks.map((t) => t.id)));
   // A shared environment is deployed by the merged mission branch and by nothing that flies in parallel.
   const sharedLower = shared.map((s) => s.toLowerCase());
-  for (const m of milestones) for (const t of m.tasks) for (const stack of t.deploys ?? []) if (sharedLower.includes(stack)) problems.push(`"${t.title}" in milestone ${m.n} deploys ${stack}, which this project lists as shared; only the merged mission branch deploys there`);
-  for (const c of contracts) if (!ids.has(c.owner)) problems.push(`contract "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
-  for (const c of contracts) if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
+  for (const m of milestones) for (const t of m.tasks) for (const stack of t.deploys ?? []) if (sharedLower.includes(stack.toLowerCase())) problems.push(`"${t.title}" in milestone ${m.n} deploys ${stack}, which this project lists as shared; only the merged mission branch deploys there`);
   // The same thing written in two markdown styles is the same thing, and the check exists to catch two owners for it.
   const plain = (name: string): string => name.replace(/[`*]/g, "").trim().toLowerCase();
-  for (const [i, c] of contracts.entries()) if (contracts.findIndex((x) => plain(x.name) === plain(c.name)) !== i) problems.push(`contract "${c.name}" is named twice`);
+  for (const [i, c] of contracts.entries()) {
+    if (!ids.has(c.owner)) problems.push(`contract "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
+    if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
+    if (contracts.findIndex((x) => plain(x.name) === plain(c.name)) !== i) problems.push(`contract "${c.name}" is named twice`);
+  }
   // Not a refusal: a plan whose tasks build on each other and names nothing they share is the
   // plan the first mission had, where parallel Wingmen invented the shared conventions apart.
   const warnings: string[] = [];
@@ -526,7 +531,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
 };
 
 /** The preflight for a plan in this project: what a machine can check, and what is a person's. */
-const preflightFor = (project: Project, cfg: MissionConfig, choices: Array<{ label: string; path: string; land: Landing }>, parsed: ReturnType<typeof parsePlan>): Promise<Check[]> => {
+export const preflightFor = (project: Project, cfg: MissionConfig, choices: Array<{ label: string; path: string; land: Landing }>, parsed: ReturnType<typeof parsePlan>): Promise<Check[]> => {
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
   const mine = choices.filter((r) => named.has(r.label));
   return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, landsRemotely: mine.some((r) => r.land !== "merge") });
@@ -591,14 +596,24 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
  * `console-sessions/` keeps only what markdown cannot hold: session ids, worktrees, revisions.
  */
 /** The log lines for what changed between the ledger's last state and the mission's, timestamped locally. */
-const transitions = (was: Map<string, MissionTask>, mission: Mission, stamp: string, heldBefore: string[]): string[] => [
-  ...mission.milestones.flatMap((m) => m.tasks).filter((t) => {
-    const before = was.get(t.id);
-    return !before || before.status !== t.status || before.verdict !== t.verdict;
-  }).map((t) => `${stamp} ${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`),
-  // A milestone held for a person (a collision, a landing, a proof) is a transition too, written once.
-  ...mission.milestones.filter((m) => m.held && !heldBefore.includes(m.held)).map((m) => `${stamp} milestone ${m.n} held: ${m.held}`),
-];
+/**
+ * The log lines for what changed between the ledger's last state and the mission's. A line
+ * says what it is after its stamp: `auto:` for a transition the merge-with-notes rule settled
+ * without a person, `held:` for a milestone held for one, `decision:` (written by `recorded`)
+ * for what a person did, and nothing for a plain pass or retry. The report reads those words,
+ * not the prose after them.
+ */
+const transitions = (before: ReturnType<typeof parsePlan>, mission: Mission, stamp: string): string[] => {
+  const was = new Map(before.milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
+  const heldLogged = new Set(before.log.filter((l) => /^\S+ \S+ held: /.test(l)).map((l) => l.match(/\(since ([^)]+)\)/)?.[1]));
+  return [
+    ...mission.milestones.flatMap((m) => m.tasks).filter((t) => {
+      const prior = was.get(t.id);
+      return !prior || prior.status !== t.status || prior.verdict !== t.verdict;
+    }).map((t) => `${stamp} ${t.status === "passed" && t.note?.startsWith("the RIO said") ? "auto: " : ""}${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`),
+    ...mission.milestones.filter((m) => m.hold && !heldLogged.has(m.hold.at)).map((m) => `${stamp} held: milestone ${m.n} (since ${m.hold!.at}): ${m.hold!.reason}`),
+  ];
+};
 
 /**
  * The checkout the ledger may be committed in, or an error. The commit lands wherever git
@@ -623,11 +638,10 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
     // Read and diff first: a pass that changed nothing costs one read and no git.
     const existing = await readFile(ledger, "utf8").catch(() => null);
     const current = existing ?? await readFile(source, "utf8");
-    const was = new Map(parsePlan(current).milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
+    const before = parsePlan(current);
     const d = new Date();
     const stamp = `${today()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    const heldBefore = parsePlan(current).log.filter((l) => / held: /.test(l)).map((l) => l.replace(/^.*? held: /, ""));
-    const entries = [...transitions(was, mission, stamp, heldBefore), ...decisions.map((x) => `${stamp} ${x}`)];
+    const entries = [...transitions(before, mission, stamp), ...decisions.map((x) => `${stamp} decision: ${x}`)];
     if (!entries.length && existing !== null) return undefined;
     await ledgerRepoFor(mission, ledger);
     await mkdir(dirname(ledger), { recursive: true });
@@ -749,7 +763,7 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
   "",
   PLAN_FORMAT,
   "",
-  "Rules for the plan. Each task is one unit of work for one session with no other context, so its body must carry everything that session needs: the files, the shape, what it must not touch, and how it proves itself. Say what each task owns (`touches`) and what it builds on (`needs`): a task starts when what it needs has passed, so a dependency inside a milestone is allowed and means after. Before any fan-out, every type, id, codec, env flag and function one task makes and another uses goes in `## Contracts` with its owner and its shape; a task flying beside the owner, before the owner has written it, stubs it in a file of its own at the declared shape, never at the owner's path. Keep milestones small enough that a failure costs one milestone, not the mission. In `## Preflight`, say what the mission needs of the host (tools, runtimes, credentials and how long the mission runs so their lifetime can be checked, secrets by name) and what only a person can do (an inbox, a passkey, a real sign-in), with what the plan does instead; Maverick checks what a machine can before Cory approves and leaves.",
+  "Rules for the plan. Each task is one unit of work for one session with no other context, so its body must carry everything that session needs: the files, the shape, what it must not touch, and how it proves itself. Say what each task owns (`touches`) and what it builds on (`needs`): a task starts when what it needs has passed, so a dependency inside a milestone is allowed and means after. Before any fan-out, every type, id, codec, env flag and function one task makes and another uses goes in `## Contracts` with its owner and its shape. Keep milestones small enough that a failure costs one milestone, not the mission. In `## Preflight`, say what the mission needs of the host (tools, runtimes, credentials and how long the mission runs so their lifetime can be checked, secrets by name) and what only a person can do (an inbox, a passkey, a real sign-in), with what the plan does instead; Maverick checks what a machine can before Cory approves and leaves.",
   "",
   repos.length > 1
     ? [
@@ -873,11 +887,12 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
   if (parsed.problems.length) throw new Error(`the plan cannot be flown as written: ${parsed.problems.join("; ")}`);
   // A tool or an agent the mission cannot run without is refused here; a credential, a pin or a
   // human step is shown at the gate for the person to settle, and approving is their answer.
-  const failing = (await preflightFor(project, cfg, choices, parsed)).filter((c) => c.blocking && c.status === "fail");
+  const failing = (await preflightFor(project, cfg, choices, parsed)).filter((c) => refuses(c));
   if (failing.length) throw new Error(`preflight: ${failing.map((c) => `${c.name}: ${c.detail}`).join("; ")}`);
   mission.milestones = parsed.milestones;
   mission.contracts = parsed.contracts;
   mission.requirements = parsed.requirements;
+  mission.proofRequired = Boolean(cfg.proof);
   mission.land = cfg.land;
   // Only the repos the plan actually names get a branch. A project with eleven repos does not
   // get eleven mission branches because one task touches one of them.
@@ -983,10 +998,13 @@ const commissionWalkthrough = async (project: Project, mission: Mission, m: Mile
   if (!repo) return;
   const started = new Date().toISOString();
   try {
-    const claudeId = await spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m)));
-    m.walkthrough = { claudeId, started };
+    await claimed(mission,
+      () => { m.walkthrough = { started }; },
+      () => spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m))),
+      (claudeId) => { m.walkthrough = { claudeId, started }; });
     agentCache.delete(project.path);
   } catch (err) {
+    if (err instanceof StaleMissionError) throw err;
     m.walkthrough = { started, failed: `could not start the walkthrough builder: ${(err as Error).message}` };
   }
 };
@@ -1039,14 +1057,72 @@ const recordWingman = async (mission: Mission, task: MissionTask): Promise<void>
  * dependencies, not its milestone boundaries, decide when work can begin, and one straggler no
  * longer idles everything behind it. The milestone still merges as one, once all its tasks pass.
  */
+/** Whether two tasks could collide in the air: a stack both deploy, or a path both own. */
+const clash = (a: MissionTask, b: MissionTask): boolean => {
+  const fold = (s: string): string => s.toLowerCase().replace(/\/+$/, "");
+  return (a.deploys ?? []).some((d) => (b.deploys ?? []).some((e) => fold(d) === fold(e)))
+    || (a.touches ?? []).some((x) => (b.touches ?? []).some((y) => pathsOverlap(fold(x), fold(y))));
+};
+
+/**
+ * Which pending tasks may start now. A task with no `needs` starts with its milestone. A task
+ * with `needs` starts when every task it names has passed, wherever that task is: a sibling in
+ * the same milestone, or a task in an earlier milestone that has not merged yet. So the plan's
+ * dependencies, not its milestone boundaries, decide when work can begin, and one straggler no
+ * longer idles everything behind it. The milestone still merges as one, once all its tasks pass.
+ * A need in a held milestone (a landing that failed, a collision nobody reconciled) is not a
+ * base to build on, and a task that would deploy a stack or own a path a task in the air has
+ * waits its turn: one deployer per stack in the air, whatever the milestones say.
+ */
 export const startable = (mission: Pick<Mission, "milestones" | "status">): Array<{ milestone: Milestone; task: MissionTask }> => {
   if (mission.status === "paused") return [];
-  // A need in a held milestone (a landing that failed, a collision nobody reconciled) is not a
-  // base to build on: that is exactly the hold's point.
-  const passed = new Set(mission.milestones.filter((m) => !m.held).flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
+  const all = mission.milestones.flatMap((m) => m.tasks);
+  const passed = new Set(mission.milestones.filter((m) => !m.hold).flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
+  const airborne = all.filter((t) => ["flying", "built", "reviewing"].includes(t.status));
   return mission.milestones.flatMap((milestone) => milestone.tasks
     .filter((task) => task.status === "pending" && (task.needs?.length ? task.needs.every((id) => passed.has(id)) : Boolean(milestone.dispatched)))
+    .filter((task) => !airborne.some((other) => clash(task, other)))
     .map((task) => ({ milestone, task })));
+};
+
+/** The one definition of "a person is needed": a task handed back, or a milestone held. Used by the sweep, resume, release and landAgain alike, through `settle`. */
+export const needsPerson = (mission: Pick<Mission, "milestones">): string[] => [
+  ...mission.milestones.flatMap((m) => m.tasks.filter((t) => t.status === "handed-back").map((t) => `${t.title}: ${t.note ?? (t.verdict ? `the RIO said ${t.verdict}` : "no verdict recorded")}`)),
+  ...mission.milestones.filter((m) => m.hold).map((m) => m.hold!.reason),
+];
+
+/**
+ * The one derivation of a mission's status and trouble from its record, called at the end of
+ * every pass and every person's action. Paused is the person's word; review is every milestone
+ * merged and unheld; blocked is a person needed somewhere; otherwise it flies. Statuses before
+ * approval and after the end are not its business.
+ */
+export const settle = (mission: Mission, extra: string[] = []): Mission => {
+  if (SWEPT.has(mission.status) || mission.status === "review") {
+    const done = (m: Milestone): boolean => Boolean(m.merged) && !m.hold && (!mission.proofRequired || Boolean(m.proof?.ok));
+    mission.status = mission.pausedFor !== undefined ? "paused"
+      : mission.milestones.length && mission.milestones.every(done) ? "review"
+      : needsPerson(mission).length ? "blocked" : "flying";
+    if (mission.status === "review") mission.finished ??= new Date().toISOString();
+  }
+  const open = [...(mission.pausedFor !== undefined ? [`paused: ${mission.pausedFor}`] : []), ...needsPerson(mission), ...extra];
+  mission.trouble = open.length ? open.join(" · ") : undefined;
+  return mission;
+};
+
+const holdFor = (m: Milestone, kind: HoldKind, reason: string): void => { m.hold ??= { kind, reason, at: new Date().toISOString() }; };
+
+/**
+ * Claim on disk, then spawn, then record the id (M11). A record that refuses the claim means a
+ * person moved the mission while this pass was busy, and the StaleMissionError ends the pass
+ * before any agent is spawned that nobody owns. What the spawn needs is already on the record
+ * when it starts; the id is patched in after.
+ */
+const claimed = async <T>(mission: Mission, claim: () => void, spawn: () => Promise<T>, record: (result: T) => void): Promise<void> => {
+  claim();
+  await writeMission(mission);
+  record(await spawn());
+  await writeMission(mission);
 };
 
 /** Cut a task's worktree from the mission branch as it stands now and send its Wingman out. */
@@ -1057,53 +1133,45 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     await ensureWorktree(repo.path, task.worktree, task.branch, repo.branch);
     // The fork point is the branch just made, not the mission tip a moment later.
     task.base = await revParse(repo.path, task.branch);
-    // Claimed on disk before the spawn: a record that refuses the claim means a person moved
-    // the mission while this pass was busy, and no Wingman is spawned that nobody owns.
-    task.status = "flying";
-    task.started = new Date().toISOString();
-    task.attempts = 1;
-    await writeMission(mission);
-    task.claudeId = await spawnBackgroundAgent(task.worktree, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg.shared)), cfg.wingmanAgent);
+    await claimed(mission,
+      () => { task.status = "flying"; task.started = new Date().toISOString(); task.attempts = 1; },
+      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg.shared)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+      (claudeId) => { task.claudeId = claudeId; });
     agentCache.delete(project.path);
     await recordWingman(mission, task);
   } catch (err) {
     if (err instanceof StaleMissionError) throw err;
     task.status = "handed-back";
     task.note = `could not launch: ${(err as Error).message}`;
+    await writeMission(mission);
   }
-  // Saved per task, not once at the end: a spawn that is not on disk is an agent nobody owns.
-  await writeMission(mission);
 };
 
-/** The one definition of "a person is needed": a task handed back, or a milestone held for a collision or a landing. Used by the sweep, resume and landAgain alike. */
-export const needsPerson = (mission: Pick<Mission, "milestones">): string[] => [
-  ...mission.milestones.flatMap((m) => m.tasks.filter((t) => t.status === "handed-back").map((t) => `${t.title}: ${t.note ?? `the RIO said ${t.verdict}`}`)),
-  ...mission.milestones.filter((m) => m.held).map((m) => m.held!),
-];
-
-const run = promisify(execFile);
+/** What a Wingman's shell is told about itself, so a project's own scripts can refuse what the brief forbids. */
+const wingmanEnv = (task: MissionTask, cfg: MissionConfig): Record<string, string> => ({ MAVERICK_TASK: task.id, ...(cfg.shared.length ? { MAVERICK_SHARED: cfg.shared.join(",") } : {}) });
 
 /**
  * Run the project's proof command where the milestone's work is merged. Never throws: a proof
  * that cannot run is a failed proof. The command runs in its own process group and is judged
  * by the shell's exit, not by its pipes closing, so a server it starts in the background does
- * not hold the proof open until the timeout; and the whole group is killed afterwards, so
- * nothing it started outlives it. A proof that times out is a failed proof.
+ * not hold the proof open until the timeout; and the whole group is killed afterwards, and when
+ * this process ends, so nothing it started outlives it. A proof that times out is a failed proof.
  */
+const liveProofGroups = new Set<number>();
+const killProofGroups = (): void => { for (const pgid of liveProofGroups) try { process.kill(-pgid, "SIGKILL"); } catch { /* gone */ } };
+process.once("exit", killProofGroups);
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { killProofGroups(); process.exit(signal === "SIGINT" ? 130 : 143); });
+
 export const runProof = (cwd: string, command: string, timeoutMs = 30 * 60_000): Promise<{ ok: boolean; at: string; output: string }> =>
   new Promise((resolve) => {
     const at = new Date().toISOString();
     let output = "";
-    let child: ReturnType<typeof spawn>;
-    try {
-      child = spawn("sh", ["-c", command], { cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
-    } catch (err) {
-      return resolve({ ok: false, at, output: (err as Error).message });
-    }
+    const child = spawn("sh", ["-c", command], { cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    if (child.pid) liveProofGroups.add(child.pid);
     const keep = (chunk: Buffer): void => { output = (output + chunk.toString()).slice(-4000); };
     child.stdout?.on("data", keep);
     child.stderr?.on("data", keep);
-    const killGroup = (): void => { if (child.pid) try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ } };
+    const killGroup = (): void => { if (child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ } liveProofGroups.delete(child.pid); } };
     const timer = setTimeout(() => { killGroup(); done(false, `${output}\n(timed out after ${Math.round(timeoutMs / 60_000)} minutes)`); }, timeoutMs);
     let settled = false;
     const done = (ok: boolean, text: string): void => {
@@ -1118,9 +1186,12 @@ export const runProof = (cwd: string, command: string, timeoutMs = 30 * 60_000):
     child.on("exit", (code, signal) => done(code === 0, signal ? `${output}\n(killed by ${signal})` : output));
   });
 
-/** Milestones merge in order: a later one whose tasks all passed early still waits for the ones before it. */
+/** Proofs in flight, keyed by mission and milestone: a standing job the pass starts and later reads, never waits on. */
+const proving = new Map<string, { result?: Awaited<ReturnType<typeof runProof>> }>();
+
+/** Milestones merge in order, and only once sent: a later one whose tasks all passed early still waits for the ones before it. */
 export const mergeable = (mission: Pick<Mission, "milestones">, m: Milestone): boolean =>
-  Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && mission.milestones.every((x) => x.n >= m.n || x.merged);
+  Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && !m.hold && mission.milestones.every((x) => x.n >= m.n || x.merged);
 
 /** Mark a milestone sent and start every task of it that can start; the rest wait on their `needs`. */
 const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
@@ -1129,30 +1200,13 @@ const dispatch = async (project: Project, mission: Mission, m: Milestone): Promi
   return writeThenSync(project, mission);
 };
 
-/**
- * Start whatever the plan's dependencies now allow, in any milestone, including one not yet
- * sent. The brake is checked before every launch (M11): a person may have stopped, paused or
- * changed the mission while the pass was busy, and a Wingman spawned after that is one no
- * record owns. A stale record ends the launches; the next pass sees the truth.
- */
+/** Start whatever the plan's dependencies now allow, in any milestone, including one not yet sent. Each launch claims the record first, so a person's move ends the launches. */
 const startReady = async (project: Project, mission: Mission): Promise<number> => {
   const ready = startable(mission);
   if (!ready.length) return 0;
   const cfg = await missionConfigFor(project.path);
-  let started = 0;
-  for (const { milestone, task } of ready) {
-    const fresh = await readMission(mission.project, mission.id);
-    if (!fresh || fresh.status === "paused" || !SWEPT.has(fresh.status) || (fresh.rev ?? 0) !== (mission.rev ?? 0)) break;
-    try {
-      await launch(project, mission, milestone, task, cfg);
-    } catch (err) {
-      if (!(err instanceof StaleMissionError)) throw err;
-      console.log(`mission ${mission.id}: a person moved it while ${task.id} was being launched; the next pass picks it up`);
-      break;
-    }
-    started += 1;
-  }
-  return started;
+  for (const { milestone, task } of ready) await launch(project, mission, milestone, task, cfg);
+  return ready.length;
 };
 
 /**
@@ -1188,15 +1242,20 @@ const forget = (task: MissionTask): void => {
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
   const previous = task.claudeId;
   const cfg = await missionConfigFor(project.path);
-  task.claudeId = await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts + 1})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), findings), cfg.wingmanAgent);
-  task.sessionId = undefined;
-  task.status = "flying";
-  task.attempts += 1;
-  task.started = new Date().toISOString();
-  task.ended = undefined;
-  task.verdict = undefined;
-  task.review = undefined;
-  forget(task);
+  await claimed(mission,
+    () => {
+      task.sessionId = undefined;
+      task.status = "flying";
+      task.attempts += 1;
+      task.started = new Date().toISOString();
+      task.ended = undefined;
+      task.verdict = undefined;
+      task.review = undefined;
+      task.note = undefined;
+      forget(task);
+    },
+    () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+    (claudeId) => { task.claudeId = claudeId; });
   if (previous) await patchSession(config.sessionsDir, `bg-${previous}`, { status: "handed-off", ended: new Date().toISOString(), handoff: findings.split("\n")[0] });
   await recordWingman(mission, task);
 };
@@ -1207,12 +1266,6 @@ const isOver = (state: Map<string, string>, claudeId: string, since?: string): b
   const seen = state.get(claudeId);
   if (seen !== undefined) return FINISHED.test(seen);
   return Date.now() - new Date(since ?? 0).getTime() > SETTLE_MS;
-};
-
-/** The brake, read fresh: whether the mission is still what this pass believes, before anything is spawned, merged or pushed. */
-const still = async (mission: Mission, paused: boolean): Promise<boolean> => {
-  const fresh = (await readMission(mission.project, mission.id))?.status ?? "closed";
-  return SWEPT.has(fresh) && (fresh === "paused") === paused;
 };
 
 /**
@@ -1243,6 +1296,212 @@ export const sweepMissions = async (project: Project): Promise<void> => {
   }
 };
 
+/** A milestone with a task in the air is watched whether or not it has been sent: a task may start early on its needs, and a Wingman nobody watches never gets its RIO. */
+const inTheAir = (m: Milestone): boolean => !m.merged && Boolean(m.dispatched || m.tasks.some((t) => t.status !== "pending"));
+
+/** The files a task inherited through its needs: the owners' touches, and theirs in turn. A task that merged what it needs carries them on its branch; they are not its strays. */
+const inherited = (mission: Mission, task: MissionTask): string[] => {
+  const all = new Map(mission.milestones.flatMap((x) => x.tasks).map((t) => [t.id, t]));
+  const out: string[] = [];
+  for (const seen = new Set<string>(), queue = [...(task.needs ?? [])]; queue.length;) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(...(all.get(id)?.touches ?? []));
+    queue.push(...(all.get(id)?.needs ?? []));
+  }
+  return out;
+};
+
+/**
+ * Step one of a pass: record what finished. Session ids, Wingmen that stopped (with their
+ * commits, head and strays), verdicts that arrived (recorded on the task, acted on in step
+ * two), reconciles that ended, proofs that settled. Nothing here spawns, so it runs paused or
+ * not: a paused mission still knows what happened to it.
+ */
+const recordFinished = async (project: Project, mission: Mission, agents: Map<string, { sessionId?: string }>, state: Map<string, string>): Promise<{ waiting: string[]; seated: boolean }> => {
+  const waiting: string[] = [];
+  let seated = false;
+  for (const m of mission.milestones) {
+    if (inTheAir(m)) for (const task of m.tasks) {
+      // A session id only exists once the agent listing knows about it; the formation wants
+      // that one. An agent can be listed without one, so read it rather than test for the key.
+      const sessionId = task.claudeId ? agents.get(task.claudeId)?.sessionId : undefined;
+      if (sessionId && !task.sessionId) {
+        task.sessionId = sessionId;
+        seated = true;
+      }
+      if (task.status === "flying" && task.claudeId && state.get(task.claudeId) === "blocked") waiting.push(`${task.title} is waiting on you in its own session`);
+      if (task.status === "flying" && task.claudeId && isOver(state, task.claudeId, task.started)) {
+        const repo = missionRepo(mission, task);
+        task.status = "built";
+        task.ended = new Date().toISOString();
+        task.commits = await commitsAhead(repo.path, repo.branch, task.branch!).catch(() => []);
+        task.head = await revParse(repo.path, task.branch!).then((sha) => sha.slice(0, 7)).catch(() => undefined);
+        // Against the commit the task was cut from, not the mission tip: the ledger moves that tip
+        // on every transition, and a two-dot diff against it would call the ledger a stray.
+        try {
+          task.strayed = strays(await changedFiles(repo.path, task.base ?? repo.branch, task.branch!), task.touches?.length ? [...task.touches, ...inherited(mission, task)] : undefined);
+        } catch (err) {
+          task.strayed = undefined;
+          console.error(`mission ${mission.id}: could not diff ${task.id} against its touches:`, (err as Error).message);
+        }
+      }
+      if (task.status === "reviewing" && task.review) {
+        const findings = await readFile(task.review.file, "utf8").catch(() => null);
+        const verdict = findings ? verdictOf(findings) : undefined;
+        if (verdict && verdict !== "pending") {
+          // Recorded here; what it means for the task is step two's, which a pause withholds.
+          task.verdict = verdict;
+          task.status = "built";
+          task.note = `the RIO said ${verdict}`;
+          await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { status: "closed", ended: new Date().toISOString() });
+        } else if (isOver(state, task.review.claudeId, task.review.started)) {
+          // The RIO is gone and wrote nothing: that is a failed review, not a pass.
+          task.status = "handed-back";
+          task.note = "the RIO finished without writing a verdict";
+        }
+      }
+    }
+    // A Strike Lead sent in to reconcile a collision: look at the branch when it is done, not at what it said about itself.
+    if (m.resolve && isOver(state, m.resolve.claudeId, m.resolve.started)) {
+      const repo = mission.repos.find((r) => r.label === m.resolve!.repo);
+      const landed = repo ? await commitsAhead(repo.path, m.resolve.branch, repo.branch).catch(() => []) : [];
+      if (landed.length) {
+        m.mergeShas = { ...(m.mergeShas ?? {}), [m.resolve.repo]: await revParse(repo!.path, repo!.branch).then((sha) => sha.slice(0, 7)).catch(() => "merged") };
+        m.conflicts = undefined;
+        m.hold = undefined;
+      } else {
+        holdFor(m, "collision", `milestone ${m.n} collided in ${m.resolve.repo} and the Strike Lead could not reconcile it: ${(m.resolve.paths ?? []).join(", ")}. Both sides are work the plan asked for, so this is a question about the plan.`);
+      }
+      m.resolve = undefined;
+    }
+    // A proof that settled since the last pass.
+    const job = proving.get(`${mission.id}/${m.n}`);
+    if (job?.result) {
+      m.proof = job.result;
+      proving.delete(`${mission.id}/${m.n}`);
+      if (!m.proof.ok) holdFor(m, "proof", `the proof failed after milestone ${m.n} merged: ${m.proof.output.split("\n").filter(Boolean).slice(-3).join(" | ")}`);
+    }
+  }
+  return { waiting, seated };
+};
+
+/** Step two: act on what step one recorded. Every spawn claims the record first; every merge or landing writes the record first as its brake. Not run while paused. */
+const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Promise<void> => {
+  for (const m of mission.milestones) {
+    if (inTheAir(m)) for (const task of m.tasks) {
+      if (task.status !== "built") continue;
+      if (task.verdict) {
+        const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
+        const outcome = settleReview(task, findings, task.verdict);
+        if (outcome.status === "retry") {
+          await handBack(project, mission, m, task, findings).catch((err) => {
+            if (err instanceof StaleMissionError) throw err;
+            task.status = "handed-back";
+            task.note = `could not hand the task back: ${(err as Error).message}`;
+          });
+        } else {
+          task.status = outcome.status;
+          task.note = outcome.note;
+          task.carried = outcome.carried;
+        }
+        continue;
+      }
+      // Reviewed by a RIO that did not write it. The tool list is the fence, passed here so it holds whether or not the agent file was installed (M19).
+      const reviews = (task.reviews ?? 0) + 1;
+      const file = reviewFile(mission, { ...task, reviews });
+      const previous = reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: reviews - 1 }), "utf8").catch(() => undefined) : undefined;
+      try {
+        await claimed(mission,
+          () => { task.reviews = reviews; task.status = "reviewing"; task.review = { claudeId: "", file, started: new Date().toISOString() }; },
+          () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), file, previous), cfg.rioAgent, RIO_TOOLS),
+          (claudeId) => { task.review!.claudeId = claudeId; });
+        agentCache.delete(project.path);
+        await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { audit: task.review });
+      } catch (err) {
+        if (err instanceof StaleMissionError) throw err;
+        task.status = "handed-back";
+        task.note = `could not start the RIO: ${(err as Error).message}`;
+      }
+    }
+    if (m.resolve || !mergeable(mission, m)) continue;
+    // The brake before anything non-idempotent: a write that the record refuses ends the pass.
+    await writeMission(mission);
+    // Each task lands on its own repo's mission branch: a milestone can span repos, and a
+    // conflict in one must not leave another half-applied.
+    m.mergeShas = m.mergeShas ?? {};
+    let collided = false;
+    for (const task of m.tasks) {
+      if (!task.commits?.length) continue;
+      const repo = missionRepo(mission, task);
+      // The same precondition as the ledger's: the merge lands on whatever is checked out there (M8).
+      await assertCheckedOut(repo.integration, repo.branch);
+      const result = await mergeInto(repo.integration, task.branch!, `mission ${mission.id}: ${task.title}`);
+      if (result.merged) {
+        if (result.sha) m.mergeShas[repo.label] = result.sha;
+        continue;
+      }
+      collided = true;
+      const paths = result.conflicts ?? [];
+      m.conflicts = paths.map((f) => `${repo.label}/${f}`);
+      mission.conflictsSeen = (mission.conflictsSeen ?? 0) + 1;
+      // Three collisions is a plan whose milestones overlap, which is a level up from here.
+      if ((mission.conflictsSeen ?? 0) >= 3) mission.escalation = `${mission.conflictsSeen} milestones of this mission have collided. That is the plan putting work that touches the same lines into one milestone, not a merge that needs redoing. The plan is the thing to change.`;
+      // One attempt by the Strike Lead per milestone. A second is not more likely to work
+      // and a loop of agents on a collision is exactly what nobody asked for.
+      if (m.resolveTried) {
+        holdFor(m, "collision", `milestone ${m.n} still will not merge into ${repo.label} after the Strike Lead tried: ${m.conflicts.join(", ") || "unknown conflict"}`);
+        break;
+      }
+      try {
+        await claimed(mission,
+          () => { m.resolveTried = true; m.resolve = { claudeId: "", repo: repo.label, branch: task.branch!, started: new Date().toISOString(), paths: m.conflicts! }; },
+          () => spawnBackgroundAgent(repo.integration, `Strike Lead · resolve m${m.n}`, resolvePrompt(project, mission, m, repo, task.branch!, paths)),
+          (claudeId) => { m.resolve!.claudeId = claudeId; });
+        agentCache.delete(project.path);
+      } catch (err) {
+        if (err instanceof StaleMissionError) throw err;
+        m.resolve = undefined;
+        holdFor(m, "collision", `milestone ${m.n} will not merge into ${repo.label} and the Strike Lead could not be sent in: ${(err as Error).message}`);
+      }
+      break;
+    }
+    if (!collided) m.merged = new Date().toISOString();
+  }
+};
+
+/**
+ * Step three: catch up on what a merged milestone owes and what the plan now allows. Standing
+ * jobs, not things done only in the pass that merged, so a milestone merged while paused gets
+ * its proof, its landing and its walkthrough on resume, and a released hold is tried again.
+ */
+const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): Promise<void> => {
+  for (const m of mission.milestones) {
+    if (!m.merged || m.hold) continue;
+    const key = `${mission.id}/${m.n}`;
+    if (cfg.proof && !m.proof && !proving.has(key)) {
+      // Detached: the pass starts it and a later pass reads it; a sweep is not held for half an hour.
+      const job: { result?: Awaited<ReturnType<typeof runProof>> } = {};
+      proving.set(key, job);
+      void runProof(walkRepo(mission, m)!.integration, cfg.proof).then((r) => { job.result = r; });
+    }
+    if (cfg.proof && !m.proof?.ok) continue;
+    // A repo with nothing left to do lands now rather than at the close, so an earlier repo can
+    // be reviewed and merged while the later ones are still flying. A base that never received
+    // the push holds the next milestone, which very often consumes what this one made.
+    if (mission.repos.some((r) => r.land !== "merge" && !r.landed)) {
+      await writeMission(mission);
+      const { failed } = await landTheWork(mission);
+      if (failed.length) { holdFor(m, "landing", `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`); continue; }
+    }
+    if (!m.walkthrough) await commissionWalkthrough(project, mission, m);
+  }
+  const next = mission.milestones.find((x) => !x.dispatched && !x.merged && mission.milestones.every((y) => y.n >= x.n || (y.merged && !y.hold)));
+  if (next) await dispatch(project, mission, next);
+  await startReady(project, mission);
+};
+
 const sweepOnce = async (project: Project): Promise<void> => {
   // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough being written.
   const missions = (await listMissions(project.id)).filter((m) => SWEPT.has(m.status) || m.milestones.some(building));
@@ -1251,229 +1510,24 @@ const sweepOnce = async (project: Project): Promise<void> => {
   const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
   const state = new Map([...agents].map(([id, a]) => [id, a.state ?? ""]));
   for (const mission of missions) {
-    const settled = await settleWalkthroughs(project, mission, state);
+    const settledWalks = await settleWalkthroughs(project, mission, state);
     if (!SWEPT.has(mission.status)) {
-      if (settled) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
+      if (settledWalks) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
       continue;
     }
-    // Paused: what is running is recorded and nothing new starts, not a RIO, not a retry, not a
-    // merge (which can push), not a reconcile, not a walkthrough, not a milestone. A pass that a
-    // pause interrupts stops where it is; the next pass runs as paused.
-    const paused = mission.status === "paused";
-    const waiting: string[] = [];
-    let seated = false;
-    for (const m of mission.milestones) {
-      // A milestone with a task in the air is watched whether or not it has been sent: a task
-      // may start early on its needs, and a Wingman nobody watches never gets its RIO.
-      if (m.merged || !(m.dispatched || m.tasks.some((t) => t.status !== "pending"))) continue;
-      for (const task of m.tasks) {
-        // Between two expensive steps Cory may have pulled the brake, or paused; nothing more is
-        // spawned for a mission that is no longer what this pass believes it is.
-        if (!(await still(mission, paused))) return;
-        // A session id only exists once the agent listing knows about it; the formation wants
-        // that one. An agent can be listed without one, so read it rather than test for the key.
-        const sessionId = task.claudeId ? agents.get(task.claudeId)?.sessionId : undefined;
-        if (sessionId && !task.sessionId) {
-          task.sessionId = sessionId;
-          seated = true;
-        }
-        if (task.status === "flying" && task.claudeId && state.get(task.claudeId) === "blocked") {
-          waiting.push(`${task.title} is waiting on you in its own session`);
-        }
-        if (task.status === "flying" && task.claudeId && isOver(state, task.claudeId, task.started)) {
-          const repo = missionRepo(mission, task);
-          task.status = "built";
-          task.ended = new Date().toISOString();
-          task.commits = await commitsAhead(repo.path, repo.branch, task.branch!).catch(() => []);
-          task.head = await revParse(repo.path, task.branch!).then((sha) => sha.slice(0, 7)).catch(() => undefined);
-          // Against the commit the task was cut from, not the mission tip: the ledger moves that tip
-          // on every transition, and a two-dot diff against it would call the ledger a stray.
-          try {
-            // A task that merged what it needs carries the owners' files on its branch, and theirs in turn; none are strays of its own.
-            const all = new Map(mission.milestones.flatMap((x) => x.tasks).map((t) => [t.id, t]));
-            const inherited: string[] = [];
-            for (const seen = new Set<string>(), queue = [...(task.needs ?? [])]; queue.length;) {
-              const id = queue.shift()!;
-              if (seen.has(id)) continue;
-              seen.add(id);
-              const t = all.get(id);
-              inherited.push(...(t?.touches ?? []));
-              queue.push(...(t?.needs ?? []));
-            }
-            task.strayed = strays(await changedFiles(repo.path, task.base ?? repo.branch, task.branch!), task.touches?.length ? [...task.touches, ...inherited] : undefined);
-          } catch (err) {
-            task.strayed = undefined;
-            console.error(`mission ${mission.id}: could not diff ${task.id} against its touches:`, (err as Error).message);
-          }
-        }
-        if (task.status === "built" && task.retry && !paused) {
-          // A retry its RIO asked for during the pause: the fresh Wingman goes out now, with those findings.
-          const findings = await readFile(task.retry, "utf8").catch(() => "");
-          task.retry = undefined;
-          try {
-            await handBack(project, mission, m, task, findings);
-          } catch (err) {
-            task.status = "handed-back";
-            task.note = `could not hand the task back: ${(err as Error).message}`;
-          }
-        } else if (task.status === "built" && !task.retry && !paused) {
-          task.reviews = (task.reviews ?? 0) + 1;
-          const file = reviewFile(mission, task);
-          try {
-            // The agent is installed in `~/.claude/agents/` (`rio.md` from this repo, by default); the brief says what to do, the tool list says what it cannot.
-            const previous = task.reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: task.reviews - 1 }), "utf8").catch(() => undefined) : undefined;
-            // The tool list is the fence, passed here so it holds whether or not the agent file was installed (M19).
-            const claudeId = await spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), file, previous), cfg.rioAgent, RIO_TOOLS);
-            task.review = { claudeId, file, started: new Date().toISOString() };
-            task.status = "reviewing";
-            agentCache.delete(project.path);
-            await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { audit: task.review });
-          } catch (err) {
-            task.status = "handed-back";
-            task.note = `could not start the RIO: ${(err as Error).message}`;
-          }
-        }
-        else if (task.status === "reviewing" && task.review) {
-          const findings = await readFile(task.review.file, "utf8").catch(() => null);
-          const verdict = findings ? verdictOf(findings) : undefined;
-          if (!verdict || verdict === "pending") {
-            // The RIO is gone and wrote nothing: that is a failed review, not a pass.
-            if (isOver(state, task.review.claudeId, task.review.started)) {
-              task.status = "handed-back";
-              task.note = "the RIO finished without writing a verdict";
-            }
-            continue;
-          }
-          task.verdict = verdict;
-          await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { status: "closed", ended: new Date().toISOString() });
-          const outcome = settleReview(task, findings!, verdict);
-          if (outcome.status === "retry" && paused) {
-            // The verdict is recorded and the retry is owed; the fresh Wingman goes out on resume.
-            task.status = "built";
-            task.retry = task.review.file;
-            task.note = `the RIO said ${verdict}; the retry waits for the mission to resume`;
-          } else if (outcome.status === "retry") {
-            try {
-              await handBack(project, mission, m, task, findings!);
-            } catch (err) {
-              task.status = "handed-back";
-              task.note = `could not hand the task back: ${(err as Error).message}`;
-            }
-          } else {
-            task.status = outcome.status;
-            task.note = outcome.note;
-            task.carried = outcome.carried;
-          }
-        }
-      }
-      if (paused || !(await still(mission, paused))) continue;
-      // A Strike Lead sent in to reconcile a collision: wait for it, then look at the branch
-      // rather than at what it said about itself. Either the merge is committed or it is not.
-      if (m.resolve) {
-        if (!isOver(state, m.resolve.claudeId, m.resolve.started)) continue;
-        const repo = mission.repos.find((r) => r.label === m.resolve!.repo);
-        const landed = repo ? await commitsAhead(repo.path, m.resolve.branch, repo.branch).catch(() => []) : [];
-        if (landed.length) {
-          // The branch it was merging is now an ancestor of the mission branch: it landed.
-          m.mergeShas = { ...(m.mergeShas ?? {}), [m.resolve.repo]: await revParse(repo!.path, repo!.branch).then((sha) => sha.slice(0, 7)).catch(() => "merged") };
-          m.conflicts = undefined;
-          m.held = undefined;
-        } else {
-          m.held = `milestone ${m.n} collided in ${m.resolve.repo} and the Strike Lead could not reconcile it: ${(m.resolve.paths ?? []).join(", ")}. Both sides are work the plan asked for, so this is a question about the plan.`;
-        }
-        m.resolve = undefined;
-        if (m.held) continue;
-      }
-      if (mergeable(mission, m)) {
-        // Each task lands on its own repo's mission branch: a milestone can span repos, and
-        // a conflict in one must not leave another half-applied.
-        m.mergeShas = m.mergeShas ?? {};
-        let collided = false;
-        for (const task of m.tasks) {
-          if (!task.commits?.length) continue;
-          const repo = missionRepo(mission, task);
-          // The same precondition as the ledger's: the merge lands on whatever is checked out there (M8).
-          await assertCheckedOut(repo.integration, repo.branch);
-          const result = await mergeInto(repo.integration, task.branch!, `mission ${mission.id}: ${task.title}`);
-          if (!result.merged) {
-            collided = true;
-            const paths = result.conflicts ?? [];
-            m.conflicts = paths.map((f) => `${repo.label}/${f}`);
-            mission.conflictsSeen = (mission.conflictsSeen ?? 0) + 1;
-            // One attempt by the Strike Lead per milestone. A second is not more likely to work
-            // and a loop of agents on a collision is exactly what nobody asked for.
-            if (!m.resolveTried) {
-              m.resolveTried = true;
-              try {
-                const claudeId = await spawnBackgroundAgent(repo.integration, `Strike Lead · resolve m${m.n}`, resolvePrompt(project, mission, m, repo, task.branch!, paths));
-                m.resolve = { claudeId, repo: repo.label, branch: task.branch!, started: new Date().toISOString(), paths: m.conflicts };
-                agentCache.delete(project.path);
-              } catch (err) {
-                m.held = `milestone ${m.n} will not merge into ${repo.label} and the Strike Lead could not be sent in: ${(err as Error).message}`;
-              }
-            } else {
-              m.held = `milestone ${m.n} still will not merge into ${repo.label} after the Strike Lead tried: ${m.conflicts.join(", ") || "unknown conflict"}`;
-            }
-            // Three collisions is a plan whose milestones overlap, which is a level up from here.
-            if ((mission.conflictsSeen ?? 0) >= 3) {
-              mission.escalation = `${mission.conflictsSeen} milestones of this mission have collided. That is the plan putting work that touches the same lines into one milestone, not a merge that needs redoing. The plan is the thing to change.`;
-            }
-            break;
-          }
-          if (result.sha) m.mergeShas[repo.label] = result.sha;
-        }
-        if (collided) continue;
-        m.merged = new Date().toISOString();
-        // The project's own proof, on the merged tree: a merge that dropped a rule a passed task
-        // added, or broke what each task proved alone, is caught here and holds the milestone.
-        if (cfg.proof) {
-          const repo = walkRepo(mission, m)!;
-          m.proof = await runProof(repo.integration, cfg.proof);
-          if (!m.proof.ok) m.held = `the proof failed after milestone ${m.n} merged (${cfg.proof}): ${m.proof.output.split("\n").filter(Boolean).slice(-3).join(" | ")}`;
-        }
-        // A repo with nothing left to do gets its pull request now rather than at the close, so
-        // an earlier repo can be reviewed and merged while the later ones are still flying. Not
-        // a tree whose proof failed: nothing lands until a person has looked at that.
-        if (!m.held && mission.repos.some((r) => r.land !== "merge") && (await still(mission, paused))) {
-          const { failed } = await landTheWork(mission);
-          // The next milestone is very often the one that consumes what this one just made: a
-          // contract package pushed to its base, a service that reads it. Sending its Wingmen
-          // out against a base that never received the push would have them build against the
-          // old thing and look correct doing it. The milestone is held until a person lands it.
-          if (failed.length) m.held ??= `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`;
-        }
-      }
-    }
-    if (!paused && (await still(mission, paused))) {
-      // Catching up is a standing job, not something done only in the pass that merged: a
-      // milestone merged while paused gets its walkthrough and sends the next one on resume.
-      try {
-        for (const m of mission.milestones) if (m.merged && !m.walkthrough && !m.held && (await still(mission, paused))) await commissionWalkthrough(project, mission, m);
-        const next = mission.milestones.find((x) => !x.dispatched && !x.merged && mission.milestones.every((y) => y.n >= x.n || (y.merged && !y.held)));
-        if (next && (await still(mission, paused))) await dispatch(project, mission, next);
-        if (mission.milestones.every((x) => x.merged && !x.held)) {
-          mission.status = "review";
-          mission.finished = mission.finished ?? new Date().toISOString();
-        } else {
-          // A task whose needs passed this pass starts now, in its own milestone or one not yet sent.
-          await startReady(project, mission);
-          mission.status = needsPerson(mission).length ? "blocked" : "flying";
-        }
-      } catch (err) {
-        if (!(err instanceof StaleMissionError)) throw err;
-        console.log(`mission sweep yielded ${mission.id} to a change made while it caught up; the next pass picks it up`);
-        continue;
-      }
-    }
-    // Derived every pass, so a reason survives and nothing stale lingers; the pause keeps its own line.
-    const open = [...(paused && mission.pausedFor ? [`paused: ${mission.pausedFor}`] : []), ...needsPerson(mission), ...waiting];
-    mission.trouble = open.length ? open.join(" · ") : undefined;
-    // One formation write per pass rather than one per task that gained a session id.
-    if (seated && mission.formation) await updateFormation(mission.formation, { members: memberIds(mission) }).catch(() => undefined);
-    // The Strike Lead only reaches Claude Code's session registry once its session has done something,
-    // which can be well after the formation was made; keep offering it the lead seat.
-    await seatTheLead(mission).catch(() => undefined);
     try {
+      const { waiting, seated } = await recordFinished(project, mission, agents, state);
+      // Paused: what is running is recorded and nothing new starts. Everything else is step two and three.
+      if (mission.status !== "paused") {
+        await actOn(project, mission, cfg);
+        await catchUp(project, mission, cfg);
+      }
+      settle(mission, waiting);
+      // One formation write per pass rather than one per task that gained a session id.
+      if (seated && mission.formation) await updateFormation(mission.formation, { members: memberIds(mission) }).catch(() => undefined);
+      // The Strike Lead only reaches Claude Code's session registry once its session has done something,
+      // which can be well after the formation was made; keep offering it the lead seat.
+      await seatTheLead(mission).catch(() => undefined);
       await writeThenSync(project, mission);
     } catch (err) {
       if (!(err instanceof StaleMissionError)) throw err;
@@ -1578,9 +1632,8 @@ export const landAgain = async (project: Project, id: string): Promise<{ mission
       throw new Error(`nothing was waiting to land on ${mission.name}: every repo either still has work in the air or has already landed`);
     } else {
       // Back in the air: the hold comes off and the sweep sends the milestone that was waiting behind the landing.
-      for (const m of mission.milestones) if (m.held?.startsWith("could not land")) m.held = undefined;
-      mission.trouble = needsPerson(mission).join(" · ") || undefined;
-      mission.status = mission.milestones.every((x) => x.merged) ? "review" : needsPerson(mission).length ? "blocked" : "flying";
+      for (const m of mission.milestones) if (m.hold?.kind === "landing") m.hold = undefined;
+      settle(mission);
     }
     return mission;
   });
@@ -1599,10 +1652,7 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
     const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
     task.attempts = MAX_ATTEMPTS - 1;
     await handBack(project, mission, m, task, findings);
-    task.note = undefined;
-    mission.status = "flying";
-    mission.trouble = undefined;
-    return mission;
+    return settle(mission);
   }).then((mission) => recorded(project, mission, [`${taskId} sent back out by Cory`]));
 
 /**
@@ -1614,31 +1664,29 @@ export const pauseMission = async (project: Project, id: string, note: string): 
   if (!note.trim()) throw new Error("say why the mission is being paused; it is kept in the ledger");
   const mission = await changeMission(project.id, id, (mission) => {
     if (mission.status !== "flying" && mission.status !== "blocked") throw new Error(`${mission.name} is ${mission.status}; only a flying or blocked mission can be paused`);
-    mission.status = "paused";
     mission.pausedFor = note.trim();
-    mission.trouble = `paused: ${note.trim()}`;
-    return mission;
+    return settle(mission);
   });
   return recorded(project, mission, [`paused by Cory: ${note.trim()}`]);
 };
 
 /**
- * Release a milestone a person settled by hand: a collision they reconciled in the integration
- * worktree, or a landing they fixed. The hold and the conflicts come off, and the sweep merges
- * or lands again; if it still cannot, the hold comes back with the new reason.
+ * Release a milestone a person settled by hand. What release means is the hold's kind: a
+ * collision they reconciled in the integration worktree is merged again; a proof is run again
+ * on the tree they fixed, so a hand fix never goes in unproved; a landing is `landAgain`'s,
+ * because it pushes. If the sweep still cannot, the hold comes back with the new reason.
  */
 export const releaseMilestone = async (project: Project, id: string, n: number, note: string): Promise<Mission> => {
   if (!note.trim()) throw new Error("say what you did to settle it; it is kept in the ledger");
   const mission = await changeMission(project.id, id, (mission) => {
     const m = mission.milestones.find((x) => x.n === n);
     if (!m) throw new Error(`no milestone ${n} on ${mission.name}`);
-    if (!m.held) throw new Error(`milestone ${n} is not held`);
-    m.held = undefined;
-    m.conflicts = undefined;
-    m.resolveTried = undefined;
-    if (mission.status !== "paused") mission.status = needsPerson(mission).length ? "blocked" : "flying";
-    mission.trouble = needsPerson(mission).join(" · ") || undefined;
-    return mission;
+    if (!m.hold) throw new Error(`milestone ${n} is not held`);
+    if (m.hold.kind === "landing") throw new Error(`milestone ${n} is held on a landing; "land again" is the release for that, because it pushes`);
+    if (m.hold.kind === "proof") m.proof = undefined;
+    else { m.conflicts = undefined; m.resolveTried = undefined; }
+    m.hold = undefined;
+    return settle(mission);
   });
   return recorded(project, mission, [`milestone ${n} released by Cory: ${note.trim()}`]);
 };
@@ -1647,9 +1695,7 @@ export const resumeMission = async (project: Project, id: string): Promise<Missi
   const mission = await changeMission(project.id, id, (mission) => {
     if (mission.status !== "paused") throw new Error(`${mission.name} is ${mission.status}, not paused`);
     mission.pausedFor = undefined;
-    mission.status = needsPerson(mission).length ? "blocked" : "flying";
-    mission.trouble = needsPerson(mission).join(" · ") || undefined;
-    return mission;
+    return settle(mission);
   });
   return recorded(project, mission, ["resumed by Cory"]);
 };
@@ -1663,12 +1709,7 @@ export const acceptTask = async (project: Project, id: string, taskId: string, n
     task.status = "passed";
     task.note = `accepted by Cory over the RIO: ${note}`.trim();
     if (task.claudeId) await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { decision: "accepted" });
-    // A pause is not ended by accepting a task; the sweep sets the status again on resume.
-    if (mission.status !== "paused") {
-      mission.status = needsPerson(mission).length ? "blocked" : "flying";
-      mission.trouble = needsPerson(mission).join(" · ") || undefined;
-    }
-    return mission;
+    return settle(mission);
   }).then((mission) => recorded(project, mission, [`${taskId} accepted by Cory over the RIO: ${note}`.trim()]));
 
 /**

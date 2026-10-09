@@ -10,10 +10,9 @@ const tasksOf = (mission: Mission): Array<{ n: number; task: MissionTask }> => m
 
 const line = (n: number, t: MissionTask): string => `${t.id} ${t.title} (milestone ${n})`;
 
-/** The ledger's own decision lines, written by Maverick with these words and no others; a task title holding "by Cory" is not one. */
-const DECISION = /\b(accepted|sent back out|paused|resumed|closed|abandoned|waived|released) by Cory\b/;
-/** A transition the sweep settled on its own under the merge-with-notes rule, rather than a pass or a retry. */
-const AUTOMATIC = /\bmerged with \d+ note\(s\) carried\b/;
+/** The ledger says what each line is right after its stamp (`decision:`, `auto:`, `held:`); nothing in the prose after that is read. */
+const DECISION = /^\S+ \S+ decision: /;
+const AUTOMATIC = /^\S+ \S+ auto: /;
 
 /** The report as markdown. `findings` is each task's RIO text by task id, verbatim; `log` is the ledger's, or undefined when it could not be read. */
 export const reportFor = (mission: Mission, findings: Record<string, string>, log?: string[]): string => {
@@ -21,7 +20,7 @@ export const reportFor = (mission: Mission, findings: Record<string, string>, lo
   const passed = all.filter(({ task }) => task.status === "passed");
   const open = all.filter(({ task }) => task.status === "handed-back");
   const unfinished = all.filter(({ task }) => !["passed", "handed-back"].includes(task.status));
-  const auto = (log ?? []).filter((l) => !DECISION.test(l) && AUTOMATIC.test(l));
+  const auto = (log ?? []).filter((l) => AUTOMATIC.test(l));
   const byCory = (log ?? []).filter((l) => DECISION.test(l));
   const unverified = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => c.startsWith("unverified: ")).map((c) => `${line(n, task)}: ${c.slice("unverified: ".length)}`));
   const carried = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => !c.startsWith("unverified: ")).map((c) => `${line(n, task)}: ${c}`));
@@ -40,8 +39,8 @@ export const reportFor = (mission: Mission, findings: Record<string, string>, lo
     ...section("Unverified, by the RIOs' own account", unverified, "no RIO reported a step it could not check"),
     ...section("Notes carried", carried, "none"),
     ...section("Files changed outside what the task owned", strayed, "none measured"),
-    ...section("Held milestones", mission.milestones.filter((m) => m.held).map((m) => `milestone ${m.n}: ${m.held}`), "none"),
-    ...section("The proof on each merged tree", mission.milestones.filter((m) => m.proof).map((m) => `milestone ${m.n}: ${m.proof!.ok ? "passed" : "failed"} at ${m.proof!.at}`), "no proof command is set for this project, so nothing was run after the merges"),
+    ...section("Held milestones", mission.milestones.filter((m) => m.hold).map((m) => `milestone ${m.n} (${m.hold!.kind}): ${m.hold!.reason}`), "none"),
+    ...section("The proof on each merged tree", mission.milestones.filter((m) => m.proof).map((m) => `milestone ${m.n}: ${m.proof!.ok ? "passed" : "failed"} at ${m.proof!.at}`), "no proof result yet: either nothing has merged, or the project sets no proof command"),
     "## Not recorded by Maverick",
     "",
     "- Actions an agent was denied and why: not captured; a Wingman says so in its final message, which is in its transcript.",

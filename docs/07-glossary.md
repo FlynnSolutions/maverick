@@ -32,6 +32,7 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 | **Shared environment, proof** | what a project's `maverick.json` names as deployed only from the merged mission branch, and the command run on the merged tree after each milestone; a failing proof holds the milestone. |
 | **Report** | the morning read: generated from the record, the ledger and the RIO findings in fixed sections, never written by the agent that flew the mission; committed beside the ledger at close. |
 | **Preflight** | the plan's `## Preflight` section and the checks the gate runs from it: tools, runtimes, agents, credentials and their lifetime, disk, and the steps marked as a person's. |
+| **Hold** | why a milestone waits for a person, with a kind: a collision nobody reconciled (release merges again), a proof that failed on the merged tree (release proves again), a landing that failed (land again). |
 | **Paused** | a mission a person has stopped spawning for, with a reason in the ledger; what runs finishes and is recorded, and it resumes from the file. Distinct from **blocked**, where a person is needed for one task and the rest flies on, and from **abandoned**, which ends it. |
 | **Contract** | a thing one task makes and another uses (a type, an id, a codec, an env flag, a function), named in the plan's `## Contracts` section with its owner and shape before any task starts. |
 | **Blocker, note** | the two kinds of finding a RIO writes. A blocker stops the task until fixed; a note is fixed if cheap, else carried to the result (M19). |

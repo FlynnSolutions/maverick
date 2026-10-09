@@ -66,7 +66,7 @@ test("a task is told what it alone deploys, and what nobody deploys from a task"
   const brief = wingmanBrief({ ...ctx, shared: ["dev", "staging"], task: { ...task, deploys: ["data"] } });
   assert.match(brief, /This task alone deploys data in this milestone; no other task touches it\./);
   assert.match(brief, /Shared environments, deployed only from the merged mission branch and never from a task's: dev, staging\./);
-  assert.match(brief, /named with m1-t2 and deleted by the test that made it/);
+  assert.match(brief, /named with the task id \(it is in MAVERICK_TASK\) and gone after it/, "the debris rule rides in the checklist, so every brief has it once");
   assert.ok(!wingmanBrief(ctx).includes("Shared environments"), "a project that names none gets no such block");
 });
 

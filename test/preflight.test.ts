@@ -9,10 +9,11 @@ import { parsePlan } from "../src/missions.ts";
 import { tempRepo } from "./fixtures.ts";
 
 test("a preflight line names its kind, what, and a note", () => {
-  const { requirements, problems } = parseRequirements(["duration: 8h", "**tool**: `docker`", "credential: aws dev, the dev stack, and staging", "human: check the inbox, then click the link", "something else"]);
+  const { requirements, problems } = parseRequirements(["duration: 8h", "**tool**: `docker`", "**tool:** gh", "credential: aws dev, the dev stack, and staging", "human: check the inbox, then click the link", "something else"]);
   assert.deepEqual(requirements, [
     { kind: "duration", value: "8h", note: "" },
     { kind: "tool", value: "docker", note: "" },
+    { kind: "tool", value: "gh", note: "" },
     { kind: "credential", value: "aws dev", note: "the dev stack, and staging" },
     { kind: "human", value: "check the inbox, then click the link", note: "" },
   ]);
@@ -34,6 +35,8 @@ test("a runtime pin is read the way a Wingman would hit it", () => {
   assert.equal(versionMeets(">22", "v24.1.0"), true);
   assert.equal(versionMeets("~22.21", "v22.21.1"), true);
   assert.equal(versionMeets("node", "v22.0.0"), undefined);
+  assert.equal(versionMeets("<=22", "v22.21.1"), true, "a pin with no minor is the whole major");
+  assert.equal(versionMeets(">22.x", "v22.21.1"), false);
 });
 
 test("the plan's Preflight section is read, and the checks say ok, fail or yours", async () => {
@@ -45,9 +48,11 @@ test("the plan's Preflight section is read, and the checks say ok, fail or yours
   const checks = await preflight({ projectPath: dir, repoPaths: [dir], requirements: [...plan.requirements, { kind: "runtime", value: "node >=99", note: "" }, { kind: "credential", value: "okta", note: "" }], rioAgent: "no-such-agent-xyz", landsRemotely: false });
   const by = Object.fromEntries(checks.map((c) => [c.name, c]));
   assert.equal(by["git"].status, "ok");
-  assert.deepEqual([by["no-such-tool-xyz"].status, by["no-such-tool-xyz"].blocking], ["fail", true], "a declared tool refuses approval when missing");
+  assert.deepEqual([by["no-such-tool-xyz"].status, by["no-such-tool-xyz"].refuses], ["fail", true], "a declared tool refuses approval when missing");
   assert.match(by["no-such-tool-xyz"].detail, /not on PATH; the plan shells out to it/);
-  assert.deepEqual([by["agent no-such-agent-xyz"].status, by["agent no-such-agent-xyz"].blocking], ["fail", true], "a RIO that would run without its standing orders");
+  assert.deepEqual([by["agent no-such-agent-xyz"].status, by["agent no-such-agent-xyz"].refuses], ["fail", true], "a RIO that would run without its standing orders");
+  assert.equal(by[`node pin in ${dir.split("/").pop()}`].refuses, true, "a repo's own pin refuses the same way a runtime line does");
+  assert.equal(by["the sign-up inbox"].refuses, false);
   assert.equal(by["the sign-up inbox"].status, "human");
   assert.equal(by["okta"].status, "human", "a credential this check cannot read is the person's");
   assert.equal(by["node"].status, "fail", "a runtime line with a version is a pin to meet");

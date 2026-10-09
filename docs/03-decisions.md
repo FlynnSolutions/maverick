@@ -400,6 +400,12 @@ committing to `main` twice; the guard and its test came from that.
 **Rejected: a state file beside the record.** It would be a second store (M1) and invisible to
 the agents working the branch.
 
+**A log line says what it is.** After its stamp a line reads `decision:` (what a person did),
+`auto:` (a transition the merge-with-notes rule settled without one), `held:` (a milestone held
+for a person, with the time of the hold, written once), or nothing for a plain pass or retry.
+The report reads those words, never the prose after them, so rewording a sentence cannot empty
+a section.
+
 ## M19 — A finding is a blocker or a note, and notes ride ✅ built
 
 A RIO's findings are lines that say what they are: `BLOCKER:` (the task does not pass until it
@@ -444,6 +450,21 @@ flying again. `paused` is a person's call, with a reason the ledger keeps: nothi
 spawned, what is running finishes and is recorded, and resume picks up where the file says. On
 the first mission an expired credential ended the mission at milestone 6 and cut the central
 feature, whose own tasks needed none of it. Milestones still merge in order, once sent.
+
+**A hold has a kind, and the kind says what release means.** A milestone is held for a
+collision nobody reconciled, a landing that failed, or a proof that failed on the merged tree.
+Releasing a collision merges again; releasing a proof runs the proof again on what the person
+fixed, so a hand fix never goes in unproved; a landing is released by landing again, because it
+pushes. Proofs, landings and walkthroughs are standing jobs of the sweep, not things done only
+in the pass that merged, and the proof runs detached so a sweep is never held for it.
+
+**Every spawn claims the record first** (M11 made mechanical): the task, the review, the
+reconcile or the walkthrough is written to the record before the agent starts, and a record
+that refuses the claim because a person moved the mission ends the pass before any agent is
+spawned that nobody owns. One `settle` derives a mission's status and its trouble from the
+record, for the sweep and for every button alike. A task that would deploy a stack or own a path
+a task in the air already has waits its turn: one deployer per stack in the air, whatever the
+milestones say.
 
 **The gate checks the host before the person leaves.** The plan's `## Preflight` section says
 what the mission needs: how long it runs, the tools and runtimes, the credentials and secrets

@@ -15,11 +15,15 @@ const run = promisify(execFile);
 
 export type RequirementKind = "tool" | "runtime" | "credential" | "secret" | "human" | "duration";
 export interface Requirement { kind: RequirementKind; value: string; note: string }
-/** `blocking`: a fail here refuses approval (a tool, a runtime, an agent). Anything else is the person's to settle by approving. */
-export interface Check { name: string; status: "ok" | "warn" | "fail" | "human"; detail: string; blocking?: boolean }
+export type CheckKind = "host" | "tool" | "agent" | "runtime" | "credential" | "secret" | "human" | "disk";
+export interface Check { kind: CheckKind; name: string; status: "ok" | "warn" | "fail" | "human"; detail: string; refuses?: boolean }
+
+/** What a failing check means for approval is its kind, in one place: a tool, a runtime or an agent the mission cannot run without refuses; the rest is the person's to settle by approving. */
+const REFUSING: ReadonlySet<CheckKind> = new Set(["tool", "runtime", "agent"]);
+export const refuses = (c: Pick<Check, "kind" | "status">): boolean => c.status === "fail" && REFUSING.has(c.kind);
 
 /** `- tool: docker`, `- credential: aws dev, the dev stack`, `- human: the sign-up email inbox`. Bold around the kind is tolerated; anything else is a problem. */
-const REQUIREMENT_LINE = /^\**(tool|runtime|credential|secret|human|duration)\**:\s*(.+)$/i;
+const REQUIREMENT_LINE = /^\**(tool|runtime|credential|secret|human|duration)\**:?\**:?\s*(.+)$/i;
 
 export const parseRequirements = (bullets: string[]): { requirements: Requirement[]; problems: string[] } => {
   const requirements: Requirement[] = [];
@@ -58,9 +62,11 @@ export const versionMeets = (pin: string, host: string): boolean | undefined => 
     if (!m) return undefined;
     const [op, maj, min] = [m[1] ?? "", Number(m[2]), m[3] && /^\d+$/.test(m[3]) ? Number(m[3]) : 0];
     const cmp = hMaj !== maj ? hMaj - maj : hMin - min;
+    // A pin with no minor means the whole major: `<=22` admits 22.21, `>22` wants 23 or more.
+    const whole = m[3] === undefined || !/^\d+$/.test(m[3]);
     if (op === ">=") return cmp >= 0;
-    if (op === ">") return hMaj > maj || (hMaj === maj && m[3] !== undefined && hMin > min);
-    if (op === "<=") return cmp <= 0;
+    if (op === ">") return whole ? hMaj > maj : cmp > 0;
+    if (op === "<=") return whole ? hMaj <= maj : cmp <= 0;
     if (op === "<") return cmp < 0;
     return hMaj === maj && hMin >= min;
   };
@@ -96,8 +102,8 @@ const awsCredential = async (profile?: string): Promise<{ who: string; expires?:
   try {
     const { stdout: who } = await run("aws", ["sts", "get-caller-identity", "--query", "Arn", "--output", "text"], { env, timeout: 15_000 });
     const exp = await run("aws", ["configure", "export-credentials", "--format", "process"], { env, timeout: 15_000 }).then(({ stdout }) => (JSON.parse(stdout) as { Expiration?: string }).Expiration).catch(() => undefined);
-    // The account id and the person's name stay off the page and out of anything pasted from it.
-    return { who: who.trim().split("/").slice(-1)[0] || "signed in", ...(exp ? { expires: new Date(exp) } : {}) };
+    // Neither the account nor the person's name reaches the page or anything pasted from it; that the call answered is the fact.
+    return { who: who.trim() ? "signed in" : "signed in", ...(exp ? { expires: new Date(exp) } : {}) };
   } catch {
     return undefined;
   }
@@ -127,14 +133,15 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
   const checks: Check[] = [];
   const duration = input.requirements.find((r) => r.kind === "duration");
   const hours = duration ? hoursOf(duration.value) : undefined;
-  checks.push({ name: "host", status: "ok", detail: `${platform()} ${arch()}${platform() === "darwin" ? ", BSD tools: no timeout, sed -i needs '', no date -d" : ""}; node ${process.version}` });
+  const push = (c: Omit<Check, "refuses">): void => { checks.push({ ...c, refuses: refuses(c) }); };
+  push({ kind: "host", name: "host", status: "ok", detail: `${platform()} ${arch()}${platform() === "darwin" ? ", BSD tools: no timeout, sed -i needs '', no date -d" : ""}; node ${process.version}` });
   for (const tool of ["claude", "git", "python3", ...(input.landsRemotely ? ["gh"] : [])]) {
     const path = await has(tool);
-    checks.push({ name: tool, status: path ? "ok" : "fail", detail: path ?? `not on PATH; every ${tool === "python3" ? "embedded terminal" : "agent"} needs it`, blocking: true });
+    push({ kind: "tool", name: tool, status: path ? "ok" : "fail", detail: path ?? `not on PATH; every ${tool === "python3" ? "embedded terminal" : "agent"} needs it` });
   }
   for (const agent of [input.rioAgent, ...(input.wingmanAgent ? [input.wingmanAgent] : [])]) {
     const ok = await agentResolves(agent, input.projectPath);
-    checks.push({ name: `agent ${agent}`, status: ok ? "ok" : "fail", detail: ok ? "installed" : `no ~/.claude/agents/${agent}.md; the session would run without its standing orders (the README says how to install it)`, blocking: true });
+    push({ kind: "agent", name: `agent ${agent}`, status: ok ? "ok" : "fail", detail: ok ? "installed" : `no ${agent}.md in ~/.claude/agents or the project's .claude/agents; the session would run without its standing orders (the README says how to install it)` });
   }
   for (const repo of input.repoPaths) {
     // `.nvmrc` first, then `engines.node`; a repo that pins nothing says nothing.
@@ -144,43 +151,43 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
     // Against the node a Wingman's shell finds, not the one serving this page.
     const shellNode = (await versionOf("node")) ?? process.version;
     const met = versionMeets(pin, shellNode);
-    checks.push({ name: `node pin in ${repo.split("/").pop()}`, status: met === false ? "fail" : met === undefined ? "warn" : "ok", detail: met === false ? `wants ${pin.trim()}, the shell has ${shellNode}; a Wingman will go hunting for another node` : met === undefined ? `${pin.trim()} is a pin this check cannot read; compare it with ${shellNode} yourself` : `${pin.trim()} against ${shellNode}` });
+    push({ kind: "runtime", name: `node pin in ${repo.split("/").pop()}`, status: met === false ? "fail" : met === undefined ? "warn" : "ok", detail: met === false ? `wants ${pin.trim()}, the shell has ${shellNode}; a Wingman will go hunting for another node` : met === undefined ? `${pin.trim()} is a pin this check cannot read; compare it with ${shellNode} yourself` : `${pin.trim()} against ${shellNode}` });
   }
   for (const r of input.requirements) {
     if (r.kind === "tool" || r.kind === "runtime") {
       // `runtime: node >=24` is a version to meet; `tool: docker` is a binary to find.
       const [tool, ...pin] = r.value.split(/\s+/);
       const path = await has(tool);
-      if (!path) checks.push({ name: tool, status: "fail", detail: `not on PATH${r.note ? `; ${r.note}` : ""}`, blocking: true });
+      if (!path) push({ kind: r.kind, name: tool, status: "fail", detail: `not on PATH${r.note ? `; ${r.note}` : ""}` });
       else if (pin.length) {
         const have = await versionOf(tool);
         const met = have ? versionMeets(pin.join(" "), have) : undefined;
-        checks.push({ name: tool, status: met === false ? "fail" : met === undefined ? "warn" : "ok", detail: `${path}, ${have ?? "version unknown"} against ${pin.join(" ")}`, blocking: true });
-      } else checks.push({ name: tool, status: "ok", detail: path, blocking: true });
+        push({ kind: "runtime", name: tool, status: met === false ? "fail" : met === undefined ? "warn" : "ok", detail: `${path}, ${have ?? "version unknown"} against ${pin.join(" ")}` });
+      } else push({ kind: r.kind, name: tool, status: "ok", detail: path });
     } else if (r.kind === "credential" && /^aws\b/i.test(r.value)) {
-      // `credential: aws` or `credential: aws dev` (the profile), or `aws (dev)`.
-      const profile = r.value.match(/^aws[\s(-]*([\w.-]+)?\)?/i)?.[1];
+      // `credential: aws`, or `credential: aws profile dev` / `aws dev` / `aws (dev)` to name the profile.
+      const profile = r.value.match(/^aws(?:\s+profile)?[\s(]+([\w.-]+)\)?\s*$/i)?.[1];
       const cred = await awsCredential(profile);
-      if (!cred) checks.push({ name: r.value, status: "fail", detail: `no AWS credentials resolve${profile ? ` for profile ${profile}` : " for the default profile"}; sign in before approving` });
+      if (!cred) push({ kind: "credential", name: r.value, status: "fail", detail: `no AWS credentials resolve${profile ? ` for profile ${profile}` : " for the default profile"}; sign in before approving` });
       else {
         const left = cred.expires ? (cred.expires.getTime() - Date.now()) / 3_600_000 : undefined;
         const short = left !== undefined && hours !== undefined && left < hours;
         const caveat = "what the CLI holds now; a static key refreshes a role for ever, an SSO session can end sooner than the role credentials it minted, so check the session itself";
-        checks.push({ name: r.value, status: short || hours === undefined || left === undefined ? "warn" : "ok", detail: `${cred.who}${left !== undefined ? `, current credentials end in ${left.toFixed(1)}h` : ", no expiry reported"}${hours === undefined ? "; the plan declares no duration, so the lifetime is not compared" : short ? ` but the mission expects ${duration!.value}` : ""}; ${caveat}` });
+        push({ kind: "credential", name: r.value, status: short || hours === undefined || left === undefined ? "warn" : "ok", detail: `${cred.who}${left !== undefined ? `, current credentials end in ${left.toFixed(1)}h` : ", no expiry reported"}${hours === undefined ? "; the plan declares no duration, so the lifetime is not compared" : short ? ` but the mission expects ${duration!.value}` : ""}; ${caveat}` });
       }
     } else if (r.kind === "credential") {
-      checks.push({ name: r.value, status: "human", detail: `confirm it is signed in and outlives the mission${r.note ? `: ${r.note}` : ""}` });
+      push({ kind: "credential", name: r.value, status: "human", detail: `confirm it is signed in and outlives the mission${r.note ? `: ${r.note}` : ""}` });
     } else if (r.kind === "secret") {
-      checks.push({ name: `secret ${r.value}`, status: "human", detail: `confirm it exists where the plan reads it${r.note ? `: ${r.note}` : ""}` });
+      push({ kind: "secret", name: `secret ${r.value}`, status: "human", detail: `confirm it exists where the plan reads it${r.note ? `: ${r.note}` : ""}` });
     } else if (r.kind === "human") {
-      checks.push({ name: r.value, status: "human", detail: r.note || "a person does this; the plan must not expect an agent to" });
+      push({ kind: "human", name: r.value, status: "human", detail: r.note || "a person does this; the plan must not expect an agent to" });
     }
   }
-  if (duration && hours === undefined) checks.push({ name: "duration", status: "warn", detail: `"${duration.value}" is not a duration like 8h` });
+  if (duration && hours === undefined) push({ kind: "host", name: "duration", status: "warn", detail: `"${duration.value}" is not a duration like 8h` });
   try {
     const { stdout } = await run("df", ["-k", input.projectPath]);
     const free = Number(stdout.trim().split("\n").pop()?.split(/\s+/)[3]) / 1_048_576;
-    if (Number.isFinite(free)) checks.push({ name: "disk", status: free < 5 ? "warn" : "ok", detail: `${free.toFixed(0)} GB free; worktrees and node_modules per task add up` });
+    if (Number.isFinite(free)) push({ kind: "disk", name: "disk", status: free < 5 ? "warn" : "ok", detail: `${free.toFixed(0)} GB free; worktrees and node_modules per task add up` });
   } catch { /* no df: nothing to say */ }
   return checks;
 };

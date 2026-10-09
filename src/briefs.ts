@@ -80,7 +80,7 @@ export const RIO_CHECKLIST: readonly string[] = [
   "Deployed state: where the task deploys or configures something live, the claim is verified against the live thing, not against the code.",
   "Accessibility, for anything a person looks at: keyboard focus, labels, contrast.",
   "Background processes: none left running, no port held.",
-  "Test debris: anything made for a test (a queue, a tenant, a table, a user) is named with the task id and gone after it.",
+  "Test debris: anything made for a test (a queue, a tenant, a table, a user) is named with the task id (it is in MAVERICK_TASK) and gone after it.",
   "Scope: the diff stays within the files the task was given; a file outside them is justified in the message of the commit that changes it, or is a finding.",
   "Generated output is read against its input: schema-valid is not the same as correct.",
   "The repo's own rules: its rulebook, its decision log, its design contract, before the task's own words.",
@@ -99,9 +99,10 @@ const ownership = (ctx: BriefContext): string[] => {
     const home = ctx.mission.repos.find((r) => r.label === target?.repo) ?? repo;
     // A task starts when what it needs has passed, so the need is either merged on the mission
     // branch (its milestone landed) or still on its own branch, passed and no longer changing.
-    out.push(where?.merged
-      ? `It builds on ${need}${target ? ` (${target.title})` : ""}, already merged on ${home.branch} and checked out at ${home.integration}.`
-      : `It builds on ${need}${target ? ` (${target.title})` : ""}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. ${home.label === repo.label ? `Merge that branch into yours (\`git merge ${home.branch}-${need}\`) so you build and test against it; its files are the owner's, not yours to change.` : "It is in another repo, so read it there and take its shape from the contracts."}`);
+    const what = `It builds on ${need}${target ? ` (${target.title})` : ""}`;
+    if (where?.merged) out.push(`${what}, already merged on ${home.branch} and checked out at ${home.integration}.`);
+    else if (home.label === repo.label) out.push(`${what}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. Merge that branch into yours (\`git merge ${home.branch}-${need}\`) so you build and test against it; its files are the owner's, not yours to change.`);
+    else out.push(`${what}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. It is in another repo, so read it there and take its shape from the contracts.`);
   }
   // Every contract the task does not own is one it may use, and the owner may be flying beside
   // it right now: that parallel consumer is the case the contracts step exists for.
@@ -110,7 +111,7 @@ const ownership = (ctx: BriefContext): string[] => {
   if (owned.length) out.push(`Contracts this task owns, which other tasks will read from your branch, so write them first and exactly as declared: ${owned.map((c) => `${c.name} (${c.shape})`).join("; ")}.`);
   if (used.length) out.push(`Contracts owned by other tasks, which you use as declared and never redefine: ${used.map((c) => `${c.name} (${c.shape}, owned by ${c.owner})`).join("; ")}. If the owner's branch already has one, read it there; if not yet, stub it in a file of your own at the declared shape, never at the owner's path, and say so in your final message.`);
   if (task.deploys?.length) out.push(`This task alone deploys ${task.deploys.join(", ")} in this milestone; no other task touches ${task.deploys.length > 1 ? "them" : "it"}. Deploy from your branch and say so in your final message.`);
-  if (ctx.shared?.length) out.push(`Shared environments, deployed only from the merged mission branch and never from a task's: ${ctx.shared.join(", ")}. Do not deploy app code there, do not flip a knob there by hand (knobs live in the stack); anything you create for a test (a queue, a tenant, a table, a user) is named with ${task.id} and deleted by the test that made it.`);
+  if (ctx.shared?.length) out.push(`Shared environments, deployed only from the merged mission branch and never from a task's: ${ctx.shared.join(", ")}. Do not deploy app code there, and do not flip a knob there by hand: knobs live in the stack.`);
   return out.length ? ["", ...out] : [];
 };
 

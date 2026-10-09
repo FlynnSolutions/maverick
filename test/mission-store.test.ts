@@ -177,7 +177,7 @@ test("a plan no mission repo holds lands on the first repo's mission branch, and
 
 test("pause keeps its reason, refuses a retry, and resume comes back blocked when a person is still needed", async () => {
   const m = await seed("pause");
-  (m.milestones[0] as { held?: string }).held = "milestone 1 collided in root and the Strike Lead could not reconcile it";
+  (m.milestones[0] as { hold?: unknown }).hold = { kind: "collision", reason: "milestone 1 collided in root and the Strike Lead could not reconcile it", at: "2026-10-09T00:00:00Z" };
   m.status = "blocked";
   await writeFile(file("pause"), JSON.stringify(m), "utf8");
   await assert.rejects(() => pauseMission(project, "pause", "  "), /say why/);
@@ -195,15 +195,30 @@ test("pause keeps its reason, refuses a retry, and resume comes back blocked whe
 
 test("a held milestone is released by a person with a reason, and the mission is flying again if nothing else needs them", async () => {
   const m = await seed("held");
-  (m.milestones[0] as { held?: string; conflicts?: string[] }).held = "milestone 1 collided";
-  (m.milestones[0] as { held?: string; conflicts?: string[] }).conflicts = ["root/a.ts"];
+  (m.milestones[0] as { hold?: unknown; conflicts?: string[] }).hold = { kind: "collision", reason: "milestone 1 collided", at: "2026-10-09T00:00:00Z" };
+  (m.milestones[0] as { hold?: unknown; conflicts?: string[] }).conflicts = ["root/a.ts"];
   m.status = "blocked";
   await writeFile(file("held"), JSON.stringify(m), "utf8");
   await assert.rejects(() => releaseMilestone(project, "held", 1, ""), /say what you did/);
   await assert.rejects(() => releaseMilestone(project, "held", 2, "x"), /no milestone 2/);
   const released = await releaseMilestone(project, "held", 1, "merged it by hand in the integration worktree");
   assert.equal(released.status, "flying");
-  assert.equal(released.milestones[0].held, undefined);
+  assert.equal(released.milestones[0].hold, undefined);
   assert.equal(released.milestones[0].conflicts, undefined);
   await assert.rejects(() => releaseMilestone(project, "held", 1, "again"), /is not held/);
+  // A proof hold releases into a fresh proof; a landing hold is land-again's.
+  const p = await seed("proofheld");
+  (p as { proofRequired?: boolean }).proofRequired = true;
+  p.milestones[0].merged = "x";
+  p.milestones[0].tasks[0].status = "passed";
+  (p.milestones[0] as { hold?: unknown; proof?: unknown }).hold = { kind: "proof", reason: "the proof failed", at: "x" };
+  (p.milestones[0] as { hold?: unknown; proof?: unknown }).proof = { ok: false, at: "x", output: "boom" };
+  await writeFile(file("proofheld"), JSON.stringify(p), "utf8");
+  const reproved = await releaseMilestone(project, "proofheld", 1, "fixed the test");
+  assert.equal(reproved.milestones[0].proof, undefined, "the proof runs again before anything lands");
+  assert.equal(reproved.status, "flying", "merged, but not done until the proof passes again");
+  const l = await seed("landheld");
+  (l.milestones[0] as { hold?: unknown }).hold = { kind: "landing", reason: "could not land", at: "x" };
+  await writeFile(file("landheld"), JSON.stringify(l), "utf8");
+  await assert.rejects(() => releaseMilestone(project, "landheld", 1, "pushed it"), /"land again" is the release for that/);
 });
