@@ -1199,7 +1199,11 @@ export const runProof = (cwd: string, command: string, timeoutMs = 30 * 60_000):
       resolve({ ok, at, output: text.slice(-4000) });
     };
     child.on("error", (err) => done(false, `${output}\n${err.message}`));
-    child.on("exit", (code, signal) => done(code === 0, signal ? `${output}\n(killed by ${signal})` : output));
+    const judge = (code: number | null, signal: NodeJS.Signals | null): void => done(code === 0, signal ? `${output}\n(killed by ${signal})` : output);
+    // The shell's last lines can still be in the pipe when it exits. Wait for its streams to close, but not on
+    // whatever it left running holding them open: a short grace after exit is enough to read what it wrote.
+    child.on("close", judge);
+    child.on("exit", (code, signal) => setTimeout(() => judge(code, signal), 200));
   });
 
 /** Proofs in flight, keyed by mission and milestone: a standing job the pass starts and later reads, never waits on. */
