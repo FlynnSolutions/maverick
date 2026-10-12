@@ -14,13 +14,13 @@ import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 
 const src = (name) => join(dirname(fileURLToPath(import.meta.url)), "..", "src", name);
-const { missionLayout, parsePlan, repoChoices, taskLayout } = await import(src("missions.ts"));
+const { missionLayout, parsePlan, preflightFor, repoChoices, taskLayout } = await import(src("missions.ts"));
 const { missionConfigFor } = await import(src("project-config.ts"));
 const { commonDirOf, toplevelOf } = await import(src("git.ts"));
 const { rioBrief, rioRole, scratchFor, wingmanBrief } = await import(src("briefs.ts"));
 
 const usage = () => {
-  console.error("usage: maverick plan-check <plan.md> [--project <path>]\n       maverick brief <plan.md> <task-id> --role wingman|rio [--project <path>] [--findings <file>]");
+  console.error("usage: maverick plan-check <plan.md> [--project <path>]\n       maverick preflight <plan.md> [--project <path>]\n       maverick brief <plan.md> <task-id> --role wingman|rio [--project <path>] [--findings <file>]");
   process.exit(2);
 };
 
@@ -45,7 +45,7 @@ const project = { id: basename(projectPath), name: basename(projectPath), path: 
 const cfg = await missionConfigFor(projectPath);
 const choices = await repoChoices(project, cfg);
 const text = await readFile(planFile, "utf8");
-const plan = parsePlan(text, choices.map((r) => r.label));
+const plan = parsePlan(text, choices.map((r) => r.label), cfg.shared);
 const missionId = basename(planFile, ".md");
 
 if (command === "plan-check") {
@@ -58,11 +58,25 @@ if (command === "plan-check") {
       console.log(`  ${[t.id, t.status.padEnd(11), t.attempts && `attempt ${t.attempts}`, t.verdict && `RIO ${t.verdict}`, t.head && `@${t.head}`, t.title].filter(Boolean).join(" ")}`);
       if (t.touches?.length) console.log(`         touches ${t.touches.join(", ")}`);
       if (t.needs?.length) console.log(`         needs ${t.needs.join(", ")}`);
+      if (t.deploys?.length) console.log(`         deploys ${t.deploys.join(", ")}`);
     }
   }
+  if (plan.contracts.length) console.log(`\nContracts\n${plan.contracts.map((c) => `  ${c.name}  (${c.owner})  ${c.shape}`).join("\n")}`);
   for (const o of plan.overlaps) console.log(`\noverlap: ${o}`);
+  for (const w of plan.warnings) console.log(`\nwarning: ${w}`);
   if (plan.log.length) console.log(`\nLog (${plan.log.length}), last: ${plan.log[plan.log.length - 1]}`);
   process.exit(plan.problems.length ? 1 : 0);
+}
+
+if (command === "preflight") {
+  if (plan.problems.length) { for (const p of plan.problems) console.error(`problem: ${p}`); process.exit(1); }
+  const checks = await preflightFor(project, cfg, choices, plan);
+  for (const c of checks) console.log(`${c.status.padEnd(5)} ${c.name}: ${c.detail}`);
+  const failed = checks.filter((c) => c.status === "fail").length;
+  const warned = checks.filter((c) => c.status === "warn").length;
+  const human = checks.filter((c) => c.status === "human").length;
+  console.log(`\n${failed ? `${failed} failing; ` : ""}${warned ? `${warned} to read; ` : ""}${human ? `${human} for a person to confirm; ` : ""}${checks.length - failed - warned - human} ok`);
+  process.exit(failed ? 1 : 0);
 }
 
 if (command === "brief") {

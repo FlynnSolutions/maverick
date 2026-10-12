@@ -400,6 +400,12 @@ committing to `main` twice; the guard and its test came from that.
 **Rejected: a state file beside the record.** It would be a second store (M1) and invisible to
 the agents working the branch.
 
+**A log line says what it is.** After its stamp a line reads `decision:` (what a person did),
+`auto:` (a transition the merge-with-notes rule settled without one), `held:` (a milestone held
+for a person, with the time of the hold, written once), or nothing for a plain pass or retry.
+The report reads those words, never the prose after them, so rewording a sentence cannot empty
+a section.
+
 ## M19 — A finding is a blocker or a note, and notes ride ✅ built
 
 A RIO's findings are lines that say what they are: `BLOCKER:` (the task does not pass until it
@@ -421,5 +427,71 @@ discovers.
 `touches` and what it `needs`, an overlap inside a milestone is named at the gate, and a
 Wingman's strays outside its paths go to its RIO; the RIO is an installed agent whose tool
 list has no Edit or Write (`.claude/agents/rio.md`); and `bin/maverick` gives a mission flown
-by hand the same parser and the same briefs. Dispatching by `needs` rather than by milestone
-boundary is designed, not built.
+by hand the same parser and the same briefs.
+
+**Dispatch follows `needs`, not only the milestone boundary** (built the same day, after the
+first five). A task with no `needs` starts with its milestone; a task with `needs` starts when
+every task it names has passed, wherever that task is, a sibling or an earlier milestone that
+has not merged. The milestone still merges as one once all its tasks pass. On the first mission
+one straggler on its last retry idled eighteen tasks that did not need it.
+
+**What tasks share is named before any of them starts.** A `## Contracts` section in the plan
+lists each type, id, codec, env flag or function one task makes and another uses, with its
+owner and its shape; a task that builds on another is warned at the gate when the plan names
+nothing between them. The owner writes it first and exactly as declared; every other task is
+told the shape, and one flying beside the owner before it exists stubs it in a file of its own,
+never at the owner's path. On the first mission
+parallel Wingmen invented the shared conventions apart and a reconcile task had to be added.
+
+**Pause, do not end.** `blocked` means a person is needed somewhere, not that everything stops:
+the milestone that holds the handed-back task or the unresolved collision waits, and every
+other task keeps flying and starting; when nothing is left for a person the mission is simply
+flying again. `paused` is a person's call, with a reason the ledger keeps: nothing new is
+spawned, what is running finishes and is recorded, and resume picks up where the file says. On
+the first mission an expired credential ended the mission at milestone 6 and cut the central
+feature, whose own tasks needed none of it. Milestones still merge in order, once sent.
+
+**A hold has a kind, and the kind says what release means.** A milestone is held for a
+collision nobody reconciled, a landing that failed, or a proof that failed on the merged tree.
+Releasing a collision merges again; releasing a proof runs the proof again on what the person
+fixed, so a hand fix never goes in unproved; a landing is released by landing again, because it
+pushes. Proofs, landings and walkthroughs are standing jobs of the sweep, not things done only
+in the pass that merged, and the proof runs detached so a sweep is never held for it.
+
+**Every spawn claims the record first** (M11 made mechanical): the task, the review, the
+reconcile or the walkthrough is written to the record before the agent starts, and a record
+that refuses the claim because a person moved the mission ends the pass before any agent is
+spawned that nobody owns. One `settle` derives a mission's status and its trouble from the
+record, for the sweep and for every button alike. A task that would deploy a stack or own a path
+a task in the air already has waits its turn: one deployer per stack in the air, whatever the
+milestones say.
+
+**The gate checks the host before the person leaves.** The plan's `## Preflight` section says
+what the mission needs: how long it runs, the tools and runtimes, the credentials and secrets
+by name, and the steps only a person can do. Maverick checks what a machine can (the tools on
+the path, the agents it will spawn, a repo's Node pin against the host, an AWS credential and
+whether it outlives the mission, free disk) and shows the rest marked as the person's to
+confirm; a missing tool or agent refuses approval, everything else is theirs to settle by
+approving. `bin/maverick preflight` prints the same checks. On the first mission Node 22 met a
+pin of 24, `timeout` was missing, a credential expired mid-mission and a real sign-in was never
+verified, each found by an agent at the wrong hour.
+
+**The report is generated, not written.** At close, and on the result page at any time, the
+report comes from the record, the ledger and the RIOs' own findings, in fixed sections: the
+decisions made without the person, theirs, what passed and what rode along with it, what is
+handed back, what is unfinished, what no RIO could verify, the notes carried, the files changed
+outside what a task owned, the held milestones, what Maverick does not record, and the findings
+unedited. It is committed beside the ledger on the mission branch. On the first mission the
+interim report missed three incidents and one line claimed an audit that had not run; a report
+the flying agent writes about itself is a self-report, and the RIO rule applies to it too.
+
+**Shared environments are the merged branch's, and a merge is proved.** A project names in
+`maverick.json` the environments only the merged mission branch may deploy to (`shared`) and a
+`proof` command; a task that says it deploys a shared environment is refused at the gate, two
+tasks deploying one stack in one milestone are refused, each Wingman is told what it alone
+deploys and that anything it makes for a test is named with its task id and deleted by that
+test, and after every milestone merges the proof runs on the merged tree and a failure holds
+the milestone. The Strike Lead sent in on a collision keeps both sides, including a rule or a
+test one side added, and writes no product code. On the first mission the shared dev URL ran
+an unmerged task branch twice, two deployers flipped one knob, a lint rule was dropped at a
+merge, and the Lead's unreviewed wiring broke tests within minutes.

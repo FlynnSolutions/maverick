@@ -34,7 +34,7 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | `Formation` | `src/formations.ts` | `session-console/` | `name` (phonetic callsign), `lead`, `members[]` |
 | `ShipRun` | `src/ships.ts` | `console-sessions/ships/<project>/<version>.json` | `version`, `steps[]` |
 | `ShipStep` | `src/ships.ts` | within the run | `prompt`, `status`, `claudeId`, `report`, `artifacts[]` |
-| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `repos[]`, `land`, `formation`, `milestones[]` |
+| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `repos[]`, `land`, `formation`, `milestones[]`, `contracts[]`, `requirements[]` |
 | `MissionRepo` | `src/missions.ts` | within the mission | `label`, `path`, `base`, `branch`, `integration`, `landed` |
 | `Milestone` | `src/missions.ts` | within the mission | `n`, `title`, `done`, `tasks[]`, `merged`, `mergeShas`, `walkthrough` |
 | `MilestoneWalkthrough` | `src/missions.ts` | within the milestone | `claudeId`, `doc`, `progress`, `failed`, `waived` |
@@ -44,7 +44,7 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 
 `SessionRole` is `driver | develop | audit | plan`; `SessionStatus` is `open | closed |
 handed-off`; `StepStatus` is `pending | running | finished | done | failed | skipped`.
-`MissionStatus` is `interviewing | planned | flying | blocked | review | closed | abandoned`;
+`MissionStatus` is `interviewing | planned | flying | blocked | paused | review | closed | abandoned`;
 `TaskStatus` is `pending | flying | built | reviewing | passed | handed-back`; a RIO's `Verdict`
 is `pass | pass with notes | fail | mixed` (M19).
 

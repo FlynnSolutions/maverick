@@ -257,8 +257,11 @@ That plan is the first gate. Maverick shows it with what it will cost (how many 
 background sessions, and Factory's published numbers for a mission of this kind), and nothing
 has spawned yet. Approving writes the whole plan into your tracker as ordinary items carrying
 `mission` and `milestone` fields, cuts a `mission/<id>` branch, and sends the first milestone out:
-one **Wingman** per task, each in its own worktree, in parallel within a milestone and sequential
-across them.
+one **Wingman** per task, each in its own worktree. A task with no `needs` starts with its
+milestone; a task that names what it builds on starts the moment those tasks pass, even in a
+milestone not yet sent, so one straggler does not idle everything behind it. What tasks share
+is named in the plan's `## Contracts` section before any of them starts, with an owner and a
+shape. A milestone still merges as one, once every task in it has passed.
 
 When a Wingman finishes, a **RIO** climbs into its back seat: a separate session that did not
 write the code, reads every commit on the branch, runs the thing, and writes a verdict. It never
@@ -267,7 +270,8 @@ findings, twice, before it stops and asks you. A milestone whose tasks all pass 
 conflict aborts and names the paths.
 
 The second gate is the result: every task with its diff, its verdict and its findings, on a
-branch you can check out and test. Closing ticks the items in the tracker. **Maverick never merges
+branch you can check out and test, and a report generated from the record and the RIOs' own
+findings rather than written by the agent that flew it. Closing ticks the items in the tracker. **Maverick never merges
 a mission into main**: the ship wizard does, with you in it phase by phase.
 
 ### The Wingman and the RIO agents
@@ -294,6 +298,7 @@ A mission can be flown by hand, outside the app, with the same parser and the sa
 
 ```bash
 bin/maverick plan-check deliverables/missions/<id>.md                    # problems, and where every task stands
+bin/maverick preflight deliverables/missions/<id>.md                     # what the host has and lacks of what the plan needs
 bin/maverick brief deliverables/missions/<id>.md m1-t2 --role wingman    # the brief, with the app's worktree and branch layout
 bin/maverick brief deliverables/missions/<id>.md m1-t2 --role rio --findings <file>
 ```

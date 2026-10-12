@@ -25,10 +25,16 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 | **Item** | a `- [ ]` bullet, optionally carrying indented `key: value` fields. |
 | **Tracker** | the project's markdown work file. The source of truth for all board state. |
 | **Ship run** | a saved, resumable set of steps for one version, driving the project's own `SHIP_WORKFLOW.md`. |
-| **Milestone** | a group of a mission's tasks that fly together and merge together, the way a division or section of the package launches together. Tasks inside one are parallel; milestones are sequential. No agent holds one: the Strike Lead dispatches every task itself. |
+| **Milestone** | a group of a mission's tasks that fly together and merge together, the way a division or section of the package launches together. Tasks inside one fly in parallel unless a `needs` line says otherwise; a task that names what it builds on starts when that has passed, even before its milestone is sent. Milestones merge in order. No agent holds one: Maverick dispatches every task itself. |
 | **Ledger** | the plan on the mission branch once the mission flies, with where every task stands written under it and a `## Log` of transitions and decisions (M18). |
 | **Brief** | the prompt a Wingman or a RIO is launched with, generated from one template (`src/briefs.ts`) with the standing orders and the RIO's checklist. |
 | **Touches, needs** | two fields on a task in the plan: the paths it owns, and the tasks it builds on. An overlap inside a milestone is named at the gate; a change outside its paths is a stray the RIO is told about. |
+| **Shared environment, proof** | what a project's `maverick.json` names as deployed only from the merged mission branch, and the command run on the merged tree after each milestone; a failing proof holds the milestone. |
+| **Report** | the morning read: generated from the record, the ledger and the RIO findings in fixed sections, never written by the agent that flew the mission; committed beside the ledger at close. |
+| **Preflight** | the plan's `## Preflight` section and the checks the gate runs from it: tools, runtimes, agents, credentials and their lifetime, disk, and the steps marked as a person's. |
+| **Hold** | why a milestone waits for a person, with a kind: a collision nobody reconciled (release merges again), a proof that failed on the merged tree (release proves again), a landing that failed (land again). |
+| **Paused** | a mission a person has stopped spawning for, with a reason in the ledger; what runs finishes and is recorded, and it resumes from the file. Distinct from **blocked**, where a person is needed for one task and the rest flies on, and from **abandoned**, which ends it. |
+| **Contract** | a thing one task makes and another uses (a type, an id, a codec, an env flag, a function), named in the plan's `## Contracts` section with its owner and shape before any task starts. |
 | **Blocker, note** | the two kinds of finding a RIO writes. A blocker stops the task until fixed; a note is fixed if cheap, else carried to the result (M19). |
 | **Gate** | one of the two places a mission stops for Cory: the plan before anything spawns, and the result before anything ships. |
 | **Audit parent** | a session record with role `audit` that owns a group of task sessions and returns a verdict. |

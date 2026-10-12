@@ -12,7 +12,9 @@ export const RIO_TOOLS = "Bash,Read,Grep,Glob";
 
 export interface BriefContext {
   projectPath: string;
-  mission: Pick<Mission, "id" | "name" | "plan" | "repos" | "milestones">;
+  /** Environments only the merged mission branch may deploy to, from the project's maverick.json. */
+  shared?: string[];
+  mission: Pick<Mission, "id" | "name" | "plan" | "repos" | "milestones" | "contracts">;
   milestone: Pick<Milestone, "n" | "title" | "done" | "tasks">;
   task: MissionTask;
   repo: MissionRepo;
@@ -78,6 +80,7 @@ export const RIO_CHECKLIST: readonly string[] = [
   "Deployed state: where the task deploys or configures something live, the claim is verified against the live thing, not against the code.",
   "Accessibility, for anything a person looks at: keyboard focus, labels, contrast.",
   "Background processes: none left running, no port held.",
+  "Test debris: anything made for a test (a queue, a tenant, a table, a user) is named with the task id (it is in MAVERICK_TASK) and gone after it.",
   "Scope: the diff stays within the files the task was given; a file outside them is justified in the message of the commit that changes it, or is a finding.",
   "Generated output is read against its input: schema-valid is not the same as correct.",
   "The repo's own rules: its rulebook, its decision log, its design contract, before the task's own words.",
@@ -91,12 +94,24 @@ const ownership = (ctx: BriefContext): string[] => {
   const out: string[] = [];
   if (task.touches?.length) out.push(`This task owns these paths and no others: ${task.touches.join(", ")}. A file outside them is a finding unless the commit that changes it says why in its message; if it needs more, add a new file rather than editing a shared one.`);
   for (const need of task.needs ?? []) {
-    const target = ctx.mission.milestones.flatMap((x) => x.tasks).find((t) => t.id === need);
+    const where = ctx.mission.milestones.find((x) => x.tasks.some((t) => t.id === need));
+    const target = where?.tasks.find((t) => t.id === need);
     const home = ctx.mission.repos.find((r) => r.label === target?.repo) ?? repo;
-    out.push(m.tasks.includes(target!)
-      ? `It builds on ${need} (${target!.title}), which flies beside it in this milestone on branch ${home.branch}-${need} in ${home.path}; read it there, and expect it to change until it passes.`
-      : `It builds on ${need}${target ? ` (${target.title})` : ""}, from an earlier milestone, already merged on ${home.branch} and checked out at ${home.integration}.`);
+    // A task starts when what it needs has passed, so the need is either merged on the mission
+    // branch (its milestone landed) or still on its own branch, passed and no longer changing.
+    const what = `It builds on ${need}${target ? ` (${target.title})` : ""}`;
+    if (where?.merged) out.push(`${what}, already merged on ${home.branch} and checked out at ${home.integration}.`);
+    else if (home.label === repo.label) out.push(`${what}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. Merge that branch into yours (\`git merge ${home.branch}-${need}\`) so you build and test against it; its files are the owner's, not yours to change.`);
+    else out.push(`${what}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. It is in another repo, so read it there and take its shape from the contracts.`);
   }
+  // Every contract the task does not own is one it may use, and the owner may be flying beside
+  // it right now: that parallel consumer is the case the contracts step exists for.
+  const owned = (ctx.mission.contracts ?? []).filter((c) => c.owner === task.id);
+  const used = (ctx.mission.contracts ?? []).filter((c) => c.owner !== task.id);
+  if (owned.length) out.push(`Contracts this task owns, which other tasks will read from your branch, so write them first and exactly as declared: ${owned.map((c) => `${c.name} (${c.shape})`).join("; ")}.`);
+  if (used.length) out.push(`Contracts owned by other tasks, which you use as declared and never redefine: ${used.map((c) => `${c.name} (${c.shape}, owned by ${c.owner})`).join("; ")}. If the owner's branch already has one, read it there; if not yet, stub it in a file of your own at the declared shape, never at the owner's path, and say so in your final message.`);
+  if (task.deploys?.length) out.push(`This task alone deploys ${task.deploys.join(", ")} in this milestone; no other task touches ${task.deploys.length > 1 ? "them" : "it"}. Deploy from your branch and say so in your final message.`);
+  if (ctx.shared?.length) out.push(`Shared environments, deployed only from the merged mission branch and never from a task's: ${ctx.shared.join(", ")}. Do not deploy app code there, and do not flip a knob there by hand: knobs live in the stack.`);
   return out.length ? ["", ...out] : [];
 };
 

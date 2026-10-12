@@ -16,7 +16,7 @@ import { test } from "node:test";
 const dir = mkdtempSync(join(tmpdir(), "mv-store-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "p"), { recursive: true });
-const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, closeMission, needsWalking, parsePlan, readMission, recordWalkthrough, walkthroughState } = await import("../src/missions.ts");
+const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, claimed, closeMission, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
 const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
@@ -173,4 +173,74 @@ test("a plan no mission repo holds lands on the first repo's mission branch, and
   assert.match(g(integration, "log", "--format=%s", "-1"), /^mission held:/);
   assert.equal(g(root, "log", "--format=%s", "-1").trim(), "the plan, on main", "main got no commit");
   assert.equal(await readFile(join(root, "deliverables", "missions", "held.md"), "utf8"), planText, "and the Lead's copy is untouched");
+});
+
+test("pause keeps its reason, refuses a retry, and resume comes back blocked when a person is still needed", async () => {
+  const m = await seed("pause");
+  (m.milestones[0] as { hold?: unknown }).hold = { kind: "collision", reason: "milestone 1 collided in root and the Strike Lead could not reconcile it", at: "2026-10-09T00:00:00Z" };
+  m.status = "blocked";
+  await writeFile(file("pause"), JSON.stringify(m), "utf8");
+  await assert.rejects(() => pauseMission(project, "pause", "  "), /say why/);
+  const paused = await pauseMission(project, "pause", "token expired");
+  assert.equal(paused.status, "paused");
+  assert.match(paused.trouble ?? "", /^paused: token expired/);
+  await assert.rejects(() => retryTask(project, "pause", "m1-t1"), /is paused; resume it first/);
+  await acceptTask(project, "pause", "m1-t1", "looked");
+  assert.equal((await readMission("p", "pause"))!.status, "paused", "accepting a task does not end a pause");
+  const resumed = await resumeMission(project, "pause");
+  assert.equal(resumed.status, "blocked", "the collision is still a person's to answer");
+  assert.match(resumed.trouble ?? "", /milestone 1 collided/);
+  await assert.rejects(() => resumeMission(project, "pause"), /not paused/);
+});
+
+test("a held milestone is released by a person with a reason, and the mission is flying again if nothing else needs them", async () => {
+  const m = await seed("held");
+  (m.milestones[0] as { hold?: unknown; conflicts?: string[] }).hold = { kind: "collision", reason: "milestone 1 collided", at: "2026-10-09T00:00:00Z" };
+  (m.milestones[0] as { hold?: unknown; conflicts?: string[] }).conflicts = ["root/a.ts"];
+  m.status = "blocked";
+  await writeFile(file("held"), JSON.stringify(m), "utf8");
+  await assert.rejects(() => releaseMilestone(project, "held", 1, ""), /say what you did/);
+  await assert.rejects(() => releaseMilestone(project, "held", 2, "x"), /no milestone 2/);
+  const released = await releaseMilestone(project, "held", 1, "merged it by hand in the integration worktree");
+  assert.equal(released.status, "flying");
+  assert.equal(released.milestones[0].hold, undefined);
+  assert.equal(released.milestones[0].conflicts, undefined);
+  await assert.rejects(() => releaseMilestone(project, "held", 1, "again"), /is not held/);
+  // A proof hold releases into a fresh proof; a landing hold is land-again's.
+  const p = await seed("proofheld");
+  (p as { proofRequired?: boolean }).proofRequired = true;
+  p.milestones[0].merged = "x";
+  p.milestones[0].tasks[0].status = "passed";
+  (p.milestones[0] as { hold?: unknown; proof?: unknown }).hold = { kind: "proof", reason: "the proof failed", at: "x" };
+  (p.milestones[0] as { hold?: unknown; proof?: unknown }).proof = { ok: false, at: "x", output: "boom" };
+  await writeFile(file("proofheld"), JSON.stringify(p), "utf8");
+  const reproved = await releaseMilestone(project, "proofheld", 1, "fixed the test");
+  assert.equal(reproved.milestones[0].proof, undefined, "the proof runs again before anything lands");
+  assert.equal(reproved.status, "flying", "merged, but not done until the proof passes again");
+  const l = await seed("landheld");
+  (l.milestones[0] as { hold?: unknown }).hold = { kind: "landing", reason: "could not land", at: "x" };
+  await writeFile(file("landheld"), JSON.stringify(l), "utf8");
+  await assert.rejects(() => releaseMilestone(project, "landheld", 1, "pushed it"), /"land again" is the release for that/);
+});
+
+test("a spawned agent's id is never lost: a write the record refuses puts the id on the fresh record and ends the pass", async () => {
+  const m = await seed("claim");
+  const task = m.milestones[0].tasks[0];
+  task.status = "pending";
+  await writeFile(file("claim"), JSON.stringify(m), "utf8");
+  const mission = (await readMission("p", "claim"))!;
+  await assert.rejects(() => claimed(mission,
+    () => { const t = mission.milestones[0].tasks[0]; t.status = "flying"; t.claudeId = undefined; },
+    async () => {
+      // A person acts while the spawn is in flight: the record moves under the pass.
+      const theirs = (await readMission("p", "claim"))!;
+      theirs.trouble = "a person was here";
+      await __writeMissionForTest(theirs);
+      return "agent-123";
+    },
+    (on, id) => { on.milestones[0].tasks[0].claudeId = id; }), StaleMissionError);
+  const fresh = (await readMission("p", "claim"))!;
+  assert.equal(fresh.milestones[0].tasks[0].claudeId, "agent-123", "the id landed on the record that is true");
+  assert.equal(fresh.milestones[0].tasks[0].status, "flying", "the claim written before the spawn stands");
+  assert.equal(fresh.trouble, "a person was here", "and the person's write was not undone");
 });

@@ -31,9 +31,12 @@ milestone merges into `mission/<id>`, never main. Verified end to end against a 
 with real agents on 2026-09-16: plan, dispatch, review verdict, merge, close and tick.
 
 **Mission protocol v2, 2026-10-09** (M18, M19), built as five bricks each reviewed by an
-independent RIO before the next; every brick failed its first review and was fixed. Not yet:
-dispatching by `needs`, the preflight, pause-not-end, the shared-environment rules, the report
-sections.
+independent RIO before the next; every brick failed its first review and was fixed. Dispatch
+by `needs`, the contracts section, pause-not-end, the preflight, the generated report, the
+shared-environment rules and a proof after each merge followed. Of the audit's seventeen
+changes, what is not built: a mission owning one keep-awake, prohibitions enforced by withholding
+a token (a project's own environment, not Maverick's), and an eval of generated output beyond the
+RIO's standing check.
 
 ## What does not
 
