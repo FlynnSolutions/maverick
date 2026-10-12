@@ -79,7 +79,8 @@ test("preflight prints every check and exits 1 when something the mission needs 
   assert.equal(status, 1, stdout);
   assert.match(stdout, /^fail {2}no-such-tool-xyz: not on PATH/m);
   assert.match(stdout, /^human a passkey:/m);
-  assert.match(stdout, /1 failing; 1 for a person to confirm/);
+  // The host decides how many fail (CI has no claude on PATH); the fixture decides what a person must confirm.
+  assert.match(stdout, /\d+ failing; 1 for a person to confirm/);
 });
 
 test("brief derives the worktree, branch and plan path the app would use, for either seat", () => {
