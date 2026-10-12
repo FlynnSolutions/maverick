@@ -44,12 +44,19 @@ they merge; spikes record units and semantics for every metric they touch; a RIO
 derived number against an independent source; a cost estimate at gate 1 outside the app; agent
 commits carry an agent identity or trailer, not only the human's.
 
-## Built 2026-10-09, on `feat/protocol-v2`
+## Built 2026-10-09, merged as #11
 
 Changes 1, 2, 4, 5, 6 and 12 of the table above, as five bricks with a test or a check each, each
-reviewed by an independent RIO before the next. Decisions M18 and M19. Not built: 3 (the
-contracts step), 7 to 11, 13 to 17, and dispatching by `needs`; those are the proposal that
-follows this branch.
+reviewed by an independent RIO before the next. Decisions M18 and M19.
+
+## Built 2026-10-10 to 11, merged as #12
+
+Dispatching by `needs`, 3 (contracts), 13 (pause, not end), 8 (preflight), 11 (the report) and 7
+(shared environments, with a proof command that covers the proof half of 10), as six more bricks,
+each reviewed the same way, then a `/simplify` pass that restructured the sweep. Still prose, not
+mechanism: 9 (the standing orders are in the brief, not enforced), 10's merge discipline beyond
+the proof, 14 to 17. None of it has flown a live mission yet; the next mission on a fixture
+project is the test.
 
 ## Keep exactly as it is
 

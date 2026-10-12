@@ -144,31 +144,6 @@ format: checklist
 
 ## 🚧 In Progress
 
-- [~] `[ENG]` `[L]` **Mission protocol v2: the ledger, the brief template, the RIO agent, touches and needs, blocker and note**
-  - created: 2026-10-09
-  - source: the outside audit of the first overnight mission, 2026-10-09
-  - kind: feature
-  - plan: plans/mission-protocol-v2-2026-10-09.md
-  - status: merged to main 2026-10-09 (#11); dispatch by needs and the rest on the follow-up branch
-  - pr: https://github.com/FlynnSolutions/maverick/pull/11
-  The first five of the ranked changes, one brick at a time, each reviewed by a RIO that did not
-  write it. Decisions M18 and M19. The rest (contracts step, shared-environment rules, preflight,
-  pause-not-end, report sections, dispatch by needs) is the proposal at the end of the plan.
-
-- [~] `[ENG]` `[L]` **Electron shell, and Maverick posted as a free, open-source download** —
-  `server.ts` becomes the main process. **Cory, 2026-10-07:** make it an app people can download
-  from GitHub, open source and free, with one completely honest statement on the front about
-  why it was built and who built it; the reality of it is the marketing of it. The brief and
-  his statement are in the plan.
-  **Built 2026-10-07 on `feat/electron-shell`:** `app/` (Electron 44, its own `package.json`,
-  one `main.mjs` that imports `server.ts`), the Release workflow on a `v*` tag, the README with
-  the statement up front, and the public-repo files. Decisions M15. Packaged app run on this Mac;
-  not yet downloaded from a Release.
-  - created: 2026-09-14
-  - plan: plans/maverick-public-release-2026-10-07.md
-  - status: PR #5 open, not merged
-  - pr: https://github.com/FlynnSolutions/maverick/pull/5
-
 ## 📋 Backlog
 
 - [ ] `[ENG]` `[M]` **Checkbox flips from the board** — tick an item in the UI, write `- [x]` back.
@@ -360,6 +335,17 @@ format: checklist
 
 ## ✅ Recently shipped, pending release
 
+- [x] `[ENG]` `[L]` **Mission protocol v2** — the plan on the mission branch is the ledger, one
+  brief template, a read-only `rio.md` agent, `touches` / `needs` / `deploys` with mechanical
+  checks, BLOCKER / NOTE verdicts and merge-with-notes (#11, M18, M19); then dispatch by needs,
+  contracts, pause-not-end, preflight, the generated report, shared environments and a proof
+  (#12). Not yet flown on a live mission: the next mission on a fixture project is the test.
+  Plan: plans/mission-protocol-v2-2026-10-09.md. _2026-10-09 (#11), 2026-10-11 (#12)._
+- [x] `[ENG]` `[L]` **Electron shell, and Maverick posted as a free, open-source download** —
+  `app/` (Electron 44, its own `package.json`), the Release workflow on a `v*` tag, the README with
+  Cory's statement up front, and the public-repo files. Decision M15. Released as v0.1.0, ad-hoc
+  signed; Apple Developer enrollment for a signed build is in progress.
+  Plan: plans/maverick-public-release-2026-10-07.md. _2026-10-08 (#5, v0.1.0)._
 - [x] `[OSS]` **MIT `LICENSE`** — the repo was public with no license, which made it legally
   unusable by anyone who found it. _2026-09-16._
 - [x] `[DOC]` **`RULEBOOK.md`** — Maverick is held to the workspace standard it reads for everyone
