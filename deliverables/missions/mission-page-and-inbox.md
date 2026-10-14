@@ -8,7 +8,7 @@ _done when: `npm test` passes, `GET /api/missions/<id>?project=<p>` on a mission
 
 - [~] **Questions and the status word**
   - touches: src/questions.ts, test/questions.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 1
   Write `src/questions.ts`, pure functions over a `Mission` (the type in `src/missions.ts`; import the types only, do not edit that file). Export `statusWord(mission: Mission): "working" | "waiting for you" | "error" | "done"`: `done` for `closed` and `review` with nothing held; `waiting for you` when any task is `handed-back`, any milestone carries a `hold`, the mission has `escalation` or `trouble`, is `paused`, or is `planned` (the gate); `error` when `trouble` names a failure the person cannot act on (the report could not be written, a proof runner died: the strings in `src/missions.ts` that set `trouble` tell you which); otherwise `working`. Export `questionsOf(mission: Mission): Question[]` where `Question` is the contract below: one per handed-back task (answers: send it out again → `POST tasks/<id>/retry`; accept it over the RIO → `POST tasks/<id>/accept` with `{ note }`; the body is the task title, attempt count, verdict and the first BLOCKER line from `mission.findings?.[id]` when the view carries findings, else the task `note`), one per held milestone (kind from `hold.kind`; answers: release → `POST milestones/<n>/release` with `{ note }`, and for a landing hold "try landing again" → `POST land`), one for `escalation` (kind `plan`; answers: resume → `POST resume`, pause → `POST pause`), one when `paused` (answer: resume), one at the gate when `status === "planned"` (kind `gate`; answer: approve → `POST approve`). Every answer carries `label`, `method`, `path` relative to `/api/missions/<id>/`, optional `body` keys the page must fill (`note`), and `primary: true` on exactly one answer per question. Questions are ordered oldest first by the timestamp you can find (hold.at, task.review?.at, else mission.created). `test/questions.test.ts` builds missions by hand (see `test/missions.test.ts` for the shapes) and pins every kind, the ordering, one primary per question, and all four words. No I/O in this file.
 
@@ -108,3 +108,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 21:42 m1-t1 Questions and the status word: pending to flying
 - 2026-10-13 21:42 m1-t2 The feed from the ledger: pending to flying
 - 2026-10-13 21:45 m1-t2 The feed from the ledger: flying to reviewing
+- 2026-10-13 21:45 m1-t1 Questions and the status word: flying to reviewing
