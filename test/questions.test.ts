@@ -51,7 +51,7 @@ test("an escalation, a pause and the gate each ask their own question", () => {
   const [plan] = questionsOf(base({ escalation: "the plan collides" }));
   assert.equal(plan.kind, "plan");
   assert.equal(plan.body, "the plan collides");
-  assert.deepEqual(plan.answers.map((a) => [a.path, Boolean(a.primary)]), [["resume", false], ["pause", true]]);
+  assert.deepEqual(plan.answers, [{ label: "pause", method: "POST", path: "pause", body: ["note"], primary: true }]);
   const [paused] = questionsOf(base({ status: "paused", pausedFor: "credential expired" }));
   assert.equal(paused.kind, "paused");
   assert.equal(paused.body, "credential expired");
@@ -59,6 +59,32 @@ test("an escalation, a pause and the gate each ask their own question", () => {
   const [gate] = questionsOf(base({ status: "planned" }));
   assert.equal(gate.kind, "gate");
   assert.deepEqual(gate.answers, [{ label: "approve", method: "POST", path: "approve", primary: true }]);
+});
+
+test("an escalation offers only what the server takes in the mission's state", () => {
+  const answers = (status: Mission["status"]) => questionsOf(base({ status, escalation: "collides" })).find((q) => q.kind === "plan")?.answers;
+  assert.deepEqual(answers("blocked"), [{ label: "pause", method: "POST", path: "pause", body: ["note"], primary: true }]);
+  assert.deepEqual(answers("paused"), [{ label: "resume", method: "POST", path: "resume", primary: true }]);
+  // Never cleared, so it rides into review, where neither pause nor resume is taken.
+  assert.equal(answers("review"), undefined);
+  assert.equal(answers("interviewing"), undefined);
+});
+
+test("on a paused mission, retry and land give way to resume, which the server asks for first", () => {
+  const mission = base({
+    status: "paused",
+    milestones: [ms(1, [t("a", "handed-back")]), ms(2, [], { hold: { kind: "landing", reason: "r", at: "2026-10-02T00:00:00.000Z" } })],
+  });
+  const qs = questionsOf(mission);
+  assert.deepEqual(qs.find((q) => q.id === "task:a")!.answers, [
+    { label: "resume", method: "POST", path: "resume", primary: true },
+    { label: "accept it over the RIO", method: "POST", path: "tasks/a/accept", body: ["note"] },
+  ]);
+  assert.deepEqual(qs.find((q) => q.id === "hold:2")!.answers, [
+    { label: "release", method: "POST", path: "milestones/2/release", body: ["note"] },
+    { label: "resume", method: "POST", path: "resume", primary: true },
+  ]);
+  for (const q of qs) assert.ok(!q.answers.some((a) => a.path === "land" || a.path.endsWith("/retry")), q.id);
 });
 
 test("questions come oldest first, every one has exactly one primary answer and a unique id", () => {

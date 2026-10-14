@@ -33,11 +33,20 @@ const over = (mission: Mission): boolean => mission.status === "closed" || missi
 export const statusWord = (mission: Mission): StatusWord => {
   if (mission.trouble && BROKEN.some((re) => re.test(mission.trouble!))) return "error";
   if (over(mission)) return "done";
-  if (questionsOf(mission).length || mission.trouble) return "waiting for you";
+  if (questionsOf(mission).length || mission.escalation || mission.trouble) return "waiting for you";
   return mission.status === "review" ? "done" : "working";
 };
 
 const blockerOf = (findings: string | undefined): string | undefined => (findings ? findingsOf(findings).blockers[0] : undefined);
+
+type Answer = Question["answers"][number];
+
+/**
+ * The server refuses `retry` and `land` on a paused mission and says "resume it first", so on a
+ * paused mission that is the answer offered in their place. Both are primary where they appear.
+ */
+const unlessPaused = (mission: Mission, answer: Answer): Answer =>
+  mission.status === "paused" ? { label: "resume", method: "POST", path: "resume", primary: true } : answer;
 
 const handedBack = (mission: Mission & { findings?: Record<string, string> }, task: MissionTask): Question => {
   const why = blockerOf(mission.findings?.[task.id]) ?? task.note ?? "no reason recorded";
@@ -49,10 +58,22 @@ const handedBack = (mission: Mission & { findings?: Record<string, string> }, ta
     at: task.review?.started ?? task.ended ?? mission.created,
     taskId: task.id,
     answers: [
-      { label: "send it out again", method: "POST", path: `tasks/${task.id}/retry`, primary: true },
+      unlessPaused(mission, { label: "send it out again", method: "POST", path: `tasks/${task.id}/retry`, primary: true }),
       { label: "accept it over the RIO", method: "POST", path: `tasks/${task.id}/accept`, body: ["note"] },
     ],
   };
+};
+
+/**
+ * The one answer the server takes for an escalation, which depends on where the mission is: it
+ * pauses only a flying or blocked mission, with a reason, and resumes only a paused one. In any
+ * other state (an escalation is never cleared, so it rides into `review`) nothing it would take
+ * is an answer, so there is no question to ask.
+ */
+const escalationAnswer = (mission: Mission): Answer | undefined => {
+  if (mission.status === "flying" || mission.status === "blocked") return { label: "pause", method: "POST", path: "pause", body: ["note"], primary: true };
+  if (mission.status === "paused") return { label: "resume", method: "POST", path: "resume", primary: true };
+  return undefined;
 };
 
 /**
@@ -77,21 +98,18 @@ export const questionsOf = (mission: Mission & { findings?: Record<string, strin
       milestone: m.n,
       answers: [
         { label: "release", method: "POST", path: `milestones/${m.n}/release`, body: ["note"], ...(landing ? {} : { primary: true }) },
-        ...(landing ? [{ label: "try landing again", method: "POST" as const, path: "land", primary: true }] : []),
+        ...(landing ? [unlessPaused(mission, { label: "try landing again", method: "POST", path: "land", primary: true })] : []),
       ],
     });
   }
-  if (mission.escalation) out.push({
+  const escalated = mission.escalation ? escalationAnswer(mission) : undefined;
+  if (escalated) out.push({
     id: "escalation",
     kind: "plan",
     title: "the plan needs a look",
-    body: mission.escalation,
+    body: mission.escalation!,
     at: mission.created,
-    // Pause is primary: the server refuses resume on a mission that is not paused.
-    answers: [
-      { label: "resume", method: "POST", path: "resume" },
-      { label: "pause", method: "POST", path: "pause", primary: true },
-    ],
+    answers: [escalated],
   });
   if (mission.status === "paused") out.push({
     id: "paused",
