@@ -1,0 +1,432 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mission page and inbox: milestone 4 walkthrough</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+    --radius:10px; --maxw:1000px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+      --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+      --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+      --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+    --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+    --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+    --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em;
+    background:var(--line2);padding:.08em .38em;border-radius:5px;border:1px solid var(--line);
+    word-break:break-word;}
+  a{color:var(--accent)}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 120px}
+  header.mast{max-width:var(--maxw);margin:0 auto;padding:36px 20px 20px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:30px;line-height:1.15;margin:.28em 0 .1em;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:15px;max-width:72ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .progwrap{position:sticky;top:0;z-index:20;background:var(--bg);
+    border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:6px}
+  .progrow{max-width:var(--maxw);margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:14px}
+  .bar{flex:1;height:8px;background:var(--line2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s ease}
+  .pct{font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;white-space:nowrap}
+  .tools{display:flex;gap:8px}
+  button.btn{font:inherit;font-size:12.5px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+  button.btn:hover{color:var(--ink);border-color:var(--accent)}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:var(--radius);padding:16px 18px;margin:18px 0}
+  .callout h3{margin:0 0 8px;font-size:15px}
+  .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px;margin-top:4px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px 16px;margin:18px 0 6px}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:28px}
+  @media(max-width:640px){nav.toc ol{columns:1}}
+  nav.toc li{margin:4px 0;break-inside:avoid}
+  nav.toc a{text-decoration:none;color:var(--ink)}
+  nav.toc a:hover{color:var(--accent)}
+  nav.toc .c{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px}
+  section.pillar{margin:30px 0 0}
+  .phead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:10px 0 8px;border-bottom:2px solid var(--line);position:sticky;top:44px;background:var(--bg);z-index:5}
+  .phead h2{margin:0;font-size:21px;letter-spacing:-.01em}
+  .phead .pc{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .tc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    margin:12px 0;overflow:hidden}
+  .tc-head{display:flex;gap:11px;align-items:flex-start;padding:13px 40px 13px 15px;cursor:pointer;user-select:none;position:relative}
+  .tc-head:after{content:"\25BE";position:absolute;right:15px;top:13px;color:var(--faint);transition:transform .15s}
+  .tc-head:hover:after{color:var(--accent)}
+  .tc.collapsed .tc-head:after{transform:rotate(-90deg)}
+  .tc-title{font-weight:600;font-size:15px;flex:1}
+  .caseid{display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    font-weight:700;color:var(--muted);background:var(--line2);border:1px solid var(--line);
+    border-radius:5px;padding:0 6px;margin-right:8px;vertical-align:1px}
+  .tc-actions{display:inline-flex;gap:8px;align-items:center;margin-left:auto;flex:none}
+  .verdict{display:inline-flex;gap:3px}
+  .vbtn{font:inherit;font-size:13px;font-weight:800;width:27px;height:24px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--faint);cursor:pointer;line-height:1;padding:0}
+  .vbtn:hover{border-color:var(--accent);color:var(--ink)}
+  .vbtn.v-pass.on{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+  .vbtn.v-partial.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+  .vbtn.v-fail.on{background:#fdecec;border-color:#e0554c;color:#b3261e}
+  :root[data-theme="dark"] .vbtn.v-fail.on{background:#2c1514;color:#f0918a;border-color:#7a3b36}
+  .vbtn.v-blocked.on{background:var(--line2);border-color:var(--faint);color:var(--ink)}
+  .vbtn.v-defer.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .notebtn{font:inherit;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;white-space:nowrap}
+  .notebtn:hover{border-color:var(--accent);color:var(--accent)}
+  .notebtn.has{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .notebtn.sendbtn.sent{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+  .vchip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--setup);
+    background:var(--setup-soft);border:1px solid var(--setup);border-radius:5px;padding:0 5px;margin-left:7px;vertical-align:1px}
+  .notearea{width:100%;font:inherit;font-size:13px;border:1px solid var(--warn);border-radius:7px;padding:7px 9px;margin:0 0 11px;background:var(--warn-soft);color:var(--ink);resize:vertical;box-sizing:border-box}
+  .tc[data-v="pass"]{border-left:3px solid var(--good)}
+  .tc[data-v="partial"]{border-left:3px solid var(--warn)}
+  .tc[data-v="fail"]{border-left:3px solid #d3453b}
+  .tc[data-v="blocked"]{border-left:3px solid var(--faint)}
+  .tc[data-v="defer"]{border-left:3px solid var(--accent)}
+  #breakdown{display:inline-flex;gap:9px;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  #breakdown .p{color:var(--good)} #breakdown .pa{color:var(--warn)} #breakdown .f{color:#d3453b} #breakdown .bl{color:var(--muted)}
+  #barFill{width:100%;height:100%;background:transparent;display:flex}
+  .bar .seg{height:100%;display:block}
+  .bar .seg-pass{background:var(--good)} .bar .seg-partial{background:var(--warn)}
+  .bar .seg-blocked{background:var(--faint)} .bar .seg-fail{background:#d3453b}
+  .progrow.filters{margin-top:9px;gap:8px;flex-wrap:wrap}
+  .flabel{font-size:12.5px;color:var(--muted)} .flabel b{color:var(--ink);font-weight:600}
+  .fchip{font:inherit;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 13px;cursor:pointer;color:var(--muted)}
+  .fchip:hover{border-color:var(--accent)}
+  .fchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .cpanel{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}
+  .cbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(760px,100%);max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+  .chead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+  .chead .csub{color:var(--muted);font-size:12.5px}
+  #compileText{flex:1;min-height:340px;border:0;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);color:var(--ink);resize:none;outline:none}
+  .tc.done .tc-title{color:var(--done);text-decoration:line-through;text-decoration-thickness:1px}
+  .tc-body{padding:0 15px 14px 43px;font-size:14px}
+  .tc.collapsed .tc-body{display:none}
+  .why{color:var(--muted);margin:0 0 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;margin-right:7px;vertical-align:1px}
+  .tag.setup{background:var(--setup-soft);color:var(--setup)}
+  .tag.ask{background:var(--warn-soft);color:var(--warn)}
+  .setup-line{background:var(--setup-soft);border:1px solid var(--line);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .ask-line{background:var(--warn-soft);border:1px solid var(--warn);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .auto-note{background:var(--accent-soft);border:1px solid var(--line);border-radius:7px;
+    padding:6px 11px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+  .auto-note b{color:var(--ink)}
+  .hist{background:var(--line2);border:1px solid var(--line);border-left:3px solid var(--faint);
+    border-radius:7px;padding:7px 11px;margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .hist .hr{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:3px}
+  .hist p{margin:0 0 6px}
+  .hist p:last-child{margin-bottom:0}
+  .notearea::placeholder{color:var(--faint)}
+  .fix-note{background:var(--good-soft);border:1px solid var(--good);border-radius:7px;
+    padding:7px 11px;margin:0 0 11px;font-size:12.5px;color:var(--ink)}
+  .fix-note b{color:var(--good)}
+  .fix-note.pending{background:var(--warn-soft);border-color:var(--warn)}
+  .fix-note.pending b{color:var(--warn)}
+  .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:10px 0 4px}
+  ol.steps{margin:0 0 4px;padding-left:20px} ol.steps li{margin:4px 0}
+  ul.exp{margin:0;padding-left:0;list-style:none}
+  ul.exp li{margin:5px 0;padding-left:22px;position:relative}
+  ul.exp li:before{content:"\2713";position:absolute;left:2px;color:var(--good);font-weight:800}
+  .exp-wrap{background:var(--good-soft);border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin-top:4px}
+  .guide{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--line2);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 12px;font-size:13px}
+  .guide .who b{color:var(--accent)}
+  .guide .sep{color:var(--muted)}
+  .glink{display:inline-flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);
+    border-radius:6px;padding:3px 10px;color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px}
+  .glink:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .glink:before{content:"\2197";font-size:11px}
+  .pswitch{font-weight:650;text-decoration:none;border-bottom:1px dashed currentColor}
+  .pswitch:hover{opacity:.75}
+  @media(max-width:640px){
+    .progrow{flex-wrap:wrap} .tools{flex-wrap:wrap}
+    .tc-head{flex-wrap:wrap} .tc-actions{flex-wrap:wrap;margin-left:0}
+    .tc-body{padding-left:15px}
+  }
+</style>
+
+
+<header class="mast">
+  <div class="eyebrow">Mission page and inbox · milestone 4</div>
+  <h1>The question reaches you, and the page is where you start</h1>
+  <p class="sub">The app polls every project's workspace every 15 s and shows a macOS notification once for each question that is new since the last poll; a click brings the window up on that mission's Progress. The app reopens on the workspace of the project you last had open, with a "change project" button for the picker. The docs name the four anchors, the inbox and the status words.</p>
+  <div class="meta"><span><b>Branch</b> mission/mission-page-and-inbox</span><span><b>Tasks</b> the notification, workspace first, the docs</span><span><b>Cases</b> 8</span></div>
+</header>
+<div class="progwrap">
+  <div class="progrow">
+    <span class="pct" id="pctText">0 / 0</span>
+    <span id="breakdown"></span>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="tools">
+      <button class="btn" id="compileBtn" style="font-weight:700;color:var(--accent);border-color:var(--accent)">&#128203; Compile findings</button>
+      <button class="btn" id="themeBtn">Theme</button>
+      <button class="btn" id="expandBtn">Collapse all</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div class="progrow filters">
+    <span class="flabel">Show:</span>
+    <button class="fchip on" data-f="all">All</button>
+    <button class="fchip" data-f="work">Needs work</button>
+    <button class="fchip" data-f="notes">Has notes</button>
+    <button class="fchip" data-f="untested">Untested</button>
+  </div>
+</div>
+<div id="compilePanel" class="cpanel" style="display:none">
+  <div class="cbox">
+    <div class="chead"><b>Findings (markdown)</b><span class="csub">paste this back to iterate</span><span style="flex:1"></span>
+      <button class="btn" id="copyBtn">Copy</button><button class="btn" id="closeBtn">Close</button></div>
+    <textarea id="compileText" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="callout">
+    <h3>Before you start: run the app from this branch on 8767</h3>
+    <p>Most of this milestone lives in the Electron app (<code>app/main.mjs</code>), so this walk is in the app, not a browser tab. A browser tab gets no notification.</p>
+    <ol class="steps">
+      <li>Stop the server on 8767. When this was written it was a <code>node</code> started from the main checkout (<code>/Users/coryflynn/Projects/maverick</code>, on main), which has none of this milestone. <code>lsof -nP -iTCP:8767 -sTCP:LISTEN</code> names it.</li>
+      <li>Once: <code>cd /Users/coryflynn/Projects/maverick/.claude/worktrees/mission-page-and-inbox-integration-root/app &amp;&amp; npm install</code>. That puts Electron 44.7.0 from the lockfile into <code>app/node_modules</code> (ignored by git). It is the app's declared dependency, not a new one; it was simply never installed here.</li>
+      <li>In the same folder: <code>SESSION_CONSOLE_PORT=8767 npm start</code>. Nothing answers on 8767, so the app starts this branch's server inside itself, on your real home. Keep that terminal in view: the poll's errors print there.</li>
+    </ol>
+    <p>If the window never opens or the terminal shows an error importing a <code>.ts</code> file, mark n1 to n3 and w1 to w3 blocked (⛔) with the error as the note; nobody has run this Electron build with <code>src/notify.ts</code> yet. If notifications never show, look at System Settings, Notifications, Electron (and Focus) before failing a case.</p>
+  </div>
+  <div class="callout">
+    <h3>Known going in</h3>
+    <p>The RIOs passed all three tasks with notes and left these open. They are not cases; note them if you hit them.</p>
+    <dl class="kv">
+      <dt>sweep</dt><dd>The poll reads <code>/api/workspace?project=</code>, which sweeps that project's missions first, so with the app open every project's flying missions are swept every 15 s, not every 60 s. Recorded in M20 as your call; the mission ledger has no <code>decision:</code> line for it.</dd>
+      <dt>lost draft</dt><dd>Clicking a notification loads the mission page over whatever page was open, so a half-typed reply elsewhere is gone without a prompt. As specified.</dd>
+      <dt>noisy log</dt><dd>A project whose workspace read fails logs <code>question poll for &lt;id&gt;: ...</code> in the terminal on every poll, every 15 s.</dd>
+      <dt>brand mark</dt><dd>The Maverick mark top left (and on the breakdown, review, ship and mission pages) goes to <code>/</code>, which now reopens the last project rather than the picker. The Board link on the ship page now opens the workspace.</dd>
+      <dt>ghost button</dt><dd>"change project" sits flush against the project pill, 8 px shorter, with no gap.</dd>
+      <dt>doc wording</dt><dd>The docs say the reply box is "one line, to pause and say what you see"; it does not pause the mission. docs/04-status.md still mentions a Missions rack that no longer exists.</dd>
+    </dl>
+  </div>
+  <nav class="toc">
+    <ol>
+      <li><a href="#start">The app opens on your workspace</a> <span class="c" id="toc-start"></span></li>
+      <li><a href="#notify">A new question reaches you</a> <span class="c" id="toc-notify"></span></li>
+      <li><a href="#docs">The docs</a> <span class="c" id="toc-docs"></span></li>
+      <li><a href="#done">The milestone's done check</a> <span class="c" id="toc-done"></span></li>
+    </ol>
+  </nav>
+
+  <section class="pillar" id="start" data-key="start">
+    <div class="phead"><h2>The app opens on your workspace</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="w1"><div class="tc-head"><span class="tc-title">The second launch skips the picker</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>With the app open from the setup, pick Maverick if the picker shows.</li><li>Quit the app (Cmd+Q), then <code>SESSION_CONSOLE_PORT=8767 npm start</code> again.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>First launch: the picker, once (the app has never remembered a project before this milestone). Picking Maverick lands on the Workspace view with the four groups, and a quiet <code>change project</code> button beside the project pill.</li>
+        <li>Second launch: straight onto Maverick's workspace, no picker in between, not even a flash of it.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="w2"><div class="tc-head"><span class="tc-title">The picker is still one click away, and the choice sticks</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Press <code>change project</code>. Reload the window (Cmd+R).</li><li>Pick another project. Quit and launch again.</li><li>Open the project pill's menu and press <code>All projects</code>, then pick Maverick again.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>change project</code> shows the picker, and the reload keeps the picker (it does not bounce you back into the project).</li>
+        <li>The relaunch opens on the other project's workspace: the last one you showed wins.</li>
+        <li><code>All projects</code> shows the picker too, and picking Maverick makes it the remembered one again.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="w3"><div class="tc-head"><span class="tc-title">A remembered Board or Calendar still wins: your call</span></div><div class="tc-body">
+      <p class="setup-line"><span class="tag setup">decide</span>This is a reading the RIOs could not settle. The done-when says the app opens on the workspace; the code makes the workspace the default but keeps an explicit Board or Calendar choice. Pass means you accept that; fail means the workspace should always win, and say so in the note.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>On Maverick, press the <code>Board</code> tab. Quit and launch again.</li><li>Press the <code>Workspace</code> tab. Quit and launch again.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>After choosing Board, the app reopens on Maverick's Board. After choosing Workspace, it reopens on the workspace.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="notify" data-key="notify">
+    <div class="phead"><h2>A new question reaches you</h2><span class="pc"></span></div>
+    <p class="setup-line"><span class="tag setup">how</span>The live mission is at review and asks nothing, and only a flying mission can be paused, so these cases make a question by hand: a planned mission record, which the workspace reads as one question, "the plan is waiting for approval". The sweep leaves planned missions alone. <b>Never press <code>approve</code> on it</b>; delete the file when done (n3 does).</p>
+
+    <div class="tc" data-id="n1"><div class="tc-head"><span class="tc-title">Opening the app announces nothing that was already waiting</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Quit the app. Write the question while it is closed:
+<pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px">cat &gt; ~/.claude/console-sessions/missions/maverick/walkthrough-m4-ping.json &lt;&lt;'EOF'
+{"id":"walkthrough-m4-ping","project":"maverick","name":"walkthrough m4 ping","brief":"A mission written by hand so the app has a question to announce. Delete the file when done.","status":"planned","created":"2026-10-14T12:00:00.000Z","plan":"","repos":[],"land":"pr","trackerIndex":0,"milestones":[]}
+EOF</pre></li><li>Launch the app and watch for 40 s (two polls past the first).</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Needs you on Maverick's workspace has a row <code>the plan is waiting for approval</code> for <code>walkthrough m4 ping</code>, with an <code>approve</code> button (do not press it).</li>
+        <li>No notification at all: not for this question, not for any other project's open questions. The first poll only remembers.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="n2"><div class="tc-head"><span class="tc-title">A question that appears is announced once</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>With the app running: <code>mv ~/.claude/console-sessions/missions/maverick/walkthrough-m4-ping.json ~/Desktop/</code>. Wait 20 s.</li><li><code>mv ~/Desktop/walkthrough-m4-ping.json ~/.claude/console-sessions/missions/maverick/</code>. Note the time, then watch for 45 s more.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Moving it out: no notification (a question going away says nothing).</li>
+        <li>Moving it back: within 15 s, exactly one macOS notification, title <code>walkthrough m4 ping</code>, body <code>the plan is waiting for approval</code>. A question that went and came back counts as new; that is by design.</li>
+        <li>No second notification for it in the 45 s after, while it stays open.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="n3"><div class="tc-head"><span class="tc-title">Clicking it brings the window up on that mission</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Minimize the app window (Cmd+M). Repeat n2's two moves to get a fresh notification.</li><li>Click the notification (from Notification Center if the banner has gone).</li><li>Clean up: <code>rm ~/.claude/console-sessions/missions/maverick/walkthrough-m4-ping.json</code>, then go back to the workspace.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The window comes back from the Dock and to the front, on the mission page for <code>walkthrough m4 ping</code>, scrolled to Progress. Before approval Progress reads <code>Nothing has flown yet...</code>; the approve control is under Plan just above. The rail's word is <code>waiting for you</code>.</li>
+        <li>After the <code>rm</code>, the workspace's Needs you row for it is gone within a few seconds and no notification fires.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="docs" data-key="docs">
+    <div class="phead"><h2>The docs</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="d1"><div class="tc-head"><span class="tc-title">A newcomer can find the anchors, the inbox and the words</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>In the integration worktree, read README.md "What you see while it flies", docs/06-runbook.md "Follow a mission and answer it", docs/07-glossary.md (Anchor, Status word, Question, Inbox) and docs/03-decisions.md M20.</li><li>Hold each against what you just saw in the app.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The four anchors by name: The ask, Plan, Progress, Result. The inbox: Needs you, Working, Ready to review, Done, in that order. The four words: working, waiting for you, error, done.</li>
+        <li>The runbook explains the notification as you saw it in n1 to n3 (app only, 15 s, first poll silent, click opens Progress), the 15 s sweep as your call, and <code>/?pick</code> for the picker.</li>
+        <li>Where they say the app "always" opens on the workspace, that matches your w3 call; if you failed w3 or want the Board exception written down, note it here. Same for the reply box's "pause" wording under Known going in.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="done" data-key="done">
+    <div class="phead"><h2>The milestone's done check</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="dc1"><div class="tc-head"><span class="tc-title">The done-when, run as written</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>In the integration worktree: <code>npm test</code></li><li><code>node --test test/notify.test.ts</code></li><li><code>npm run lint; echo $?</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>npm test</code>: 126 pass, 0 fail (as of f60f3d1).</li>
+        <li>notify.test.ts: 6 pass, naming which questions are new: a question not there before; not one still open even with a new title or time; the same id on another mission is new; a new mission brings all its questions; an answered one is not reported and one that comes back is new; ids that would join into the same string are told apart.</li>
+        <li>Lint prints nothing past its header and exits 0. (It is <code>node --check</code> only: a syntax pass.)</li>
+        <li>With w1 and d1 passed, that is every line of the done-when.</li>
+      </ul></div></div></div>
+  </section>
+
+</div>
+<script>
+(function(){
+  var KEY="maverick-mission-page-and-inbox-m4-walkthrough";
+  var VERDS=[["pass","Pass","✓"],["partial","Partial","~"],["fail","Fail","✗"],["blocked","Blocked","⛔"],["defer","Defer","»"]];
+  var state={};
+  try{var sv=JSON.parse(localStorage.getItem(KEY)||"null"); if(sv&&typeof sv==="object")state=sv;}catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  function get(id){var e=state[id]||{};return{v:e.v||"",n:e.n||""};}
+  function put(id,e){if(!e.v&&!(e.n&&e.n.trim()))delete state[id];else state[id]=e;save();}
+  function setV(id,v){var e=get(id);put(id,{v:(e.v===v?"":v),n:e.n});paint(id);render();}
+  function setN(id,n){var e=get(id);put(id,{v:e.v,n:n});paintNote(id);render();}
+  [].forEach.call(document.querySelectorAll('.tc'),function(tc){
+    var id=tc.dataset.id, head=tc.querySelector('.tc-head'), title=tc.querySelector('.tc-title');
+    if(title){var s=document.createElement('span');s.className='caseid';s.textContent=id;title.insertBefore(s,title.firstChild);}
+    var acts=document.createElement('div'); acts.className='tc-actions';
+    var vc=document.createElement('div'); vc.className='verdict';
+    VERDS.forEach(function(vd){
+      var b=document.createElement('button'); b.type='button'; b.className='vbtn v-'+vd[0]; b.dataset.v=vd[0];
+      b.title=vd[1]; b.textContent=vd[2];
+      b.addEventListener('click',function(e){e.stopPropagation();setV(id,vd[0]);});
+      vc.appendChild(b);
+    });
+    var nb=document.createElement('button'); nb.type='button'; nb.className='notebtn'; nb.textContent='+ note';
+    nb.addEventListener('click',function(e){e.stopPropagation();
+      var na=tc.querySelector('.notearea'); na.style.display=(na.style.display==='none')?'':'none';
+      if(na.style.display!=='none'){tc.classList.remove('collapsed'); na.focus();}});
+    var sb=document.createElement('button'); sb.type='button'; sb.className='notebtn sendbtn'; sb.textContent='→ Claude';
+    sb.title='Send this case’s verdict and note to Claude';
+    sb.addEventListener('click',function(e){e.stopPropagation();
+      var st=get(id); sb.disabled=true;
+      fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({caseId:id,caseVersion:1,verdict:st.v,note:st.n.trim()})})
+      .then(function(r){if(!r.ok)throw new Error(r.status);sb.textContent='✓ sent';sb.classList.add('sent');})
+      .catch(function(){sb.textContent='✗ retry';})
+      .then(function(){sb.disabled=false;setTimeout(function(){sb.textContent='→ Claude';sb.classList.remove('sent');},2000);});});
+    acts.appendChild(vc); acts.appendChild(nb); acts.appendChild(sb); head.appendChild(acts);
+    var na=document.createElement('textarea'); na.className='notearea'; na.rows=2;
+    na.placeholder="Note for "+id+": what is wrong, partial or blocked";
+    na.value=get(id).n; na.style.display=get(id).n.trim()?'':'none';
+    na.addEventListener('click',function(e){e.stopPropagation();});
+    na.addEventListener('input',function(){setN(id,na.value);});
+    var body=tc.querySelector('.tc-body'); body.insertBefore(na,body.firstChild);
+    head.addEventListener('click',function(e){
+      if(e.target.closest('.verdict')||e.target.closest('.notebtn'))return;
+      tc.classList.toggle('collapsed');});
+    paint(id);
+  });
+  function paint(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var v=get(id).v;
+    tc.setAttribute('data-v',v);
+    [].forEach.call(tc.querySelectorAll('.vbtn'),function(b){b.classList.toggle('on',b.dataset.v===v);}); paintNote(id);}
+  function paintNote(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var has=!!get(id).n.trim();
+    var nb=tc.querySelector('.notebtn:not(.sendbtn)'); nb.classList.toggle('has',has); nb.textContent=has?'📝 note':'+ note';}
+  var FILTER='all';
+  function match(id){var e=get(id);
+    if(FILTER==='work')return e.v==='partial'||e.v==='fail'||e.v==='blocked';
+    if(FILTER==='notes')return !!e.n.trim();
+    if(FILTER==='untested')return !e.v;
+    return true;}
+  function counts(){var c={total:0,reviewed:0,pass:0,partial:0,fail:0,blocked:0,defer:0,notes:0};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var e=get(tc.dataset.id);c.total++;
+      if(e.v){c.reviewed++;c[e.v]++;} if(e.n.trim())c.notes++;}); return c;}
+  function render(){var c=counts();
+    document.getElementById('pctText').textContent=c.reviewed+' / '+c.total;
+    document.getElementById('breakdown').innerHTML='<span class="p">✓'+c.pass+'</span><span class="pa">~'+c.partial+'</span><span class="f">✗'+c.fail+'</span><span class="bl">⛔'+c.blocked+'</span>';
+    var bar=document.getElementById('barFill'), t=c.total||1; bar.innerHTML='';
+    [['pass',c.pass],['partial',c.partial],['blocked',c.blocked],['fail',c.fail],['defer',c.defer]].forEach(function(x){
+      if(x[1]){var seg=document.createElement('i');seg.className='seg seg-'+x[0];seg.style.width=(x[1]/t*100)+'%';bar.appendChild(seg);}});
+    [].forEach.call(document.querySelectorAll('section.pillar'),function(p){
+      var bs=p.querySelectorAll('.tc'),d=0;[].forEach.call(bs,function(tc){if(get(tc.dataset.id).v)d++;});
+      p.querySelector('.phead .pc').textContent=d+' / '+bs.length;
+      var tt=document.getElementById('toc-'+p.dataset.key); if(tt)tt.textContent='('+d+'/'+bs.length+')';});
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){tc.style.display=match(tc.dataset.id)?'':'none';});}
+  function compile(){var g={fail:[],blocked:[],partial:[],defer:[],passn:[],noverdict:[]};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var id=tc.dataset.id,e=get(id);
+      var title=tc.querySelector('.tc-title').textContent.replace(id,'').trim();
+      var row={id:id,title:title,n:e.n.trim()};
+      if(e.v==='pass'){if(row.n)g.passn.push(row);}
+      else if(e.v)g[e.v].push(row);
+      else if(row.n)g.noverdict.push(row);});
+    var c=counts();
+    var md='# Mission page and inbox, milestone 4 walkthrough: findings\n\nReviewed '+c.reviewed+'/'+c.total+' · ✓'+c.pass+' pass · ~'+c.partial+' partial · ✗'+c.fail+' fail · ⛔'+c.blocked+' blocked · »'+c.defer+' defer · ✎'+c.notes+' noted\n';
+    function S(h,a){if(!a.length)return'';var s='\n## '+h+' ('+a.length+')\n';a.forEach(function(x){s+='- ['+x.id+'] '+x.title+(x.n?': '+x.n:'')+'\n';});return s;}
+    var out=S('✗ Fail',g.fail)+S('⛔ Blocked',g.blocked)+S('~ Partial',g.partial)+S('» Defer',g.defer)+S('✓ Pass (noted)',g.passn)+S('✎ Noted, no verdict',g.noverdict);
+    return md+(out||'\n_No findings recorded._\n');}
+  var eb=document.getElementById('expandBtn'),collapsed=false;
+  eb.addEventListener('click',function(){collapsed=!collapsed;
+    [].forEach.call(document.querySelectorAll('.tc'),function(el){el.classList.toggle('collapsed',collapsed);});
+    eb.textContent=collapsed?'Expand all':'Collapse all';});
+  // Reset asks in the page: the first press arms it, a second within 4 s clears.
+  var rb=document.getElementById('resetBtn'),armed=0;
+  rb.addEventListener('click',function(){
+    if(!armed){rb.textContent='Press again to clear all';armed=setTimeout(function(){armed=0;rb.textContent='Reset';},4000);return;}
+    clearTimeout(armed);armed=0;rb.textContent='Reset';state={};save();
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){paint(tc.dataset.id);var na=tc.querySelector('.notearea');na.value='';na.style.display='none';});render();});
+  var root=document.documentElement,tkey="maverick-test-theme",tv=null;
+  try{tv=localStorage.getItem(tkey);}catch(e){} if(tv)root.setAttribute('data-theme',tv);
+  document.getElementById('themeBtn').addEventListener('click',function(){var cur=root.getAttribute('data-theme');
+    var next=cur==='dark'?'light':(cur==='light'?'dark':(matchMedia('(prefers-color-scheme: dark)').matches?'light':'dark'));
+    root.setAttribute('data-theme',next);try{localStorage.setItem(tkey,next);}catch(e){}});
+  [].forEach.call(document.querySelectorAll('.fchip'),function(ch){ch.addEventListener('click',function(){
+    FILTER=ch.dataset.f; [].forEach.call(document.querySelectorAll('.fchip'),function(c){c.classList.toggle('on',c===ch);}); render();});});
+  var panel=document.getElementById('compilePanel'),ta=document.getElementById('compileText'),cpy=document.getElementById('copyBtn');
+  document.getElementById('compileBtn').addEventListener('click',function(){ta.value=compile();panel.style.display='flex';ta.focus();ta.select();});
+  document.getElementById('closeBtn').addEventListener('click',function(){panel.style.display='none';});
+  panel.addEventListener('click',function(e){if(e.target===panel)panel.style.display='none';});
+  cpy.addEventListener('click',function(){ta.select();
+    if(navigator.clipboard){navigator.clipboard.writeText(ta.value).then(function(){cpy.textContent='Copied ✓';setTimeout(function(){cpy.textContent='Copy';},1500);});}});
+  render();
+})();
+</script>
