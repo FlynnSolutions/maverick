@@ -144,6 +144,18 @@ format: checklist
 
 ## 🚧 In Progress
 
+- [~] `[ENG]` `[L]` **The mission page and the inbox**
+  - created: 2026-10-13
+  - source: the first fixture flight, 2026-10-12; four options drawn from Devin, Jules, Linear, Superset, Conductor, Factory
+  - kind: feature
+  - plan: plans/mission-ui-2026-10-13.md
+  - mission: missions/mission-page-and-inbox.md
+  - status: flying overnight 2026-10-13 as a Maverick mission; Cory picked option 3 in front of 1 with 4's reply box
+  The workspace as an inbox (Needs you, Working, Ready to review, Done), the mission page with four
+  fixed anchors (The ask, Plan, Progress, Result) and one status word, questions as feed entries
+  answered in place and pushed as a notification, a reply box to the Strike Lead. Mockups in
+  `.ui-design/mockups/`, served at `/mockups/`.
+
 ## 📋 Backlog
 
 - [ ] `[ENG]` `[M]` **Checkbox flips from the board** — tick an item in the UI, write `- [x]` back.

@@ -1,0 +1,6 @@
+{
+  "missions": {
+    "wingmanAgent": "wingman",
+    "proof": "npm test && npm run lint"
+  }
+}
