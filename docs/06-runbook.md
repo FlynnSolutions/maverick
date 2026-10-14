@@ -156,8 +156,8 @@ was open. A project whose workspace read fails logs `question poll for <id>: ...
 
 That poll has a side effect: `GET /api/workspace?project=` sweeps the project's missions before
 it answers, so while the app is open each project's missions are swept every 15 s, on top of
-the server's own sweep every 60 s. A project with nothing in the air only has its mission list
-read.
+the server's own sweep every 60 s; that is Cory's call (M20). A project with nothing in the air
+only has its mission list read.
 
 ## Check its agent readiness
 

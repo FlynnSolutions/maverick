@@ -542,4 +542,8 @@ Four layouts were drawn on one invented mission (`.ui-design/mockups/options.htm
 in front of the four anchors, with the thread's reply box, was chosen. If Mission Control is ever
 wanted, it is what Progress looks like while a mission flies.
 
+**The app's poll sweeps** (Cory's call, 2026-10-14). The notification polls
+`GET /api/workspace?project=` every 15 s, and that route sweeps the project's missions before it
+answers, so while the app is open missions move every 15 s rather than every 60 s. It stands.
+
 **Not decided here:** the palette (a variants round of its own) and the map view.
