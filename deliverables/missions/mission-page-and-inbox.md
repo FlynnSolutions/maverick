@@ -24,8 +24,8 @@ _done when: `npm test` passes, `GET /api/missions/<id>?project=<p>` on a mission
 - [~] **The view, the stream and the reply**
   - touches: server.ts, src/missions.ts, test/missions.test.ts
   - needs: m1-t1, m1-t2
-  - status: reviewing
-  - attempt: 1
+  - status: flying
+  - attempt: 2
   In `src/missions.ts`, make `missionView` also return `word: statusWord(mission)`, `questions: questionsOf({ ...mission, findings })` and `feed: feedOf(log, mission)` where `log` is the ledger: read the plan on the mission branch the way `missionReport` does (`ledgerRepoFor` and the integration worktree path; `parsePlan(text).log`), empty when the mission is not approved yet or the file cannot be read, never a throw. Add `export const sayToStrikeLead(project, id, text)`: appends `decision: Cory to the Strike Lead: <text>` to the ledger through the same write path every other ledger line uses (`writeThenSync` with a note; read how `pauseMission` records its note) and, when `mission.interview?.terminalId` names a terminal that is still open, sends the text plus a newline into it with the terminal module's input function (`server.ts` shows how terminals take input); return `{ ok: true, sent: boolean }`. In `server.ts`: `POST /api/missions/:id/say` with `{ text }` (empty text is a 400 through the existing error path); `GET /api/missions/:id/stream` as `text/event-stream` following the pattern of `/api/transcript/stream`: write `data: <JSON of missionView>` once on connect, then whenever the mission record file changes (watch the file at `missionPath`, with a 1 s poll as the backstop, and a `: ping` comment every 15 s); stop everything on `close`. Extend the route regex that lists actions. Tests in `test/missions.test.ts`: `missionView` carries the three new fields on a fixture mission with a ledger (use `tempRepo` from `test/fixtures.ts`), and `sayToStrikeLead` writes the line and reports `sent: false` with no terminal.
 
 ## Milestone 2 — The mission page: four anchors
@@ -120,3 +120,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 21:56 decision: m1-t1 accepted by Cory over the RIO: Cory's call on the RIO's major: the status word follows the questions. A mission with no open question is never 'waiting for you', whatever escalation it once had; a stale escalation on a review mission is history, not a question. m1-t3, when you wire missionView, derive the word as `questions.length ? 'waiting for you' : statusWord(mission)` and, when statusWord says 'waiting for you' with no question, read 'done' for review/closed and 'working' otherwise; pin that in test/missions.test.ts. The RIO's minors stand as notes: release on a landing hold and the duplicate resume on a paused mission are for m2-t2 and m2-t3 to hide (offer only answers the server will take).
 - 2026-10-13 21:56 m1-t3 The view, the stream and the reply: pending to flying
 - 2026-10-13 22:02 m1-t3 The view, the stream and the reply: flying to reviewing
+- 2026-10-13 22:08 m1-t3 The view, the stream and the reply: reviewing to flying
