@@ -17,13 +17,15 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, api, post, act, projectId, missionId, openSession, fmtTime }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
- *   api(path, init), post(path, body)  fetch JSON; throw with the server's error on a non-2xx
- *   act(path, body, said)        posts to /api/missions/<id>/<path>?project=, sets the status
- *                                line to `said` (or the error), and refreshes every module
+ *   post(path, body)             fetch JSON; throws with the server's error on a non-2xx
+ *   act(path, body, said)        posts to actionUrl(path), sets the status line to `said` (or
+ *                                the error), and lets the stream refresh every module
+ *   actionUrl(path)              /api/missions/<id>/<path>?project=
+ *   LANDS[land](base)            the sentence for where a repo's work lands
  *   projectId, missionId
  *   openSession(taskId, under)   mounts the task's session (its RIO's while it is reviewing,
  *                                its Wingman's otherwise) as a terminal under `under`
@@ -152,8 +154,7 @@ const reapSessions = () => {
 };
 
 /** ctx.openSession: the task's session under the element the module passes, with its own way to close. */
-const tasksOf = (m) => m.tasks ?? [];
-const allTasks = () => mission.milestones.flatMap(tasksOf);
+const allTasks = () => mission.milestones.flatMap((m) => m.tasks);
 const openSession = (taskId, under) => {
   const task = allTasks().find((t) => t.id === taskId);
   const claudeId = task?.status === "reviewing" ? task.review?.claudeId : task?.claudeId ?? task?.review?.claudeId;
@@ -178,13 +179,21 @@ const act = async (action, body, said) => {
   try {
     await post(actionUrl(action), body);
     setStatus(said);
-    await load();
+    // On the stream the server's own flush lands the change; only the 8 s fallback has to ask.
+    if (!streaming) await load();
   } catch (err) {
     setStatus(err.message, true);
   }
 };
 
-const ctx = { el, text, btn, lamp, api, post, act, projectId, missionId, openSession, fmtTime };
+/** Where a repo's work goes when the mission is done, said the same way at both gates. */
+const LANDS = {
+  merge: (base) => `stays on the mission branch; nothing touches ${base}`,
+  pr: (base) => `a pull request against ${base}, merged by you`,
+  push: (base) => `${base} is advanced to it and pushed`,
+};
+
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime };
 
 /* ---------- the rail: one word, four anchors, and the brakes ---------- */
 const WORD = {
@@ -205,17 +214,14 @@ const renderWord = () => {
 /**
  * The reason behind the word. A failed report or ledger write has no question to answer and
  * cannot reach the feed, because the ledger is what failed, so this line is the only place it
- * shows. A landing that failed gets the one thing that can be done about it.
+ * shows. A landing that failed is a question with its own answer, drawn where questions are.
  */
 let troubleKey = null;
 const renderTrouble = () => {
   const trouble = mission.trouble ?? "";
   if (trouble === troubleKey) return;
   troubleKey = trouble;
-  fill($("#trouble"),
-    trouble ? el("p", { class: "mv-warn" }, trouble) : null,
-    /could not land/.test(trouble) ? btn("try landing it again", () => act("land", {}, "landing again"), "primary") : null,
-    /could not land/.test(trouble) ? el("span", { class: "muted small" }, "rebase the branch it named first; nothing here will force it") : null);
+  fill($("#trouble"), trouble ? el("p", { class: "mv-warn" }, trouble) : null);
 };
 
 const count = (id, label, needs = false) => {
@@ -224,7 +230,7 @@ const count = (id, label, needs = false) => {
   n.classList.toggle("needs", needs);
 };
 const renderCounts = () => {
-  const ms = mission.milestones ?? [];
+  const ms = mission.milestones;
   const merged = ms.filter((m) => m.merged).length;
   if (mission.approved) {
     const at = ms.find((m) => !m.merged) ?? ms.at(-1);
@@ -311,7 +317,12 @@ const spy = () => {
 };
 
 /* ---------- the ask: the shell's own section ---------- */
+let askKey = "";
 const renderAsk = () => {
+  const key = JSON.stringify([mission.name, mission.brief, mission.created, mission.approved, mission.planCommit]);
+  if (key === askKey) return;
+  askKey = key;
+  $("#crumb").replaceChildren(text("Mission "), el("b", {}, mission.name));
   fill($("#ask"),
     el("h2", {}, "The ask"),
     el("h1", {}, el("span", { class: "name" }, mission.name), mission.brief),
@@ -323,12 +334,6 @@ const renderAsk = () => {
 };
 
 /* ---------- the plan, and the first gate: the shell's until it is approved ---------- */
-const LANDS = {
-  merge: (base) => `stays on the mission branch; nothing touches ${base}`,
-  pr: (base) => `a pull request against ${base}, merged by you`,
-  push: (base) => `${base} is advanced to it and pushed`,
-};
-
 /**
  * What happens to each repo when it is done. `push` is the one that reaches a shared branch
  * without a person, so it is named loudly here rather than buried in a config file.
@@ -506,7 +511,6 @@ const updateModules = () => {
 
 /* ---------- paint: the first one builds, every one after patches ---------- */
 const paint = () => {
-  $("#crumb").replaceChildren(text("Mission "), el("b", {}, mission.name));
   renderWord();
   renderTrouble();
   renderCounts();
@@ -534,9 +538,11 @@ const load = async () => apply(await api(missionUrl()));
  * page falls back to asking every eight seconds, which also drives the server's sweep. The
  * first poll the server answers means it is back, so the stream is opened again.
  */
+let streaming = false;
 const listen = () => {
   let errors = 0;
   const source = new EventSource(actionUrl("stream"));
+  streaming = true;
   source.onmessage = (e) => {
     errors = 0;
     try {
@@ -549,6 +555,7 @@ const listen = () => {
     errors += 1;
     if (errors < 2) return;
     source.close();
+    streaming = false;
     setStatus("the live stream dropped; checking every 8 s instead");
     poll();
   };

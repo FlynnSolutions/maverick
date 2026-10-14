@@ -31,7 +31,7 @@ test("a handed-back task asks retry or accept, and quotes the first blocker when
   assert.match(questionsOf(base({ milestones: [ms(1, [task])] }))[0].body, /: the RIO failed it$/);
 });
 
-test("a held milestone asks to be released, with the hold's kind; a landing hold also offers landing again, as its primary", () => {
+test("a held milestone asks to be released, with the hold's kind; a landing hold offers landing again instead, which is all the server takes", () => {
   const hold = (kind: "collision" | "landing" | "proof", at: string) => ({ kind, reason: `${kind} reason`, at });
   const mission = base({ status: "blocked", milestones: [ms(1, [], { hold: hold("collision", "2026-10-03T00:00:00.000Z") }), ms(2, [], { hold: hold("proof", "2026-10-04T00:00:00.000Z") }), ms(3, [], { hold: hold("landing", "2026-10-05T00:00:00.000Z") })] });
   const qs = questionsOf(mission);
@@ -42,7 +42,6 @@ test("a held milestone asks to be released, with the hold's kind; a landing hold
   ]);
   assert.deepEqual(qs[0].answers, [{ label: "release", method: "POST", path: "milestones/1/release", body: ["note"], primary: true }]);
   assert.deepEqual(qs[2].answers, [
-    { label: "release", method: "POST", path: "milestones/3/release", body: ["note"] },
     { label: "try landing again", method: "POST", path: "land", primary: true },
   ]);
 });
@@ -70,24 +69,18 @@ test("an escalation offers only what the server takes in the mission's state", (
   assert.equal(answers("interviewing"), undefined);
 });
 
-test("on a paused mission, retry and land give way to resume, which the server asks for first", () => {
-  const mission = base({
-    status: "paused",
-    milestones: [ms(1, [t("a", "handed-back")]), ms(2, [], { hold: { kind: "landing", reason: "r", at: "2026-10-02T00:00:00.000Z" } })],
-  });
-  const qs = questionsOf(mission);
-  assert.deepEqual(qs.find((q) => q.id === "task:a")!.answers, [
-    { label: "resume", method: "POST", path: "resume", primary: true },
-    { label: "accept it over the RIO", method: "POST", path: "tasks/a/accept", body: ["note"] },
-  ]);
-  assert.deepEqual(qs.find((q) => q.id === "hold:2")!.answers, [
-    { label: "release", method: "POST", path: "milestones/2/release", body: ["note"] },
-    { label: "resume", method: "POST", path: "resume", primary: true },
-  ]);
+test("only what the server takes is offered: a landing hold lands again, never releases; while paused, retry and land are gone and resume is the paused question's alone", () => {
+  const milestones = [ms(1, [t("a", "handed-back")]), ms(2, [], { hold: { kind: "landing", reason: "r", at: "2026-10-02T00:00:00.000Z" } })];
+  const flying = questionsOf(base({ status: "blocked", milestones }));
+  assert.deepEqual(flying.find((q) => q.id === "hold:2")!.answers, [{ label: "try landing again", method: "POST", path: "land", primary: true }]);
+  const qs = questionsOf(base({ status: "paused", milestones }));
+  assert.deepEqual(qs.find((q) => q.id === "task:a")!.answers, [{ label: "accept it over the RIO", method: "POST", path: "tasks/a/accept", body: ["note"], primary: true }]);
+  assert.deepEqual(qs.find((q) => q.id === "hold:2")!.answers, []);
+  assert.equal(qs.filter((q) => q.answers.some((a) => a.path === "resume")).length, 1, "resume is offered once, by the paused question");
   for (const q of qs) assert.ok(!q.answers.some((a) => a.path === "land" || a.path.endsWith("/retry")), q.id);
 });
 
-test("questions come oldest first, every one has exactly one primary answer and a unique id", () => {
+test("questions come oldest first, every one has at most one primary answer, first, and a unique id", () => {
   const mission = base({
     status: "paused",
     pausedFor: "lunch",
@@ -101,7 +94,10 @@ test("questions come oldest first, every one has exactly one primary answer and 
   const qs = questionsOf(mission);
   assert.deepEqual(qs.map((q) => q.id), ["escalation", "paused", "task:c", "hold:1", "task:a"]);
   assert.deepEqual(qs.map((q) => q.at), [...qs.map((q) => q.at)].sort());
-  for (const q of qs) assert.equal(primaries(q).length, 1, q.id);
+  for (const q of qs) {
+    assert.ok(primaries(q).length <= 1, q.id);
+    if (q.answers.length) assert.ok(q.answers[0].primary, `${q.id}: the primary comes first`);
+  }
   assert.equal(new Set(qs.map((q) => q.id)).size, qs.length);
 });
 
@@ -111,23 +107,25 @@ test("an ended mission asks nothing, because every action on it is refused", () 
   assert.deepEqual(questionsOf(base({ status: "closed", milestones })), []);
 });
 
-test("statusWord: done, waiting for you, error and working", () => {
+test("statusWord follows the questions: done, waiting for you, error and working", () => {
   assert.equal(statusWord(base({ status: "closed" })), "done");
   assert.equal(statusWord(base({ status: "review", milestones: [ms(1, [t("a", "passed")], { merged: "m" })] })), "done");
   assert.equal(statusWord(base({ status: "flying", milestones: [ms(1, [t("a", "flying")])] })), "working");
   assert.equal(statusWord(base({ status: "interviewing" })), "working");
 
-  assert.equal(statusWord(base({ status: "review", escalation: "e" })), "waiting for you");
   assert.equal(statusWord(base({ status: "blocked", milestones: [ms(1, [t("a", "handed-back")])] })), "waiting for you");
   assert.equal(statusWord(base({ status: "blocked", milestones: [ms(1, [], { hold: { kind: "collision", reason: "r", at: "a" } })] })), "waiting for you");
   assert.equal(statusWord(base({ status: "flying", escalation: "e" })), "waiting for you");
-  assert.equal(statusWord(base({ status: "blocked", trouble: "title a is waiting on you in its own session" })), "waiting for you");
   assert.equal(statusWord(base({ status: "paused", pausedFor: "" })), "waiting for you");
   assert.equal(statusWord(base({ status: "planned" })), "waiting for you");
+  // Nothing open is never waiting, whatever the record carries (Cory's call on m1-t1).
+  assert.equal(statusWord(base({ status: "review", escalation: "stale" })), "done", "a stale escalation on a review mission is history");
+  assert.equal(statusWord(base({ status: "blocked", trouble: "title a is waiting on you in its own session" })), "working");
+  assert.equal(statusWord(base({ status: "flying" }), [{ id: "x" } as never]), "waiting for you", "the questions passed in decide");
 
   assert.equal(statusWord(base({ status: "closed", trouble: "the report could not be written: EACCES" })), "error");
   assert.equal(statusWord(base({ status: "flying", trouble: "the ledger at deliverables/x.md could not be written: ENOSPC" })), "error");
   assert.equal(statusWord(base({ status: "blocked", trouble: "the proof failed after milestone 2 merged: running tests | (killed by SIGKILL)" })), "error");
-  // A proof that failed on its own is a question, not an error: release it or fix it.
-  assert.equal(statusWord(base({ status: "blocked", trouble: "the proof failed after milestone 2 merged: 1 failing" })), "waiting for you");
+  // A proof that failed on its own holds the milestone, which is a question, not an error: release it or fix it.
+  assert.equal(statusWord(base({ status: "blocked", trouble: "the proof failed after milestone 2 merged: 1 failing", milestones: [ms(2, [], { merged: "m", hold: { kind: "proof", reason: "1 failing", at: "a" } })] })), "waiting for you");
 });

@@ -93,24 +93,26 @@ const getJson = async (url) => {
 };
 
 /**
- * Every 15 s, each project's missions from the workspace, compared with the last poll of the
- * same project. A project's first poll only remembers what it asks, so opening the app (or
- * adding a project) does not announce questions that were already waiting.
+ * Every 15 s, what each project's missions ask, compared with the last poll of the same project.
+ * The questions route reads records and nothing else, so the poll never drives a sweep or a git
+ * spawn. A project's first poll only remembers what it asks, so opening the app (or adding a
+ * project) does not announce questions that were already waiting.
  */
 const pollQuestions = (win, origin) => {
   const last = new Map();
+  const one = async (project) => {
+    try {
+      const { missions = [] } = await getJson(`${origin}api/questions?project=${encodeURIComponent(project.id)}`);
+      const now = missions.map((m) => ({ missionId: m.id, missionName: m.name, questions: m.questions }));
+      if (last.has(project.id)) for (const fresh of newQuestions(last.get(project.id), now)) notify(win, origin, project.id, fresh);
+      last.set(project.id, now);
+    } catch (err) {
+      console.error(`question poll for ${project.id}:`, err.message);
+    }
+  };
   const poll = async () => {
     try {
-      for (const project of await getJson(`${origin}api/projects`)) {
-        try {
-          const { missions = [] } = await getJson(`${origin}api/workspace?project=${encodeURIComponent(project.id)}`);
-          const now = missions.map((m) => ({ missionId: m.id, missionName: m.name, questions: m.questions ?? [] }));
-          if (last.has(project.id)) for (const fresh of newQuestions(last.get(project.id), now)) notify(win, origin, project.id, fresh);
-          last.set(project.id, now);
-        } catch (err) {
-          console.error(`question poll for ${project.id}:`, err.message);
-        }
-      }
+      await Promise.all((await getJson(`${origin}api/projects`)).map(one));
     } catch (err) {
       console.error("question poll:", err.message);
     }

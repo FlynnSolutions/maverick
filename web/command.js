@@ -671,11 +671,15 @@ export const mountCommandCenter = (root, ctx) => {
 
   /**
    * Missions live here rather than on the board, because a mission is a bundle of sessions and
-   * this is the page that holds those. A mission at its gate is waiting on the pilot, so it
-   * wears the reticle and sorts above everything else, the way any other waiting thing does.
+   * this is the page that holds those. The lamp follows the mission's own word, the one its page
+   * shows above the rail: what wants you wears the reticle and sorts above everything else, the
+   * way any other waiting thing does.
    */
-  const MISSION_LAMP = { interviewing: "waiting", planned: "waiting", flying: "busy", blocked: "blocked", paused: "idle", review: "waiting", closed: "done" };
-  // A paused mission carries its reason in trouble, which is not the red lamp's "needs you".
+  // The word picks the lamp, except that a mission in review is done with its flying and not with
+  // you: it waits to be walked and closed, so it wears the reticle, not the finished lamp.
+  const WORD_LAMP = { "waiting for you": "blocked", error: "idle", done: "done", working: "busy" };
+  const lampOf = (m) => (m.status === "review" ? "waiting" : WORD_LAMP[m.word] ?? "busy");
+  /** What the status says beyond the word, for the note column when nothing has gone wrong. */
   const MISSION_SAYS = {
     interviewing: "the Strike Lead is interviewing you",
     planned: "waiting on your approval",
@@ -686,48 +690,35 @@ export const mountCommandCenter = (root, ctx) => {
     closed: "closed",
   };
 
-  /** A strip that is a link to its own page: the article shell, with click and keyboard opening it, around one strip line. */
-  const pageStrip = ({ status, title, open }, line) => el("article", {
+  /** A strip that is a link to its own page: the article shell, with click and keyboard opening it, around a strip line and whatever sits under it. */
+  const pageStrip = ({ status, title, open }, ...children) => el("article", {
     class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" || status === "blocked" ? " full" : ""}`,
     tabindex: "0",
     title,
     onclick: (e) => { if (!e.target.closest("button, input")) open(); },
     onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } },
-  }, line);
+  }, ...children);
 
   const missionRow = (m) => {
-    const tasks = m.milestones.flatMap((x) => x.tasks ?? []);
+    const tasks = m.milestones.flatMap((x) => x.tasks);
     const passed = tasks.filter((t) => t.status === "passed").length;
     const merged = m.milestones.filter((x) => x.merged).length;
-    const status = m.trouble && m.status !== "paused" ? "blocked" : MISSION_LAMP[m.status];
+    const status = lampOf(m);
     const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
     const openMission = () => { location.href = href; };
-    return pageStrip({ status, title: `${m.name} · ${MISSION_SAYS[m.status] ?? m.status}`, open: openMission }, stripLine({
-      // waiting and blocked both draw the lock: a mission at its gate is blocked on the pilot,
-      // which is what the lock means, and the band is ignored for those two anyway.
+    return pageStrip({ status, title: `${m.name} · ${m.word}`, open: openMission }, stripLine({
       status,
       name: el("h4", { class: "strip-name" }, m.name),
-      state: MISSION_SAYS[m.status] ?? m.status,
-      note: m.escalation ? clip(m.escalation, 90) : m.trouble ? clip(m.trouble, 90) : null,
+      state: m.word,
+      note: m.escalation ? clip(m.escalation, 90) : m.trouble ? clip(m.trouble, 90) : MISSION_SAYS[m.status] ?? null,
       when: age(Date.parse(m.approved ?? m.created)),
       where: [tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "), m.diffstat].filter(Boolean).join(" · "),
       acts: [el("button", { type: "button", class: "act", title: "open this mission", onclick: openMission }, "open")],
     }));
   };
 
-  /**
-   * A mission's open questions as Needs you strips, drawn by web/inbox.js. It hands the answers
-   * back on the say block's flex line beside their status hint, where a long label squeezes the
-   * rest; here they get a block of their own that wraps, and the hint a line of its own under it.
-   * The nodes move, so the handlers inbox.js wired to them keep working.
-   */
-  const questionRows = (m) => inboxRows(m, { el, lamp, post, refresh: load, projectId: ctx.projectId }).map((row) => {
-    const line = row.querySelector(".strip-say > p:last-child");
-    const hint = line.querySelector("[role=status]");
-    line.replaceChildren(line.querySelector(".who"), el("span", { class: "inbox-answers" }, ...line.querySelectorAll("button")));
-    line.after(el("p", {}, el("span", { class: "who" }), hint));
-    return row;
-  });
+  /** A mission's open questions as Needs you strips, drawn by web/inbox.js on this page's strip builders. */
+  const questionRows = (m) => inboxRows(m, { el, post, refresh: load, projectId: ctx.projectId, stripLine, pageStrip, age });
 
   /** Missions open here, because the page that lists them is this one. */
   const missionFoot = () => el("p", { class: "muted small cc-empty" },
@@ -805,7 +796,7 @@ export const mountCommandCenter = (root, ctx) => {
     const replied = recent.filter((s) => !asking.includes(s) && s.lastReply);
     // Idle past the hour is a tab you have moved on from, which is stale here.
     const stale = idle.filter((s) => !asking.includes(s) && !replied.includes(s));
-    const byLamp = (a, b) => (rank[MISSION_LAMP[a.status]] ?? 4) - (rank[MISSION_LAMP[b.status]] ?? 4);
+    const byLamp = (a, b) => (rank[lampOf(a)] ?? 4) - (rank[lampOf(b)] ?? 4);
     const mine = [...missions].sort(byLamp);
     // A mission that wants you with no question to answer would otherwise have no row at all.
     const stuck = mine.filter((m) => (m.word === "waiting for you" || m.word === "error") && !m.questions?.length && m.status !== "review");

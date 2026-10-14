@@ -4,7 +4,6 @@
 
 import { render as renderMarkdown } from "../markdown.js";
 
-const tasksOf = (m) => m.tasks ?? [];
 const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${repo} ${sha}`).join(" · ");
 const needsWalking = (view, m) => Boolean(view.walk?.[m.n]?.needed);
 const walkState = (view, m) => view.walk?.[m.n]?.state ?? "none";
@@ -60,9 +59,9 @@ const minus = (a, b) => ({ plus: a.plus - b.plus, minus: a.minus - b.minus });
  * its stat. `own` is the task's diff less the siblings inside it, and `rows` its files less theirs.
  */
 const mergedOf = (view) => {
-  const groups = (view.milestones ?? []).filter((m) => m.merged).map((m) => ({
+  const groups = view.milestones.filter((m) => m.merged).map((m) => ({
     m,
-    tasks: tasksOf(m).map((task) => {
+    tasks: m.tasks.map((task) => {
       const stat = view.diffstat?.[task.id] ?? "";
       return { task, totals: stat ? totalsOf(stat) : null, files: stat ? filesOf(stat) : [] };
     }),
@@ -86,7 +85,7 @@ const mergedOf = (view) => {
 /** Every carried note, the unverified ones first: those are claims nobody checked, not opinions. */
 const UNVERIFIED = /^unverified:\s*/i;
 const toRead = (view) => {
-  const notes = (view.milestones ?? []).flatMap(tasksOf).flatMap((task) => (task.carried ?? []).map((line) => ({
+  const notes = view.milestones.flatMap((m) => m.tasks).flatMap((task) => (task.carried ?? []).map((line) => ({
     unverified: UNVERIFIED.test(line),
     text: line.replace(UNVERIFIED, ""),
     title: task.title,
@@ -94,15 +93,8 @@ const toRead = (view) => {
   return [...notes.filter((n) => n.unverified), ...notes.filter((n) => !n.unverified)];
 };
 
-const LANDS = {
-  merge: (base) => `stays on the mission branch; nothing touches ${base}`,
-  pr: (base) => `a pull request against ${base}, merged by you`,
-  push: (base) => `${base} is advanced to it and pushed`,
-};
-
 export const mount = (host, view, ctx) => {
-  const { el, btn, fmtTime } = ctx;
-  const actionUrl = (action) => `/api/missions/${encodeURIComponent(ctx.missionId)}/${action}?project=${encodeURIComponent(ctx.projectId)}`;
+  const { el, btn, fmtTime, actionUrl, LANDS } = ctx;
 
   const count = el("span", { class: "n" });
   const sum = el("div", { class: "rs-sum" });
@@ -125,7 +117,7 @@ export const mount = (host, view, ctx) => {
 
   const drawSum = (v, merged) => {
     if (!merged.length) {
-      const first = (v.milestones ?? [])[0];
+      const first = v.milestones[0];
       return [el("p", { class: "rs-pending" }, first
         ? `Nothing has merged yet. When milestone ${first.n}, ${first.title}, lands on ${branchOf(v)}, this shows its diff: the lines added and removed, the files each of its tasks changed, and the tasks merged.`
         : "Nothing has merged yet, and the plan has no milestones.")];
@@ -164,7 +156,7 @@ export const mount = (host, view, ctx) => {
     : [el("li", { class: "rs-none" }, "Nothing carried. Every task that passed did so with nothing left for you to read.")];
 
   /** The walk and the proof for each merged milestone, as the review page showed them. */
-  const drawWalks = (v) => (v.milestones ?? []).filter((m) => m.merged).map((m) => el("li", {},
+  const drawWalks = (v) => v.milestones.filter((m) => m.merged).map((m) => el("li", {},
     el("span", { class: "d" }, `Milestone ${m.n} · ${m.title}`),
     el("span", { class: `w${needsWalking(v, m) ? " need" : ""}` }, needsWalking(v, m) ? "not walked" : ({ walked: "walked", waived: "waived" }[walkState(v, m)] ?? "nothing to walk")),
     m.proof ? el("span", { class: `w ${m.proof.ok ? "ok" : "bad"}` }, `proof ${m.proof.ok ? "passed" : "failed"} ${fmtTime(m.proof.at)}`) : el("span", { class: "w" }, v.proofRequired ? "no proof yet" : ""),
@@ -192,19 +184,18 @@ export const mount = (host, view, ctx) => {
   /** The second gate, moved from the review page. Closing lands work, so it asks twice, in the page. */
   const drawGate = (v) => {
     if (v.status !== "review" && v.status !== "closed") return [];
-    const tasks = (v.milestones ?? []).flatMap(tasksOf);
+    const tasks = v.milestones.flatMap((m) => m.tasks);
     const passed = tasks.filter((t) => t.status === "passed");
-    const unwalked = (v.milestones ?? []).filter((m) => needsWalking(v, m));
+    const unwalked = v.milestones.filter((m) => needsWalking(v, m));
     const ready = v.status === "review" && !unwalked.length;
     const closed = v.status === "closed";
     const repos = v.repos ?? [];
     const byPr = repos.some((r) => r.land === "pr");
-    const landsAnywhere = repos.some((r) => r.land !== "merge");
     const lands = repos.filter((r) => r.land !== "merge");
     const what = lands.length
       ? `Then, per repo: ${lands.map((r) => `${r.label} ${r.land === "push" ? `pushed to ${r.base}` : `a pull request against ${r.base}`}`).join(", ")}.`
       : "The mission branches are left for the ship.";
-    const label = landsAnywhere ? "close it and land the work" : "close the mission and tick its items";
+    const label = lands.length ? "close it and land the work" : "close the mission and tick its items";
     const acts = el("div", { class: "rs-acts" });
     const arm = () => acts.replaceChildren(
       btn(`yes, ${label}`, () => ctx.act("close", {}, byPr ? "closed; pull requests opened" : "mission closed; its items are ticked"), "primary"),
@@ -228,7 +219,7 @@ export const mount = (host, view, ctx) => {
       tidy.replaceChildren(el("span", { class: "rs-quiet" }, "removing the worktrees"));
       try {
         /* The gate is not redrawn when a worktree goes, so what was left is read from the latest view. */
-        const expected = (latest.milestones ?? []).flatMap(tasksOf).filter((t) => t.status === "passed" && t.worktree).length;
+        const expected = latest.milestones.flatMap((m) => m.tasks).filter((t) => t.status === "passed" && t.worktree).length;
         const { removed } = await ctx.post(actionUrl("tidy"), {});
         const left = expected - removed.length;
         tidyDisarm(left > 0
@@ -271,20 +262,27 @@ export const mount = (host, view, ctx) => {
   };
 
   let latest = view;
+  let mergedKey = "";
+  let merged = [];
   const update = (v) => {
     latest = v;
-    const merged = mergedOf(v);
+    // Reading the stats is the heavy part of an update, and they move only when a diff or a merge does.
+    const key = JSON.stringify([v.diffstat, v.milestones.filter((m) => m.merged).map((m) => m.n)]);
+    if (key !== mergedKey) {
+      mergedKey = key;
+      merged = mergedOf(v);
+    }
     const notes = toRead(v);
     const closing = v.status === "review" || v.status === "closed";
     count.textContent = v.status === "closed" ? "closed" : v.status === "review" ? "ready" : merged.length ? "so far" : "not yet";
-    patch(sum, [merged.map((g) => g.tasks.map((t) => [t.own, t.files])), (v.milestones ?? [])[0]?.title, branchOf(v)], () => drawSum(v, merged));
+    patch(sum, [merged.map((g) => g.tasks.map((t) => [t.own, t.files])), v.milestones[0]?.title, branchOf(v)], () => drawSum(v, merged));
     patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, rows, from, fromFiles])]), () => drawFiles(merged));
     files.hidden = !merged.length;
     readHead.lastChild.textContent = notes.length ? `${notes.filter((n) => n.unverified).length} unverified · ${notes.length} in all` : "";
     patch(read, notes, () => drawRead(notes));
-    patch(walks, closing ? (v.milestones ?? []).filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired]) : [], () => (closing ? drawWalks(v) : []));
+    patch(walks, closing ? v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired]) : [], () => (closing ? drawWalks(v) : []));
     walks.hidden = !closing;
-    patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, (v.milestones ?? []).flatMap(tasksOf).map((t) => t.status)] : null, () => drawGate(v));
+    patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status)] : null, () => drawGate(v));
   };
   update(view);
   return { update };

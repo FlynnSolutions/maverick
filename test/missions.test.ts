@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, wordFor, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 import { closeTerminal, openTerminal } from "../src/terminal.ts";
@@ -584,15 +584,6 @@ test("missionView's feed is empty before approval and when the ledger cannot be 
   assert.deepEqual((await missionView(project, "unblessed")).feed, []);
   const { project: gone } = viewFixture("gone", { repos: [{ label: "root", path: "/nonexistent-m1-t3", base: "main", branch: "mission/gone", integration: "/nonexistent-m1-t3/integration", land: "merge" }] as never });
   assert.deepEqual((await missionView(gone, "gone")).feed, []);
-});
-
-test("the word follows the questions: nothing open is never waiting for you", () => {
-  const base = { status: "flying", milestones: [], created: "2026-10-09T07:00:00Z", brief: "b" } as unknown as Mission;
-  assert.equal(wordFor({ ...base, trouble: "something odd" }, []), "working", "trouble with no question reads working");
-  assert.equal(wordFor({ ...base, status: "review", escalation: "stale" }, []), "done", "a stale escalation on a review mission is history");
-  assert.equal(wordFor({ ...base, status: "closed" }, []), "done");
-  assert.equal(wordFor(base, [{ id: "x" } as never]), "waiting for you", "any open question is waiting for you");
-  assert.equal(wordFor({ ...base, trouble: "the report could not be written: disk full" }, []), "error");
 });
 
 test("sayToStrikeLead writes the decision into the ledger and says it sent nothing with no terminal", async () => {

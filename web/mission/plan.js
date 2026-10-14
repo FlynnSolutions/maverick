@@ -3,6 +3,7 @@
 // The page keeps a stream open and calls update() on every event, so nothing here rebuilds: rows
 // are patched by id, and a session opened under a row is still open after the next event.
 
+import { answerControls } from "../answers.js";
 import { stopWalkthrough, walkthroughPanel } from "../walkthrough.js";
 
 /** The task's lamp and word, the map in /mockups/mission.html. `built` is between the two: the Wingman is done and its RIO is on the way. */
@@ -12,17 +13,16 @@ const STEP_LAMP = { done: ["done", "work"], waiting: ["blocked", "work"], workin
 /** The states with a session worth opening: a Wingman flying, a RIO reading, or the last of either before it was handed back. */
 const LIVE = new Set(["flying", "reviewing", "handed-back"]);
 
-const tasksOf = (m) => m.tasks ?? [];
 const stepState = (m) =>
   m.merged ? "done"
-    : m.hold || tasksOf(m).some((t) => t.status === "handed-back") ? "waiting"
-      : m.dispatched || tasksOf(m).some((t) => t.status !== "pending") ? "working"
+    : m.hold || m.tasks.some((t) => t.status === "handed-back") ? "waiting"
+      : m.dispatched || m.tasks.some((t) => t.status !== "pending") ? "working"
         : "pending";
 /** A milestone started early has no dispatch stamp; its first task's start stands in. */
-const since = (m) => m.dispatched ?? tasksOf(m).map((t) => t.started).filter(Boolean).sort()[0];
+const since = (m) => m.dispatched ?? m.tasks.map((t) => t.started).filter(Boolean).sort()[0];
 
 export const mount = (host, view, ctx) => {
-  const { el, text, lamp, fmtTime } = ctx;
+  const { el, text, btn, lamp, fmtTime, act, post, actionUrl, openSession, projectId } = ctx;
   const steps = new Map();
   const rows = new Map();
   let current = view;
@@ -32,10 +32,10 @@ export const mount = (host, view, ctx) => {
       : s === "waiting" ? "waiting for you"
         : s === "working" ? (since(m) ? `working since ${fmtTime(since(m))}` : "working")
           : "not started";
-  const titleOf = (id) => current.milestones.flatMap(tasksOf).find((t) => t.id === id)?.title ?? id;
+  const titleOf = (id) => current.milestones.flatMap((m) => m.tasks).find((t) => t.id === id)?.title ?? id;
   const waitsOn = (task) => {
     if (task.status !== "pending") return [];
-    const passed = new Set(current.milestones.flatMap(tasksOf).filter((t) => t.status === "passed").map((t) => t.id));
+    const passed = new Set(current.milestones.flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
     return (task.needs ?? []).filter((id) => !passed.has(id));
   };
   const swapLamp = (holder, [status, band]) => {
@@ -46,26 +46,8 @@ export const mount = (host, view, ctx) => {
   };
 
   /* ---------- the handed-back task's question, answered in the row ---------- */
-  const answersFor = (task, question) => {
-    const box = el("div", { class: "plan-answers" });
-    const wanted = question.answers.some((a) => a.body?.length);
-    const note = wanted ? el("input", { type: "text", class: "plan-note", placeholder: "why, in a line; kept in the ledger", "aria-label": `note for ${task.title}` }) : null;
-    const answers = [...question.answers].sort((a, b) => Number(Boolean(b.primary)) - Number(Boolean(a.primary)));
-    const opts = el("div", { class: "plan-opts" }, ...answers.map((a) => ctx.btn(a.label, async () => {
-      const keys = a.body ?? [];
-      if (keys.length && !note.value.trim()) {
-        note.focus();
-        note.setAttribute("aria-invalid", "true");
-        return;
-      }
-      await ctx.act(a.path, Object.fromEntries(keys.map((k) => [k, note.value.trim()])), `${task.title}: ${a.label}`);
-    }, a.primary ? "primary" : "")));
-    if (note) note.addEventListener("input", () => note.removeAttribute("aria-invalid"));
-    // DOM append stringifies a null into the word "null", so the note row goes in only when there is one.
-    box.append(opts);
-    if (note) box.append(el("div", { class: "plan-note-row" }, note));
-    return box;
-  };
+  const answersFor = (task, question) => el("div", { class: "plan-answers" },
+    answerControls(question, { el, btn, submit: (a, body) => act(a.path, body, `${task.title}: ${a.label}`) }).node);
 
   /* ---------- a task row ---------- */
   const makeRow = (task) => {
@@ -76,6 +58,7 @@ export const mount = (host, view, ctx) => {
       word: el("span", { class: "w" }),
       answers: el("div", { class: "plan-q" }),
       session: el("div", { class: "plan-session" }),
+      wordKey: "",
       question: "",
     };
     r.li = el("li", { "data-task": task.id }, r.lamp, r.title, r.intent, r.word, r.answers, r.session);
@@ -92,11 +75,16 @@ export const mount = (host, view, ctx) => {
     r.intent.title = task.intent ?? "";
     r.intent.hidden = !task.intent;
     const waits = waitsOn(task);
-    r.word.replaceChildren(
-      el("b", { class: task.status === "handed-back" ? "needs" : task.status === "passed" ? "ok" : "" }, WORD[task.status] ?? task.status),
-      task.attempts ? ` · attempt ${task.attempts}` : "",
-      ...(waits.length ? [el("br"), `after ${waits.map(titleOf).join(", ")}`] : []),
-      ...(LIVE.has(task.status) ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); ctx.openSession(task.id, r.session); } }, "open the session")] : []));
+    // The word is rebuilt only when it would read differently, the way the lamp is swapped.
+    const wordKey = JSON.stringify([task.status, task.attempts, waits]);
+    if (wordKey !== r.wordKey) {
+      r.wordKey = wordKey;
+      r.word.replaceChildren(
+        el("b", { class: task.status === "handed-back" ? "needs" : task.status === "passed" ? "ok" : "" }, WORD[task.status] ?? task.status),
+        task.attempts ? ` · attempt ${task.attempts}` : "",
+        ...(waits.length ? [el("br"), `after ${waits.map(titleOf).join(", ")}`] : []),
+        ...(LIVE.has(task.status) ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, "open the session")] : []));
+    }
     // The answers are rebuilt only when the question itself changes, so a half-written note survives the next event.
     const question = task.status === "handed-back" ? (current.questions ?? []).find((q) => q.taskId === task.id) : null;
     const key = question ? JSON.stringify([question.id, question.answers]) : "";
@@ -111,17 +99,18 @@ export const mount = (host, view, ctx) => {
   };
 
   /* ---------- the walkthrough under a done milestone, as today's walkthroughSection has it ---------- */
-  const walkUrl = (n) => `/api/missions/${encodeURIComponent(ctx.missionId)}/milestones/${n}/walkthrough?project=${encodeURIComponent(ctx.projectId)}`;
+  const walkPath = (n) => `milestones/${n}/walkthrough`;
+  /** Not the answer row: a waiver's note is kept on the milestone, not in the ledger, and its line says so. */
   const waiveRow = (m) => {
-    const note = el("input", { type: "text", class: "plan-note", placeholder: "why it is let through unwalked; kept on the milestone", "aria-label": `why milestone ${m.n} is waived` });
+    const note = el("input", { type: "text", class: "mv-note", placeholder: "why it is let through unwalked; kept on the milestone", "aria-label": `why milestone ${m.n} is waived` });
     note.addEventListener("input", () => note.removeAttribute("aria-invalid"));
-    return el("div", { class: "plan-note-row" }, note, ctx.btn("waive it", async () => {
+    return el("div", { class: "mv-note-row" }, note, btn("waive it", async () => {
       if (!note.value.trim()) {
         note.focus();
         note.setAttribute("aria-invalid", "true");
         return;
       }
-      await ctx.act(`milestones/${m.n}/walkthrough`, { waive: { note: note.value.trim() } }, `milestone ${m.n} waived`);
+      await act(walkPath(m.n), { waive: { note: note.value.trim() } }, `milestone ${m.n} waived`);
     }, "ghost"));
   };
   const walkHead = (label) => el("h4", {}, "Walkthrough", el("span", { class: "plan-walk-meta" }, label));
@@ -139,12 +128,12 @@ export const mount = (host, view, ctx) => {
       return [walkHead(`session ${w.claudeId} · since ${fmtTime(w.started)}`),
         el("p", {}, "A session is writing the test walkthrough for this milestone in the integration worktree. When it has committed the document, it shows here for you to walk.")];
     }
-    const url = `/files?project=${encodeURIComponent(ctx.projectId)}&path=${encodeURIComponent(w.doc)}`;
+    const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(w.doc)}`;
     const said = el("p", { class: "plan-walk-meta", hidden: true });
     const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, onSave: async (progress) => {
       w.progress = progress;
       try {
-        await ctx.post(walkUrl(m.n), { progress: { total: progress.total, answered: progress.answered, verdicts: progress.verdicts, updatedAt: progress.updatedAt } });
+        await post(actionUrl(walkPath(m.n)), { progress: { total: progress.total, answered: progress.answered, verdicts: progress.verdicts, updatedAt: progress.updatedAt } });
         said.classList.remove("warn");
         said.textContent = progress.answered >= progress.total ? `milestone ${m.n} walked` : "";
         said.hidden = !said.textContent;
@@ -227,9 +216,9 @@ export const mount = (host, view, ctx) => {
     s.word.textContent = stepWord(m, state);
     s.gives.textContent = m.done ? `Done when ${m.done}` : "";
     s.gives.hidden = !m.done;
-    const ids = tasksOf(m).map((t) => t.id);
+    const ids = m.tasks.map((t) => t.id);
     for (const [id, r] of rows) if (r.li.parentElement === s.tasks && !ids.includes(id)) { r.li.remove(); rows.delete(id); }
-    tasksOf(m).forEach((t, i) => {
+    m.tasks.forEach((t, i) => {
       const li = patchRow(t);
       if (s.tasks.children[i] !== li) s.tasks.insertBefore(li, s.tasks.children[i] ?? null);
     });
@@ -243,8 +232,8 @@ export const mount = (host, view, ctx) => {
 
   const update = (next) => {
     current = next;
-    const milestones = next.milestones ?? [];
-    const taskCount = milestones.flatMap(tasksOf).length;
+    const milestones = next.milestones;
+    const taskCount = milestones.flatMap((m) => m.tasks).length;
     count.textContent = [
       `${milestones.length} milestone${milestones.length === 1 ? "" : "s"}`,
       `${taskCount} task${taskCount === 1 ? "" : "s"}`,

@@ -21,8 +21,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionPath, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
-import { planOnBranch } from "./src/briefs.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, landAgain, ledgerPath, listMissions, missionPath, missionQuestions, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
@@ -348,6 +347,45 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
   }
 };
 
+/* ---------- server-sent events ---------- */
+
+/**
+ * One scaffold for every stream: a watcher on the file is the fast path and a slow poll catches
+ * what fs.watch misses (a file replaced rather than written in place). `next` returns what to
+ * send, or nothing when nothing changed. The close is listened for before the first flush, so a
+ * client gone during it cannot leave the timers running for the life of the process.
+ */
+const eventStream = <T>(req: IncomingMessage, res: ServerResponse, on: { file: string; every: number; ping?: number; next: () => Promise<T | undefined> }): void => {
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+  let sending = false;
+  const flush = async () => {
+    if (sending || res.writableEnded) return;
+    sending = true;
+    try {
+      const payload = await on.next();
+      if (payload !== undefined && !res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch {
+      /* the file may not exist yet, or was caught mid-write; the next tick tries again */
+    } finally {
+      sending = false;
+    }
+  };
+  let watcher: FSWatcher | null = null;
+  try {
+    watcher = watch(on.file, () => void flush());
+  } catch {
+    /* no file to watch yet: the poll carries it */
+  }
+  const backstop = setInterval(() => void flush(), on.every);
+  const ping = on.ping ? setInterval(() => { if (!res.writableEnded) res.write(": ping\n\n"); }, on.ping) : undefined;
+  req.on("close", () => {
+    clearInterval(backstop);
+    clearInterval(ping);
+    watcher?.close();
+  });
+  void flush();
+};
+
 /* ---------- static ---------- */
 
 const serveStatic = async (pathname: string, res: ServerResponse): Promise<void> => {
@@ -443,34 +481,21 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const sessionId = url.searchParams.get("session");
     if (!cwd || !sessionId) throw new Error("transcript stream needs cwd and session");
     let offset = Number(url.searchParams.get("from") ?? 0);
-    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    let sending = false;
-    const flush = async () => {
-      if (sending || res.writableEnded) return;
-      sending = true;
-      try {
+    eventStream(req, res, {
+      file: transcriptPath(cwd, sessionId),
+      every: 2500,
+      next: async () => {
         const page = await readTranscript(cwd, sessionId, offset);
         offset = page.offset;
-        if (page.events.length || page.title) res.write(`data: ${JSON.stringify(page)}\n\n`);
-      } catch {
-        /* the file may not exist yet; the next tick tries again */
-      } finally {
-        sending = false;
-      }
-    };
-    let watcher: FSWatcher | null = null;
-    try {
-      watcher = watch(transcriptPath(cwd, sessionId), () => void flush());
-    } catch {
-      /* no file to watch yet: the interval carries it */
-    }
-    const backstop = setInterval(() => void flush(), 2500);
-    void flush();
-    req.on("close", () => {
-      clearInterval(backstop);
-      watcher?.close();
+        return page.events.length || page.title ? page : undefined;
+      },
     });
     return;
+  }
+  // What every mission asks, for the shell's notification poll: no sweep, no git, so a poll every
+  // few seconds costs a record read per mission and nothing else.
+  if (method === "GET" && path === "/api/questions") {
+    return sendJson(res, 200, { missions: await missionQuestions(await requireProject(url)) });
   }
   if (method === "GET" && path === "/api/workspace") {
     const lan = lanAddress();
@@ -628,58 +653,26 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, await page());
     }
     // The page's live feed: the view once on connect, then again whenever the record (or the
-    // ledger it writes just after) changes. The watcher is the fast path; the poll catches what
-    // it misses, such as a file replaced rather than written in place.
+    // ledger it writes just after) changes. The record's mtime and the ledger's together say
+    // whether anything moved; the view is only rebuilt when they did.
     if (method === "GET" && action === "stream") {
-      // Listening for the close before the first await: a client gone during it must not leave
-      // the poll and the ping running for the life of the process.
-      let closed = false;
-      let watcher: FSWatcher | null = null;
-      let backstop: NodeJS.Timeout | undefined;
-      let ping: NodeJS.Timeout | undefined;
-      req.on("close", () => {
-        closed = true;
-        clearInterval(backstop);
-        clearInterval(ping);
-        watcher?.close();
-      });
       const record = missionPath(project.id, id);
       const first = await page();
-      let ledger: string | null = null;
-      try {
-        ledger = first.approved ? planOnBranch(project.path, first.plan, first.repos) : null;
-      } catch {
-        /* a mission with no repos has no ledger: the record alone drives it */
-      }
-      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-      res.write(`data: ${JSON.stringify(first)}\n\n`);
+      const ledger = ledgerPath(project, first);
       const stamp = async () => (await Promise.all([record, ledger].map((f) => (f ? stat(f).then((s) => s.mtimeMs, () => 0) : 0)))).join(":");
-      let seen = await stamp();
-      if (closed) return;
-      let sending = false;
-      const flush = async () => {
-        if (sending || res.writableEnded) return;
-        sending = true;
-        try {
+      let seen = "";
+      eventStream(req, res, {
+        file: record,
+        every: 1000,
+        ping: 15_000,
+        next: async () => {
           const now = await stamp();
-          if (now === seen) return;
-          const view = await page();
-          if (res.writableEnded) return;
-          res.write(`data: ${JSON.stringify(view)}\n\n`);
+          if (now === seen) return undefined;
+          const view = seen ? await page() : first;
           seen = now;
-        } catch {
-          /* caught mid-write, or gone for a moment: the next tick tries again */
-        } finally {
-          sending = false;
-        }
-      };
-      try {
-        watcher = watch(record, () => void flush());
-      } catch {
-        /* no file to watch: the poll carries it */
-      }
-      backstop = setInterval(() => void flush(), 1000);
-      ping = setInterval(() => { if (!res.writableEnded) res.write(": ping\n\n"); }, 15_000);
+          return view;
+        },
+      });
       return;
     }
     if (method === "POST" && action === "say") {

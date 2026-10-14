@@ -10,18 +10,10 @@ const lampFor = (ctx, entry, open) =>
       : entry.kind === "response" || entry.who === "you" ? ctx.lamp("done", "work")
         : ctx.lamp("busy", "work");
 
+import { answerControls } from "../answers.js";
+
 /** A question's anchor: what the pins link to and what a page hash names. */
 const anchorOf = (q) => `q-${q.id}`;
-
-const tasksOf = (view) => (view.milestones ?? []).flatMap((m) => m.tasks ?? []);
-
-/**
- * Only the answers the server will take (Cory's call on m1-t1): never `release` on a landing hold,
- * since landing again is its release, and while the mission is paused only the pause itself offers
- * `resume`, so the page does not show the same button once per question.
- */
-const answersFor = (q, paused) => q.answers.filter((a) =>
-  !(q.kind === "landing" && a.path.endsWith("/release")) && !(paused && q.id !== "paused" && a.path === "resume"));
 
 export const mount = (host, view, ctx) => {
   const { el, text } = ctx;
@@ -45,11 +37,11 @@ export const mount = (host, view, ctx) => {
   const groupOf = (entry) => entry.milestone ?? lastGroup ?? "gate";
   const groupLabel = (g) => {
     if (g === "gate") return text("At the gate");
-    const m = (current.milestones ?? []).find((x) => x.n === g);
+    const m = current.milestones.find((x) => x.n === g);
     return el("b", {}, m ? `milestone ${g}, ${m.title}` : `milestone ${g}`);
   };
   const where = (taskId) => {
-    const task = tasksOf(current).find((t) => t.id === taskId);
+    const task = current.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId);
     return el("span", { class: "prog-where" }, task ? `${task.title} (${taskId})` : taskId);
   };
 
@@ -72,35 +64,11 @@ export const mount = (host, view, ctx) => {
     }
   };
 
-  /**
-   * The answers as buttons, posted through the shell's `act`, and a note field only when an answer
-   * sends one. `kept` is a note carried over from the controls these replace.
-   */
-  const controls = (q, answers, kept) => {
-    if (!answers.length) return [el("div", { class: "prog-note" }, el("span", { class: "prog-hint" }, "resume the mission first"))];
-    const wanted = answers.some((a) => a.body?.length);
-    const note = wanted ? el("input", { type: "text", value: kept, placeholder: "why, in a line; kept in the ledger", "aria-label": `Note for: ${q.title}` }) : null;
-    const hint = el("span", { class: "prog-hint", role: "status" });
-    const buttons = answers.map((a) => ctx.btn(a.label, async () => {
-      const said = note?.value.trim() ?? "";
-      const keys = a.body ?? [];
-      if (keys.length && !said) {
-        hint.textContent = `${a.label} needs a line of why first`;
-        note.setAttribute("aria-invalid", "true");
-        note.focus();
-        return;
-      }
-      note?.removeAttribute("aria-invalid");
-      hint.textContent = "";
-      for (const b of buttons) b.disabled = true;
-      try {
-        await ctx.act(a.path, Object.fromEntries(keys.map((k) => [k, said])), `${q.title}: ${a.label}`);
-      } finally {
-        for (const b of buttons) b.disabled = false;
-      }
-    }, a.primary ? "primary" : ""));
-    return wanted ? [el("div", { class: "prog-opts" }, ...buttons), el("div", { class: "prog-note" }, note, hint)]
-      : [el("div", { class: "prog-opts" }, ...buttons)];
+  /** The answer row, posted through the shell's `act`. `kept` is a note carried over from the row this replaces. */
+  const controls = (q, kept) => {
+    const { node, note } = answerControls(q, { el, btn: ctx.btn, submit: (a, body) => ctx.act(a.path, body, `${q.title}: ${a.label}`) });
+    if (note) note.value = kept;
+    return node;
   };
 
   /**
@@ -125,43 +93,41 @@ export const mount = (host, view, ctx) => {
     const on = asked.get(id);
     asked.delete(id);
     if (on.loose) return on.li.remove();
-    for (const node of on.added) node.remove();
+    on.added.remove();
     on.li.classList.remove("open");
     on.li.removeAttribute("id");
     on.li.querySelector(".lamp").replaceWith(lampFor(ctx, on.entry, false));
   };
 
-  const open = (q, li, answers, kept = "") => {
+  const open = (q, li, kept = "") => {
     const entry = rows.find((r) => r.li === li)?.entry;
     const target = li ?? looseRow(q);
-    const added = controls(q, answers, kept);
-    target.append(...added);
+    const added = controls(q, kept);
+    target.append(added);
     target.classList.add("open");
     target.id = anchorOf(q);
     if (li) li.querySelector(".lamp").replaceWith(lampFor(ctx, entry, true));
     else loose.append(target);
-    asked.set(q.id, { li: target, entry, added, loose: !li, offered: answers.map((a) => a.path).join(" ") });
+    asked.set(q.id, { li: target, entry, added, loose: !li, offered: q.answers.map((a) => a.path).join(" ") });
   };
 
   /** Task questions claim their rows first, so a hold on the same milestone cannot take a task's row. */
   const settleQuestions = () => {
-    const questions = current.questions ?? [];
+    const questions = current.questions;
     const ids = new Set(questions.map((q) => q.id));
     for (const id of [...asked.keys()]) if (!ids.has(id)) close(id);
-    const paused = questions.some((q) => q.id === "paused");
     const claimed = new Set();
     const ordered = [...questions.filter((q) => q.taskId), ...questions.filter((q) => !q.taskId)];
     for (const q of ordered) {
       const li = askedIn(q, claimed);
       if (li) claimed.add(li);
-      const answers = answersFor(q, paused);
       const on = asked.get(q.id);
       // A question asked again (a task handed back a second time) moves to the row that asked it last,
       // and one whose answers changed (the mission paused or resumed) gets new buttons, keeping its note.
-      if (on && on.li === (li ?? on.li) && on.loose === !li && on.offered === answers.map((a) => a.path).join(" ")) continue;
-      const kept = on?.li.querySelector(".prog-note input")?.value ?? "";
+      if (on && on.li === (li ?? on.li) && on.loose === !li && on.offered === q.answers.map((a) => a.path).join(" ")) continue;
+      const kept = on?.added.querySelector(".mv-note")?.value ?? "";
       if (on) close(q.id);
-      open(q, li, answers, kept);
+      open(q, li, kept);
     }
     loose.hidden = !loose.children.length;
     pins.replaceChildren(...questions.map((q) => el("p", { class: "prog-pin" }, ctx.lamp("blocked", "work"),
@@ -196,7 +162,7 @@ export const mount = (host, view, ctx) => {
     send.disabled = true;
     heard.classList.remove("error");
     try {
-      const res = await ctx.post(`/api/missions/${encodeURIComponent(ctx.missionId)}/say?project=${encodeURIComponent(ctx.projectId)}`, { text: said });
+      const res = await ctx.post(ctx.actionUrl("say"), { text: said });
       say.value = "";
       heard.textContent = res.sent ? "the Strike Lead has it" : "kept in the ledger; no Strike Lead session is open";
     } catch (err) {
@@ -220,18 +186,9 @@ export const mount = (host, view, ctx) => {
   };
 
   host.append(el("h2", { class: "prog-head" }, "Progress", count), pins, list, loose, live, reply);
-  // The clock stops once the section has been on the page and left it.
-  const onHash = () => { scrolledTo = ""; toHash(); };
-  let attached = false;
-  const ticker = setInterval(() => {
-    if (host.isConnected) attached = true;
-    else if (attached) {
-      window.removeEventListener("hashchange", onHash);
-      return clearInterval(ticker);
-    }
-    tick();
-  }, 1000);
-  window.addEventListener("hashchange", onHash);
+  // A hidden tab has no one reading the clock; it catches up on the next tick that is seen.
+  setInterval(() => { if (!document.hidden) tick(); }, 1000);
+  window.addEventListener("hashchange", () => { scrolledTo = ""; toHash(); });
   update(view);
   return { update };
 };

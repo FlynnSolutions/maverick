@@ -40,9 +40,7 @@ const kindOf = (mark: string | undefined, text: string): FeedEntry["kind"] => {
     if (now === "flying" || now === "reviewing") return "action";
     return "thought";
   }
-  if (/\bproof failed\b|\bcollided\b|\bcollision\b/.test(text)) return "error";
-  if (/\bmerged\b|\blanded\b/.test(text)) return "response";
-  if (/\bmerg(e|ing)\b|\blanding\b/.test(text)) return "action";
+  // Everything the ledger types is a mark or a transition; a line that is neither is kept as read.
   return "thought";
 };
 

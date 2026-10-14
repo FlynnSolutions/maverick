@@ -43,13 +43,11 @@ test("every kind, from the lines the ledger actually holds", () => {
   for (const [line, kind] of cases) assert.equal(one(line).kind, kind, line);
 });
 
-test("a stamped line in no shape the ledger writes today is read by its words", () => {
-  // Not real ledger lines: these pin the fallback for lines Maverick may start writing later.
-  assert.equal(one("2026-10-09 12:00 milestone 1 collided in root").kind, "error");
-  assert.equal(one("2026-10-09 12:00 the proof failed on milestone 1").kind, "error");
-  assert.equal(one("2026-10-09 12:00 milestone 1 merged into root").kind, "response");
-  assert.equal(one("2026-10-09 12:00 milestone 1 landed").kind, "response");
-  assert.equal(one("2026-10-09 12:00 trying to merge milestone 1").kind, "action");
+test("a stamped line in no shape the ledger writes is kept as a thought, never guessed from its words", () => {
+  // The ledger types a line by its mark or its transition; anything else is read as written. A new
+  // kind gets a mark in `transitions`, not a word list here.
+  assert.equal(one("2026-10-09 12:00 milestone 1 collided in root").kind, "thought");
+  assert.equal(one("2026-10-09 12:00 milestone 1 merged into root").kind, "thought");
   assert.equal(one("2026-10-09 12:00 swept, nothing to do").kind, "thought");
 });
 

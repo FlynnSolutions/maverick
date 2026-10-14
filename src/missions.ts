@@ -1735,8 +1735,7 @@ export const sayToStrikeLead = async (project: Project, id: string, text: string
   const open = Boolean(terminalId && listTerminals().find((t) => t.id === terminalId && t.exitCode === null));
   if (!fresh.approved && !open) throw new Error(`${fresh.name} has no ledger before approval and no open Strike Lead terminal; there is nowhere to say it`);
   if (fresh.approved) {
-    const mission = await changeMission(project.id, id, (mission) => mission);
-    const why = await syncPlan(project, mission, [`Cory to the Strike Lead: ${said}`]);
+    const why = await syncPlan(project, fresh, [`Cory to the Strike Lead: ${said}`]);
     if (why && !open) throw new Error(`the reply was not sent: ${why}, and no Strike Lead terminal is open`);
     if (why) await noteTrouble(project, id, why);
   }
@@ -1947,41 +1946,38 @@ const remembered = async (key: string, read: () => Promise<string>, keep: boolea
 /** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
 export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; word: StatusWord; questions: Question[]; feed: FeedEntry[] };
 
-/**
- * The word follows the questions (Cory's call on m1-t1): a mission with nothing open is never
- * "waiting for you", whatever escalation it once had. A stale escalation on a review mission is
- * history, not a question.
- */
-export const wordFor = (mission: Mission, questions: Question[]): StatusWord => {
-  if (questions.length) return "waiting for you";
-  const word = statusWord(mission);
-  if (word !== "waiting for you") return word;
-  return mission.status === "review" || mission.status === "closed" ? "done" : "working";
-};
-
-/** The ledger's log for the view: empty before approval or when the file cannot be read, never a throw. */
-const ledgerLog = async (project: Project, mission: Mission): Promise<string[]> => {
-  if (!mission.approved) return [];
+/** Where the ledger is once a mission is approved: the plan on the mission branch. Null before that, or when the plan names no repo. */
+export const ledgerPath = (project: Project, mission: Mission): string | null => {
+  if (!mission.approved) return null;
   try {
-    const ledger = planOnBranch(project.path, mission.plan, mission.repos);
-    await ledgerRepoFor(mission, ledger);
-    return parsePlan(await readFile(ledger, "utf8")).log;
+    return planOnBranch(project.path, mission.plan, mission.repos);
   } catch {
-    return [];
+    return null;
   }
 };
 
-/** Each task's RIO findings and diff stat, both remembered once the task has settled. */
-const statsOf = async (mission: Mission): Promise<{ findings: Record<string, string>; diffstat: Record<string, string> }> => {
+/** The ledger's log for the view: a plain read, empty before approval or when the file cannot be read, never a throw. */
+const ledgerLog = async (project: Project, mission: Mission): Promise<string[]> => {
+  const ledger = ledgerPath(project, mission);
+  if (!ledger) return [];
+  return readFile(ledger, "utf8").then((text) => parsePlan(text).log, () => []);
+};
+
+/**
+ * Each task's RIO findings and diff stat, both remembered once the task has settled. `only`
+ * narrows it to the tasks a caller will read, and `diff: false` skips git altogether: the
+ * workspace and the question poll want far less than the page, and a stat is a git spawn.
+ */
+const statsOf = async (mission: Mission, only: (task: MissionTask) => boolean = () => true, diff = true): Promise<{ findings: Record<string, string>; diffstat: Record<string, string> }> => {
   const findings: Record<string, string> = {};
   const diffstat: Record<string, string> = {};
   const settled = (task: MissionTask) => task.status === "passed" || task.status === "handed-back";
-  await Promise.all(mission.milestones.flatMap((m) => m.tasks).map(async (task) => {
+  await Promise.all(mission.milestones.flatMap((m) => m.tasks).filter(only).map(async (task) => {
     if (task.review) {
       const text = await remembered(`findings:${task.review.file}`, () => readFile(task.review!.file, "utf8").catch(() => ""), settled(task));
       if (text) findings[task.id] = text;
     }
-    if (task.branch) {
+    if (diff && task.branch) {
       const repo = mission.repos.find((r) => r.label === task.repo);
       const from = task.base ?? repo?.branch;
       if (!repo || !from) return;
@@ -1992,12 +1988,18 @@ const statsOf = async (mission: Mission): Promise<{ findings: Record<string, str
   return { findings, diffstat };
 };
 
+/** What every view derives from the record the same way: the findings and stats it asked for, the questions, the word. */
+const asked = async (mission: Mission, only?: (task: MissionTask) => boolean, diff = true): Promise<{ findings: Record<string, string>; diffstat: Record<string, string>; questions: Question[]; word: StatusWord }> => {
+  const { findings, diffstat } = await statsOf(mission, only, diff);
+  const questions = questionsOf({ ...mission, findings });
+  return { findings, diffstat, questions, word: statusWord(mission, questions) };
+};
+
 export const missionView = async (project: Project, id: string): Promise<MissionView> => {
   const mission = await missionOr404(project.id, id);
-  const { findings, diffstat } = await statsOf(mission);
+  const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
-  const questions = questionsOf({ ...mission, findings });
-  return { ...mission, findings, diffstat, walk, word: wordFor(mission, questions), questions, feed: feedOf(await ledgerLog(project, mission), mission) };
+  return { ...mission, findings, diffstat, walk, word, questions, feed: feedOf(log, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
@@ -2048,10 +2050,22 @@ const mergedStat = (mission: Mission, diffstat: Record<string, string>): string 
   return `+${plus} −${minus}`;
 };
 
+/** The tasks a question reads findings for, and the merged total reads stats for; the rest of a mission is not asked. */
+const askedAbout = (mission: Mission): ((task: MissionTask) => boolean) => {
+  const merged = new Set(mission.milestones.filter((m) => m.merged).flatMap((m) => m.tasks));
+  return (task) => task.status === "handed-back" || (task.status === "passed" && merged.has(task));
+};
+
 /** Every mission in the project as the workspace draws it, so a row can say what it asks without opening it. */
 export const workspaceMissions = async (project: Project): Promise<WorkspaceMission[]> =>
   Promise.all((await listMissions(project.id)).map(async (mission) => {
-    const { findings, diffstat } = await statsOf(mission);
-    const questions = questionsOf({ ...mission, findings });
-    return { ...mission, word: wordFor(mission, questions), questions, diffstat: mergedStat(mission, diffstat) };
+    const { diffstat, questions, word } = await asked(mission, askedAbout(mission));
+    return { ...mission, word, questions, diffstat: mergedStat(mission, diffstat) };
+  }));
+
+/** What a mission asks, and nothing else: no sweep, no git, findings only for what is handed back. The notification poll reads this. */
+export const missionQuestions = async (project: Project): Promise<Array<{ id: string; name: string; questions: Question[] }>> =>
+  Promise.all((await listMissions(project.id)).map(async (mission) => {
+    const { questions } = await asked(mission, (task) => task.status === "handed-back", false);
+    return { id: mission.id, name: mission.name, questions };
   }));
