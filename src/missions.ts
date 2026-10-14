@@ -1971,11 +1971,10 @@ const ledgerLog = async (project: Project, mission: Mission): Promise<string[]> 
   }
 };
 
-export const missionView = async (project: Project, id: string): Promise<MissionView> => {
-  const mission = await missionOr404(project.id, id);
+/** Each task's RIO findings and diff stat, both remembered once the task has settled. */
+const statsOf = async (mission: Mission): Promise<{ findings: Record<string, string>; diffstat: Record<string, string> }> => {
   const findings: Record<string, string> = {};
   const diffstat: Record<string, string> = {};
-  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const settled = (task: MissionTask) => task.status === "passed" || task.status === "handed-back";
   await Promise.all(mission.milestones.flatMap((m) => m.tasks).map(async (task) => {
     if (task.review) {
@@ -1990,6 +1989,69 @@ export const missionView = async (project: Project, id: string): Promise<Mission
       if (stat) diffstat[task.id] = stat;
     }
   }));
+  return { findings, diffstat };
+};
+
+export const missionView = async (project: Project, id: string): Promise<MissionView> => {
+  const mission = await missionOr404(project.id, id);
+  const { findings, diffstat } = await statsOf(mission);
+  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const questions = questionsOf({ ...mission, findings });
   return { ...mission, findings, diffstat, walk, word: wordFor(mission, questions), questions, feed: feedOf(await ledgerLog(project, mission), mission) };
 };
+
+/** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
+export type WorkspaceMission = Mission & { word: StatusWord; questions: Question[]; diffstat: string };
+
+/** A task's stat read the way the result page reads it: its totals line, and each file with its changed lines. */
+type ReadStat = { order: number; plus: number; minus: number; files: Array<{ path: string; changes: number | null }> };
+const readStat = (stat: string, order: number): ReadStat => {
+  const lines = stat.trim().split("\n");
+  const last = lines.at(-1) ?? "";
+  const files = lines.slice(0, -1).flatMap((line) => {
+    const m = line.match(/^\s*(.+?)\s+\|\s+(\d+|Bin)\b/);
+    // A rename is drawn `src/{old => new}/a.ts` or `old => new`; the file is where it went.
+    const path = m?.[1].replace(/\{[^{}]*? => ([^{}]*)\}/g, "$1").replace(/\/\/+/g, "/").replace(/^.* => /, "");
+    return m && path ? [{ path, changes: m[2] === "Bin" ? null : Number(m[2]) }] : [];
+  });
+  return { order, files, plus: Number(last.match(/(\d+) insertions?\(\+\)/)?.[1] ?? 0), minus: Number(last.match(/(\d+) deletions?\(-\)/)?.[1] ?? 0) };
+};
+
+/**
+ * Whether `a` is a sibling that `b` merged into its own branch: every file of `a` is in `b`'s stat
+ * with the same count of changed lines. The same test as `inside` in web/mission/result.js, so the
+ * workspace's total and the mission page's agree.
+ */
+const inside = (a: ReadStat, b: ReadStat): boolean => a.files.length > 0 && a !== b
+  && a.files.every((f) => b.files.some((g) => g.path === f.path && g.changes === f.changes))
+  && (b.files.length > a.files.length || b.order > a.order);
+
+/**
+ * `+N −M` over the passed tasks of merged milestones. A task that merged a sibling (a `needs:`)
+ * carries the sibling's lines in its own stat, so each task counts only its diff less the
+ * outermost siblings inside it, as the mission page's result does. Empty when nothing has merged
+ * or git gave no stat for any of it.
+ */
+const mergedStat = (mission: Mission, diffstat: Record<string, string>): string => {
+  const stats = mission.milestones.filter((m) => m.merged).flatMap((m) => m.tasks).filter((t) => t.status === "passed")
+    .map((t) => diffstat[t.id]).filter(Boolean).map(readStat);
+  if (!stats.length) return "";
+  let plus = 0;
+  let minus = 0;
+  for (const t of stats) {
+    const within = stats.filter((a) => inside(a, t));
+    // Only the outermost: a sibling inside another sibling is already in that one's count.
+    const direct = within.filter((a) => !within.some((b) => inside(a, b)));
+    plus += t.plus - direct.reduce((n, a) => n + a.plus, 0);
+    minus += t.minus - direct.reduce((n, a) => n + a.minus, 0);
+  }
+  return `+${plus} −${minus}`;
+};
+
+/** Every mission in the project as the workspace draws it, so a row can say what it asks without opening it. */
+export const workspaceMissions = async (project: Project): Promise<WorkspaceMission[]> =>
+  Promise.all((await listMissions(project.id)).map(async (mission) => {
+    const { findings, diffstat } = await statsOf(mission);
+    const questions = questionsOf({ ...mission, findings });
+    return { ...mission, word: wordFor(mission, questions), questions, diffstat: mergedStat(mission, diffstat) };
+  }));
