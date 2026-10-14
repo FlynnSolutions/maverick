@@ -107,22 +107,24 @@ const listLine = (line: string): string | undefined => {
   const m = line.match(/^(\s*)(?:[-*+]|\d+[.)])(?:\s+|(?=\**[A-Z]))(.*)$/);
   if (!m) return undefined;
   const text = m[2].replace(/\*\*/g, "").trim();
-  return m[1] && !/^BLOCKER:/i.test(text) ? undefined : text;
+  return m[1] && !/^BLOCKER(?:\([^)]*\))?:/i.test(text) ? undefined : text;
 };
 
 export interface Findings { blockers: string[]; notes: string[]; unsorted: string[] }
 
 /**
  * What a RIO wrote, sorted by the word each line starts with: `BLOCKER:`, `NOTE:`,
- * `UNVERIFIED:` (carried with the notes, so it reaches the page), or none. What an unsorted
- * line means is the verdict's business (`settleReview`); this only reads.
+ * `UNVERIFIED:` (carried with the notes, so it reaches the page), or none. The kind may carry
+ * `(area, severity)` before its colon; that is `src/findings.ts`'s to read, so the whole text
+ * after the colon is kept. What an unsorted line means is the verdict's business
+ * (`settleReview`); this only reads.
  */
 export const findingsOf = (findings: string): Findings => {
   const out: Findings = { blockers: [], notes: [], unsorted: [] };
   for (const raw of findings.split(/\r?\n/)) {
     const line = listLine(raw);
     if (line === undefined || /^verdict:/i.test(line)) continue;
-    const sorted = line.match(/^(BLOCKER|NOTE|UNVERIFIED):\s*(.*)$/i);
+    const sorted = line.match(/^(BLOCKER|NOTE|UNVERIFIED)(?:\([^)]*\))?:\s*(.*)$/i);
     const kind = sorted?.[1].toUpperCase();
     if (kind === "BLOCKER") out.blockers.push(sorted![2]);
     else if (kind === "NOTE") out.notes.push(sorted![2]);

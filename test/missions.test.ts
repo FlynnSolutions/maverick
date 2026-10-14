@@ -351,6 +351,7 @@ test("a RIO's verdict is one of four, and its findings sort into blockers and no
     assert.deepEqual(findingsOf(text), { blockers: [], notes: [], unsorted: [] }, text);
   }
   assert.deepEqual(findingsOf("verdict: mixed\n- NOTE: parent\n  - evidence: line 12\n+ BLOCKER: plus bullet\n-NOTE: no space\n  - BLOCKER: and the secret is committed"), { blockers: ["plus bullet", "and the secret is committed"], notes: ["parent", "no space"], unsorted: [] }, "indented evidence belongs to its finding, but an indented blocker is still a blocker");
+  assert.deepEqual(findingsOf("verdict: mixed\n- BLOCKER(src/worker, fix): a failed job is retried forever. line 42\n- NOTE(web/signin, ship): focus is lost. The Wingman called it out of scope.\n- **UNVERIFIED(deploy, check):** the staging deploy\n  - BLOCKER(src/auth, fix): the secret is committed"), { blockers: ["a failed job is retried forever. line 42", "the secret is committed"], notes: ["focus is lost. The Wingman called it out of scope.", "unverified: the staging deploy"], unsorted: [] }, "the (area, severity) shape sorts by its kind and keeps the whole text after the colon");
 });
 
 test("the merge-with-notes rule: notes carry, a blocker stops, and retries come first", () => {
