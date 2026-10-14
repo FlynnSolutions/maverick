@@ -70,8 +70,9 @@ _done when: with the server running, the workspace (`/?view=workspace`) renders 
 
 - [~] **Questions on the workspace feed**
   - touches: web/inbox.js, src/missions.ts, server.ts
-  - status: flying
+  - status: reviewing
   - attempt: 2
+  - commit: 57483d5
   Two halves. Server: `GET /api/workspace` (read `server.ts` and `src/missions.ts` for what it returns today) carries, for each mission, `word` and `questions` from `src/questions.ts`, and a `diffstat` summary string (`+N −M` over its merged tasks, computed the way `missionView` computes per-task stats, cached the same way) so a row can show it without opening the mission. Browser: write `web/inbox.js` exporting `inboxRows(mission, ctx)` per the contract: one strip per open question (`.strip.full`, the lock lamp, the question title, its body on the `strip-say` line, and its answers as buttons in the acts column; the primary answer first; a note field appears inline when an answer wants one), posting to `/api/missions/<id>/<path>?project=` through `ctx.post`, then `ctx.refresh()`. The strip grid in `web/style.css` is the one to use; add nothing to it. No prompt.
 
 - [ ] **The four groups**
@@ -165,3 +166,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 22:56 m3-t1 Questions on the workspace feed: pending to flying
 - 2026-10-13 23:11 m3-t1 Questions on the workspace feed: flying to reviewing
 - 2026-10-13 23:19 m3-t1 Questions on the workspace feed: reviewing to flying
+- 2026-10-13 23:24 m3-t1 Questions on the workspace feed: flying to reviewing
