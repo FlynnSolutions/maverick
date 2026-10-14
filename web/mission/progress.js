@@ -15,6 +15,14 @@ const anchorOf = (q) => `q-${q.id}`;
 
 const tasksOf = (view) => (view.milestones ?? []).flatMap((m) => m.tasks ?? []);
 
+/**
+ * Only the answers the server will take (Cory's call on m1-t1): never `release` on a landing hold,
+ * since landing again is its release, and while the mission is paused only the pause itself offers
+ * `resume`, so the page does not show the same button once per question.
+ */
+const answersFor = (q, paused) => q.answers.filter((a) =>
+  !(q.kind === "landing" && a.path.endsWith("/release")) && !(paused && q.id !== "paused" && a.path === "resume"));
+
 export const mount = (host, view, ctx) => {
   const { el, text } = ctx;
   let current = view;
@@ -64,12 +72,17 @@ export const mount = (host, view, ctx) => {
     }
   };
 
-  /** The answers as buttons and the note beside them, posted through the shell's `act`. */
-  const controls = (q) => {
-    const note = el("input", { type: "text", placeholder: "why, in a line; kept in the ledger", "aria-label": `Note for: ${q.title}` });
+  /**
+   * The answers as buttons, posted through the shell's `act`, and a note field only when an answer
+   * sends one. `kept` is a note carried over from the controls these replace.
+   */
+  const controls = (q, answers, kept) => {
+    if (!answers.length) return [el("div", { class: "prog-note" }, el("span", { class: "prog-hint" }, "resume the mission first"))];
+    const wanted = answers.some((a) => a.body?.length);
+    const note = wanted ? el("input", { type: "text", value: kept, placeholder: "why, in a line; kept in the ledger", "aria-label": `Note for: ${q.title}` }) : null;
     const hint = el("span", { class: "prog-hint", role: "status" });
-    const buttons = q.answers.map((a) => ctx.btn(a.label, async () => {
-      const said = note.value.trim();
+    const buttons = answers.map((a) => ctx.btn(a.label, async () => {
+      const said = note?.value.trim() ?? "";
       const keys = a.body ?? [];
       if (keys.length && !said) {
         hint.textContent = `${a.label} needs a line of why first`;
@@ -77,7 +90,7 @@ export const mount = (host, view, ctx) => {
         note.focus();
         return;
       }
-      note.removeAttribute("aria-invalid");
+      note?.removeAttribute("aria-invalid");
       hint.textContent = "";
       for (const b of buttons) b.disabled = true;
       try {
@@ -86,15 +99,19 @@ export const mount = (host, view, ctx) => {
         for (const b of buttons) b.disabled = false;
       }
     }, a.primary ? "primary" : ""));
-    return [el("div", { class: "prog-opts" }, ...buttons), el("div", { class: "prog-note" }, note, hint)];
+    return wanted ? [el("div", { class: "prog-opts" }, ...buttons), el("div", { class: "prog-note" }, note, hint)]
+      : [el("div", { class: "prog-opts" }, ...buttons)];
   };
 
-  /** The feed row that asks `q`: the latest question entry for its task, else for its milestone. */
+  /**
+   * The feed row that asks `q`: the latest question entry for its task, else the `held:` line for its
+   * milestone (`milestone N (since ...)`, as the ledger writes it), never another task's row.
+   */
   const askedIn = (q, claimed) => {
     for (let i = rows.length - 1; i >= 0; i -= 1) {
       const { li, entry } = rows[i];
       if (entry.kind !== "question" || claimed.has(li)) continue;
-      if (q.taskId ? entry.taskId === q.taskId : q.milestone !== undefined && entry.milestone === q.milestone) return li;
+      if (q.taskId ? entry.taskId === q.taskId : q.milestone !== undefined && entry.text.startsWith(`milestone ${q.milestone} (since `)) return li;
     }
     return null;
   };
@@ -114,16 +131,16 @@ export const mount = (host, view, ctx) => {
     on.li.querySelector(".lamp").replaceWith(lampFor(ctx, on.entry, false));
   };
 
-  const open = (q, li) => {
+  const open = (q, li, answers, kept = "") => {
     const entry = rows.find((r) => r.li === li)?.entry;
     const target = li ?? looseRow(q);
-    const added = controls(q);
+    const added = controls(q, answers, kept);
     target.append(...added);
     target.classList.add("open");
     target.id = anchorOf(q);
     if (li) li.querySelector(".lamp").replaceWith(lampFor(ctx, entry, true));
     else loose.append(target);
-    asked.set(q.id, { li: target, entry, added, loose: !li });
+    asked.set(q.id, { li: target, entry, added, loose: !li, offered: answers.map((a) => a.path).join(" ") });
   };
 
   /** Task questions claim their rows first, so a hold on the same milestone cannot take a task's row. */
@@ -131,16 +148,20 @@ export const mount = (host, view, ctx) => {
     const questions = current.questions ?? [];
     const ids = new Set(questions.map((q) => q.id));
     for (const id of [...asked.keys()]) if (!ids.has(id)) close(id);
+    const paused = questions.some((q) => q.id === "paused");
     const claimed = new Set();
     const ordered = [...questions.filter((q) => q.taskId), ...questions.filter((q) => !q.taskId)];
     for (const q of ordered) {
       const li = askedIn(q, claimed);
       if (li) claimed.add(li);
+      const answers = answersFor(q, paused);
       const on = asked.get(q.id);
-      // A question asked again (a task handed back a second time) moves to the row that asked it last.
-      if (on && on.li === (li ?? on.li) && on.loose === !li) continue;
+      // A question asked again (a task handed back a second time) moves to the row that asked it last,
+      // and one whose answers changed (the mission paused or resumed) gets new buttons, keeping its note.
+      if (on && on.li === (li ?? on.li) && on.loose === !li && on.offered === answers.map((a) => a.path).join(" ")) continue;
+      const kept = on?.li.querySelector(".prog-note input")?.value ?? "";
       if (on) close(q.id);
-      open(q, li);
+      open(q, li, answers, kept);
     }
     loose.hidden = !loose.children.length;
     pins.replaceChildren(...questions.map((q) => el("p", { class: "prog-pin" }, ctx.lamp("blocked", "work"),
@@ -156,7 +177,7 @@ export const mount = (host, view, ctx) => {
     scrolledTo = id;
     requestAnimationFrame(() => {
       target.scrollIntoView({ block: "center" });
-      target.querySelector("button")?.focus({ preventScroll: true });
+      target.querySelector("button.primary, button")?.focus({ preventScroll: true });
     });
   };
 
@@ -200,13 +221,17 @@ export const mount = (host, view, ctx) => {
 
   host.append(el("h2", { class: "prog-head" }, "Progress", count), pins, list, loose, live, reply);
   // The clock stops once the section has been on the page and left it.
+  const onHash = () => { scrolledTo = ""; toHash(); };
   let attached = false;
   const ticker = setInterval(() => {
     if (host.isConnected) attached = true;
-    else if (attached) return clearInterval(ticker);
+    else if (attached) {
+      window.removeEventListener("hashchange", onHash);
+      return clearInterval(ticker);
+    }
     tick();
   }, 1000);
-  window.addEventListener("hashchange", () => { scrolledTo = ""; toHash(); });
+  window.addEventListener("hashchange", onHash);
   update(view);
   return { update };
 };
