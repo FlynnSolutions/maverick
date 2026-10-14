@@ -1,0 +1,519 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mission page and inbox: milestone 2 walkthrough</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+    --radius:10px; --maxw:1000px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+      --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+      --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+      --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+    --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+    --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+    --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em;
+    background:var(--line2);padding:.08em .38em;border-radius:5px;border:1px solid var(--line);
+    word-break:break-word;}
+  a{color:var(--accent)}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 120px}
+  header.mast{max-width:var(--maxw);margin:0 auto;padding:36px 20px 20px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:30px;line-height:1.15;margin:.28em 0 .1em;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:15px;max-width:72ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .progwrap{position:sticky;top:0;z-index:20;background:var(--bg);
+    border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:6px}
+  .progrow{max-width:var(--maxw);margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:14px}
+  .bar{flex:1;height:8px;background:var(--line2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s ease}
+  .pct{font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;white-space:nowrap}
+  .tools{display:flex;gap:8px}
+  button.btn{font:inherit;font-size:12.5px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+  button.btn:hover{color:var(--ink);border-color:var(--accent)}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:var(--radius);padding:16px 18px;margin:18px 0}
+  .callout h3{margin:0 0 8px;font-size:15px}
+  .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px;margin-top:4px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px 16px;margin:18px 0 6px}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:28px}
+  @media(max-width:640px){nav.toc ol{columns:1}}
+  nav.toc li{margin:4px 0;break-inside:avoid}
+  nav.toc a{text-decoration:none;color:var(--ink)}
+  nav.toc a:hover{color:var(--accent)}
+  nav.toc .c{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px}
+  section.pillar{margin:30px 0 0}
+  .phead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:10px 0 8px;border-bottom:2px solid var(--line);position:sticky;top:44px;background:var(--bg);z-index:5}
+  .phead h2{margin:0;font-size:21px;letter-spacing:-.01em}
+  .phead .pc{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .tc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    margin:12px 0;overflow:hidden}
+  .tc-head{display:flex;gap:11px;align-items:flex-start;padding:13px 40px 13px 15px;cursor:pointer;user-select:none;position:relative}
+  .tc-head:after{content:"\25BE";position:absolute;right:15px;top:13px;color:var(--faint);transition:transform .15s}
+  .tc-head:hover:after{color:var(--accent)}
+  .tc.collapsed .tc-head:after{transform:rotate(-90deg)}
+  .tc-title{font-weight:600;font-size:15px;flex:1}
+  .caseid{display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    font-weight:700;color:var(--muted);background:var(--line2);border:1px solid var(--line);
+    border-radius:5px;padding:0 6px;margin-right:8px;vertical-align:1px}
+  .tc-actions{display:inline-flex;gap:8px;align-items:center;margin-left:auto;flex:none}
+  .verdict{display:inline-flex;gap:3px}
+  .vbtn{font:inherit;font-size:13px;font-weight:800;width:27px;height:24px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--faint);cursor:pointer;line-height:1;padding:0}
+  .vbtn:hover{border-color:var(--accent);color:var(--ink)}
+  .vbtn.v-pass.on{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+  .vbtn.v-partial.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+  .vbtn.v-fail.on{background:#fdecec;border-color:#e0554c;color:#b3261e}
+  :root[data-theme="dark"] .vbtn.v-fail.on{background:#2c1514;color:#f0918a;border-color:#7a3b36}
+  .vbtn.v-blocked.on{background:var(--line2);border-color:var(--faint);color:var(--ink)}
+  .vbtn.v-defer.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .notebtn{font:inherit;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;white-space:nowrap}
+  .notebtn:hover{border-color:var(--accent);color:var(--accent)}
+  .notebtn.has{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .notebtn.sendbtn.sent{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+  .vchip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--setup);
+    background:var(--setup-soft);border:1px solid var(--setup);border-radius:5px;padding:0 5px;margin-left:7px;vertical-align:1px}
+  .notearea{width:100%;font:inherit;font-size:13px;border:1px solid var(--warn);border-radius:7px;padding:7px 9px;margin:0 0 11px;background:var(--warn-soft);color:var(--ink);resize:vertical;box-sizing:border-box}
+  .tc[data-v="pass"]{border-left:3px solid var(--good)}
+  .tc[data-v="partial"]{border-left:3px solid var(--warn)}
+  .tc[data-v="fail"]{border-left:3px solid #d3453b}
+  .tc[data-v="blocked"]{border-left:3px solid var(--faint)}
+  .tc[data-v="defer"]{border-left:3px solid var(--accent)}
+  #breakdown{display:inline-flex;gap:9px;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  #breakdown .p{color:var(--good)} #breakdown .pa{color:var(--warn)} #breakdown .f{color:#d3453b} #breakdown .bl{color:var(--muted)}
+  #barFill{width:100%;height:100%;background:transparent;display:flex}
+  .bar .seg{height:100%;display:block}
+  .bar .seg-pass{background:var(--good)} .bar .seg-partial{background:var(--warn)}
+  .bar .seg-blocked{background:var(--faint)} .bar .seg-fail{background:#d3453b}
+  .progrow.filters{margin-top:9px;gap:8px;flex-wrap:wrap}
+  .flabel{font-size:12.5px;color:var(--muted)} .flabel b{color:var(--ink);font-weight:600}
+  .fchip{font:inherit;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 13px;cursor:pointer;color:var(--muted)}
+  .fchip:hover{border-color:var(--accent)}
+  .fchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .cpanel{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}
+  .cbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(760px,100%);max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+  .chead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+  .chead .csub{color:var(--muted);font-size:12.5px}
+  #compileText{flex:1;min-height:340px;border:0;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);color:var(--ink);resize:none;outline:none}
+  .tc.done .tc-title{color:var(--done);text-decoration:line-through;text-decoration-thickness:1px}
+  .tc-body{padding:0 15px 14px 43px;font-size:14px}
+  .tc.collapsed .tc-body{display:none}
+  .why{color:var(--muted);margin:0 0 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;margin-right:7px;vertical-align:1px}
+  .tag.setup{background:var(--setup-soft);color:var(--setup)}
+  .tag.ask{background:var(--warn-soft);color:var(--warn)}
+  .setup-line{background:var(--setup-soft);border:1px solid var(--line);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .ask-line{background:var(--warn-soft);border:1px solid var(--warn);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .auto-note{background:var(--accent-soft);border:1px solid var(--line);border-radius:7px;
+    padding:6px 11px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+  .auto-note b{color:var(--ink)}
+  .hist{background:var(--line2);border:1px solid var(--line);border-left:3px solid var(--faint);
+    border-radius:7px;padding:7px 11px;margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .hist .hr{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:3px}
+  .hist p{margin:0 0 6px}
+  .hist p:last-child{margin-bottom:0}
+  .notearea::placeholder{color:var(--faint)}
+  .fix-note{background:var(--good-soft);border:1px solid var(--good);border-radius:7px;
+    padding:7px 11px;margin:0 0 11px;font-size:12.5px;color:var(--ink)}
+  .fix-note b{color:var(--good)}
+  .fix-note.pending{background:var(--warn-soft);border-color:var(--warn)}
+  .fix-note.pending b{color:var(--warn)}
+  .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:10px 0 4px}
+  ol.steps{margin:0 0 4px;padding-left:20px} ol.steps li{margin:4px 0}
+  ul.exp{margin:0;padding-left:0;list-style:none}
+  ul.exp li{margin:5px 0;padding-left:22px;position:relative}
+  ul.exp li:before{content:"\2713";position:absolute;left:2px;color:var(--good);font-weight:800}
+  .exp-wrap{background:var(--good-soft);border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin-top:4px}
+  .guide{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--line2);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 12px;font-size:13px}
+  .guide .who b{color:var(--accent)}
+  .guide .sep{color:var(--muted)}
+  .glink{display:inline-flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);
+    border-radius:6px;padding:3px 10px;color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px}
+  .glink:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .glink:before{content:"\2197";font-size:11px}
+  .pswitch{font-weight:650;text-decoration:none;border-bottom:1px dashed currentColor}
+  .pswitch:hover{opacity:.75}
+  @media(max-width:640px){
+    .progrow{flex-wrap:wrap} .tools{flex-wrap:wrap}
+    .tc-head{flex-wrap:wrap} .tc-actions{flex-wrap:wrap;margin-left:0}
+    .tc-body{padding-left:15px}
+  }
+</style>
+
+
+<header class="mast">
+  <div class="eyebrow">Mission page and inbox · milestone 2</div>
+  <h1>The mission page: four anchors</h1>
+  <p class="sub">The mission page rebuilt as a shell with three modules: a rail with one status word and four anchors (The ask, Plan, Progress, Result), the plan as steps with each task's intent, the ledger as a live feed with a reply box, and the result as a diff with what to read before you merge.</p>
+  <div class="meta"><span><b>Branch</b> mission/mission-page-and-inbox</span><span><b>Tasks</b> the shell, the plan module, the progress module, the result module</span><span><b>Cases</b> 15</span></div>
+</header>
+
+<div class="progwrap">
+  <div class="progrow">
+    <span class="pct" id="pctText">0 / 0</span>
+    <span id="breakdown"></span>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="tools">
+      <button class="btn" id="compileBtn" style="font-weight:700;color:var(--accent);border-color:var(--accent)">&#128203; Compile findings</button>
+      <button class="btn" id="themeBtn">Theme</button>
+      <button class="btn" id="expandBtn">Collapse all</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div class="progrow filters">
+    <span class="flabel">Show:</span>
+    <button class="fchip on" data-f="all">All</button>
+    <button class="fchip" data-f="work">Needs work</button>
+    <button class="fchip" data-f="notes">Has notes</button>
+    <button class="fchip" data-f="untested">Untested</button>
+  </div>
+</div>
+<div id="compilePanel" class="cpanel" style="display:none">
+  <div class="cbox">
+    <div class="chead"><b>Findings (markdown)</b><span class="csub">paste this back to iterate</span><span style="flex:1"></span>
+      <button class="btn" id="copyBtn">Copy</button><button class="btn" id="closeBtn">Close</button></div>
+    <textarea id="compileText" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="callout">
+    <h3>Before you start: put this branch on 8767</h3>
+    <p>When this was written, both servers on this machine ran the main checkout (<code>/Users/coryflynn/Projects/maverick</code>, on main), which has none of this milestone. Stop the one on 8767 and start it again from the integration worktree:</p>
+    <p><code>cd /Users/coryflynn/Projects/maverick/.claude/worktrees/mission-page-and-inbox-integration-root &amp;&amp; SESSION_CONSOLE_PORT=8767 node server.ts</code></p>
+    <p>Then open <a href="http://localhost:8767/mission.html?project=maverick&amp;mission=mission-page-and-inbox" target="_blank">localhost:8767/mission.html?project=maverick&amp;mission=mission-page-and-inbox</a>. It reads your real home, as today's 8767 already does, so this is the live mission: milestone 3 is flying (Questions on the workspace feed) while you walk. The cases that write (pause, reply) say so and are safe to answer with "not yet" or a harmless line.</p>
+  </div>
+
+  <div class="callout">
+    <h3>Known going in</h3>
+    <p>The RIOs passed all four tasks and left these open. They are not cases; note them if you hit them.</p>
+    <dl class="kv">
+      <dt>stream</dt><dd>If the stream route answers an error (not a dropped connection) the page stops updating and says nothing. A restart (case sh5) is the path that does fall back.</dd>
+      <dt>trouble</dt><dd>A long trouble line under the word pushes pause and stop below the fold; its "try landing it again" is offered even when paused.</dd>
+      <dt>sessions</dt><dd>A failed attach clicked twice stacks two "could not attach" wells; a walkthrough being written has no way to watch its session.</dd>
+      <dt>copy</dt><dd>One em-dash survives in the pre-approval plan heading, between <code>Milestone n</code> and its title; it only shows before a plan is approved.</dd>
+      <dt>not walked</dt><dd>The second gate (close and land) only shows at <code>review</code>; this mission is flying, so it is not a case here.</dd>
+    </dl>
+  </div>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#shell">The shell: one word, four anchors</a> <span class="c" id="toc-shell"></span></li>
+      <li><a href="#planp">The plan module</a> <span class="c" id="toc-planp"></span></li>
+      <li><a href="#prog">The progress module</a> <span class="c" id="toc-prog"></span></li>
+      <li><a href="#res">The result module</a> <span class="c" id="toc-res"></span></li>
+      <li><a href="#done">The milestone's done check</a> <span class="c" id="toc-done"></span></li>
+    </ol>
+  </nav>
+
+  <section class="pillar" id="shell" data-key="shell">
+    <div class="phead"><h2>The shell: one word, four anchors</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="sh1"><div class="tc-head"><span class="tc-title">The page opens on one word and four anchors</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Open the mission page on 8767 (link above).</li><li>Read the left rail top to bottom, then the first section.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>At the top of the rail, one status word in a chip with a lamp: <code>working</code> while milestone 3 flies (or <code>waiting for you · n</code> if something is asking).</li>
+        <li>Four anchors: The ask, Plan (<code>milestone 3 of 4</code>), Progress (<code>live</code>, or <code>n questions</code> in caution), Result (<code>2 of 4 merged</code> or however many have landed).</li>
+        <li>The ask shows the mission's name, its brief as one sentence, and <code>opened … · approved …</code> times.</li>
+        <li>No browser dialog, and nowhere on the page the words <code>null</code> or <code>undefined</code>.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="sh2"><div class="tc-head"><span class="tc-title">Anchors jump, and the one in view is lit</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Click Progress in the rail.</li><li>Scroll slowly back up to the top, watching the rail.</li><li>Change the URL to end in <code>#result</code> and reload.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Clicking jumps to the Progress section and marks that anchor on.</li>
+        <li>While scrolling, the mark moves to whichever section is at the top: Plan, then The ask.</li>
+        <li>The reload lands on Result, not at the top of the page, once the sections have drawn.</li>
+        <li>The rail stays put (sticky) the whole time.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="sh3"><div class="tc-head"><span class="tc-title">Pause and stop ask in the page, and "not yet" backs out</span></div><div class="tc-body">
+      <p class="ask-line"><span class="tag ask">writes</span>Pressing "pause it" or "yes, stop it" acts on the live mission. Answer this case with "not yet" unless you mean it.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>Under the anchors, press "pause". Type half a sentence in the note and leave it for a minute while milestone 3 moves.</li><li>Press "not yet".</li><li>Press "stop this mission", read it, press "not yet".</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Pause opens a line ("Nothing new starts; what is running finishes…"), a note field with the cursor in it, and "pause it" / "not yet". No browser prompt.</li>
+        <li>The half-typed note is still there, still focused, after events arrive.</li>
+        <li>"not yet" puts back pause and stop.</li>
+        <li>Stop shows a warning naming how many sessions it stops and that branches and worktrees are left as they are; focus is on "not yet", not on "yes, stop it". No browser confirm.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="sh4"><div class="tc-head"><span class="tc-title">The page keeps up without a reload</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Leave the page open on Plan while milestone 3 works (the Wingman on Questions on the workspace feed finishing, its RIO starting, a verdict).</li><li>Scroll down to the bottom of Progress after a change.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The task's word changes in its row (working, built, in review, done) within seconds of the ledger line, with no reload and no flash or scroll jump.</li>
+        <li>Progress has the new entry at the bottom, and its count goes up.</li>
+        <li>The rail's word and counts follow.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="sh5"><div class="tc-head"><span class="tc-title">A server restart: the page falls back, then comes back</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>With the page open, stop the 8767 server (Ctrl-C).</li><li>Wait 15 seconds, read the bar's status line.</li><li>Start it again with the same command and wait about 10 seconds.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>After the stop: <code>the live stream dropped; checking every 8 s instead</code>.</li>
+        <li>After the restart: <code>the live stream is back</code>, and later changes reach the page again (sh4 holds).</li>
+        <li>The sections are intact throughout; nothing empties or redraws from scratch.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="sh6"><div class="tc-head"><span class="tc-title">Narrow window</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Narrow the browser window to phone width (or use the responsive view), and scroll the whole page.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Rail and content still readable; no sideways scroll of the page; task rows and feed lines wrap rather than overflow.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="planp" data-key="planp">
+    <div class="phead"><h2>The plan module</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="pl1"><div class="tc-head"><span class="tc-title">Milestones as steps, tasks with their intent</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Go to Plan and read it without clicking.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Heading counts: <code>4 milestones · 12 tasks · approved …</code>.</li>
+        <li>One step per milestone with a lamp, <code>Milestone n</code> and its title, and a word on the right: merged ones <code>done &lt;time&gt;</code> and closed; milestone 3 <code>working since &lt;time&gt;</code> and open; milestone 4 <code>not started</code>.</li>
+        <li>Under an open step, the done-when line as prose, then one row per task: lamp, title, its intent as a second line, the word with <code>· attempt n</code>.</li>
+        <li>A pending task whose needs have not passed says <code>after &lt;that task's title&gt;</code> (milestone 3's second task, after Questions on the workspace feed).</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="pl2"><div class="tc-head"><span class="tc-title">A session opens under its row and stays open</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>On a flying or in-review task in milestone 3, click "open the session".</li><li>Click it again.</li><li>Wait for the next event (a feed entry), then press "stop watching".</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>A live terminal of that task's Wingman (or its RIO while in review) appears under the row, headed <code>session &lt;id&gt;</code>.</li>
+        <li>The second click opens nothing new; the status line says the session is already open on this page.</li>
+        <li>The terminal survives the event; "stop watching" removes it.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="pl3"><div class="tc-head"><span class="tc-title">This walkthrough, hosted under its milestone</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>In Plan, open the Milestone 2 step (it is closed because it is done).</li><li>Answer a case in the hosted copy of this document, then wait 5 seconds.</li><li>Open Milestone 1's step.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Under the tasks, a Walkthrough panel framing this document with <code>n of 15 cases answered</code> and one row per pillar.</li>
+        <li>The count moves after you answer, and <code>last saved</code> appears after a reload.</li>
+        <li>If milestone 1 also has a walkthrough panel, opening it closes milestone 2's step (one panel at a time).</li>
+        <li>A "waive it" field is there for a milestone not yet walked, and refuses an empty reason by marking the field, not with a dialog.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="prog" data-key="prog">
+    <div class="phead"><h2>The progress module</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="pg1"><div class="tc-head"><span class="tc-title">The feed reads as the ledger, oldest first, by milestone</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Go to Progress and scroll its feed top to bottom.</li><li>Watch the line under the feed for a few seconds.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Heading <code>n entries · live</code>.</li>
+        <li>Group headings where the milestone changes (<code>milestone 1, The record speaks the page's language</code>, and so on).</li>
+        <li>Each entry: time, lamp, who in bold (Maverick, RIO, Wingman, you), the text, and a mono line naming the task and its id where there is one.</li>
+        <li>Your earlier decisions (the m1-t1 acceptance) read as yours; a RIO verdict reads as the RIO's.</li>
+        <li>Under the feed, <code>swept n s ago · the next entry lands here</code>, counting up and resetting on an event.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="pg2"><div class="tc-head"><span class="tc-title">Reply to the Strike Lead</span></div><div class="tc-body">
+      <p class="ask-line"><span class="tag ask">writes</span>This commits a line to the mission's ledger and, if a Strike Lead session is open, types it there. Send something harmless.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>Press "send" with the box empty.</li><li>Type <code>walkthrough check for milestone 2, nothing to do</code> and press Enter.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Empty: nothing is sent; the cursor goes to the box.</li>
+        <li>Sent: the box clears, and the line beside it says <code>the Strike Lead has it</code> or <code>kept in the ledger; no Strike Lead session is open</code>, whichever is true.</li>
+        <li>Within seconds a new entry from you appears at the bottom of the feed carrying the text.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="pg3"><div class="tc-head"><span class="tc-title">A question is pinned, and answered where it was asked</span></div><div class="tc-body">
+      <p class="setup-line"><span class="tag setup">when it happens</span>Needs an open question: a task handed back or a milestone held. If none comes up during the walk, defer (»).</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>When the word reads <code>waiting for you</code>, go to Progress and click "answer below" on the pinned line.</li><li>Press an answer that needs a reason with the note empty.</li><li>Look at the task's row in Plan.</li><li>Answer it for real, with a line of why.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The pin scrolls to the feed row that asked, ringed in caution, with the answer buttons and a note field. No answer the server would refuse (no "release" on a landing hold; no duplicate resume while paused).</li>
+        <li>The empty note is refused in place: <code>&lt;answer&gt; needs a line of why first</code>, focus in the field.</li>
+        <li>The handed-back row in Plan carries the same answers inline.</li>
+        <li>After answering: the status line says what you did, the buttons leave the row, the pin goes, and the word moves off <code>waiting for you</code>.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="res" data-key="res">
+    <div class="phead"><h2>The result module</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="rs1"><div class="tc-head"><span class="tc-title">What merged, as a diff you can believe</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Go to Result and read the summary line and the list under it.</li><li>Pick one task and compare with its stat: <code>git -C /Users/coryflynn/Projects/maverick diff --stat main...mission/mission-page-and-inbox-m2-t4</code> (or that task's branch).</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Heading <code>Result · so far</code>; summary <code>+N −M · F files · T tasks merged</code> and <code>on mission/mission-page-and-inbox</code>.</li>
+        <li>Grouped under <code>Milestone 1 · …</code> and <code>Milestone 2 · …</code>, each task with its files and <code>+a −b</code>; each file with its line count.</li>
+        <li>The task you checked matches git (ledger lines aside). A task that merged a sibling into itself says <code>and n files merged in from &lt;sibling&gt;, counted there</code> rather than counting them twice.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="rs2"><div class="tc-head"><span class="tc-title">To read before you merge: the unverified first</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Read the "To read before you merge" list.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Heading count <code>n unverified · m in all</code>.</li>
+        <li>The lines marked <code>unverified</code> come first (for example the shell's "the done criterion on Cory's live server at 8767"), then the rest marked <code>carried</code>.</li>
+        <li>Each line ends with the title of the task it came from.</li>
+        <li>The RIO findings listed in "Known going in" above are all there, so nothing the RIOs left is only in the ledger.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="done" data-key="done">
+    <div class="phead"><h2>The milestone's done check</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="dc1"><div class="tc-head"><span class="tc-title">The done-when, run as written</span></div><div class="tc-body">
+      <div class="lbl">Setup</div><p class="setup-line">Save this as <code>/tmp/check.js</code> (it is not in the repo):</p>
+<pre class="rs-proof" style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px">(() =&gt; {
+  const q = (s) =&gt; [...document.querySelectorAll(s)];
+  const anchors = q("#rail a[href^='#']").map((a) =&gt; a.hash);
+  const word = document.querySelector("#word")?.textContent.trim() ?? "";
+  const steps = q("#plan details.step").map((d) =&gt; ({
+    milestone: d.querySelector("summary h3")?.textContent.trim(),
+    tasks: d.querySelectorAll("li[data-task]").length,
+    intents: [...d.querySelectorAll("li[data-task] .i")].filter((i) =&gt; i.textContent.trim()).length,
+  }));
+  const feed = q("#progress .prog-feed li.prog-entry").length;
+  const failed = q("section .mv-empty").map((p) =&gt; p.textContent).filter((t) =&gt; /did not load/.test(t));
+  return JSON.stringify({ anchors: anchors.length, list: anchors, word, steps, feed, failed }, null, 1);
+})()</pre>
+      <div class="lbl">Steps</div><ol class="steps">
+        <li>In the integration worktree: <code>node tools/cdp.mjs "http://localhost:8767/mission.html?project=maverick&amp;mission=mission-page-and-inbox" --eval /tmp/check.js --wait 7000</code></li>
+        <li><code>grep -rnE 'window\.(prompt|confirm)' web/mission*</code></li>
+        <li><code>npm run lint</code></li>
+      </ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>anchors: 4</code> (<code>#ask #plan #progress #result</code>), a non-empty <code>word</code>, four steps whose <code>intents</code> equal their <code>tasks</code> (3, 4, 2, 3), <code>feed</code> above zero, <code>failed: []</code>.</li>
+        <li>The grep prints nothing (exit 1).</li>
+        <li>Lint exits 0. (It is <code>node --check</code> only: a syntax pass.)</li>
+      </ul></div></div></div>
+  </section>
+
+</div>
+<script>
+(function(){
+  var KEY="maverick-mission-page-and-inbox-m2-walkthrough";
+  var VERDS=[["pass","Pass","✓"],["partial","Partial","~"],["fail","Fail","✗"],["blocked","Blocked","⛔"],["defer","Defer","»"]];
+  var state={};
+  try{var sv=JSON.parse(localStorage.getItem(KEY)||"null"); if(sv&&typeof sv==="object")state=sv;}catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  function get(id){var e=state[id]||{};return{v:e.v||"",n:e.n||""};}
+  function put(id,e){if(!e.v&&!(e.n&&e.n.trim()))delete state[id];else state[id]=e;save();}
+  function setV(id,v){var e=get(id);put(id,{v:(e.v===v?"":v),n:e.n});paint(id);render();}
+  function setN(id,n){var e=get(id);put(id,{v:e.v,n:n});paintNote(id);render();}
+  [].forEach.call(document.querySelectorAll('.tc'),function(tc){
+    var id=tc.dataset.id, head=tc.querySelector('.tc-head'), title=tc.querySelector('.tc-title');
+    if(title){var s=document.createElement('span');s.className='caseid';s.textContent=id;title.insertBefore(s,title.firstChild);}
+    var acts=document.createElement('div'); acts.className='tc-actions';
+    var vc=document.createElement('div'); vc.className='verdict';
+    VERDS.forEach(function(vd){
+      var b=document.createElement('button'); b.type='button'; b.className='vbtn v-'+vd[0]; b.dataset.v=vd[0];
+      b.title=vd[1]; b.textContent=vd[2];
+      b.addEventListener('click',function(e){e.stopPropagation();setV(id,vd[0]);});
+      vc.appendChild(b);
+    });
+    var nb=document.createElement('button'); nb.type='button'; nb.className='notebtn'; nb.textContent='+ note';
+    nb.addEventListener('click',function(e){e.stopPropagation();
+      var na=tc.querySelector('.notearea'); na.style.display=(na.style.display==='none')?'':'none';
+      if(na.style.display!=='none'){tc.classList.remove('collapsed'); na.focus();}});
+    var sb=document.createElement('button'); sb.type='button'; sb.className='notebtn sendbtn'; sb.textContent='→ Claude';
+    sb.title='Send this case’s verdict and note to Claude';
+    sb.addEventListener('click',function(e){e.stopPropagation();
+      var st=get(id); sb.disabled=true;
+      fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({caseId:id,caseVersion:1,verdict:st.v,note:st.n.trim()})})
+      .then(function(r){if(!r.ok)throw new Error(r.status);sb.textContent='✓ sent';sb.classList.add('sent');})
+      .catch(function(){sb.textContent='✗ retry';})
+      .then(function(){sb.disabled=false;setTimeout(function(){sb.textContent='→ Claude';sb.classList.remove('sent');},2000);});});
+    acts.appendChild(vc); acts.appendChild(nb); acts.appendChild(sb); head.appendChild(acts);
+    var na=document.createElement('textarea'); na.className='notearea'; na.rows=2;
+    na.placeholder="Note for "+id+": what is wrong, partial or blocked";
+    na.value=get(id).n; na.style.display=get(id).n.trim()?'':'none';
+    na.addEventListener('click',function(e){e.stopPropagation();});
+    na.addEventListener('input',function(){setN(id,na.value);});
+    var body=tc.querySelector('.tc-body'); body.insertBefore(na,body.firstChild);
+    head.addEventListener('click',function(e){
+      if(e.target.closest('.verdict')||e.target.closest('.notebtn'))return;
+      tc.classList.toggle('collapsed');});
+    paint(id);
+  });
+  function paint(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var v=get(id).v;
+    tc.setAttribute('data-v',v);
+    [].forEach.call(tc.querySelectorAll('.vbtn'),function(b){b.classList.toggle('on',b.dataset.v===v);}); paintNote(id);}
+  function paintNote(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var has=!!get(id).n.trim();
+    var nb=tc.querySelector('.notebtn:not(.sendbtn)'); nb.classList.toggle('has',has); nb.textContent=has?'📝 note':'+ note';}
+  var FILTER='all';
+  function match(id){var e=get(id);
+    if(FILTER==='work')return e.v==='partial'||e.v==='fail'||e.v==='blocked';
+    if(FILTER==='notes')return !!e.n.trim();
+    if(FILTER==='untested')return !e.v;
+    return true;}
+  function counts(){var c={total:0,reviewed:0,pass:0,partial:0,fail:0,blocked:0,defer:0,notes:0};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var e=get(tc.dataset.id);c.total++;
+      if(e.v){c.reviewed++;c[e.v]++;} if(e.n.trim())c.notes++;}); return c;}
+  function render(){var c=counts();
+    document.getElementById('pctText').textContent=c.reviewed+' / '+c.total;
+    document.getElementById('breakdown').innerHTML='<span class="p">✓'+c.pass+'</span><span class="pa">~'+c.partial+'</span><span class="f">✗'+c.fail+'</span><span class="bl">⛔'+c.blocked+'</span>';
+    var bar=document.getElementById('barFill'), t=c.total||1; bar.innerHTML='';
+    [['pass',c.pass],['partial',c.partial],['blocked',c.blocked],['fail',c.fail],['defer',c.defer]].forEach(function(x){
+      if(x[1]){var seg=document.createElement('i');seg.className='seg seg-'+x[0];seg.style.width=(x[1]/t*100)+'%';bar.appendChild(seg);}});
+    [].forEach.call(document.querySelectorAll('section.pillar'),function(p){
+      var bs=p.querySelectorAll('.tc'),d=0;[].forEach.call(bs,function(tc){if(get(tc.dataset.id).v)d++;});
+      p.querySelector('.phead .pc').textContent=d+' / '+bs.length;
+      var tt=document.getElementById('toc-'+p.dataset.key); if(tt)tt.textContent='('+d+'/'+bs.length+')';});
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){tc.style.display=match(tc.dataset.id)?'':'none';});}
+  function compile(){var g={fail:[],blocked:[],partial:[],defer:[],passn:[],noverdict:[]};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var id=tc.dataset.id,e=get(id);
+      var title=tc.querySelector('.tc-title').textContent.replace(id,'').trim();
+      var row={id:id,title:title,n:e.n.trim()};
+      if(e.v==='pass'){if(row.n)g.passn.push(row);}
+      else if(e.v)g[e.v].push(row);
+      else if(row.n)g.noverdict.push(row);});
+    var c=counts();
+    var md='# Mission page and inbox, milestone 2 walkthrough: findings\n\nReviewed '+c.reviewed+'/'+c.total+' · ✓'+c.pass+' pass · ~'+c.partial+' partial · ✗'+c.fail+' fail · ⛔'+c.blocked+' blocked · »'+c.defer+' defer · ✎'+c.notes+' noted\n';
+    function S(h,a){if(!a.length)return'';var s='\n## '+h+' ('+a.length+')\n';a.forEach(function(x){s+='- ['+x.id+'] '+x.title+(x.n?': '+x.n:'')+'\n';});return s;}
+    var out=S('✗ Fail',g.fail)+S('⛔ Blocked',g.blocked)+S('~ Partial',g.partial)+S('» Defer',g.defer)+S('✓ Pass (noted)',g.passn)+S('✎ Noted, no verdict',g.noverdict);
+    return md+(out||'\n_No findings recorded._\n');}
+  var eb=document.getElementById('expandBtn'),collapsed=false;
+  eb.addEventListener('click',function(){collapsed=!collapsed;
+    [].forEach.call(document.querySelectorAll('.tc'),function(el){el.classList.toggle('collapsed',collapsed);});
+    eb.textContent=collapsed?'Expand all':'Collapse all';});
+  // Reset asks in the page: the first press arms it, a second within 4 s clears.
+  var rb=document.getElementById('resetBtn'),armed=0;
+  rb.addEventListener('click',function(){
+    if(!armed){rb.textContent='Press again to clear all';armed=setTimeout(function(){armed=0;rb.textContent='Reset';},4000);return;}
+    clearTimeout(armed);armed=0;rb.textContent='Reset';state={};save();
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){paint(tc.dataset.id);var na=tc.querySelector('.notearea');na.value='';na.style.display='none';});render();});
+  var root=document.documentElement,tkey="maverick-test-theme",tv=null;
+  try{tv=localStorage.getItem(tkey);}catch(e){} if(tv)root.setAttribute('data-theme',tv);
+  document.getElementById('themeBtn').addEventListener('click',function(){var cur=root.getAttribute('data-theme');
+    var next=cur==='dark'?'light':(cur==='light'?'dark':(matchMedia('(prefers-color-scheme: dark)').matches?'light':'dark'));
+    root.setAttribute('data-theme',next);try{localStorage.setItem(tkey,next);}catch(e){}});
+  [].forEach.call(document.querySelectorAll('.fchip'),function(ch){ch.addEventListener('click',function(){
+    FILTER=ch.dataset.f; [].forEach.call(document.querySelectorAll('.fchip'),function(c){c.classList.toggle('on',c===ch);}); render();});});
+  var panel=document.getElementById('compilePanel'),ta=document.getElementById('compileText'),cpy=document.getElementById('copyBtn');
+  document.getElementById('compileBtn').addEventListener('click',function(){ta.value=compile();panel.style.display='flex';ta.focus();ta.select();});
+  document.getElementById('closeBtn').addEventListener('click',function(){panel.style.display='none';});
+  panel.addEventListener('click',function(e){if(e.target===panel)panel.style.display='none';});
+  cpy.addEventListener('click',function(){ta.select();
+    if(navigator.clipboard){navigator.clipboard.writeText(ta.value).then(function(){cpy.textContent='Copied ✓';setTimeout(function(){cpy.textContent='Copy';},1500);});}});
+  render();
+})();
+</script>
