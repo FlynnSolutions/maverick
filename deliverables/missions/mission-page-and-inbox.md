@@ -68,9 +68,9 @@ _done when: with the server running, `node tools/cdp.mjs "http://localhost:8767/
 
 _done when: with the server running, the workspace (`/?view=workspace`) renders four groups in the order Needs you, Working, Ready to review, Done, a mission's open question appears as a row in Needs you with an Answer button that posts the same route the mission page uses, and `npm run lint` passes._
 
-- [~] **Questions on the workspace feed**
+- [x] **Questions on the workspace feed**
   - touches: web/inbox.js, src/missions.ts, server.ts
-  - status: handed-back
+  - status: passed
   - attempt: 2
   - verdict: mixed
   - commit: 57483d5
@@ -169,3 +169,5 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 23:19 m3-t1 Questions on the workspace feed: reviewing to flying
 - 2026-10-13 23:24 m3-t1 Questions on the workspace feed: flying to reviewing
 - 2026-10-13 23:29 m3-t1 Questions on the workspace feed: reviewing to handed-back (RIO: mixed): the RIO said mixed after 2 attempts with 3 blocker(s) open; this one is yours
+- 2026-10-14 09:45 m3-t1 Questions on the workspace feed: handed-back to passed (RIO: mixed): accepted by Cory over the RIO: Cory's call: the one open blocker is layout, and inbox.js cannot fix it because the rule that breaks it lives in style.css, which m3-t2 owns. m3-t2: give the inbox strip's answers their own block under the say line, `.strip-say .inbox-answers { display: flex; flex-wrap: wrap; gap: 6px; }` with `white-space: nowrap` on its buttons and the status hint on its own line, never inside the flex paragraph; then render the Needs you rack at 1440 and 390 with tools/cdp.mjs inside `.rack.needs` with a long hint and a refused post, and keep every button 28 px tall with its label on one line. The RIO's note that the answers left the acts column stands: that is the right call, keep it.
+- 2026-10-14 09:45 decision: m3-t1 accepted by Cory over the RIO: Cory's call: the one open blocker is layout, and inbox.js cannot fix it because the rule that breaks it lives in style.css, which m3-t2 owns. m3-t2: give the inbox strip's answers their own block under the say line, `.strip-say .inbox-answers { display: flex; flex-wrap: wrap; gap: 6px; }` with `white-space: nowrap` on its buttons and the status hint on its own line, never inside the flex paragraph; then render the Needs you rack at 1440 and 390 with tools/cdp.mjs inside `.rack.needs` with a long hint and a refused post, and keep every button 28 px tall with its label on one line. The RIO's note that the answers left the acts column stands: that is the right call, keep it.
