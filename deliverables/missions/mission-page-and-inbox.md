@@ -36,8 +36,9 @@ _done when: with the server running, `node tools/cdp.mjs "http://localhost:8767/
 
 - [~] **The shell**
   - touches: web/mission.html, web/mission.js, web/mission.css
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 419be7f
   Rewrite the mission page as the shell of `/mockups/mission.html`: the bar as it is today (keep `#back`, `#crumb`, `#status`, `#board-link`), then a two-column page, a sticky left rail (200px) and content (max 760px). The rail shows the status word from `view.word` as a chip (`waiting for you` in caution, `done` in hud, `error` in threat, `working` plain) and four anchor links, The ask, Plan, Progress, Result, each with a small count (Plan: milestone n of N; Progress: open questions or `live`; Result: `not yet` until something merged). Each anchor scrolls to a `<section>` of that id; the one in view is marked `on` with an IntersectionObserver. The ask section is the shell's own: `mission.name` as the display name, `mission.brief` as the sentence, created and approved times. Before approval (`status` interviewing or planned) the Plan section shows what today's `renderPlan` shows (the gate: problems, overlaps, warnings, preflight, cost, the approve and interview buttons, the Strike Lead terminal) moved verbatim into the shell; after approval, Plan, Progress and Result are modules: `import("./mission/plan.js")`, `progress.js`, `result.js`, each mounted with the contract below, each wrapped so a module that fails to load shows one line saying so instead of breaking the page. Link `web/mission/plan.css`, `progress.css` and `result.css` from `mission.html` (they may not exist on your branch; a missing stylesheet is harmless). Data: open `EventSource(/api/missions/<id>/stream?project=)` and call every module's `update(view)` on each event; fall back to the 8 s poll if the stream errors twice; never `replaceChildren` on the whole page after the first paint. Keep `watchSession`, `mountTerminal`, `detachTerminal` and the `act` helper from today's file and hand them to modules through `ctx` (`ctx.openSession(taskId)` mounts the task's session, Wingman or RIO, under the element the module passes). Delete every `window.prompt` and `window.confirm` in the file; a module asks with its own note field. Keep `mission.css` to the shell's own rules and the tokens; nothing a module owns.
 
 - [~] **The plan module**
@@ -144,3 +145,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 22:26 m2-t4 The result module: built to reviewing
 - 2026-10-13 22:28 m2-t3 The progress module: flying to reviewing
 - 2026-10-13 22:31 m2-t2 The plan module: reviewing to flying
+- 2026-10-13 22:32 m2-t1 The shell: flying to reviewing
