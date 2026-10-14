@@ -142,6 +142,116 @@ format: checklist
   later: it is the one piece of the just-built breakdown that writes something wrong rather than
   something deferred, every approve from today on produces it, and the plan is a paragraph.
 
+### Mission: Mission page and inbox
+
+- [ ] `[ENG]` **Mission: Mission page and inbox**
+  - created: 2026-10-13
+  - source: Strike Lead interview, 2026-10-13
+  - kind: mission
+  - mission: mission-page-and-inbox
+  - plan: deliverables/missions/mission-page-and-inbox.md
+  Build the UI Cory chose in `deliverables/plans/mission-ui-2026-10-13.md`: the workspace becomes an inbox grouped by what needs him (Needs you, Working, Ready to review, Done); the mission page gets four fixed anchors (The ask, Plan, Progress, Result) in a left rail, one status word, and updates from a server stream; every question from an agent is a feed entry with its answers as buttons, repeated in the inbox and pushed as a macOS notification; a reply box to the Strike Lead sits at the bottom of Progress. The mockups to match are served by the app at `/mockups/mission.html` and `/mockups/question-queue.html#b` (read them in a browser with `node tools/cdp.mjs <url> --shot out.png`, and read their source in `.ui-design/mockups/`). This mission is deliberately not the palette (a variants round later), not the map view, and not a change to the protocol in `src/missions.ts` beyond what the view needs. Nothing here adds a dependency or a build step (decision M2), and the design contract in `.ui-design/system.md` holds: its tokens, its lamps (`web/lamp.js`), its strips, no unicode glyphs for icons.
+  Milestone 1 — The record speaks the page's language: done when `npm test` passes, `GET /api/missions/<id>?project=<p>` on a mission record returns `word`, `questions` and `feed`, `GET /api/missions/<id>/stream` sends a `data:` event within two seconds of the record being written, and `POST /api/missions/<id>/say` appends a decision line to the ledger
+  Milestone 2 — The mission page: four anchors: done when with the server running, `node tools/cdp.mjs "http://localhost:8767/mission.html?project=maverick&mission=mission-page-and-inbox" --eval check.js` (write `check.js` to count them) reports four anchor links, a status word, the plan's milestones with their tasks' intent lines, a feed with entries, and no `window.prompt` or `window.confirm` anywhere under `web/mission*`; and `npm run lint` passes
+  Milestone 3 — The workspace is the inbox: done when with the server running, the workspace (`/?view=workspace`) renders four groups in the order Needs you, Working, Ready to review, Done, a mission's open question appears as a row in Needs you with an Answer button that posts the same route the mission page uses, and `npm run lint` passes
+  Milestone 4 — The question reaches you, and the page is where you start: done when `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which questions are new; the app opens on the workspace of the last project; the docs name the four anchors, the inbox and the status words
+
+- [ ] `[ENG]` **Questions and the status word**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 1
+  - mission: mission-page-and-inbox
+  - milestone: 1
+  - repo: root
+  Write `src/questions.ts`, pure functions over a `Mission` (the type in `src/missions.ts`; import the types only, do not edit that file). Export `statusWord(mission: Mission): "working" | "waiting for you" | "error" | "done"`: `done` for `closed` and `review` with nothing held; `waiting for you` when any task is `handed-back`, any milestone carries a `hold`, the mission has `escalation` or `trouble`, is `paused`, or is `planned` (the gate); `error` when `trouble` names a failure the person cannot act on (the report could not be written, a proof runner died: the strings in `src/missions.ts` that set `trouble` tell you which); otherwise `working`. Export `questionsOf(mission: Mission): Question[]` where `Question` is the contract below: one per handed-back task (answers: send it out again → `POST tasks/<id>/retry`; accept it over the RIO → `POST tasks/<id>/accept` with `{ note }`; the body is the task title, attempt count, verdict and the first BLOCKER line from `mission.findings?.[id]` when the view carries findings, else the task `note`), one per held milestone (kind from `hold.kind`; answers: release → `POST milestones/<n>/release` with `{ note }`, and for a landing hold "try landing again" → `POST land`), one for `escalation` (kind `plan`; answers: resume → `POST resume`, pause → `POST pause`), one when `paused` (answer: resume), one at the gate when `status === "planned"` (kind `gate`; answer: approve → `POST approve`). Every answer carries `label`, `method`, `path` relative to `/api/missions/<id>/`, optional `body` keys the page must fill (`note`), and `primary: true` on exactly one answer per question. Questions are ordered oldest first by the timestamp you can find (hold.at, task.review?.at, else mission.created). `test/questions.test.ts` builds missions by hand (see `test/missions.test.ts` for the shapes) and pins every kind, the ordering, one primary per question, and all four words. No I/O in this file.
+
+- [ ] `[ENG]` **The feed from the ledger**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 1
+  - mission: mission-page-and-inbox
+  - milestone: 1
+  - repo: root
+  Write `src/feed.ts`: `feedOf(log: string[], mission: Mission): FeedEntry[]` turning the plan's `## Log` lines (the ledger; `parsePlan(...).log` returns them, each `<ISO stamp> <text>`, with the marks `decision:`, `auto:` and `held:` that `src/report.ts` already reads with `DECISION` and `AUTOMATIC`; read `transitions()` and `recorded()` in `src/missions.ts` for every line shape the ledger can hold) into typed entries, oldest first: `kind` is `question` for `held:` lines and for lines that hand a task back, `response` for a pass, a merge, a landing and a decision line, `error` for a fail, a failed proof, a collision, `action` for a launch, a spawn, a RIO sent in, a merge attempt, and `thought` for anything else. `who` is `you` for `decision:` lines, `RIO` when the line names a verdict, `Wingman` when it names a hand-off from a task, else `Maverick`. `milestone` and `taskId` are filled when the line names `milestone N` or a task id (`m\d+-t\d+`). `text` is the line without its stamp and mark. Lines the parser cannot read are kept as `thought` with the raw text, never dropped. `test/feed.test.ts` feeds real ledger lines (take them from `test/missions.test.ts` and `test/report.test.ts`) and pins every kind and the who rule. No I/O.
+
+- [ ] `[ENG]` **The view, the stream and the reply**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 1
+  - mission: mission-page-and-inbox
+  - milestone: 1
+  - repo: root
+  In `src/missions.ts`, make `missionView` also return `word: statusWord(mission)`, `questions: questionsOf({ ...mission, findings })` and `feed: feedOf(log, mission)` where `log` is the ledger: read the plan on the mission branch the way `missionReport` does (`ledgerRepoFor` and the integration worktree path; `parsePlan(text).log`), empty when the mission is not approved yet or the file cannot be read, never a throw. Add `export const sayToStrikeLead(project, id, text)`: appends `decision: Cory to the Strike Lead: <text>` to the ledger through the same write path every other ledger line uses (`writeThenSync` with a note; read how `pauseMission` records its note) and, when `mission.interview?.terminalId` names a terminal that is still open, sends the text plus a newline into it with the terminal module's input function (`server.ts` shows how terminals take input); return `{ ok: true, sent: boolean }`. In `server.ts`: `POST /api/missions/:id/say` with `{ text }` (empty text is a 400 through the existing error path); `GET /api/missions/:id/stream` as `text/event-stream` following the pattern of `/api/transcript/stream`: write `data: <JSON of missionView>` once on connect, then whenever the mission record file changes (watch the file at `missionPath`, with a 1 s poll as the backstop, and a `: ping` comment every 15 s); stop everything on `close`. Extend the route regex that lists actions. Tests in `test/missions.test.ts`: `missionView` carries the three new fields on a fixture mission with a ledger (use `tempRepo` from `test/fixtures.ts`), and `sayToStrikeLead` writes the line and reports `sent: false` with no terminal.
+
+- [ ] `[ENG]` **The shell**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 2
+  - mission: mission-page-and-inbox
+  - milestone: 2
+  - repo: root
+  Rewrite the mission page as the shell of `/mockups/mission.html`: the bar as it is today (keep `#back`, `#crumb`, `#status`, `#board-link`), then a two-column page, a sticky left rail (200px) and content (max 760px). The rail shows the status word from `view.word` as a chip (`waiting for you` in caution, `done` in hud, `error` in threat, `working` plain) and four anchor links, The ask, Plan, Progress, Result, each with a small count (Plan: milestone n of N; Progress: open questions or `live`; Result: `not yet` until something merged). Each anchor scrolls to a `<section>` of that id; the one in view is marked `on` with an IntersectionObserver. The ask section is the shell's own: `mission.name` as the display name, `mission.brief` as the sentence, created and approved times. Before approval (`status` interviewing or planned) the Plan section shows what today's `renderPlan` shows (the gate: problems, overlaps, warnings, preflight, cost, the approve and interview buttons, the Strike Lead terminal) moved verbatim into the shell; after approval, Plan, Progress and Result are modules: `import("./mission/plan.js")`, `progress.js`, `result.js`, each mounted with the contract below, each wrapped so a module that fails to load shows one line saying so instead of breaking the page. Link `web/mission/plan.css`, `progress.css` and `result.css` from `mission.html` (they may not exist on your branch; a missing stylesheet is harmless). Data: open `EventSource(/api/missions/<id>/stream?project=)` and call every module's `update(view)` on each event; fall back to the 8 s poll if the stream errors twice; never `replaceChildren` on the whole page after the first paint. Keep `watchSession`, `mountTerminal`, `detachTerminal` and the `act` helper from today's file and hand them to modules through `ctx` (`ctx.openSession(taskId)` mounts the task's session, Wingman or RIO, under the element the module passes). Delete every `window.prompt` and `window.confirm` in the file; a module asks with its own note field. Keep `mission.css` to the shell's own rules and the tokens; nothing a module owns.
+
+- [ ] `[ENG]` **The plan module**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 2
+  - mission: mission-page-and-inbox
+  - milestone: 2
+  - repo: root
+  Write `web/mission/plan.js` per the module contract, matching the Plan section of `/mockups/mission.html`: one `<details class="step">` per milestone, open unless done, a lamp (`ctx.lamp`), `Milestone n` and the title, one status word on the right (`done <time>`, `waiting for you`, `working since <time>`, `not started`) derived from the milestone (`merged`, `hold`, tasks' statuses, `dispatched`), the done-when line as prose under the heading, then one row per task: lamp by task status (the map in the mockup), title, the task's `intent` as a second line, the status word with attempt count, `after <task title>` for a pending task whose `needs` are not all passed, and for a flying, reviewing or handed-back task a link `open the session` that calls `ctx.openSession(task.id)` and takes the session panel under the row. A handed-back task shows the question's answers inline: find the question for the task in `view.questions` and render each answer as a button that calls `ctx.act(answer.path, body)` with a note field beside the primary when the answer wants one; no prompt. `update(view)` patches in place by id (keep a map of row elements), never rebuilding, so an open session stays open. The milestone walkthrough controls that today's `walkthroughSection` renders stay available here under a done milestone, unchanged in behaviour. Style in `plan.css` with the tokens; nothing in `mission.css`.
+
+- [ ] `[ENG]` **The progress module**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 2
+  - mission: mission-page-and-inbox
+  - milestone: 2
+  - repo: root
+  Write `web/mission/progress.js` per the module contract, matching the Progress section of `/mockups/mission.html`: at the top, every open question from `view.questions` pinned as one line each with a lock lamp and `answer below`; then the feed from `view.feed`, oldest first, grouped under a small heading whenever the milestone changes (`At the gate`, `milestone 1, <title>`), each entry a row of time, lamp by kind, `who` in weight, the text, and a mono `where` line naming the task when the entry has one; `question` entries that are still open (match by task or milestone with `view.questions`) carry their answers as buttons and a note field, in a caution ring, exactly like the mockup; an `error` entry's who is in threat, a `response` in hud. Under the feed, a live line (`swept <n> s ago`, from the stream's event time) and the reply box: a text input and a `send` button posting `{ text }` to `say` through `ctx.post`, clearing on success and showing the server's `sent` flag as `the Strike Lead has it` or `kept in the ledger; no Strike Lead session is open`. `update(view)` appends new entries at the bottom and removes answered questions' buttons; it does not rebuild the list. Scroll to a question when the page's hash names it. Style in `progress.css`.
+
+- [ ] `[ENG]` **The result module**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 2
+  - mission: mission-page-and-inbox
+  - milestone: 2
+  - repo: root
+  Write `web/mission/result.js` per the module contract, matching the Result section of `/mockups/mission.html`: a summary line (`+N −M · F files · T tasks merged · on <branch>`) computed from `view.diffstat` (the strings are `git diff --stat` output per task; parse the last line for files, insertions, deletions) over tasks whose milestone has `merged`; then a list of merged tasks grouped by milestone with each task's files changed and counts (parse the stat lines; collapse to directories when a task touched more than eight files); then `To read before you merge`: every task's `carried` lines, the ones starting `unverified:` first and marked so, each with the task's title; then the milestone walkthroughs and the proof results that today's `renderReview` shows (status `review`), with the close button and its landing options moved here verbatim, no prompt. Before anything merged, the section says `not yet` and what the first landing will show. `update(view)` patches counts and lists in place. Style in `result.css`.
+
+- [ ] `[ENG]` **Questions on the workspace feed**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 3
+  - mission: mission-page-and-inbox
+  - milestone: 3
+  - repo: root
+  Two halves. Server: `GET /api/workspace` (read `server.ts` and `src/missions.ts` for what it returns today) carries, for each mission, `word` and `questions` from `src/questions.ts`, and a `diffstat` summary string (`+N −M` over its merged tasks, computed the way `missionView` computes per-task stats, cached the same way) so a row can show it without opening the mission. Browser: write `web/inbox.js` exporting `inboxRows(mission, ctx)` per the contract: one strip per open question (`.strip.full`, the lock lamp, the question title, its body on the `strip-say` line, and its answers as buttons in the acts column; the primary answer first; a note field appears inline when an answer wants one), posting to `/api/missions/<id>/<path>?project=` through `ctx.post`, then `ctx.refresh()`. The strip grid in `web/style.css` is the one to use; add nothing to it. No prompt.
+
+- [ ] `[ENG]` **The four groups**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 3
+  - mission: mission-page-and-inbox
+  - milestone: 3
+  - repo: root
+  In `web/command.js`, `projectSection` composes four groups in this order and nothing else at the top level: `Needs you` (sessions that are blocked or waiting, every mission's `inboxRows` from `web/inbox.js`, and the `Needs action` sessions that carry a question), `Working` (busy sessions, formations and shells, missions whose `word` is `working` as one row each with their `diffstat`), `Ready to review` (missions in `review`, sessions whose last turn was Claude's and are idle under an hour), `Done` (done and stale sessions, closed missions, the closed list). Each group is a `rack` with the existing heading pattern and count; `Needs you` keeps `.rack.needs`, the loudest. Mission rows reuse `missionRow` with the diff stats added in the `where` column. Drag and drop between formation racks keeps working; the formation tabs stay. In `web/style.css`, only what the regrouping needs (a `.rack.review` heading colour); nothing else moves. Remove the old racks that these replace (`Shells`, `Idle`, `Stale`, `Background`), folding their strips into the groups above.
+
+- [ ] `[ENG]` **The notification**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 4
+  - mission: mission-page-and-inbox
+  - milestone: 4
+  - repo: root
+  `src/notify.ts`: `newQuestions(before: Array<{ missionId, questions }>, after: same): Array<{ missionId, missionName, question }>` returning the questions present in `after` and not in `before`, matched by `missionId` and question `id`; pure, tested in `test/notify.test.ts`. In `app/main.mjs`, after the window opens, poll `/api/workspace` every 15 s, feed each pair to `newQuestions`, and for each result fire an Electron `Notification` titled with the mission name and bodied with the question title; clicking it focuses the window and loads `/mission.html?project=<id>&mission=<id>#progress`. No dependency; `Notification` is Electron's own. Nothing fires on the first poll.
+
+- [ ] `[ENG]` **Workspace first**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 4
+  - mission: mission-page-and-inbox
+  - milestone: 4
+  - repo: root
+  The default view is `workspace`, not `board` (`view` resolution near `console.view` in `web/app.js`); the picker remembers the last opened project in `localStorage` (`mv.project`) and opens it straight away, with the picker one click away in the bar (the brand mark already links to `/`; add a `change project` ghost button beside the project pick). Nothing else in `app.js` changes.
+
+- [ ] `[ENG]` **The docs**
+  - created: 2026-10-13
+  - source: mission mission-page-and-inbox, milestone 4
+  - mission: mission-page-and-inbox
+  - milestone: 4
+  - repo: root
+  Record decision M20 in `docs/03-decisions.md` in the house shape (read M18 and M19): the four anchors, the four status words, questions as feed entries answered in place, the inbox's four groups, the reply box, with the prior art named (`deliverables/plans/mission-ui-2026-10-13.md` has it). Architecture: `web/mission/` modules and the module contract, `src/questions.ts`, `src/feed.ts`, `src/notify.ts`, the stream route. Data model: `Question`, `FeedEntry`, `word`. Runbook: the `say` route, the stream, the notification. Glossary: anchor, status word, question, inbox. README's missions paragraph says what the person sees now. No em-dashes anywhere; the house style is in `docs/05-conventions.md`.
+
 ## 🚧 In Progress
 
 - [~] `[ENG]` `[L]` **The mission page and the inbox**
