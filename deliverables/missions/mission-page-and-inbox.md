@@ -48,8 +48,9 @@ _done when: with the server running, `node tools/cdp.mjs "http://localhost:8767/
 
 - [~] **The progress module**
   - touches: web/mission/progress.js, web/mission/progress.css
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: de55694
   Write `web/mission/progress.js` per the module contract, matching the Progress section of `/mockups/mission.html`: at the top, every open question from `view.questions` pinned as one line each with a lock lamp and `answer below`; then the feed from `view.feed`, oldest first, grouped under a small heading whenever the milestone changes (`At the gate`, `milestone 1, <title>`), each entry a row of time, lamp by kind, `who` in weight, the text, and a mono `where` line naming the task when the entry has one; `question` entries that are still open (match by task or milestone with `view.questions`) carry their answers as buttons and a note field, in a caution ring, exactly like the mockup; an `error` entry's who is in threat, a `response` in hud. Under the feed, a live line (`swept <n> s ago`, from the stream's event time) and the reply box: a text input and a `send` button posting `{ text }` to `say` through `ctx.post`, clearing on success and showing the server's `sent` flag as `the Strike Lead has it` or `kept in the ledger; no Strike Lead session is open`. `update(view)` appends new entries at the bottom and removes answered questions' buttons; it does not rebuild the list. Scroll to a question when the page's hash names it. Style in `progress.css`.
 
 - [~] **The result module**
@@ -141,3 +142,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 22:26 m2-t2 The plan module: built to reviewing
 - 2026-10-13 22:26 m2-t3 The progress module: built to flying
 - 2026-10-13 22:26 m2-t4 The result module: built to reviewing
+- 2026-10-13 22:28 m2-t3 The progress module: flying to reviewing
