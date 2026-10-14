@@ -8,8 +8,9 @@ _done when: `npm test` passes; `findingsOf` in `src/audits.ts` sorts `- NOTE(web
 
 - [~] **The finding record**
   - touches: src/findings.ts, test/findings.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 9b4ec83
   Write `src/findings.ts`, pure. Export the `Finding` contract below and `parseFinding(line: string, taskId: string): Finding`. The line is one list item's text as `findingsOf` hands it over (the `- ` and any bold already stripped): the new shape `KIND(area, severity): headline. detail` where KIND is BLOCKER, NOTE or UNVERIFIED (case-insensitive), area is a path or a plain name (`web/signin`, `the sign-in form`), severity is one of `fix`, `ship`, `check`; and the old shape `KIND: free prose` or bare prose, where the area is `general`, the severity follows the kind (BLOCKER is `fix`, UNVERIFIED is `check`, NOTE is `ship`), and the headline is the first sentence (up to the first `. ` or the whole line under 120 characters), the detail the rest. A `carried` line that begins `unverified: ` (the way `settleReview` stores them) is an UNVERIFIED. Export `triage(findings: Finding[]): { fix: Finding[]; check: Finding[]; ship: Finding[] }`, each bucket grouped by area in first-seen order, and `areaName(area: string): string` that turns `web/signin/` into `web/signin` and leaves plain names alone. `test/findings.test.ts` pins both shapes, the fallback headline rule, every severity default, the carried `unverified:` prefix, and the triage order. No I/O.
 
 - [~] **The RIO writes the shape, and the sorter reads it**
@@ -84,3 +85,4 @@ _done when: `docs/03-decisions.md` carries M21; the runbook, data model and glos
 
 - 2026-10-14 12:23 m1-t1 The finding record: pending to flying
 - 2026-10-14 12:23 m1-t2 The RIO writes the shape, and the sorter reads it: pending to flying
+- 2026-10-14 12:25 m1-t1 The finding record: flying to reviewing
