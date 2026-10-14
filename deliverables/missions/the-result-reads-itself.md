@@ -15,8 +15,9 @@ _done when: `npm test` passes; `findingsOf` in `src/audits.ts` sorts `- NOTE(web
 
 - [~] **The RIO writes the shape, and the sorter reads it**
   - touches: src/audits.ts, src/briefs.ts, test/briefs.test.ts, test/missions.test.ts
-  - status: reviewing
+  - status: handed-back
   - attempt: 2
+  - verdict: mixed
   - commit: 3607ae8
   In `src/audits.ts`, `findingsOf` accepts an optional parenthetical after the kind: `^(BLOCKER|NOTE|UNVERIFIED)(?:\([^)]*\))?:\s*(.*)$`, keeping the whole text after the colon as the finding (the parenthetical is for `src/findings.ts` to read; `findingsOf` only sorts), and the existing test at `test/missions.test.ts` gains one case per kind in the new shape. In `src/briefs.ts`, `rioBrief` tells the RIO how to write a finding, in one line placed right where it says `each starting "BLOCKER:"`: every finding is `- KIND(area, severity): headline. detail`, area the path or the plain name of what it is about, severity `fix` (must change before merge), `ship` (fine to merge as is), `check` (a claim the RIO could not verify), headline one sentence a person who will not open the code can act on, detail the evidence; with one example of each kind. `RIO_CHECKLIST` gets no new line; this is the format of the answer, not a check. `test/briefs.test.ts` pins the format line and the example in the RIO brief and its absence from the Wingman brief. `settleReview` and `verdictOf` are untouched.
 
@@ -92,3 +93,4 @@ _done when: `docs/03-decisions.md` carries M21; the runbook, data model and glos
 - 2026-10-14 12:28 m1-t2 The RIO writes the shape, and the sorter reads it: reviewing to flying
 - 2026-10-14 12:30 m1-t1 The finding record: flying to reviewing
 - 2026-10-14 12:30 m1-t2 The RIO writes the shape, and the sorter reads it: flying to reviewing
+- 2026-10-14 12:33 m1-t2 The RIO writes the shape, and the sorter reads it: reviewing to handed-back (RIO: mixed): the RIO said mixed after 2 attempts with 1 blocker(s) open; this one is yours
