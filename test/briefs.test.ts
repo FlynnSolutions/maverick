@@ -94,6 +94,19 @@ test("a RIO's brief names the branch to read, its own scratch path, its siblings
   assert.ok(!rioBrief(ctx, "/f.md").includes("This is a retry"));
 });
 
+test("a RIO is told the shape of a finding, with an example of each kind, and a Wingman is not", () => {
+  const format = 'Every finding is "- KIND(area, severity): headline. detail"';
+  const examples = ['"- BLOCKER(src/worker, fix): ', '"- NOTE(web/signin, ship): ', '"- UNVERIFIED(deploy, check): '];
+  const brief = rioBrief(ctx, "/f.md");
+  const line = brief.split("\n").find((l) => l.includes(format));
+  assert.ok(line, "missing the format line");
+  assert.ok(line.includes('each starting "BLOCKER:"'), "it sits where the brief names the kinds");
+  for (const word of ['"fix" (must change before merge)', '"ship" (fine to merge as is)', '"check" (a claim you could not verify)', ...examples]) assert.ok(line.includes(word), `missing: ${word}`);
+  const wingman = wingmanBrief(ctx);
+  for (const needle of [format, ...examples]) assert.ok(!wingman.includes(needle), `a Wingman brief carries: ${needle}`);
+  assert.ok(!RIO_CHECKLIST.some((l) => l.includes("KIND(")), "the format is the answer's shape, not a check");
+});
+
 test("on a multi-repo mission the Wingman is told where the other repos' work is, and that none of it is on a base branch", () => {
   const brief = wingmanBrief({ ...ctx, mission: { ...ctx.mission, repos: [repo, other] } });
   assert.ok(brief.includes(`contracts: branch mission/x in /p/contracts, checked out at ${other.integration}`));
