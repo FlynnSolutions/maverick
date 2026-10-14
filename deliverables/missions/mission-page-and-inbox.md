@@ -14,8 +14,9 @@ _done when: `npm test` passes, `GET /api/missions/<id>?project=<p>` on a mission
 
 - [~] **The feed from the ledger**
   - touches: src/feed.ts, test/feed.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: a466853
   Write `src/feed.ts`: `feedOf(log: string[], mission: Mission): FeedEntry[]` turning the plan's `## Log` lines (the ledger; `parsePlan(...).log` returns them, each `<ISO stamp> <text>`, with the marks `decision:`, `auto:` and `held:` that `src/report.ts` already reads with `DECISION` and `AUTOMATIC`; read `transitions()` and `recorded()` in `src/missions.ts` for every line shape the ledger can hold) into typed entries, oldest first: `kind` is `question` for `held:` lines and for lines that hand a task back, `response` for a pass, a merge, a landing and a decision line, `error` for a fail, a failed proof, a collision, `action` for a launch, a spawn, a RIO sent in, a merge attempt, and `thought` for anything else. `who` is `you` for `decision:` lines, `RIO` when the line names a verdict, `Wingman` when it names a hand-off from a task, else `Maverick`. `milestone` and `taskId` are filled when the line names `milestone N` or a task id (`m\d+-t\d+`). `text` is the line without its stamp and mark. Lines the parser cannot read are kept as `thought` with the raw text, never dropped. `test/feed.test.ts` feeds real ledger lines (take them from `test/missions.test.ts` and `test/report.test.ts`) and pins every kind and the who rule. No I/O.
 
 - [ ] **The view, the stream and the reply**
@@ -106,3 +107,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 
 - 2026-10-13 21:42 m1-t1 Questions and the status word: pending to flying
 - 2026-10-13 21:42 m1-t2 The feed from the ledger: pending to flying
+- 2026-10-13 21:45 m1-t2 The feed from the ledger: flying to reviewing
