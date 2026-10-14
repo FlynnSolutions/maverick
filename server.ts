@@ -21,7 +21,8 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionPath, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
+import { planOnBranch } from "./src/briefs.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
@@ -603,16 +604,72 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, { mission, terminal });
     }
   }
-  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|report))?$/);
+  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|report|say|stream))?$/);
   if (missionAction) {
     const project = await requireProject(url);
     const [, id, action] = missionAction;
+    // Before the blessing the page reads the plan document; after it, only the run. Parsing
+    // the plan on every poll of a mission that is already flying buys nothing.
+    const page = async () => {
+      const view = await missionView(project, id);
+      return view.approved ? view : { ...view, planDoc: await previewPlan(project, id) };
+    };
     if (method === "GET" && !action) {
       await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
-      // Before the blessing the page reads the plan document; after it, only the run. Parsing
-      // the plan on every poll of a mission that is already flying buys nothing.
-      const view = await missionView(project, id);
-      return sendJson(res, 200, view.approved ? view : { ...view, planDoc: await previewPlan(project, id) });
+      return sendJson(res, 200, await page());
+    }
+    // The page's live feed: the view once on connect, then again whenever the record (or the
+    // ledger it writes just after) changes. The watcher is the fast path; the poll catches what
+    // it misses, such as a file replaced rather than written in place.
+    if (method === "GET" && action === "stream") {
+      const record = missionPath(project.id, id);
+      const first = await page();
+      let ledger: string | null = null;
+      try {
+        ledger = first.approved ? planOnBranch(project.path, first.plan, first.repos) : null;
+      } catch {
+        /* a mission with no repos has no ledger: the record alone drives it */
+      }
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+      res.write(`data: ${JSON.stringify(first)}\n\n`);
+      const stamp = async () => (await Promise.all([record, ledger].map((f) => (f ? stat(f).then((s) => s.mtimeMs, () => 0) : 0)))).join(":");
+      let seen = await stamp();
+      let sending = false;
+      const flush = async () => {
+        if (sending || res.writableEnded) return;
+        sending = true;
+        try {
+          const now = await stamp();
+          if (now === seen) return;
+          const view = await page();
+          if (res.writableEnded) return;
+          res.write(`data: ${JSON.stringify(view)}\n\n`);
+          seen = now;
+        } catch {
+          /* caught mid-write, or gone for a moment: the next tick tries again */
+        } finally {
+          sending = false;
+        }
+      };
+      let watcher: FSWatcher | null = null;
+      try {
+        watcher = watch(record, () => void flush());
+      } catch {
+        /* no file to watch: the poll carries it */
+      }
+      const backstop = setInterval(() => void flush(), 1000);
+      const ping = setInterval(() => { if (!res.writableEnded) res.write(": ping\n\n"); }, 15_000);
+      req.on("close", () => {
+        clearInterval(backstop);
+        clearInterval(ping);
+        watcher?.close();
+      });
+      return;
+    }
+    if (method === "POST" && action === "say") {
+      const text = (await readJson<{ text?: string }>(req)).text ?? "";
+      if (!text.trim()) return sendJson(res, 400, { error: "say something; an empty reply is not sent" });
+      return sendJson(res, 200, await sayToStrikeLead(project, id, text));
     }
     if (method === "GET" && action === "report") {
       // Built before any header goes out, so a failure is a 500 with its reason, not an empty 200.
