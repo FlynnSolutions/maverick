@@ -214,6 +214,31 @@ export const mount = (host, view, ctx) => {
       btn(label, arm, "primary"),
       el("a", { href: `/?project=${encodeURIComponent(ctx.projectId)}&view=workspace` }, "back to the workspace"));
     if (ready) disarm();
+    /* Removing a worktree discards whatever was left uncommitted in it, so this asks twice too,
+       and says what the server removed rather than what it was asked to. */
+    const tidy = el("div", { class: "rs-acts" });
+    const tidyArm = () => tidy.replaceChildren(
+      btn("yes, remove the worktrees", tidyNow, "primary"),
+      btn("not yet", tidyDisarm),
+      el("span", { class: "rs-quiet" }, "anything uncommitted in them goes with them; the branches stay"));
+    const tidyDisarm = (said, isError) => tidy.replaceChildren(
+      btn("take back the worktrees", tidyArm, "ghost"),
+      el("span", { class: isError ? "rs-warn" : "rs-quiet" }, typeof said === "string" ? said : "the branches stay; this only clears the directories"));
+    const tidyNow = async () => {
+      tidy.replaceChildren(el("span", { class: "rs-quiet" }, "removing the worktrees"));
+      try {
+        /* The gate is not redrawn when a worktree goes, so what was left is read from the latest view. */
+        const expected = (latest.milestones ?? []).flatMap(tasksOf).filter((t) => t.status === "passed" && t.worktree).length;
+        const { removed } = await ctx.post(actionUrl("tidy"), {});
+        const left = expected - removed.length;
+        tidyDisarm(left > 0
+          ? `${removed.length} of ${plural(expected, "worktree")} removed; git would not remove the other ${left}`
+          : removed.length ? `${plural(removed.length, "worktree")} removed; the branches stay` : "nothing left to remove", left > 0);
+      } catch (err) {
+        tidyDisarm(err.message, true);
+      }
+    };
+    if (closed) tidyDisarm();
     return [
       el("h2", {}, "Your second and last gate", el("span", { class: "n" }, v.status)),
       el("div", { class: "rs-meta" },
@@ -241,13 +266,13 @@ export const mount = (host, view, ctx) => {
           ? el("a", { href: r.landed, target: "_blank" }, `${r.label} pull request`)
           : el("span", { title: `pushed to ${r.base}` }, `${r.label} · ${r.landed}`)))) : null,
       ready ? acts : null,
-      closed ? el("div", { class: "rs-acts" },
-        btn("take back the worktrees", () => ctx.act("tidy", {}, "the task worktrees are removed; the branches stay"), "ghost"),
-        el("span", { class: "rs-quiet" }, "the branches stay; this only clears the directories")) : null,
+      closed ? tidy : null,
     ];
   };
 
+  let latest = view;
   const update = (v) => {
+    latest = v;
     const merged = mergedOf(v);
     const notes = toRead(v);
     const closing = v.status === "review" || v.status === "closed";
