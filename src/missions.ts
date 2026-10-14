@@ -19,7 +19,7 @@
  * the same named exception `ships/` already uses.
  */
 import { spawn } from "node:child_process";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
@@ -33,7 +33,7 @@ import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, writeInput, type TerminalInfo } from "./terminal.ts";
 import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
-import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
+import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
 import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
@@ -229,6 +229,8 @@ export interface Mission {
   trouble?: string;
   /** Why a person paused the mission; the pause's own line, apart from whatever else is open. */
   pausedFor?: string;
+  /** The three bullets Cory must read, asked of a read-only session: running while `started` has neither `at` nor `failed`. */
+  summary?: { started?: string; claudeId?: string; at?: string; text?: string; failed?: string };
 }
 
 /* ---------- storage ---------- */
@@ -1031,6 +1033,27 @@ const settleWalkthroughs = async (project: Project, mission: Mission, state: Map
   return changed;
 };
 
+/** The summary file beside the record: `<record dir>/<id>-summary.md`. */
+const summaryFile = (mission: Pick<Mission, "project" | "id">): string => join(missionsDir(mission.project), `${mission.id}-summary.md`);
+
+/** A summary asked for and not yet answered either way. */
+const summarizing = (mission: Mission): boolean => Boolean(mission.summary?.started && !mission.summary.at && !mission.summary.failed);
+
+/**
+ * A summarizer that has finished either left its file or it did not. A claim whose id never
+ * landed (the server died mid-spawn) is judged on time alone, so it cannot hold the button for
+ * good. Returns whether anything changed.
+ */
+const settleSummary = async (mission: Mission, state: Map<string, string>): Promise<boolean> => {
+  const s = mission.summary;
+  if (!s || !summarizing(mission) || !isOver(state, s.claudeId ?? "", s.started)) return false;
+  const file = summaryFile(mission);
+  const text = await readFile(file, "utf8").catch(() => null);
+  if (text?.trim()) mission.summary = { at: new Date().toISOString(), text: text.trim() };
+  else s.failed = text === null ? `the session finished without writing ${file}` : `the session wrote an empty ${file}`;
+  return true;
+};
+
 const reviewFile = (mission: Mission, task: MissionTask): string =>
   join(missionsDir(mission.project), `${mission.id}-${task.id}-review${task.reviews ?? 1}.md`);
 
@@ -1418,6 +1441,7 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
       if (!m.proof.ok) holdFor(m, "proof", `the proof failed after milestone ${m.n} merged: ${m.proof.output.split("\n").filter(Boolean).slice(-3).join(" | ")}`);
     }
   }
+  await settleSummary(mission, state);
   return { waiting, seated };
 };
 
@@ -1538,8 +1562,8 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
 };
 
 const sweepOnce = async (project: Project): Promise<void> => {
-  // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough being written.
-  const missions = (await listMissions(project.id)).filter((m) => SWEPT.has(m.status) || m.milestones.some(building));
+  // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough or a summary being written.
+  const missions = (await listMissions(project.id)).filter((m) => SWEPT.has(m.status) || m.milestones.some(building) || summarizing(m));
   if (!missions.length) return;
   const cfg = await missionConfigFor(project.path);
   const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
@@ -1547,7 +1571,9 @@ const sweepOnce = async (project: Project): Promise<void> => {
   for (const mission of missions) {
     const settledWalks = await settleWalkthroughs(project, mission, state);
     if (!SWEPT.has(mission.status)) {
-      if (settledWalks) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
+      // Nothing else is recorded on a mission past flying, but a summary asked of it still lands.
+      const settledSummary = await settleSummary(mission, state);
+      if (settledWalks || settledSummary) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
       continue;
     }
     try {
@@ -2018,6 +2044,49 @@ export const markReading = async (project: Project, id: string, taskId: string, 
     return mission;
   });
   return state === "later" && was !== "later" ? recorded(project, mission, [`${taskId} finding "${finding.headline}" marked later by Cory`]) : mission;
+};
+
+/**
+ * Ask a read-only session for the three things Cory must read, from the report and the findings.
+ * Refused before anything has merged, and while one is already running. A file an earlier summary
+ * left is removed first, so the sweep never reads it as this one's. A person's action, so a
+ * record the sweep moved before the claim is retried; once the session is spawned, the fresh
+ * record already carries its id.
+ */
+export const summarizeMission = async (project: Project, id: string): Promise<Mission> => {
+  const cfg = await missionConfigFor(project.path);
+  for (let attempt = 0; ; attempt += 1) {
+    const mission = await missionOr404(project.id, id);
+    if (!mission.milestones.some((m) => m.merged)) throw new Error(`${mission.name} has merged nothing yet, so there is nothing to summarize`);
+    if (summarizing(mission)) throw new Error(`${mission.name} is already being summarized, since ${mission.summary!.started}`);
+    const file = summaryFile(mission);
+    const { findings } = await statsOf(mission, undefined, false);
+    const brief = summaryBrief({ missionName: mission.name, report: await missionReport(project, id), readings: readingsOf(mission, findings), file });
+    await rm(file, { force: true });
+    const started = new Date().toISOString();
+    let spawned = false;
+    let sent: string | undefined;
+    try {
+      await claimed(mission,
+        () => { mission.summary = { started }; },
+        async () => { spawned = true; sent = await spawnBackgroundAgent(project.path, `summary · ${mission.name}`, brief, cfg.rioAgent, RIO_TOOLS); return sent; },
+        (on, claudeId) => { if (on.summary?.started === started) on.summary.claudeId = claudeId; });
+      agentCache.delete(project.path);
+      return mission;
+    } catch (err) {
+      if (err instanceof StaleMissionError) {
+        if (spawned) { agentCache.delete(project.path); return missionOr404(project.id, id); }
+        if (attempt < 3) continue;
+        throw err;
+      }
+      if (!spawned || sent) throw err;
+      // The claim is on disk and no session is behind it: say why, and leave the button live.
+      return changeMission(project.id, id, (fresh) => {
+        if (fresh.summary?.started === started) fresh.summary.failed = `could not start the summarizer: ${(err as Error).message}`;
+        return fresh;
+      });
+    }
+  }
 };
 
 /** Where the ledger is once a mission is approved: the plan on the mission branch. Null before that, or when the plan names no repo. */
