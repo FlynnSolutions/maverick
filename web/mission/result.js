@@ -96,6 +96,18 @@ const byArea = (readings) => {
   return [...areas];
 };
 const rowId = (key) => `rd-${key.replace(/[^a-z0-9-]/gi, "-")}`;
+
+/* ---------- what I must read: three bullets asked of a read-only session ---------- */
+/** Where the summary stands: nothing merged to read, never asked, running, failed, or written. */
+const summaryState = (v) => {
+  const s = v.summary;
+  if (!v.milestones.some((m) => m.merged)) return "unmerged";
+  if (s?.at) return "written";
+  if (s?.failed) return "failed";
+  return s?.started ? "running" : "none";
+};
+/** How long a post that came back holds the button before its view lands; a post that failed brings no view. */
+const HOLD_MS = 2000;
 /**
  * Whether a merged-files row draws an area: the file or directory itself, a file inside it, or a
  * folded directory holding it. A plain-name area (`general`, `the sign-in form`) is no path, so
@@ -110,13 +122,18 @@ export const mount = (host, view, ctx) => {
   const { el, btn, fmtTime, actionUrl, LANDS } = ctx;
 
   const count = el("span", { class: "n" });
+  const mustAt = el("span", { class: "n" });
+  const mustBody = el("div", { class: "rs-must-body" });
+  const summarizeBtn = btn("summarize", () => summarize());
+  const must = el("div", { class: "rs-must", tabindex: "-1" },
+    el("h2", {}, "What I must read", mustAt), mustBody, el("div", { class: "rs-acts" }, summarizeBtn));
   const sum = el("div", { class: "rs-sum" });
   const files = el("ul", { class: "rs-files", "aria-label": "What merged, by task" });
   const readHead = el("h2", {}, "To read before you merge", el("span", { class: "n" }));
   const read = el("div", { class: "rs-read" });
   const walks = el("ul", { class: "rs-walks", "aria-label": "Milestones: walkthroughs and proofs" });
   const gate = el("div", { class: "rs-gate" });
-  const root = el("div", { class: "mv-result" }, el("h2", {}, "Result", count), sum, files, readHead, read, walks, gate);
+  const root = el("div", { class: "mv-result" }, el("h2", {}, "Result", count), must, sum, files, readHead, read, walks, gate);
   host.append(root);
 
   /** Each block is rebuilt only when what it draws changed, so nothing open inside another is lost. */
@@ -126,6 +143,46 @@ export const mount = (host, view, ctx) => {
     if (drawn.get(node) === shape) return;
     drawn.set(node, shape);
     node.replaceChildren(...draw().filter((n) => n !== null && n !== undefined && n !== false));
+  };
+
+  const drawMust = (v, state) => {
+    const s = v.summary ?? {};
+    if (state === "written") return [renderMarkdown(s.text, { project: ctx.projectId })];
+    return [{
+      unmerged: el("p", { class: "rs-pending" }, "Nothing has merged yet. Once a milestone lands, summarize asks a read-only session to read the report and every finding, and write here the three things you must read before you merge."),
+      none: el("p", { class: "rs-pending" }, "Not asked yet. Summarize asks a read-only session to read the report and every finding, and write here the three things you must read before you merge."),
+      running: el("p", { class: "rs-pending" }, `A read-only session is reading the report and the findings, since ${fmtTime(s.started)}.`),
+      failed: el("p", { class: "rs-warn" }, `The summary failed: ${s.failed}`),
+    }[state]];
+  };
+
+  /*
+   * The button is one node, relabelled in place, so a reader on it keeps it. A post that came back
+   * holds it at `summarizing...` until the view carrying the run lands, or HOLD_MS if none does.
+   */
+  let asked = null;
+  const paintMust = (v) => {
+    const state = summaryState(v);
+    const running = state === "running" || Boolean(asked);
+    summarizeBtn.textContent = running ? "summarizing..." : state === "written" ? "summarize again" : "summarize";
+    const off = running || state === "unmerged";
+    /* A disabled button drops its focus to the page, so it moves to the block, which can hold it. */
+    if (off && document.activeElement === summarizeBtn) must.focus({ preventScroll: true });
+    summarizeBtn.disabled = off;
+    mustAt.textContent = state === "written" ? `written ${fmtTime(v.summary.at)}` : "";
+    patch(mustBody, [state, v.summary], () => drawMust(v, state));
+  };
+  const summarize = async () => {
+    const mine = { before: latest.summary?.started };
+    asked = mine;
+    paintMust(latest);
+    await ctx.act("summarize", {}, "summarizing: a read-only session is reading the findings");
+    if (asked !== mine) return;
+    setTimeout(() => {
+      if (asked !== mine) return;
+      asked = null;
+      paintMust(latest);
+    }, HOLD_MS);
   };
 
   const drawSum = (v, merged) => {
@@ -377,6 +434,8 @@ export const mount = (host, view, ctx) => {
     const chipsOf = (path) => readings.filter((r) => draws(path, r.area));
     const closing = v.status === "review" || v.status === "closed";
     count.textContent = v.status === "closed" ? "closed" : v.status === "review" ? "ready" : merged.length ? "so far" : "not yet";
+    if (asked && v.summary?.started !== asked.before) asked = null;
+    paintMust(v);
     patch(sum, [merged.map((g) => g.tasks.map((t) => [t.own, t.files])), v.milestones[0]?.title, branchOf(v)], () => drawSum(v, merged));
     patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, from, fromFiles,
       rows.map((r) => [r, chipsOf(r.path).map((c) => [c.key, c.severity, c.kind, c.headline, Boolean(c.state)])])])]), () => drawFiles(merged, chipsOf));
