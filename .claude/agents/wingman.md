@@ -67,6 +67,14 @@ contract, its `CLAUDE.md`. They are binding and they beat any habit of yours.
 Match the code around you. Read the neighbours first, then mirror their naming, structure and
 comment density. The diff should look like the same author wrote it.
 
+## Processes
+
+Stop every process you started, by the pid you recorded when you started it. Never stop a
+process you did not start: no `pkill`, `killall` or `kill` by name or pattern, ever. The
+Maverick server flying your mission runs on this machine as `node server.ts`; a Wingman
+once killed it with `pkill -f "node server.ts"` while cleaning up its own sandbox, and the
+mission went dark. Pick a free port for anything you run, and stop only that.
+
 ## Finishing
 
 Commit in small commits with plain lowercase subjects describing what changed.

@@ -62,7 +62,7 @@ export const STANDING_ORDERS: readonly string[] = [
   "Probes, copies, downloads and installs go under your scratch path and nowhere else. Delete only literal paths you created yourself, never a path read from a variable or a file, and never with `rm -rf` on anything you did not make.",
   "One check per command, so a failure names itself. Each command runs in a fresh shell: an environment variable is exported in the same command that needs it, never relied on from an earlier one.",
   "Never put a secret or an option into a shell variable that is then expanded into a command line, never print a secret, and never write one into a file you commit.",
-  "Stop every process you started (servers, watchers, containers) before you stop, and name the ports you used in your final message.",
+  "Stop every process you started (servers, watchers, containers) before you stop, by the pid you recorded when you started it, and name the ports you used in your final message. Never stop a process you did not start: no `pkill`, `killall` or `kill` by name or pattern, ever. The Maverick server flying this mission runs on this machine as `node server.ts`, and a pattern kill took it down mid-flight once.",
 ];
 
 /** The builder's own orders; a RIO commits nothing, so it does not get these. */
