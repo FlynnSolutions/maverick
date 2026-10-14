@@ -1,0 +1,462 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>The result reads itself: milestone 1 walkthrough</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+    --radius:10px; --maxw:1000px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+      --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+      --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+      --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+    --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+    --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+    --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em;
+    background:var(--line2);padding:.08em .38em;border-radius:5px;border:1px solid var(--line);
+    word-break:break-word;}
+  a{color:var(--accent)}
+  pre{overflow-wrap:anywhere}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 120px}
+  header.mast{max-width:var(--maxw);margin:0 auto;padding:36px 20px 20px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:30px;line-height:1.15;margin:.28em 0 .1em;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:15px;max-width:72ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .progwrap{position:sticky;top:0;z-index:20;background:var(--bg);
+    border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:6px}
+  .progrow{max-width:var(--maxw);margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:14px}
+  .bar{flex:1;height:8px;background:var(--line2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s ease}
+  .pct{font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;white-space:nowrap}
+  .tools{display:flex;gap:8px}
+  button.btn{font:inherit;font-size:12.5px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+  button.btn:hover{color:var(--ink);border-color:var(--accent)}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:var(--radius);padding:16px 18px;margin:18px 0}
+  .callout h3{margin:0 0 8px;font-size:15px}
+  .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px;margin-top:4px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px 16px;margin:18px 0 6px}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:28px}
+  @media(max-width:640px){nav.toc ol{columns:1}}
+  nav.toc li{margin:4px 0;break-inside:avoid}
+  nav.toc a{text-decoration:none;color:var(--ink)}
+  nav.toc a:hover{color:var(--accent)}
+  nav.toc .c{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px}
+  section.pillar{margin:30px 0 0}
+  .phead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:10px 0 8px;border-bottom:2px solid var(--line);position:sticky;top:44px;background:var(--bg);z-index:5}
+  .phead h2{margin:0;font-size:21px;letter-spacing:-.01em}
+  .phead .pc{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .tc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    margin:12px 0;overflow:hidden}
+  .tc-head{display:flex;gap:11px;align-items:flex-start;padding:13px 40px 13px 15px;cursor:pointer;user-select:none;position:relative}
+  .tc-head:after{content:"\25BE";position:absolute;right:15px;top:13px;color:var(--faint);transition:transform .15s}
+  .tc-head:hover:after{color:var(--accent)}
+  .tc.collapsed .tc-head:after{transform:rotate(-90deg)}
+  .tc-title{font-weight:600;font-size:15px;flex:1}
+  .caseid{display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    font-weight:700;color:var(--muted);background:var(--line2);border:1px solid var(--line);
+    border-radius:5px;padding:0 6px;margin-right:8px;vertical-align:1px}
+  .tc-actions{display:inline-flex;gap:8px;align-items:center;margin-left:auto;flex:none}
+  .verdict{display:inline-flex;gap:3px}
+  .vbtn{font:inherit;font-size:13px;font-weight:800;width:27px;height:24px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--faint);cursor:pointer;line-height:1;padding:0}
+  .vbtn:hover{border-color:var(--accent);color:var(--ink)}
+  .vbtn.v-pass.on{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+  .vbtn.v-partial.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+  .vbtn.v-fail.on{background:#fdecec;border-color:#e0554c;color:#b3261e}
+  :root[data-theme="dark"] .vbtn.v-fail.on{background:#2c1514;color:#f0918a;border-color:#7a3b36}
+  .vbtn.v-blocked.on{background:var(--line2);border-color:var(--faint);color:var(--ink)}
+  .vbtn.v-defer.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .notebtn{font:inherit;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;white-space:nowrap}
+  .notebtn:hover{border-color:var(--accent);color:var(--accent)}
+  .notebtn.has{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .notebtn.sendbtn.sent{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+  .vchip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--setup);
+    background:var(--setup-soft);border:1px solid var(--setup);border-radius:5px;padding:0 5px;margin-left:7px;vertical-align:1px}
+  .notearea{width:100%;font:inherit;font-size:13px;border:1px solid var(--warn);border-radius:7px;padding:7px 9px;margin:0 0 11px;background:var(--warn-soft);color:var(--ink);resize:vertical;box-sizing:border-box}
+  .tc[data-v="pass"]{border-left:3px solid var(--good)}
+  .tc[data-v="partial"]{border-left:3px solid var(--warn)}
+  .tc[data-v="fail"]{border-left:3px solid #d3453b}
+  .tc[data-v="blocked"]{border-left:3px solid var(--faint)}
+  .tc[data-v="defer"]{border-left:3px solid var(--accent)}
+  #breakdown{display:inline-flex;gap:9px;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  #breakdown .p{color:var(--good)} #breakdown .pa{color:var(--warn)} #breakdown .f{color:#d3453b} #breakdown .bl{color:var(--muted)}
+  #barFill{width:100%;height:100%;background:transparent;display:flex}
+  .bar .seg{height:100%;display:block}
+  .bar .seg-pass{background:var(--good)} .bar .seg-partial{background:var(--warn)}
+  .bar .seg-blocked{background:var(--faint)} .bar .seg-fail{background:#d3453b}
+  .progrow.filters{margin-top:9px;gap:8px;flex-wrap:wrap}
+  .flabel{font-size:12.5px;color:var(--muted)} .flabel b{color:var(--ink);font-weight:600}
+  .fchip{font:inherit;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 13px;cursor:pointer;color:var(--muted)}
+  .fchip:hover{border-color:var(--accent)}
+  .fchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .cpanel{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}
+  .cbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(760px,100%);max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+  .chead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+  .chead .csub{color:var(--muted);font-size:12.5px}
+  #compileText{flex:1;min-height:340px;border:0;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);color:var(--ink);resize:none;outline:none}
+  .tc.done .tc-title{color:var(--done);text-decoration:line-through;text-decoration-thickness:1px}
+  .tc-body{padding:0 15px 14px 43px;font-size:14px}
+  .tc.collapsed .tc-body{display:none}
+  .why{color:var(--muted);margin:0 0 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;margin-right:7px;vertical-align:1px}
+  .tag.setup{background:var(--setup-soft);color:var(--setup)}
+  .tag.ask{background:var(--warn-soft);color:var(--warn)}
+  .setup-line{background:var(--setup-soft);border:1px solid var(--line);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .ask-line{background:var(--warn-soft);border:1px solid var(--warn);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .auto-note{background:var(--accent-soft);border:1px solid var(--line);border-radius:7px;
+    padding:6px 11px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+  .auto-note b{color:var(--ink)}
+  .hist{background:var(--line2);border:1px solid var(--line);border-left:3px solid var(--faint);
+    border-radius:7px;padding:7px 11px;margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .hist .hr{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:3px}
+  .hist p{margin:0 0 6px}
+  .hist p:last-child{margin-bottom:0}
+  .notearea::placeholder{color:var(--faint)}
+  .fix-note{background:var(--good-soft);border:1px solid var(--good);border-radius:7px;
+    padding:7px 11px;margin:0 0 11px;font-size:12.5px;color:var(--ink)}
+  .fix-note b{color:var(--good)}
+  .fix-note.pending{background:var(--warn-soft);border-color:var(--warn)}
+  .fix-note.pending b{color:var(--warn)}
+  .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:10px 0 4px}
+  ol.steps{margin:0 0 4px;padding-left:20px} ol.steps li{margin:4px 0}
+  ul.exp{margin:0;padding-left:0;list-style:none}
+  ul.exp li{margin:5px 0;padding-left:22px;position:relative}
+  ul.exp li:before{content:"\2713";position:absolute;left:2px;color:var(--good);font-weight:800}
+  .exp-wrap{background:var(--good-soft);border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin-top:4px}
+  .guide{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--line2);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 12px;font-size:13px}
+  .guide .who b{color:var(--accent)}
+  .guide .sep{color:var(--muted)}
+  .glink{display:inline-flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);
+    border-radius:6px;padding:3px 10px;color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px}
+  .glink:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .glink:before{content:"\2197";font-size:11px}
+  .pswitch{font-weight:650;text-decoration:none;border-bottom:1px dashed currentColor}
+  .pswitch:hover{opacity:.75}
+  @media(max-width:640px){
+    .progrow{flex-wrap:wrap} .tools{flex-wrap:wrap}
+    .tc-head{flex-wrap:wrap} .tc-actions{flex-wrap:wrap;margin-left:0}
+    .tc-body{padding-left:15px}
+  }
+</style>
+
+
+
+
+<header class="mast">
+  <div class="eyebrow">The result reads itself · milestone 1</div>
+  <h1>Findings carry their own structure</h1>
+  <p class="sub">A RIO is now told to write every finding as <code>- KIND(area, severity): headline. detail</code>. The sorter keeps that shape whole, <code>src/findings.ts</code> reads it (and the old shapes) into a record, and the mission view hands every finding back with a key and what you did with it: <code>read</code>, or <code>later</code>, which puts it on the checklist. Nothing on the page draws this yet; that is milestone 2. So this walk is in a terminal, against the real code and a scratch copy of this mission.</p>
+  <div class="meta"><span><b>Branch</b> mission/the-result-reads-itself</span><span><b>Tasks</b> the finding record, the RIO writes the shape, the view carries the readings</span><span><b>Cases</b> 7</span></div>
+</header>
+<div class="progwrap">
+  <div class="progrow">
+    <span class="pct" id="pctText">0 / 0</span>
+    <span id="breakdown"></span>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="tools">
+      <button class="btn" id="compileBtn" style="font-weight:700;color:var(--accent);border-color:var(--accent)">&#128203; Compile findings</button>
+      <button class="btn" id="themeBtn">Theme</button>
+      <button class="btn" id="expandBtn">Collapse all</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div class="progrow filters">
+    <span class="flabel">Show:</span>
+    <button class="fchip on" data-f="all">All</button>
+    <button class="fchip" data-f="work">Needs work</button>
+    <button class="fchip" data-f="notes">Has notes</button>
+    <button class="fchip" data-f="untested">Untested</button>
+  </div>
+</div>
+<div id="compilePanel" class="cpanel" style="display:none">
+  <div class="cbox">
+    <div class="chead"><b>Findings (markdown)</b><span class="csub">paste this back to iterate</span><span style="flex:1"></span>
+      <button class="btn" id="copyBtn">Copy</button><button class="btn" id="closeBtn">Close</button></div>
+    <textarea id="compileText" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="callout">
+    <h3>Before you start: two terminals in the integration worktree</h3>
+    <p>Every command below runs in <code>/Users/coryflynn/Projects/maverick/.claude/worktrees/the-result-reads-itself-integration-root</code>. Leave the server on 8767 alone; it runs main and this mission is still flying on it.</p>
+    <p>The view cases (v1 to v3) use a scratch copy of this mission on port 18767, because marking a finding <code>later</code> commits to the project's checklist and to the mission ledger. The copy is set to <code>review</code> so no sweep touches it, and its project points at a throwaway git repo holding a copy of the checklist and the plan. Nothing real is written. Paste this once, in terminal 1:</p>
+<pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px">W=/Users/coryflynn/Projects/maverick/.claude/worktrees/the-result-reads-itself-integration-root
+S=/tmp/rri-m1
+rm -rf "$S" &amp;&amp; mkdir -p "$S/home" "$S/sessions/missions/maverick" "$S/repo/deliverables/missions"
+cp "$W/deliverables/CHECKLIST.md" "$S/repo/deliverables/"
+cp "$W/deliverables/missions/the-result-reads-itself.md" "$S/repo/deliverables/missions/"
+git -C "$S/repo" init -q -b main &amp;&amp; git -C "$S/repo" add -A &amp;&amp; git -C "$S/repo" -c user.name=walk -c user.email=walk@local commit -qm seed
+cp ~/.claude/console-sessions/missions/maverick/the-result-reads-itself-m1-t*-review*.md "$S/sessions/missions/maverick/"
+S="$S" node -e '
+const fs=require("fs"),S=process.env.S,src=process.env.HOME+"/.claude/console-sessions/missions/maverick/the-result-reads-itself.json";
+const m=JSON.parse(fs.readFileSync(src,"utf8"));
+m.status="review";
+m.repos=m.repos.map(r=&gt;({...r,path:S+"/repo",integration:S+"/repo",branch:"main"}));
+for(const ms of m.milestones)for(const t of ms.tasks){if(t.review)t.review.file=t.review.file.replace(/^.*\/missions\/maverick\//,S+"/sessions/missions/maverick/");delete t.readings;}
+fs.writeFileSync(S+"/sessions/missions/maverick/the-result-reads-itself.json",JSON.stringify(m,null,2));
+fs.writeFileSync(S+"/home/projects.json",JSON.stringify([{id:"maverick",name:"Maverick (scratch)",path:S+"/repo",trackers:[{label:"CHECKLIST",path:S+"/repo/deliverables/CHECKLIST.md"}]}],null,1));'
+cd "$W" &amp;&amp; SESSION_CONSOLE_PORT=18767 SESSION_CONSOLE_HOME=$S/home SESSION_CONSOLE_SESSIONS=$S/sessions node server.ts</pre>
+    <p>The last line starts the server and keeps terminal 1. In terminal 2, define the one helper the view cases use. It prints each reading as <code>severity kind area task state key headline</code>:</p>
+<pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px">U="localhost:18767/api/missions/the-result-reads-itself"
+readings(){ curl -s "$U?project=maverick" | node -e 'let s="";process.stdin.on("data",d=&gt;s+=d).on("end",()=&gt;{const v=JSON.parse(s);console.log(v.readings.length+" readings");for(const r of v.readings)console.log([r.severity,r.kind,r.area,r.taskId,r.state??"-",r.key,r.headline.slice(0,70)].join("  "))})'; }
+mark(){ curl -s -XPOST "$U/tasks/$1/readings?project=maverick" -H 'content-type: application/json' -d "{\"key\":\"$2\",\"state\":\"$3\"}" -o /dev/null -w "%{http_code}\n"; }</pre>
+    <p>If the server will not start, mark v1 to v3 blocked (⛔) with its error as the note. When you are done: Ctrl+C in terminal 1, then <code>rm -rf /tmp/rri-m1</code>.</p>
+  </div>
+  <div class="callout">
+    <h3>Known going in</h3>
+    <p>The RIOs passed all three tasks (m1-t2 by your call over a mixed verdict) and left these open. They are not cases; note them if you hit them.</p>
+    <dl class="kv">
+      <dt>old brackets</dt><dd>This mission's own RIOs were briefed before the new line existed, and wrote <code>NOTE: [src/missions.ts, ship] ...</code>. Those read as area <code>general</code> with the bracket left in the headline, which is what you will see in v1. Only a RIO briefed from this branch on writes the shape.</dd>
+      <dt>rebuilt key</dt><dd>A finding read from a handed-back file is keyed on <code>BLOCKER: </code> plus its text, not on the line as written. Stable, but a mark made on it is orphaned once the task is retried and passes with its own carried lines.</dd>
+      <dt>changing a mark</dt><dd><code>later</code> then <code>read</code> leaves the checklist line and writes no ledger line. If that checklist line was ticked or edited, a second <code>later</code> appends another one.</dd>
+      <dt>bad input</dt><dd>A missing state, an unknown state or key, or another task's key answers HTTP 500 with a plain message, as the neighbouring routes do, not 400.</dd>
+      <dt>unverified text</dt><dd>On the result page (and in the morning report) a shaped unverified line now files under unverified but keeps its <code>UNVERIFIED(area, check):</code> prefix in the text. Cosmetic; milestone 2 redraws that part.</dd>
+    </dl>
+  </div>
+  <nav class="toc">
+    <ol>
+      <li><a href="#brief">The RIO is told the shape</a> <span class="c" id="toc-brief"></span></li>
+      <li><a href="#record">A line becomes a record</a> <span class="c" id="toc-record"></span></li>
+      <li><a href="#view">The view carries the readings</a> <span class="c" id="toc-view"></span></li>
+      <li><a href="#done">The milestone's done check</a> <span class="c" id="toc-done"></span></li>
+    </ol>
+  </nav>
+
+  <section class="pillar" id="brief" data-key="brief">
+    <div class="phead"><h2>The RIO is told the shape</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="b1"><div class="tc-head"><span class="tc-title">A RIO brief says the format in one line, with an example</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li><code>node bin/maverick brief deliverables/missions/the-result-reads-itself.md m1-t1 --role rio</code></li><li>Find the paragraph that starts <code>Write your findings to</code>.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Still there: the first line must be one of the four <code>verdict:</code> lines, and each finding starts <code>BLOCKER:</code>, <code>NOTE:</code> or <code>UNVERIFIED:</code>.</li>
+        <li>New, in the same paragraph: <code>Every finding is "- KIND(area, severity): headline. detail"</code>, then what area, severity (<code>fix</code>, <code>ship</code>, <code>check</code>), headline and detail each mean, and three examples: a <code>BLOCKER(src/worker, fix)</code>, a <code>NOTE(web/signin, ship)</code> and an <code>UNVERIFIED(deploy, check)</code>.</li>
+        <li>Read it as a RIO would: would you write the shape from that one sentence? If the wording would trip a model, note it; it is what every RIO from now on reads.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="record" data-key="record">
+    <div class="phead"><h2>A line becomes a record</h2><span class="pc"></span></div>
+    <div class="setup-line"><span class="tag setup">how</span>Both cases use one findings file, written the way a RIO writes one: the done-when's two lines, one unverified claim, and three old-style lines. Write it once:
+<pre style="white-space:pre-wrap;font-size:12px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:6px 0 0">mkdir -p /tmp/rri-m1 &amp;&amp; cat &gt; /tmp/rri-m1/sample.md &lt;&lt;'EOF'
+verdict: mixed
+- NOTE(web/signin, ship): focus is lost. The Wingman called it out of scope.
+- BLOCKER(src/worker, fix): A failed job is retried forever. src/worker.ts:42 never reads attempts.
+- UNVERIFIED(deploy, check): The staging deploy was not checked. No credentials here.
+- BLOCKER: the lock leaks on retry. Seen twice in the logs.
+- NOTE: an old-style note still reads.
+- unverified: a carried claim in the old form.
+EOF</pre></div>
+
+    <div class="tc" data-id="r1"><div class="tc-head"><span class="tc-title">The sorter puts each line in the right pile, and keeps the shape whole</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li><code>node --input-type=module -e 'import { readFileSync } from "node:fs"; import { findingsOf } from "./src/audits.ts"; console.log(findingsOf(readFileSync("/tmp/rri-m1/sample.md", "utf8")))'</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>blockers</code>: the <code>BLOCKER(src/worker, fix): ...</code> line in full, then <code>the lock leaks on retry. Seen twice in the logs.</code></li>
+        <li><code>notes</code>: <code>NOTE(web/signin, ship): focus is lost. The Wingman called it out of scope.</code> in full, the <code>UNVERIFIED(deploy, check): ...</code> line in full, <code>an old-style note still reads.</code>, and <code>unverified: a carried claim in the old form.</code></li>
+        <li><code>unsorted</code> is empty, and the <code>verdict:</code> line is in no pile.</li>
+        <li>The point: a shaped line keeps its kind and parenthetical, so the record (r2) can read it; an old line keeps only its text, as before this milestone.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="r2"><div class="tc-head"><span class="tc-title">Every line, new or old, reads as kind, area, severity, headline and detail</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li><pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:0">node --input-type=module -e '
+import { readFileSync } from "node:fs";
+import { parseFinding } from "./src/findings.ts";
+for (const line of readFileSync("/tmp/rri-m1/sample.md", "utf8").split("\n").filter((l) =&gt; l.startsWith("- ")).map((l) =&gt; l.slice(2))) {
+  const f = parseFinding(line, "t1");
+  console.log([f.kind, f.area, f.severity, f.headline, f.detail || "-"].join("  |  "));
+}'</pre></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>NOTE | web/signin | ship | focus is lost. | The Wingman called it out of scope.</code></li>
+        <li><code>BLOCKER | src/worker | fix | A failed job is retried forever. | src/worker.ts:42 never reads attempts.</code></li>
+        <li><code>UNVERIFIED | deploy | check | The staging deploy was not checked. | No credentials here.</code></li>
+        <li>The old ones land in area <code>general</code> with their kind's severity: <code>BLOCKER | general | fix | the lock leaks on retry. | Seen twice in the logs.</code>, <code>NOTE | general | ship | an old-style note still reads. | -</code>, <code>UNVERIFIED | general | check | a carried claim in the old form. | -</code></li>
+        <li>Judge the headlines as the person who will not open the code: is the first sentence the right thing to show alone?</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="view" data-key="view">
+    <div class="phead"><h2>The view carries the readings</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="v1"><div class="tc-head"><span class="tc-title">The mission's findings come back triaged, each with a key</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>With the scratch server up, in terminal 2: <code>readings</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>21 readings</code> (as of 6ac9dbe; more if a milestone 2 task has passed in the live record since).</li>
+        <li>Triage order: no <code>fix</code> rows, then one <code>check</code> row (<code>UNVERIFIED</code>, m1-t3, key <code>m1-t3:13f94819</code>, <code>[web/mission/result.js, check] I did not load the page.</code>), then 20 <code>ship</code> rows: m1-t1's 11, then m1-t3's 9.</li>
+        <li>Every state is <code>-</code>. Every area is <code>general</code> (see "old brackets" above), and no m1-t2 row at all (see v3).</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="v2"><div class="tc-head"><span class="tc-title">Read is remembered; later goes on the checklist once</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li><code>mark m1-t1 m1-t1:e8f996ca read</code></li><li><code>mark m1-t3 m1-t3:13f94819 later</code>, then the same line again.</li><li><code>mark m1-t3 m1-t3:deadbeef later</code></li><li><code>readings | grep -v "  -  "</code>, then <code>git -C /tmp/rri-m1/repo log --oneline</code> and <code>grep -n "from mission" /tmp/rri-m1/repo/deliverables/CHECKLIST.md | grep -v "Add to"</code> and <code>tail -2 /tmp/rri-m1/repo/deliverables/missions/the-result-reads-itself.md</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The marks print <code>200</code>, <code>200</code>, <code>200</code>; the made-up key prints <code>500</code> (terminal 1 shows nothing for it; the body, which <code>mark</code> drops, says <code>no finding "m1-t3:deadbeef" on m1-t3</code>).</li>
+        <li><code>readings</code> now shows exactly those two with a state: <code>m1-t3:13f94819</code> <code>later</code> and <code>m1-t1:e8f996ca</code> <code>read</code>.</li>
+        <li>The scratch repo has two new commits, not four: <code>console: later from mission "The result reads itself": [web/mission/result.js, check] I did not load the page.</code> and a ledger commit ending <code>marked later by Cory</code>.</li>
+        <li>The checklist has one new line under 📋 Backlog: <code>- [ ] `[ENG]` **[web/mission/result.js, check] I did not load the page.** (from mission the-result-reads-itself, The view carries the readings and remembers what was read; general)</code>. Is that the line you want to find in the backlog a week from now?</li>
+        <li>The ledger's last line is <code>... decision: m1-t3 finding "[web/mission/result.js, check] I did not load the page." marked later by Cory</code>, once.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="v3"><div class="tc-head"><span class="tc-title">A task you accepted over the RIO shows none of its findings: your call</span></div><div class="tc-body">
+      <p class="setup-line"><span class="tag setup">decide</span>The m1-t3 RIO found this, and it is live on this mission. The view reads a task's findings file only while the task is <code>handed-back</code>; accepting it sets <code>passed</code> and carries nothing, so the task where you overrode a blocker is the one the Result section will show empty. It matches the task's words, so it is a spec gap, and m2 draws the section on it. Pass means leave it; fail means fix it before m2 lands (the RIO's cheap fix: also read the file for a passed task whose verdict is fail or mixed and that carries nothing, or have accepting carry the open lines). Say which in the note.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li><code>readings | grep -c m1-t2</code></li><li>Flip the scratch copy's m1-t2 back to handed-back: <code>node -e 'const fs=require("fs"),f="/tmp/rri-m1/sessions/missions/maverick/the-result-reads-itself.json",m=JSON.parse(fs.readFileSync(f));m.milestones[0].tasks[1].status="handed-back";fs.writeFileSync(f,JSON.stringify(m,null,2))'</code></li><li><code>readings | head -4</code> and <code>readings | grep -c m1-t2</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>As passed: <code>0</code>.</li>
+        <li>As handed-back: <code>9</code>, and the list now opens with a <code>fix</code> row, m1-t2's <code>BLOCKER</code> <code>[src/report.ts, fix] Once this merges, the morning report files every shaped UNV...</code>, then two <code>check</code> rows. That blocker is the one you accepted over, and m1-t3 fixed it.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="done" data-key="done">
+    <div class="phead"><h2>The milestone's done check</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="dc1"><div class="tc-head"><span class="tc-title">The done-when, run as written</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>In the integration worktree: <code>npm test</code></li><li><code>npm run lint; echo $?</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>npm test</code>: 141 pass, 0 fail (as of 6ac9dbe).</li>
+        <li>Lint prints nothing past its header and exits 0. (It is <code>node --check</code> only: a syntax pass.)</li>
+        <li>With b1, r1 and r2 passed, that is every line of the done-when.</li>
+      </ul></div></div></div>
+  </section>
+
+</div>
+<script>
+(function(){
+  var KEY="maverick-the-result-reads-itself-m1-walkthrough";
+  var VERDS=[["pass","Pass","✓"],["partial","Partial","~"],["fail","Fail","✗"],["blocked","Blocked","⛔"],["defer","Defer","»"]];
+  var state={};
+  try{var sv=JSON.parse(localStorage.getItem(KEY)||"null"); if(sv&&typeof sv==="object")state=sv;}catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  function get(id){var e=state[id]||{};return{v:e.v||"",n:e.n||""};}
+  function put(id,e){if(!e.v&&!(e.n&&e.n.trim()))delete state[id];else state[id]=e;save();}
+  function setV(id,v){var e=get(id);put(id,{v:(e.v===v?"":v),n:e.n});paint(id);render();}
+  function setN(id,n){var e=get(id);put(id,{v:e.v,n:n});paintNote(id);render();}
+  [].forEach.call(document.querySelectorAll('.tc'),function(tc){
+    var id=tc.dataset.id, head=tc.querySelector('.tc-head'), title=tc.querySelector('.tc-title');
+    if(title){var s=document.createElement('span');s.className='caseid';s.textContent=id;title.insertBefore(s,title.firstChild);}
+    var acts=document.createElement('div'); acts.className='tc-actions';
+    var vc=document.createElement('div'); vc.className='verdict';
+    VERDS.forEach(function(vd){
+      var b=document.createElement('button'); b.type='button'; b.className='vbtn v-'+vd[0]; b.dataset.v=vd[0];
+      b.title=vd[1]; b.textContent=vd[2];
+      b.addEventListener('click',function(e){e.stopPropagation();setV(id,vd[0]);});
+      vc.appendChild(b);
+    });
+    var nb=document.createElement('button'); nb.type='button'; nb.className='notebtn'; nb.textContent='+ note';
+    nb.addEventListener('click',function(e){e.stopPropagation();
+      var na=tc.querySelector('.notearea'); na.style.display=(na.style.display==='none')?'':'none';
+      if(na.style.display!=='none'){tc.classList.remove('collapsed'); na.focus();}});
+    var sb=document.createElement('button'); sb.type='button'; sb.className='notebtn sendbtn'; sb.textContent='→ Claude';
+    sb.title='Send this case’s verdict and note to Claude';
+    sb.addEventListener('click',function(e){e.stopPropagation();
+      var st=get(id); sb.disabled=true;
+      fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({caseId:id,caseVersion:1,verdict:st.v,note:st.n.trim()})})
+      .then(function(r){if(!r.ok)throw new Error(r.status);sb.textContent='✓ sent';sb.classList.add('sent');})
+      .catch(function(){sb.textContent='✗ retry';})
+      .then(function(){sb.disabled=false;setTimeout(function(){sb.textContent='→ Claude';sb.classList.remove('sent');},2000);});});
+    acts.appendChild(vc); acts.appendChild(nb); acts.appendChild(sb); head.appendChild(acts);
+    var na=document.createElement('textarea'); na.className='notearea'; na.rows=2;
+    na.placeholder="Note for "+id+": what is wrong, partial or blocked";
+    na.value=get(id).n; na.style.display=get(id).n.trim()?'':'none';
+    na.addEventListener('click',function(e){e.stopPropagation();});
+    na.addEventListener('input',function(){setN(id,na.value);});
+    var body=tc.querySelector('.tc-body'); body.insertBefore(na,body.firstChild);
+    head.addEventListener('click',function(e){
+      if(e.target.closest('.verdict')||e.target.closest('.notebtn'))return;
+      tc.classList.toggle('collapsed');});
+    paint(id);
+  });
+  function paint(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var v=get(id).v;
+    tc.setAttribute('data-v',v);
+    [].forEach.call(tc.querySelectorAll('.vbtn'),function(b){b.classList.toggle('on',b.dataset.v===v);}); paintNote(id);}
+  function paintNote(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var has=!!get(id).n.trim();
+    var nb=tc.querySelector('.notebtn:not(.sendbtn)'); nb.classList.toggle('has',has); nb.textContent=has?'📝 note':'+ note';}
+  var FILTER='all';
+  function match(id){var e=get(id);
+    if(FILTER==='work')return e.v==='partial'||e.v==='fail'||e.v==='blocked';
+    if(FILTER==='notes')return !!e.n.trim();
+    if(FILTER==='untested')return !e.v;
+    return true;}
+  function counts(){var c={total:0,reviewed:0,pass:0,partial:0,fail:0,blocked:0,defer:0,notes:0};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var e=get(tc.dataset.id);c.total++;
+      if(e.v){c.reviewed++;c[e.v]++;} if(e.n.trim())c.notes++;}); return c;}
+  function render(){var c=counts();
+    document.getElementById('pctText').textContent=c.reviewed+' / '+c.total;
+    document.getElementById('breakdown').innerHTML='<span class="p">✓'+c.pass+'</span><span class="pa">~'+c.partial+'</span><span class="f">✗'+c.fail+'</span><span class="bl">⛔'+c.blocked+'</span>';
+    var bar=document.getElementById('barFill'), t=c.total||1; bar.innerHTML='';
+    [['pass',c.pass],['partial',c.partial],['blocked',c.blocked],['fail',c.fail],['defer',c.defer]].forEach(function(x){
+      if(x[1]){var seg=document.createElement('i');seg.className='seg seg-'+x[0];seg.style.width=(x[1]/t*100)+'%';bar.appendChild(seg);}});
+    [].forEach.call(document.querySelectorAll('section.pillar'),function(p){
+      var bs=p.querySelectorAll('.tc'),d=0;[].forEach.call(bs,function(tc){if(get(tc.dataset.id).v)d++;});
+      p.querySelector('.phead .pc').textContent=d+' / '+bs.length;
+      var tt=document.getElementById('toc-'+p.dataset.key); if(tt)tt.textContent='('+d+'/'+bs.length+')';});
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){tc.style.display=match(tc.dataset.id)?'':'none';});}
+  function compile(){var g={fail:[],blocked:[],partial:[],defer:[],passn:[],noverdict:[]};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var id=tc.dataset.id,e=get(id);
+      var title=tc.querySelector('.tc-title').textContent.replace(id,'').trim();
+      var row={id:id,title:title,n:e.n.trim()};
+      if(e.v==='pass'){if(row.n)g.passn.push(row);}
+      else if(e.v)g[e.v].push(row);
+      else if(row.n)g.noverdict.push(row);});
+    var c=counts();
+    var md='# The result reads itself, milestone 1 walkthrough: findings\n\nReviewed '+c.reviewed+'/'+c.total+' · ✓'+c.pass+' pass · ~'+c.partial+' partial · ✗'+c.fail+' fail · ⛔'+c.blocked+' blocked · »'+c.defer+' defer · ✎'+c.notes+' noted\n';
+    function S(h,a){if(!a.length)return'';var s='\n## '+h+' ('+a.length+')\n';a.forEach(function(x){s+='- ['+x.id+'] '+x.title+(x.n?': '+x.n:'')+'\n';});return s;}
+    var out=S('✗ Fail',g.fail)+S('⛔ Blocked',g.blocked)+S('~ Partial',g.partial)+S('» Defer',g.defer)+S('✓ Pass (noted)',g.passn)+S('✎ Noted, no verdict',g.noverdict);
+    return md+(out||'\n_No findings recorded._\n');}
+  var eb=document.getElementById('expandBtn'),collapsed=false;
+  eb.addEventListener('click',function(){collapsed=!collapsed;
+    [].forEach.call(document.querySelectorAll('.tc'),function(el){el.classList.toggle('collapsed',collapsed);});
+    eb.textContent=collapsed?'Expand all':'Collapse all';});
+  // Reset asks in the page: the first press arms it, a second within 4 s clears.
+  var rb=document.getElementById('resetBtn'),armed=0;
+  rb.addEventListener('click',function(){
+    if(!armed){rb.textContent='Press again to clear all';armed=setTimeout(function(){armed=0;rb.textContent='Reset';},4000);return;}
+    clearTimeout(armed);armed=0;rb.textContent='Reset';state={};save();
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){paint(tc.dataset.id);var na=tc.querySelector('.notearea');na.value='';na.style.display='none';});render();});
+  var root=document.documentElement,tkey="maverick-test-theme",tv=null;
+  try{tv=localStorage.getItem(tkey);}catch(e){} if(tv)root.setAttribute('data-theme',tv);
+  document.getElementById('themeBtn').addEventListener('click',function(){var cur=root.getAttribute('data-theme');
+    var next=cur==='dark'?'light':(cur==='light'?'dark':(matchMedia('(prefers-color-scheme: dark)').matches?'light':'dark'));
+    root.setAttribute('data-theme',next);try{localStorage.setItem(tkey,next);}catch(e){}});
+  [].forEach.call(document.querySelectorAll('.fchip'),function(ch){ch.addEventListener('click',function(){
+    FILTER=ch.dataset.f; [].forEach.call(document.querySelectorAll('.fchip'),function(c){c.classList.toggle('on',c===ch);}); render();});});
+  var panel=document.getElementById('compilePanel'),ta=document.getElementById('compileText'),cpy=document.getElementById('copyBtn');
+  document.getElementById('compileBtn').addEventListener('click',function(){ta.value=compile();panel.style.display='flex';ta.focus();ta.select();});
+  document.getElementById('closeBtn').addEventListener('click',function(){panel.style.display='none';});
+  panel.addEventListener('click',function(e){if(e.target===panel)panel.style.display='none';});
+  cpy.addEventListener('click',function(){ta.select();
+    if(navigator.clipboard){navigator.clipboard.writeText(ta.value).then(function(){cpy.textContent='Copied ✓';setTimeout(function(){cpy.textContent='Copy';},1500);});}});
+  render();
+})();
+</script>
