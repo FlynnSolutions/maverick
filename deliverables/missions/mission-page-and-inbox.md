@@ -56,8 +56,8 @@ _done when: with the server running, `node tools/cdp.mjs "http://localhost:8767/
 
 - [~] **The result module**
   - touches: web/mission/result.js, web/mission/result.css
-  - status: reviewing
-  - attempt: 1
+  - status: flying
+  - attempt: 2
   Write `web/mission/result.js` per the module contract, matching the Result section of `/mockups/mission.html`: a summary line (`+N −M · F files · T tasks merged · on <branch>`) computed from `view.diffstat` (the strings are `git diff --stat` output per task; parse the last line for files, insertions, deletions) over tasks whose milestone has `merged`; then a list of merged tasks grouped by milestone with each task's files changed and counts (parse the stat lines; collapse to directories when a task touched more than eight files); then `To read before you merge`: every task's `carried` lines, the ones starting `unverified:` first and marked so, each with the task's title; then the milestone walkthroughs and the proof results that today's `renderReview` shows (status `review`), with the close button and its landing options moved here verbatim, no prompt. Before anything merged, the section says `not yet` and what the first landing will show. `update(view)` patches counts and lists in place. Style in `result.css`.
 
 ## Milestone 3 — The workspace is the inbox
@@ -146,3 +146,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 22:28 m2-t3 The progress module: flying to reviewing
 - 2026-10-13 22:31 m2-t2 The plan module: reviewing to flying
 - 2026-10-13 22:32 m2-t1 The shell: flying to reviewing
+- 2026-10-13 22:33 m2-t4 The result module: reviewing to flying
