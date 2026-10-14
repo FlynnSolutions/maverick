@@ -622,6 +622,18 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     // ledger it writes just after) changes. The watcher is the fast path; the poll catches what
     // it misses, such as a file replaced rather than written in place.
     if (method === "GET" && action === "stream") {
+      // Listening for the close before the first await: a client gone during it must not leave
+      // the poll and the ping running for the life of the process.
+      let closed = false;
+      let watcher: FSWatcher | null = null;
+      let backstop: NodeJS.Timeout | undefined;
+      let ping: NodeJS.Timeout | undefined;
+      req.on("close", () => {
+        closed = true;
+        clearInterval(backstop);
+        clearInterval(ping);
+        watcher?.close();
+      });
       const record = missionPath(project.id, id);
       const first = await page();
       let ledger: string | null = null;
@@ -634,6 +646,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       res.write(`data: ${JSON.stringify(first)}\n\n`);
       const stamp = async () => (await Promise.all([record, ledger].map((f) => (f ? stat(f).then((s) => s.mtimeMs, () => 0) : 0)))).join(":");
       let seen = await stamp();
+      if (closed) return;
       let sending = false;
       const flush = async () => {
         if (sending || res.writableEnded) return;
@@ -651,19 +664,13 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
           sending = false;
         }
       };
-      let watcher: FSWatcher | null = null;
       try {
         watcher = watch(record, () => void flush());
       } catch {
         /* no file to watch: the poll carries it */
       }
-      const backstop = setInterval(() => void flush(), 1000);
-      const ping = setInterval(() => { if (!res.writableEnded) res.write(": ping\n\n"); }, 15_000);
-      req.on("close", () => {
-        clearInterval(backstop);
-        clearInterval(ping);
-        watcher?.close();
-      });
+      backstop = setInterval(() => void flush(), 1000);
+      ping = setInterval(() => { if (!res.writableEnded) res.write(": ping\n\n"); }, 15_000);
       return;
     }
     if (method === "POST" && action === "say") {
