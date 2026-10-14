@@ -8,7 +8,7 @@ const mission = {
   id: "x", project: "p", name: "X", brief: "b", status: "review", created: "2026-10-09T00:00:00Z", finished: "2026-10-09T10:00:00Z", plan: "p.md", trackerIndex: 0, land: "merge", repos: [],
   milestones: [
     { n: 1, title: "a", done: "d", merged: "x", tasks: [
-      { id: "m1-t1", title: "The data module", intent: "i", repo: "root", status: "passed", attempts: 1, verdict: "pass with notes", commits: ["abc one"], carried: ["unverified: the deploy", "tidy the log"] },
+      { id: "m1-t1", title: "The data module", intent: "i", repo: "root", status: "passed", attempts: 1, verdict: "pass with notes", commits: ["abc one"], carried: ["unverified: the deploy", "UNVERIFIED(src/migrate, check): the migration was not run", "tidy the log"] },
       { id: "m1-t2", title: "The worker", intent: "i", repo: "root", status: "passed", attempts: 2, verdict: "mixed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 1 note(s) carried", carried: ["a stray log line"], strayed: ["src/other.ts"] },
     ] },
     { n: 2, title: "b", done: "d", hold: { kind: "landing", reason: "could not land: svc", at: "x" }, tasks: [
@@ -27,7 +27,7 @@ test("the report says what passed, what rode along, what is open, what was never
   assert.match(md, /## Passed, with what rode along\n\n- m1-t1 The data module \(milestone 1\): RIO pass with notes; 1 commit\(s\)\n- m1-t2 The worker \(milestone 1\): RIO mixed; the RIO said mixed/);
   assert.match(md, /## Handed back, open\n\n- m2-t1 The dashboard \(milestone 2\): the RIO said fail/);
   assert.match(md, /## Unfinished\n\n- m2-t2 The cleanup \(milestone 2\): flying/);
-  assert.match(md, /## Unverified, by the RIOs' own account\n\n- m1-t1 The data module \(milestone 1\): the deploy/);
+  assert.match(md, /## Unverified, by the RIOs' own account\n\n- m1-t1 The data module \(milestone 1\): the deploy\n- m1-t1 The data module \(milestone 1\): UNVERIFIED\(src\/migrate, check\): the migration was not run\n\n## Notes carried/, "the old shape and the shaped line are both unverified");
   assert.match(md, /## Notes carried\n\n- m1-t1 The data module \(milestone 1\): tidy the log\n- m1-t2 The worker \(milestone 1\): a stray log line/);
   assert.match(md, /## Files changed outside what the task owned\n\n- m1-t2 The worker \(milestone 1\): src\/other\.ts/);
   assert.match(md, /## Held milestones\n\n- milestone 2 \(landing\): could not land: svc/);

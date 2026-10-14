@@ -32,12 +32,13 @@ import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, writeInput, type TerminalInfo } from "./terminal.ts";
-import { FIELD_LINE, MARKER, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
+import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
 import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
 import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, type FeedEntry } from "./feed.ts";
+import { keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -93,6 +94,8 @@ export interface MissionTask {
   note?: string;
   /** NOTE-level findings the task passed with, or merged with when it ran out of retries. They ride to the result page and the report. */
   carried?: string[];
+  /** What Cory did with each finding, by its key (`keyOf`): read it, or put it on the checklist for later. */
+  readings?: Record<string, "read" | "later">;
 }
 
 /** Progress through the hosted walkthrough document, saved from the page as it is worked. */
@@ -1943,8 +1946,79 @@ const remembered = async (key: string, read: () => Promise<string>, keep: boolea
   return value;
 };
 
+/** A finding as the Result section draws it: the record, whose it is, and what Cory did with it. */
+export type Reading = Finding & { key: string; taskId: string; taskTitle: string; milestone: number; state?: "read" | "later" };
+
 /** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
-export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; word: StatusWord; questions: Question[]; feed: FeedEntry[] };
+export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[] };
+
+/** A line that names its kind, in either shape, is read as written; one that does not is read as what `settleReview` took it for. */
+const LEADS_WITH_KIND = /^(?:BLOCKER|NOTE|UNVERIFIED)\s*[(:]/i;
+
+/**
+ * A task's findings as records, one per key: every carried line, and for a handed-back task its
+ * findings file as `findingsOf` sorts it. A blocker or an unsorted line that does not name its
+ * kind is a blocker to `settleReview` on a verdict that sent the task back, so it is read as one.
+ */
+const taskFindings = (task: MissionTask, text: string | undefined): Finding[] => {
+  const lines = (task.carried ?? []).map((line) => parseFinding(line, task.id));
+  if (task.status === "handed-back" && text) {
+    const sorted = findingsOf(text);
+    const blocker = (line: string) => parseFinding(LEADS_WITH_KIND.test(line) ? line : `BLOCKER: ${line}`, task.id);
+    lines.push(...[...sorted.blockers, ...sorted.unsorted].map(blocker), ...sorted.notes.map((line) => parseFinding(line, task.id)));
+  }
+  // The same line twice is the same finding: one key, one reading.
+  return [...new Map(lines.map((f) => [keyOf(f, task.id), f])).values()];
+};
+
+/** Every task's findings with whose they are and their state, in triage order: fix, then check, then ship, each grouped by area. */
+const readingsOf = (mission: Mission, findings: Record<string, string>): Reading[] => {
+  const all = mission.milestones.flatMap((m) => m.tasks.flatMap((task) => taskFindings(task, findings[task.id]).map((f): Reading => {
+    const key = keyOf(f, task.id);
+    const state = task.readings?.[key];
+    return { ...f, key, taskId: task.id, taskTitle: task.title, milestone: m.n, ...(state ? { state } : {}) };
+  })));
+  const { fix, check, ship } = triage(all);
+  // `triage` hands back the records it was given, so they are still readings.
+  return [...fix, ...check, ...ship] as Reading[];
+};
+
+/**
+ * Cory's mark on one finding. `later` also puts it on the project's first tracker, as one line
+ * under the backlog heading, committed the way the board commits, and says so in the ledger. The
+ * line is written before the record and only when the tracker does not already hold it, so a
+ * second click, or a retry after a record write that failed, never writes it twice.
+ */
+export const markReading = async (project: Project, id: string, taskId: string, key: string, state: "read" | "later"): Promise<Mission> => {
+  if (state !== "read" && state !== "later") throw new Error(`a finding is marked "read" or "later", not "${String(state)}"`);
+  const fresh = await missionOr404(project.id, id);
+  const found = fresh.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId);
+  if (!found) throw new Error(`no task "${taskId}" on ${fresh.name}`);
+  const text = found.review ? await readFile(found.review.file, "utf8").catch(() => "") : "";
+  const finding = taskFindings(found, text).find((f) => keyOf(f, taskId) === key);
+  if (!finding) throw new Error(`no finding "${key}" on ${taskId}`);
+  if (state === "later") {
+    const tracker = project.trackers[0];
+    if (!tracker) throw new Error(`project "${project.id}" has no tracker to put it on`);
+    const line = `${itemBlock(finding.headline, {}, [])} (from mission ${fresh.id}, ${found.title}; ${finding.area})`;
+    const before = await readFile(tracker.path, "utf8");
+    if (!before.split("\n").includes(line)) {
+      const section = parseTracker(before).sections.find((s) => BACKLOG.test(s.heading));
+      if (!section) throw new Error(`${tracker.label} has no ${BACKLOG.source} section to write into`);
+      await writeFile(tracker.path, addItem(before, section.heading, "", line), "utf8");
+      await commitFile(tracker.path, `console: later from mission "${fresh.name}": ${finding.headline}`);
+    }
+  }
+  let was: "read" | "later" | undefined;
+  const mission = await changeMission(project.id, id, (mission) => {
+    const task = mission.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId);
+    if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+    was = task.readings?.[key];
+    task.readings = { ...task.readings, [key]: state };
+    return mission;
+  });
+  return state === "later" && was !== "later" ? recorded(project, mission, [`${taskId} finding "${finding.headline}" marked later by Cory`]) : mission;
+};
 
 /** Where the ledger is once a mission is approved: the plan on the mission branch. Null before that, or when the plan names no repo. */
 export const ledgerPath = (project: Project, mission: Mission): string | null => {
@@ -1999,7 +2073,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const mission = await missionOr404(project.id, id);
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
-  return { ...mission, findings, diffstat, walk, word, questions, feed: feedOf(log, mission) };
+  return { ...mission, findings, diffstat, walk, word, questions, feed: feedOf(log, mission), readings: readingsOf(mission, findings) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */

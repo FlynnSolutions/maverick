@@ -83,11 +83,11 @@ const mergedOf = (view) => {
 };
 
 /** Every carried note, the unverified ones first: those are claims nobody checked, not opinions. */
-const UNVERIFIED = /^unverified:\s*/i;
+const UNVERIFIED = /^unverified(\s*\(|\s*:)/i;
 const toRead = (view) => {
   const notes = view.milestones.flatMap((m) => m.tasks).flatMap((task) => (task.carried ?? []).map((line) => ({
     unverified: UNVERIFIED.test(line),
-    text: line.replace(UNVERIFIED, ""),
+    text: line.replace(/^unverified\s*:\s*/i, ""),
     title: task.title,
   })));
   return [...notes.filter((n) => n.unverified), ...notes.filter((n) => !n.unverified)];

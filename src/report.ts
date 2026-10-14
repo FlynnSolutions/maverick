@@ -13,6 +13,8 @@ const line = (n: number, t: MissionTask): string => `${t.id} ${t.title} (milesto
 /** The ledger says what each line is right after its stamp (`decision:`, `auto:`, `held:`); nothing in the prose after that is read. */
 const DECISION = /^\S+ \S+ decision: /;
 const AUTOMATIC = /^\S+ \S+ auto: /;
+/** A carried unverified claim, as `settleReview` stores the old shape (`unverified: prose`) or the new one (`UNVERIFIED(area, check): ...`). */
+const UNVERIFIED = /^unverified(\s*\(|\s*:)/i;
 
 /** The report as markdown. `findings` is each task's RIO text by task id, verbatim; `log` is the ledger's, or undefined when it could not be read. */
 export const reportFor = (mission: Mission, findings: Record<string, string>, log?: string[]): string => {
@@ -22,8 +24,8 @@ export const reportFor = (mission: Mission, findings: Record<string, string>, lo
   const unfinished = all.filter(({ task }) => !["passed", "handed-back"].includes(task.status));
   const auto = (log ?? []).filter((l) => AUTOMATIC.test(l));
   const byCory = (log ?? []).filter((l) => DECISION.test(l));
-  const unverified = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => c.startsWith("unverified: ")).map((c) => `${line(n, task)}: ${c.slice("unverified: ".length)}`));
-  const carried = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => !c.startsWith("unverified: ")).map((c) => `${line(n, task)}: ${c}`));
+  const unverified = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => UNVERIFIED.test(c)).map((c) => `${line(n, task)}: ${c.replace(/^unverified\s*:\s*/i, "")}`));
+  const carried = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => !UNVERIFIED.test(c)).map((c) => `${line(n, task)}: ${c}`));
   const strayed = all.filter(({ task }) => task.strayed?.length).map(({ n, task }) => `${line(n, task)}: ${task.strayed!.join(", ")}`);
   const section = (title: string, body: string[], none: string): string[] => [`## ${title}`, "", ...(body.length ? body.map((b) => `- ${b}`) : [`_${none}_`]), ""];
   return [
