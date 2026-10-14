@@ -25,13 +25,17 @@ const filesOf = (stat) => stat.trim().split("\n").slice(0, -1).flatMap((line) =>
   const m = line.match(/^\s*(.+?)\s+\|\s+(\d+|Bin)\b/);
   return m ? [{ path: renamed(m[1]), changes: m[2] === "Bin" ? null : Number(m[2]) }] : [];
 });
-/** Past eight files a task's list stops being read, so it folds to the directories they sit in. */
+/**
+ * Past eight files a task's list stops being read, so it folds to the directories they sit in.
+ * git cuts a long path short to `.../tail`, so those fold together under `.../` rather than
+ * under a directory that is only the cut-off tail of the real one.
+ */
 const FOLD_AT = 8;
 const rowsOf = (files) => {
   if (files.length <= FOLD_AT) return files.map((f) => ({ path: f.path, files: 1, changes: f.changes }));
   const dirs = new Map();
   for (const f of files) {
-    const dir = f.path.includes("/") ? `${f.path.slice(0, f.path.lastIndexOf("/"))}/` : "./";
+    const dir = f.path.startsWith(".../") ? ".../" : f.path.includes("/") ? `${f.path.slice(0, f.path.lastIndexOf("/"))}/` : "./";
     const row = dirs.get(dir) ?? { path: dir, files: 0, changes: 0 };
     row.files += 1;
     row.changes += f.changes ?? 0;
@@ -40,14 +44,44 @@ const rowsOf = (files) => {
   return [...dirs.values()];
 };
 
-/** What merged: the milestones that landed on the mission branch, and each of their tasks with its stat. */
-const mergedOf = (view) => (view.milestones ?? []).filter((m) => m.merged).map((m) => ({
-  m,
-  tasks: tasksOf(m).map((task) => {
-    const stat = view.diffstat?.[task.id] ?? "";
-    return { task, totals: stat ? totalsOf(stat) : null, rows: stat ? rowsOf(filesOf(stat)) : [] };
-  }),
-}));
+/**
+ * A task that merged a sibling into its own branch carries the sibling's files in its diff, so
+ * summing the stats counts them twice. `inside` is how that is told from stats alone: every file
+ * of the sibling is in the task's stat with the same count of changed lines. A sibling the task
+ * merged and then edited further does not match, and is still counted twice.
+ */
+const inside = (a, b) => a.files.length > 0 && a !== b
+  && a.files.every((f) => b.files.some((g) => g.path === f.path && g.changes === f.changes))
+  && (b.files.length > a.files.length || b.order > a.order);
+const minus = (a, b) => ({ plus: a.plus - b.plus, minus: a.minus - b.minus });
+
+/**
+ * What merged: the milestones that landed on the mission branch, and each of their tasks with
+ * its stat. `own` is the task's diff less the siblings inside it, and `rows` its files less theirs.
+ */
+const mergedOf = (view) => {
+  const groups = (view.milestones ?? []).filter((m) => m.merged).map((m) => ({
+    m,
+    tasks: tasksOf(m).map((task) => {
+      const stat = view.diffstat?.[task.id] ?? "";
+      return { task, totals: stat ? totalsOf(stat) : null, files: stat ? filesOf(stat) : [] };
+    }),
+  }));
+  const all = groups.flatMap((g) => g.tasks);
+  all.forEach((t, i) => { t.order = i; });
+  for (const t of all) {
+    const within = all.filter((a) => a.totals && inside(a, t));
+    /* Only the outermost: a sibling inside another sibling is already in that one's count. */
+    const direct = within.filter((a) => !within.some((b) => inside(a, b)));
+    const taken = new Set(within.flatMap((a) => a.files.map((f) => f.path)));
+    t.from = direct.map((a) => a.task.title);
+    t.fromFiles = taken.size;
+    const mine = t.files.filter((f) => !taken.has(f.path));
+    t.own = t.totals && { ...direct.reduce((acc, a) => minus(acc, a.totals), t.totals), files: mine.length };
+    t.rows = rowsOf(mine);
+  }
+  return groups;
+};
 
 /** Every carried note, the unverified ones first: those are claims nobody checked, not opinions. */
 const UNVERIFIED = /^unverified:\s*/i;
@@ -96,22 +130,30 @@ export const mount = (host, view, ctx) => {
         ? `Nothing has merged yet. When milestone ${first.n}, ${first.title}, lands on ${branchOf(v)}, this shows its diff: the lines added and removed, the files each of its tasks changed, and the tasks merged.`
         : "Nothing has merged yet, and the plan has no milestones.")];
     }
-    const t = merged.flatMap((g) => g.tasks).reduce((a, { totals }) => (totals ? { files: a.files + totals.files, plus: a.plus + totals.plus, minus: a.minus + totals.minus } : a), { files: 0, plus: 0, minus: 0 });
-    const taskCount = merged.reduce((n, g) => n + g.tasks.length, 0);
-    return [el("b", {}, `+${t.plus} −${t.minus} · ${plural(t.files, "file")} · ${plural(taskCount, "task")} merged`), el("span", {}, `on ${branchOf(v)}`)];
+    const tasks = merged.flatMap((g) => g.tasks);
+    const t = tasks.reduce((a, { own }) => (own ? { plus: a.plus + own.plus, minus: a.minus + own.minus } : a), { plus: 0, minus: 0 });
+    const paths = new Set(tasks.flatMap((x) => x.files.map((f) => f.path)));
+    const missing = tasks.filter((x) => !x.totals).length;
+    return [
+      el("b", {}, `+${t.plus} −${t.minus} · ${plural(paths.size, "file")} · ${plural(tasks.length, "task")} merged`),
+      el("span", {}, `on ${branchOf(v)}`),
+      missing ? el("span", { class: "rs-warn", title: "a diff git could not give is not drawn as zero" }, `${plural(missing, "task")} without a diff, not counted`) : null,
+    ];
   };
 
   const drawFiles = (merged) => merged.flatMap(({ m, tasks }) => [
     el("li", { class: "rs-ms" }, `Milestone ${m.n} · ${m.title}`),
-    ...tasks.flatMap(({ task, totals, rows }) => [
+    ...tasks.flatMap(({ task, own, rows, from, fromFiles }) => [
       el("li", { class: "rs-task" },
         el("span", { class: "d", title: task.title }, task.title),
-        el("span", { class: "n" }, totals ? plural(totals.files, "file") : ""),
-        totals ? el("span", { class: "pm" }, el("b", {}, `+${totals.plus}`), " ", el("i", {}, `−${totals.minus}`)) : el("span", { class: "pm" }, "no diff recorded")),
+        el("span", { class: "n" }, own ? plural(own.files, "file") : ""),
+        own ? el("span", { class: "pm" }, el("b", {}, `+${own.plus}`), " ", el("i", {}, `−${own.minus}`)) : el("span", { class: "pm" }, "no diff recorded")),
       ...rows.map((r) => el("li", { class: "rs-file" },
         el("span", { class: "d", title: r.path }, r.path),
         el("span", { class: "n" }, r.files > 1 ? plural(r.files, "file") : ""),
         el("span", { class: "pm" }, r.changes === null ? "binary" : plural(r.changes, "line")))),
+      from.length ? el("li", { class: "rs-file rs-from" },
+        el("span", { class: "d", title: from.join(", ") }, `and ${plural(fromFiles, "file")} merged in from ${from.join(", ")}, counted there`)) : null,
     ]),
   ]);
 
@@ -210,8 +252,8 @@ export const mount = (host, view, ctx) => {
     const notes = toRead(v);
     const closing = v.status === "review" || v.status === "closed";
     count.textContent = v.status === "closed" ? "closed" : v.status === "review" ? "ready" : merged.length ? "so far" : "not yet";
-    patch(sum, [merged.map((g) => g.tasks.map((t) => t.totals)), (v.milestones ?? [])[0]?.title, branchOf(v)], () => drawSum(v, merged));
-    patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, totals, rows }) => [task.title, totals, rows])]), () => drawFiles(merged));
+    patch(sum, [merged.map((g) => g.tasks.map((t) => [t.own, t.files])), (v.milestones ?? [])[0]?.title, branchOf(v)], () => drawSum(v, merged));
+    patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, rows, from, fromFiles])]), () => drawFiles(merged));
     files.hidden = !merged.length;
     readHead.lastChild.textContent = notes.length ? `${notes.filter((n) => n.unverified).length} unverified · ${notes.length} in all` : "";
     patch(read, notes, () => drawRead(notes));
