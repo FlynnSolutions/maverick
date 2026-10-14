@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mission page, copied structure · mockup · Maverick</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+  <link rel="stylesheet" href="mock.css" />
+  <style>
+    /* The structure every shipping agent product converged on: one page per session with four fixed anchors
+       (Devin: Task, Plan, PR, Summary), a typed activity feed grouped under the plan step it serves, four status
+       words (working, waiting for you, error, done), questions as feed entries that flip the status, and a
+       diff-first result. Nothing here is invented; the colour and type are Maverick's. */
+    html { -webkit-font-smoothing: antialiased; }
+    ::selection { background: var(--accent-dim); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .page { display: grid; grid-template-columns: 200px minmax(0, 760px); gap: 40px; max-width: 1040px; margin: 0 auto; padding: 24px 24px 96px; }
+
+    /* Left: the four anchors and the status. They never move. */
+    .anchors { position: sticky; top: 70px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+    .anchors .st { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 10px; border-radius: 5px; font: 600 13px var(--sans); color: var(--ink); }
+    .anchors .st .lamp { width: 14px; height: 14px; }
+    .anchors .st.waiting { background: var(--caution-dim); color: var(--caution); }
+    .anchors .st.working { background: var(--steel); }
+    .anchors .st.done { background: var(--hud-dim); color: var(--hud); }
+    .anchors a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
+    .anchors a:hover { background: var(--steel); color: var(--ink); }
+    .anchors a.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam-strong); }
+    .anchors a .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+    .anchors a .n.needs { color: var(--caution); }
+    .anchors .sub { margin-top: 18px; padding: 0 10px; font-size: 12px; line-height: 1.5; color: var(--ink-faint); }
+
+    section { margin: 0 0 48px; scroll-margin-top: 70px; }
+    section > h2 { font: 600 13px var(--sans); letter-spacing: 0.02em; color: var(--ink-faint); margin: 0 0 10px; display: flex; gap: 10px; align-items: baseline; }
+    section > h2 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; }
+
+    /* 1. The ask. */
+    .the-ask h1 { margin: 0 0 6px; font: 500 22px/1.35 var(--sans); letter-spacing: -0.01em; color: var(--ink); max-width: 34ch; text-wrap: balance; }
+    .the-ask h1 .name { font-family: var(--display); font-weight: 600; color: var(--ink-soft); margin-right: 10px; }
+    .the-ask p { margin: 0; font-size: 13.5px; color: var(--ink-faint); }
+
+    /* 2. The plan: steps you expand, with a status word each. */
+    .plan ol { list-style: none; margin: 0; padding: 0; }
+    .step { border-radius: 6px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); margin-bottom: 8px; }
+    .step.waiting { box-shadow: 0 0 0 1px var(--caution); }
+    .step.working { box-shadow: 0 0 0 1px var(--seam-strong); }
+    .step.done { background: transparent; }
+    .step > summary { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; list-style: none; }
+    .step > summary::-webkit-details-marker { display: none; }
+    .step > summary .lamp { width: 16px; height: 16px; }
+    .step > summary h3 { font: 600 16px/1.3 var(--sans); color: var(--ink); }
+    .step > summary h3 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); margin-right: 8px; }
+    .step.done > summary h3 { font-weight: 500; color: var(--ink-soft); }
+    .step > summary .w { font: 500 12.5px var(--sans); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+    .step.waiting > summary .w { color: var(--caution); } .step.done > summary .w { color: var(--hud); } .step.working > summary .w { color: var(--ink-soft); }
+    .step .body { padding: 0 14px 12px 42px; }
+    .step .gives { margin: 0 0 10px; font-size: 13.5px; line-height: 1.55; color: var(--ink-soft); max-width: 64ch; }
+    .step .tasks { list-style: none; margin: 0; padding: 0; }
+    .step .tasks li { display: grid; grid-template-columns: 14px minmax(0, 1fr) 170px; gap: 2px 10px; align-items: baseline; padding: 7px 0; box-shadow: inset 0 -1px 0 var(--seam-soft); }
+    .step .tasks li:last-child { box-shadow: none; }
+    .step .tasks .lamp { width: 14px; height: 14px; align-self: center; }
+    .step .tasks .t { font: 500 13.5px var(--sans); color: var(--ink); }
+    .step .tasks .i { grid-column: 2; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); max-width: 56ch; }
+    .step .tasks .w { grid-column: 3; grid-row: 1; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; text-align: right; }
+    .step .tasks .w b { font-weight: 500; color: var(--ink-soft); }
+    .step .tasks .w b.needs { color: var(--caution); } .step .tasks .w b.ok { color: var(--hud); }
+    .step .tasks .w a { color: var(--accent-hot); text-decoration: none; }
+
+    /* 3. The feed: typed entries, grouped under the step they serve. A question is an entry with buttons. */
+    .feed ol { list-style: none; margin: 0; padding: 0; }
+    .feed li { display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); gap: 2px 10px; padding: 8px 0; box-shadow: inset 0 -1px 0 var(--seam-soft); font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); }
+    .feed li .at { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); padding-top: 2px; }
+    .feed li .lamp { width: 14px; height: 14px; margin-top: 3px; }
+    .feed li .who { font-weight: 500; color: var(--ink); margin-right: 6px; }
+    .feed li .where { grid-column: 3; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+    .feed li .res { color: var(--ink-faint); }
+    .feed li.error .text { color: var(--ink); }
+    .feed li.error .who { color: var(--threat); }
+    .feed li.response .who { color: var(--hud); }
+    .feed li.question { grid-template-columns: 44px 16px minmax(0, 1fr); padding: 12px 12px 12px 0; margin: 4px 0; border-radius: 6px; background: var(--caution-dim); box-shadow: 0 0 0 1px var(--caution); color: var(--ink); }
+    .feed li.question .at { padding-left: 10px; }
+    .feed li.question .who { color: var(--caution); }
+    .feed li.question .opts { grid-column: 3; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .feed li.question .opts button { height: 32px; padding: 0 12px; font: 500 13px var(--sans); }
+    .feed li.question .opts button.primary { background: var(--caution); color: #1a1408; border-color: transparent; }
+    .feed li.question .note { grid-column: 3; margin-top: 8px; display: flex; gap: 8px; }
+    .feed li.question .note input { flex: 1; height: 30px; padding: 0 10px; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font-size: 13px; }
+    .feed li.question .note input::placeholder { color: var(--ink-ghost); }
+    .feed .group { padding: 14px 0 4px; font: 500 12px var(--sans); color: var(--ink-faint); }
+    .feed .group b { color: var(--ink-soft); font-weight: 500; }
+    .feed .pin { display: flex; gap: 10px; align-items: center; margin: 0 0 12px; font-size: 13px; color: var(--ink-soft); }
+    .feed .pin .lamp { width: 14px; height: 14px; }
+    .feed .pin a { color: var(--accent-hot); text-decoration: none; }
+    .feed .live { display: flex; align-items: center; gap: 8px; padding: 10px 0 0 54px; font-family: var(--mono); font-size: 11.5px; color: var(--hud); }
+    .feed .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--hud); animation: flick 1.6s steps(1, end) infinite; }
+
+    /* 4. The result: diff first, then what to read. */
+    .result .sum { display: flex; gap: 14px; align-items: baseline; margin: 0 0 10px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); }
+    .result .sum b { color: var(--ink); font-weight: 500; }
+    .result .sum a { color: var(--accent-hot); text-decoration: none; }
+    .files { list-style: none; margin: 0 0 18px; padding: 0; border-radius: 6px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); overflow: hidden; }
+    .files li { display: grid; grid-template-columns: minmax(0, 1fr) 60px 120px 150px; gap: 12px; align-items: center; padding: 8px 14px; box-shadow: inset 0 -1px 0 var(--seam-soft); font-size: 13px; }
+    .files li:last-child { box-shadow: none; }
+    .files li:hover { background: var(--panel); cursor: pointer; }
+    .files .d { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+    .files .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); text-align: right; }
+    .files .pm { font-family: var(--mono); font-size: 11.5px; text-align: right; }
+    .files .pm b { color: var(--hud); font-weight: 400; } .files .pm i { color: var(--threat); font-style: normal; }
+    .files .t { font-size: 12px; color: var(--ink-faint); text-align: right; }
+    .read { list-style: none; margin: 0; padding: 0; }
+    .read li { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 10px; padding: 8px 0; box-shadow: inset 0 -1px 0 var(--seam-soft); font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+    .read li .w { font: 500 12px var(--sans); color: var(--caution); padding-top: 2px; }
+    .read li .w.u { color: var(--info); }
+    .read li .t { color: var(--ink-faint); font-size: 12.5px; }
+    .result .acts { display: flex; gap: 8px; margin-top: 16px; }
+    .result .acts button { height: 34px; padding: 0 14px; font: 500 13px var(--sans); }
+    .result .pending { font-size: 13.5px; color: var(--ink-faint); }
+    @media (max-width: 900px) { .page { grid-template-columns: 1fr; } .anchors { position: static; flex-direction: row; flex-wrap: wrap; } .anchors .sub { display: none; } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <div id="bar"></div>
+  <main class="page">
+    <nav class="anchors" id="anchors" aria-label="Mission"></nav>
+    <div>
+      <section id="ask" class="the-ask"></section>
+      <section id="plan" class="plan"></section>
+      <section id="progress" class="feed"></section>
+      <section id="result" class="result"></section>
+      <p class="mock-foot" id="foot"></p>
+    </div>
+  </main>
+  <script type="module">
+    import { el, lamp, bar } from "./mock.js";
+    import { asked, milestones } from "./mock-story.js";
+    import { feed, result } from "./mock-feed.js";
+
+    document.querySelector("#bar").replaceWith(bar("orbit"));
+    const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"], next: ["idle", "warm"] };
+    const WORD = { passed: "done", flying: "working", reviewing: "in review", "handed-back": "waiting for you", pending: "waiting", next: "next" };
+    const open = feed.filter((f) => f.type === "question" && f.open);
+    const status = open.length ? "waiting" : "working";
+
+    /* anchors */
+    document.querySelector("#anchors").append(
+      el("div", { class: `st ${status}` }, lamp(status === "waiting" ? "blocked" : "busy", "work"), status === "waiting" ? `Waiting for you · ${open.length}` : "Working"),
+      el("a", { href: "#ask" }, "The ask"),
+      el("a", { href: "#plan" }, "Plan", el("span", { class: "n" }, "milestone 2 of 3")),
+      el("a", { href: "#progress", class: "on" }, "Progress", el("span", { class: `n${open.length ? " needs" : ""}` }, open.length ? `${open.length} questions` : "live")),
+      el("a", { href: "#result" }, "Result", el("span", { class: "n" }, "not yet")),
+      el("p", { class: "sub" }, "Same four places, every mission, before, during and after. The status is one of four words."));
+    for (const a of document.querySelectorAll(".anchors a")) a.addEventListener("click", () => { for (const b of document.querySelectorAll(".anchors a")) b.classList.toggle("on", b === a); });
+
+    /* 1. ask */
+    document.querySelector("#ask").append(el("h2", {}, "The ask"), el("h1", {}, el("span", { class: "name" }, asked.name), asked.sentence), el("p", {}, `${asked.by} · on ${asked.branch}`));
+
+    /* 2. plan */
+    const stepState = (ms) => ms.during.state === "landed" ? "done" : ms.tasks.some((t) => t.during.status === "handed-back") ? "waiting" : ms.during.state === "flying" ? "working" : "pending";
+    const stepWord = { done: (ms) => `done ${ms.during.at}`, waiting: () => "waiting for you", working: (ms) => `working since ${ms.during.at}`, pending: () => "not started" };
+    document.querySelector("#plan").append(el("h2", {}, "Plan", el("span", { class: "n" }, "3 milestones · 9 tasks · approved 09:05")), el("ol", {}, ...milestones.map((ms) => {
+      const s = stepState(ms);
+      return el("li", {}, el("details", { class: `step ${s}`, open: s !== "done" },
+        el("summary", {}, s === "done" ? lamp("done", "work") : s === "waiting" ? lamp("blocked", "work") : s === "working" ? lamp("busy", "work") : lamp("idle", "stale"), el("h3", {}, el("span", { class: "n" }, `${ms.n}`), ms.title), el("span", { class: "w" }, stepWord[s](ms))),
+        el("div", { class: "body" }, el("p", { class: "gives" }, ms.gives), el("ul", { class: "tasks" }, ...ms.tasks.map((t) => {
+          const d = t.during;
+          return el("li", {}, lamp(...(LAMP[d.status] ?? LAMP.pending)), el("span", { class: "t" }, t.title), el("span", { class: "i" }, t.intent),
+            el("span", { class: "w" }, el("b", { class: d.status === "handed-back" ? "needs" : d.status === "passed" ? "ok" : "" }, WORD[d.status]), d.attempt ? ` · attempt ${d.attempt}` : "", d.waits ? [el("br"), `after ${(milestones.flatMap((m) => m.tasks).find((x) => d.waits.startsWith(x.id)) ?? { title: d.waits }).title}`] : null, ["flying", "reviewing", "handed-back"].includes(d.status) ? [el("br"), el("a", { href: "#" }, "open")] : null));
+        }))))); })));
+
+    /* 3. progress */
+    const whoLamp = (f) => f.type === "question" ? lamp("blocked", "work") : f.type === "error" ? lamp("idle", "warm") : f.type === "response" ? lamp("done", "work") : f.who === "you" ? lamp("done", "work") : lamp("busy", "work");
+    const label = (step) => { if (!step) return "the gate"; const ms = milestones.find((m) => `m${m.n}` === step); if (ms) return `milestone ${ms.n}, ${ms.title}`; const t = milestones.flatMap((m) => m.tasks).find((t) => t.id === step); return t ? `${t.title} (${t.id})` : step; };
+    const prog = document.querySelector("#progress");
+    prog.append(el("h2", {}, "Progress", el("span", { class: "n" }, `${feed.length} entries · live`)),
+      ...open.map((q) => el("p", { class: "pin" }, lamp("blocked", "work"), el("span", {}, q.text.split(". ")[0] + "."), el("a", { href: "#q-" + feed.indexOf(q) }, "answer below"))));
+    const ol = el("ol");
+    let lastGroup = null;
+    for (const f of feed) {
+      const g = f.step ? f.step.split("-")[0] : "gate";
+      if (g !== lastGroup) { lastGroup = g; ol.append(el("li", { class: "group", style: "display:block;box-shadow:none" }, g === "gate" ? "At the gate" : [el("b", {}, label(g))])); }
+      const li = el("li", { class: f.type, id: `q-${feed.indexOf(f)}` }, el("span", { class: "at" }, f.at), whoLamp(f),
+        el("span", { class: "text" }, el("span", { class: "who" }, f.who), f.text, f.result ? el("span", { class: "res" }, ` · ${f.result}`) : null),
+        f.step && f.step.includes("-") ? el("span", { class: "where" }, label(f.step)) : null);
+      if (f.type === "question" && f.open) li.append(el("div", { class: "opts" }, ...f.options.map((o, i) => el("button", { type: "button", class: i === 0 ? "primary" : "" }, o))), el("div", { class: "note" }, el("input", { type: "text", placeholder: "why, in a line; kept in the ledger" })));
+      ol.append(li);
+    }
+    prog.append(ol, el("div", { class: "live" }, "swept 4 s ago · the next entry lands here"));
+
+    /* 4. result */
+    const res = document.querySelector("#result");
+    res.append(el("h2", {}, "Result", el("span", { class: "n" }, "so far")),
+      el("div", { class: "sum" }, el("b", {}, "+576 −62 · 16 files · 4 tasks merged"), el("span", {}, "on", " ", result.branch), el("a", { href: "#" }, "no PR yet; opens at close")),
+      el("ul", { class: "files" }, ...result.files.filter((f) => ["m1-t1", "m1-t2", "m2-t2", "m3-t2"].includes(f.task) === false ? false : true).map((f) => el("li", {}, el("span", { class: "d" }, f.dir), el("span", { class: "n" }, `${f.n} files`), el("span", { class: "pm" }, el("b", {}, `+${f.plus}`), " ", el("i", {}, `−${f.minus}`)), el("span", { class: "t" }, milestones.flatMap((m) => m.tasks).find((t) => t.id === f.task)?.title)))),
+      el("h2", {}, "To read before you merge", el("span", { class: "n" }, "so far")),
+      el("ul", { class: "read" }, ...result.needsReading.slice(4).map((r) => el("li", {}, el("span", { class: `w${r.what === "unverified" ? " u" : ""}` }, r.what), el("span", {}, r.text, " ", el("span", { class: "t" }, r.task))))),
+      el("p", { class: "pending", style: "margin-top:14px" }, "The rest fills in as milestones land. At close: the PR, the report, every transcript."),
+      el("div", { class: "acts" }, el("button", { type: "button" }, "review the diff"), el("button", { type: "button" }, "pause the mission")));
+
+    document.querySelector("#foot").append(el("b", {}, "Where this structure comes from. "), "Devin anchors every session on Task, Plan, PR and Summary and groups actions under the plan step they serve. Jules shows the plan as steps you expand and approve, then an activity feed with a diff per file. Linear renders agent sessions as a typed feed (thought, action, question, response, error) with four statuses: working, waiting for input, error, done. Superset and Conductor review diff-first: a file tree with counts, then approve. Claude Code on the web keeps a question answerable after the agent went idle. This page is those five, in Maverick's clothes, over the same invented mission as the other mockups.");
+  </script>
+</body>
+</html>

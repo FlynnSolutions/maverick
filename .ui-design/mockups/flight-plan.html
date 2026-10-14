@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flight plan · mockup · Maverick</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+  <link rel="stylesheet" href="../mission.css" />
+  <link rel="stylesheet" href="mock.css" />
+</head>
+<body>
+  <div id="bar"></div>
+  <main class="mock-page" id="page">
+    <section data-option="a">
+      <div class="mission-head">
+        <h1>Orbit: sign-in, claims and the dashboard</h1>
+        <span class="verdict paused" style="text-transform:uppercase">needs you · 3</span>
+        <span class="meta">mission/orbit · milestone 2 of 3 in the air · proof: npm test &amp;&amp; npm run smoke</span>
+        <span class="tools"><label class="toggle"><input type="checkbox" id="focus-a" /> focus: only what moves</label><button type="button" class="ghost">pause</button><button type="button" class="ghost">report</button></span>
+      </div>
+      <div class="fp-side">
+        <div id="bands-a"></div>
+        <aside class="ledger" id="ledger-a"></aside>
+      </div>
+    </section>
+
+    <section data-option="b">
+      <div class="mission-head">
+        <h1>Orbit: sign-in, claims and the dashboard</h1>
+        <span class="verdict paused" style="text-transform:uppercase">needs you · 3</span>
+        <span class="meta">mission/orbit · milestone 2 of 3 in the air</span>
+        <span class="tools"><button type="button" class="ghost">pause</button><button type="button" class="ghost">report</button></span>
+      </div>
+      <div class="legend"><span><i></i> needs</span><span><i class="live"></i> waiting on something in the air</span><span><i class="done"></i> satisfied</span><span><i class="blocked"></i> blocked by a question</span></div>
+      <div class="graph-wrap"><div class="graph" id="graph-b"></div></div>
+      <div class="fp-side"><div id="detail-b"></div><aside class="ledger" id="ledger-b"></aside></div>
+    </section>
+
+    <p class="mock-foot"><b>Both options share:</b> a task's state is its lamp (cold waits, warm next out, lit flying, the reticle sweep while its RIO reads it, the lock when it is handed back to you); <code>touches</code>, <code>needs</code> and <code>deploys</code> are tags on the task, a stray is red; what starts on the next sweep is marked next out, and what waits says what it waits on. The ledger is the plan file's log, newest first, each line marked decision, auto or held, pushed by the server as it is written. Landed milestones fold to one line; focus hides everything that is not moving or waiting on you.</p>
+  </main>
+  <script type="module">
+    import { el, lamp, bar, options, findings } from "./mock.js";
+    import { mission, STATE } from "./mock-data.js";
+
+    document.querySelector("#bar").replaceWith(bar("orbit / plan"));
+    const byId = Object.fromEntries(mission.milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
+    const question = (t) => mission.questions.find((q) => (q.kind === "rio" && t.id === "m2-t3") || (q.kind === "plan" && t.id === "m2-t3"));
+
+    const chev = () => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("class", "chev"); s.innerHTML = '<path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'; return s; };
+    const tags = (t) => [
+      ...(t.touches ?? []).map((p) => el("span", { class: "tag" }, p)),
+      ...(t.strayed ?? []).map((p) => el("span", { class: "tag stray", title: "written outside its touches" }, p)),
+      ...(t.needs ?? []).map((n) => el("span", { class: "tag need" }, `← ${n}`)),
+      ...(t.deploys ?? []).map((d) => el("span", { class: "tag deploy" }, `deploys ${d}`)),
+    ];
+    const stateOf = (t) => {
+      const s = STATE[t.status];
+      const note = t.status === "flying" ? `attempt ${t.attempt} · since ${t.since}` : t.status === "reviewing" ? `attempt ${t.attempt} · since ${t.since}` : t.status === "passed" ? (t.verdict === "pass with notes" ? `with ${t.notes} note` : "clean") : t.status === "handed-back" ? "out of retries" : t.waits ?? t.next ?? "";
+      return el("span", { class: "state" }, el("b", {}, s.label), note ? el("i", { title: note }, note) : null);
+    };
+    const milestoneLamp = (m) => m.state === "done" ? lamp("done", "work") : m.state === "flying" ? lamp("busy", "work") : lamp("idle", "stale");
+
+    // Option A: bands of strips
+    const strip = (t) => {
+      const loud = t.status === "flying" || t.status === "reviewing" || t.status === "handed-back";
+      const cls = ["fp-strip", t.status === "handed-back" ? "needs" : "", t.status === "next" ? "next" : "", loud ? "full" : "", t.status === "passed" ? "passed" : "", t.status === "pending" ? "waits" : ""].filter(Boolean).join(" ");
+      const q = t.status === "handed-back" ? mission.questions.find((x) => x.kind === "rio") : null;
+      return el("div", { class: cls },
+        el("div", { class: "line" },
+          lamp(...STATE[t.status].lamp),
+          el("div", { class: "name" }, el("h4", {}, t.title), el("span", { class: "id" }, t.id)),
+          stateOf(t),
+          el("span", { class: "who" }, t.who ?? ""),
+          el("span", { class: "owns" }, ...tags(t)),
+          el("div", { class: "acts" }, el("button", { type: "button", class: "ghost" }, "open"), el("button", { type: "button", class: "ghost" }, t.verdict ? "findings" : "diff"))),
+        t.say ? el("div", { class: "say" }, el("span", { class: "who-said" }, t.status === "reviewing" ? "rio" : "wingman"), t.say) : null,
+        t.verdict && t.status !== "passed" ? el("div", { class: "verdict-line" }, el("span", {}, `RIO: ${t.verdict} ·`), el("span", { class: "b" }, `${t.blockers} BLOCKER`), el("span", { class: "nt" }, `${t.notes} NOTE`), el("span", { class: "q" }, "· waits on your answer to Q2"), el("a", { href: "question-queue.html#b" }, "answer it")) : null,
+      );
+    };
+    const band = (m) => {
+      const folded = m.state === "done";
+      const tasks = m.tasks;
+      const counts = m.state === "done" ? `landed ${m.merged} · proved` : m.state === "flying" ? `${tasks.filter((t) => t.status === "flying").length} flying · ${tasks.filter((t) => t.status === "reviewing").length} with a RIO · ${tasks.filter((t) => t.status === "handed-back").length} handed back` : `not sent · ${tasks.filter((t) => t.status === "next").length} starts early`;
+      const node = el("section", { class: `fp-band ${m.state === "done" ? "landed" : m.state}${folded ? " folded" : ""}` },
+        el("div", { class: "band-head", onclick: () => node.classList.toggle("folded") },
+          milestoneLamp(m),
+          el("h3", {}, el("span", { class: "mn" }, `M${m.n}`), m.title, el("span", { class: "done" }, `done when: ${m.done}`)),
+          el("span", { class: "right" }, counts, chev())),
+        el("div", { class: "fp-strips" }, ...tasks.map(strip)));
+      return node;
+    };
+    const bandsA = document.querySelector("#bands-a");
+    bandsA.append(
+      el("div", { class: "contracts" }, el("span", { class: "k" }, "Contracts"), ...mission.contracts.map((c) => el("span", { class: "c" }, el("b", {}, c.name), el("i", {}, c.shape), el("span", { class: "o" }, c.owner)))),
+      ...mission.milestones.map(band));
+    document.querySelector("#focus-a").addEventListener("change", (e) => bandsA.classList.toggle("focus", e.target.checked));
+
+    const ledger = (host) => host.append(
+      el("h4", {}, el("span", {}, "Ledger"), el("span", { class: "n" }, `${mission.ledger.length} lines`), el("span", { class: "live" }, "live")),
+      el("ol", {}, ...mission.ledger.map((l) => el("li", { class: l.kind }, el("span", { class: "at" }, l.at), el("span", { class: "k" }, l.kind), el("span", {}, l.text)))));
+    ledger(document.querySelector("#ledger-a"));
+    ledger(document.querySelector("#ledger-b"));
+
+    // Option B: the plan as a graph, needs as edges
+    const graph = document.querySelector("#graph-b");
+    const detail = document.querySelector("#detail-b");
+    const nodes = {};
+    const showDetail = (t) => {
+      const q = t.status === "handed-back" ? mission.questions.find((x) => x.kind === "rio") : null;
+      detail.replaceChildren(el("section", { class: "detail arrive" },
+        el("h4", {}, t.title, el("span", { class: "id" }, t.id), el("span", { class: "id" }, STATE[t.status].label)),
+        el("p", {}, t.say ?? (t.waits ? `Waits: ${t.waits}.` : t.next ? `Next out: ${t.next}.` : t.verdict ? `RIO: ${t.verdict}.` : "Not started.")),
+        el("div", { class: "kv" },
+          el("span", { class: "k" }, "touches"), el("span", { class: "v" }, (t.touches ?? []).join(", ") || "none"),
+          el("span", { class: "k" }, "needs"), el("span", { class: "v" }, (t.needs ?? []).map((n) => `${n} (${byId[n].title}, ${STATE[byId[n].status].label})`).join(", ") || "nothing"),
+          el("span", { class: "k" }, "deploys"), el("span", { class: "v" }, (t.deploys ?? []).join(", ") || "nothing"),
+          el("span", { class: "k" }, "attempt"), el("span", { class: "v" }, t.attempt ? `${t.attempt} of 3` : "none yet"),
+          el("span", { class: "k" }, "session"), el("span", { class: "v" }, t.who ?? "none")),
+        q ? el("div", { style: "grid-column:1/-1" }, el("details", { class: "q-context", open: true }, el("summary", {}, "findings, attempt 3"), findings(q.context.text))) : null,
+        el("div", { class: "acts" }, el("button", { type: "button" }, "open the session"), t.verdict ? el("button", { type: "button" }, "findings") : el("button", { type: "button" }, "diff"), q ? el("a", { href: "question-queue.html#b", style: "align-self:center;font-size:12.5px" }, "answer Q2") : null),
+      ));
+    };
+    const node = (t) => {
+      const n = el("div", { class: `node ${t.status}`, onclick: () => showDetail(t) },
+        lamp(...STATE[t.status].lamp),
+        el("span", { class: "t" }, t.title),
+        el("span", { class: "s" }, el("b", {}, STATE[t.status].label), el("span", {}, t.id), t.attempt ? el("span", {}, `attempt ${t.attempt}`) : null),
+        el("div", { class: "tags" }, ...(t.touches ?? []).map((p) => el("span", {}, p)), ...(t.strayed ?? []).map((p) => el("span", { class: "stray" }, p)), ...(t.deploys ?? []).map((d) => el("span", { class: "deploy" }, `deploys ${d}`))),
+        t.status === "handed-back" ? el("span", { class: "q-ask" }, lamp("blocked", "work"), "Q2: out of retries, your call") : null,
+        t.waits ? el("span", { class: "s" }, el("span", {}, `waits: ${t.waits}`)) : null,
+        t.next ? el("span", { class: "s" }, el("span", {}, "starts on the next sweep")) : null,
+      );
+      nodes[t.id] = n;
+      return n;
+    };
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "edges");
+    graph.append(svg, ...mission.milestones.map((m) => el("div", { class: `col ${m.state === "done" ? "landed" : m.state}` },
+      el("div", { class: "col-head" }, el("span", { class: "mn" }, `M${m.n}`), el("h3", {}, m.title), el("span", { class: "st" }, m.state === "done" ? `landed ${m.merged}` : m.state === "flying" ? "in the air" : "not sent")),
+      el("div", { class: "done" }, `done when: ${m.done}`),
+      ...m.tasks.map(node))));
+    const drawEdges = () => {
+      const g = graph.getBoundingClientRect();
+      svg.replaceChildren();
+      for (const t of Object.values(byId)) for (const n of t.needs ?? []) {
+        const a = nodes[n].getBoundingClientRect(), b = nodes[t.id].getBoundingClientRect();
+        const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const dep = byId[n];
+        const kind = dep.status === "passed" ? "done" : dep.status === "handed-back" ? "blocked" : "live";
+        p.setAttribute("class", `edge ${kind}`);
+        if (Math.abs(a.left - b.left) < 10) {
+          // Same column: leave the bottom of the one and arrive at the top of the other, out along the gutter.
+          const x = a.left - g.left - 14, y1 = a.top + a.height / 2 - g.top, y2 = b.top + b.height / 2 - g.top;
+          p.setAttribute("d", `M${a.left - g.left} ${y1}C${x} ${y1},${x} ${y2},${b.left - g.left} ${y2}`);
+        } else {
+          const x1 = a.right - g.left, y1 = a.top + a.height / 2 - g.top, x2 = b.left - g.left, y2 = b.top + b.height / 2 - g.top;
+          p.setAttribute("d", `M${x1} ${y1}C${x1 + 30} ${y1},${x2 - 30} ${y2},${x2} ${y2}`);
+        }
+        svg.append(p);
+      }
+      // "deploys compute" clashes are drawn too: m3-t3 waits on m2-t2's deploy, though it needs nothing.
+      const a = nodes["m2-t2"].getBoundingClientRect(), b = nodes["m3-t3"].getBoundingClientRect();
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("class", "edge live");
+      p.setAttribute("d", `M${a.right - g.left} ${a.top + a.height / 2 - g.top}C${a.right - g.left + 30} ${a.top + a.height / 2 - g.top},${b.left - g.left - 30} ${b.top + b.height / 2 - g.top},${b.left - g.left} ${b.top + b.height / 2 - g.top}`);
+      svg.append(p);
+    };
+    showDetail(byId["m2-t3"]);
+    options(document.querySelector("#page"), [
+      ["a", "A · bands of strips", "Milestones as bands, tasks as the same strips the workspace uses, needs and deploys as tags, the ledger beside it. Landed milestones fold."],
+      ["b", "B · the graph", "One column per milestone, needs drawn as edges, the state of the edge is the state of what it waits on. Click a task for its detail."],
+    ]);
+    requestAnimationFrame(drawEdges);
+    document.fonts?.ready.then(drawEdges);
+    window.addEventListener("resize", drawEdges);
+    for (const b of document.querySelectorAll(".options button")) b.addEventListener("click", () => requestAnimationFrame(drawEdges));
+  </script>
+</body>
+</html>
