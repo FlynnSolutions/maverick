@@ -36,25 +36,25 @@ _done when: with the server running, `node tools/cdp.mjs "http://localhost:8767/
 
 - [~] **The shell**
   - touches: web/mission.html, web/mission.js, web/mission.css
-  - status: flying
+  - status: built
   - attempt: 1
   Rewrite the mission page as the shell of `/mockups/mission.html`: the bar as it is today (keep `#back`, `#crumb`, `#status`, `#board-link`), then a two-column page, a sticky left rail (200px) and content (max 760px). The rail shows the status word from `view.word` as a chip (`waiting for you` in caution, `done` in hud, `error` in threat, `working` plain) and four anchor links, The ask, Plan, Progress, Result, each with a small count (Plan: milestone n of N; Progress: open questions or `live`; Result: `not yet` until something merged). Each anchor scrolls to a `<section>` of that id; the one in view is marked `on` with an IntersectionObserver. The ask section is the shell's own: `mission.name` as the display name, `mission.brief` as the sentence, created and approved times. Before approval (`status` interviewing or planned) the Plan section shows what today's `renderPlan` shows (the gate: problems, overlaps, warnings, preflight, cost, the approve and interview buttons, the Strike Lead terminal) moved verbatim into the shell; after approval, Plan, Progress and Result are modules: `import("./mission/plan.js")`, `progress.js`, `result.js`, each mounted with the contract below, each wrapped so a module that fails to load shows one line saying so instead of breaking the page. Link `web/mission/plan.css`, `progress.css` and `result.css` from `mission.html` (they may not exist on your branch; a missing stylesheet is harmless). Data: open `EventSource(/api/missions/<id>/stream?project=)` and call every module's `update(view)` on each event; fall back to the 8 s poll if the stream errors twice; never `replaceChildren` on the whole page after the first paint. Keep `watchSession`, `mountTerminal`, `detachTerminal` and the `act` helper from today's file and hand them to modules through `ctx` (`ctx.openSession(taskId)` mounts the task's session, Wingman or RIO, under the element the module passes). Delete every `window.prompt` and `window.confirm` in the file; a module asks with its own note field. Keep `mission.css` to the shell's own rules and the tokens; nothing a module owns.
 
 - [~] **The plan module**
   - touches: web/mission/plan.js, web/mission/plan.css
-  - status: flying
+  - status: built
   - attempt: 1
   Write `web/mission/plan.js` per the module contract, matching the Plan section of `/mockups/mission.html`: one `<details class="step">` per milestone, open unless done, a lamp (`ctx.lamp`), `Milestone n` and the title, one status word on the right (`done <time>`, `waiting for you`, `working since <time>`, `not started`) derived from the milestone (`merged`, `hold`, tasks' statuses, `dispatched`), the done-when line as prose under the heading, then one row per task: lamp by task status (the map in the mockup), title, the task's `intent` as a second line, the status word with attempt count, `after <task title>` for a pending task whose `needs` are not all passed, and for a flying, reviewing or handed-back task a link `open the session` that calls `ctx.openSession(task.id)` and takes the session panel under the row. A handed-back task shows the question's answers inline: find the question for the task in `view.questions` and render each answer as a button that calls `ctx.act(answer.path, body)` with a note field beside the primary when the answer wants one; no prompt. `update(view)` patches in place by id (keep a map of row elements), never rebuilding, so an open session stays open. The milestone walkthrough controls that today's `walkthroughSection` renders stay available here under a done milestone, unchanged in behaviour. Style in `plan.css` with the tokens; nothing in `mission.css`.
 
 - [~] **The progress module**
   - touches: web/mission/progress.js, web/mission/progress.css
-  - status: flying
+  - status: built
   - attempt: 1
   Write `web/mission/progress.js` per the module contract, matching the Progress section of `/mockups/mission.html`: at the top, every open question from `view.questions` pinned as one line each with a lock lamp and `answer below`; then the feed from `view.feed`, oldest first, grouped under a small heading whenever the milestone changes (`At the gate`, `milestone 1, <title>`), each entry a row of time, lamp by kind, `who` in weight, the text, and a mono `where` line naming the task when the entry has one; `question` entries that are still open (match by task or milestone with `view.questions`) carry their answers as buttons and a note field, in a caution ring, exactly like the mockup; an `error` entry's who is in threat, a `response` in hud. Under the feed, a live line (`swept <n> s ago`, from the stream's event time) and the reply box: a text input and a `send` button posting `{ text }` to `say` through `ctx.post`, clearing on success and showing the server's `sent` flag as `the Strike Lead has it` or `kept in the ledger; no Strike Lead session is open`. `update(view)` appends new entries at the bottom and removes answered questions' buttons; it does not rebuild the list. Scroll to a question when the page's hash names it. Style in `progress.css`.
 
 - [~] **The result module**
   - touches: web/mission/result.js, web/mission/result.css
-  - status: flying
+  - status: built
   - attempt: 1
   Write `web/mission/result.js` per the module contract, matching the Result section of `/mockups/mission.html`: a summary line (`+N −M · F files · T tasks merged · on <branch>`) computed from `view.diffstat` (the strings are `git diff --stat` output per task; parse the last line for files, insertions, deletions) over tasks whose milestone has `merged`; then a list of merged tasks grouped by milestone with each task's files changed and counts (parse the stat lines; collapse to directories when a task touched more than eight files); then `To read before you merge`: every task's `carried` lines, the ones starting `unverified:` first and marked so, each with the task's title; then the milestone walkthroughs and the proof results that today's `renderReview` shows (status `review`), with the close button and its landing options moved here verbatim, no prompt. Before anything merged, the section says `not yet` and what the first landing will show. `update(view)` patches counts and lists in place. Style in `result.css`.
 
@@ -133,3 +133,7 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 22:20 m2-t2 The plan module: pending to flying
 - 2026-10-13 22:20 m2-t3 The progress module: pending to flying
 - 2026-10-13 22:20 m2-t4 The result module: pending to flying
+- 2026-10-13 22:26 m2-t1 The shell: flying to built
+- 2026-10-13 22:26 m2-t2 The plan module: flying to built
+- 2026-10-13 22:26 m2-t3 The progress module: flying to built
+- 2026-10-13 22:26 m2-t4 The result module: flying to built
