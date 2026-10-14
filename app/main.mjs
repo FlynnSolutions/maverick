@@ -4,12 +4,13 @@
  * already answers on the port (a `node server.ts` left running in a terminal), the window
  * opens on that and starts nothing of its own.
  */
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, Notification, shell } from "electron";
 import { execFile } from "node:child_process";
 import { request } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import { config } from "../src/config.ts";
+import { newQuestions } from "../src/notify.ts";
 
 const run = promisify(execFile);
 
@@ -64,11 +65,64 @@ const openWindow = (origin) => {
   win.webContents.setWindowOpenHandler(({ url }) => (external(url) ? { action: "deny" } : { action: "allow" }));
   win.webContents.on("will-navigate", (event, url) => { if (external(url)) event.preventDefault(); });
   win.loadURL(origin);
+  return win;
+};
+
+/** A notification is dropped with its click handler once nothing holds it, so the live ones are kept here. */
+const shown = new Set();
+
+const notify = (win, origin, projectId, { missionId, missionName, question }) => {
+  const note = new Notification({ title: missionName, body: question.title });
+  shown.add(note);
+  note.on("close", () => shown.delete(note));
+  note.on("click", () => {
+    shown.delete(note);
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.loadURL(`${origin}mission.html?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(missionId)}#progress`);
+  });
+  note.show();
+};
+
+const getJson = async (url) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+  return res.json();
+};
+
+/**
+ * Every 15 s, each project's missions from the workspace, compared with the last poll of the
+ * same project. A project's first poll only remembers what it asks, so opening the app (or
+ * adding a project) does not announce questions that were already waiting.
+ */
+const pollQuestions = (win, origin) => {
+  const last = new Map();
+  const poll = async () => {
+    try {
+      for (const project of await getJson(`${origin}api/projects`)) {
+        try {
+          const { missions = [] } = await getJson(`${origin}api/workspace?project=${encodeURIComponent(project.id)}`);
+          const now = missions.map((m) => ({ missionId: m.id, missionName: m.name, questions: m.questions ?? [] }));
+          if (last.has(project.id)) for (const fresh of newQuestions(last.get(project.id), now)) notify(win, origin, project.id, fresh);
+          last.set(project.id, now);
+        } catch (err) {
+          console.error(`question poll for ${project.id}:`, err.message);
+        }
+      }
+    } catch (err) {
+      console.error("question poll:", err.message);
+    }
+    if (!win.isDestroyed()) setTimeout(poll, 15_000);
+  };
+  poll();
 };
 
 app.whenReady().then(async () => {
   if (!(await answers(config.port))) await startServer();
-  openWindow(`http://127.0.0.1:${config.port}/`);
+  const origin = `http://127.0.0.1:${config.port}/`;
+  pollQuestions(openWindow(origin), origin);
 });
 
 app.on("window-all-closed", () => app.quit());
