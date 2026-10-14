@@ -8,6 +8,19 @@
 .mv-result a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .mv-result a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
 
+/* What I must read: the summary's three bullets in body weight, above the diff, and the one button that asks for them. */
+.rs-must { margin: 0 0 18px; padding: 12px 14px; border-radius: var(--radius-m); background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); }
+.rs-must:focus { outline: none; }
+.rs-must:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rs-must h2 { margin-top: 0; }
+.rs-must-body .md { max-width: 80ch; }
+.rs-must-body .md ul { margin-bottom: 0; }
+.rs-must-body .md li { font-weight: 400; }
+.rs-must-body .md > :last-child, .rs-must-body p { margin-bottom: 0; }
+.rs-must .rs-acts { margin-top: 10px; }
+.rs-must button:disabled { cursor: default; color: var(--ink-soft); }
+.rs-must button:disabled:hover, .rs-must button:disabled:active { background: var(--steel); box-shadow: none; transform: none; }
+
 .rs-sum { display: flex; flex-wrap: wrap; gap: 14px; align-items: baseline; margin: 0 0 10px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .rs-sum b { color: var(--ink); font-weight: 500; }
 .rs-pending { margin: 0; font-family: var(--sans); font-size: 13.5px; color: var(--ink-faint); max-width: 70ch; }
