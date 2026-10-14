@@ -23,8 +23,12 @@ const answersFor = (q, paused) => q.answers
 
 /**
  * One strip per open question on `mission`: the lock lamp, the question as the name, its body on
- * the `strip-say` line, its answers in the acts column, and a note field under the body when an
- * answer sends one. An answer posts to `/api/missions/<id>/<path>?project=` and then refreshes.
+ * the `strip-say` line, and its answers on a row of their own under it, the primary first. The
+ * acts column is 66/52/64 px, sized for one-word verbs; "send it out again" does not fit it, so
+ * the answers sit where the body's width is and the column is left empty to hold the grid. A note
+ * field appears above them when an answer sends one. An answer posts to
+ * `/api/missions/<id>/<path>?project=` and then refreshes. The strip opens the mission on click,
+ * Enter or Space, as every page strip on the workspace does.
  */
 export const inboxRows = (mission, ctx) => {
   const { el } = ctx;
@@ -36,9 +40,13 @@ export const inboxRows = (mission, ctx) => {
     const wanted = answers.some((a) => a.body?.length);
     const note = wanted ? el("input", { type: "text", placeholder: "why, in a line; kept in the ledger", "aria-label": `Note for: ${q.title}` }) : null;
     const hint = el("span", { class: "empty", role: "status" }, answers.length ? "" : "resume the mission first");
+    const settle = (said) => {
+      hint.textContent = said;
+      for (const b of buttons) b.disabled = false;
+    };
     const buttons = answers.map((a) => el("button", {
       type: "button",
-      class: `act${a.primary ? " primary" : " ghost"}`,
+      class: a.primary ? "primary" : "",
       title: `${a.label}: ${q.title}`,
       onclick: async () => {
         const said = note?.value.trim() ?? "";
@@ -55,24 +63,36 @@ export const inboxRows = (mission, ctx) => {
         try {
           await ctx.post(`/api/missions/${encodeURIComponent(mission.id)}/${a.path}?project=${encodeURIComponent(ctx.projectId)}`, Object.fromEntries(keys.map((k) => [k, said])));
         } catch (err) {
-          hint.textContent = `${a.label} failed: ${err.message}`;
-          for (const b of buttons) b.disabled = false;
+          settle(`${a.label} failed: ${err.message}`);
           return;
         }
-        ctx.refresh();
+        try {
+          await ctx.refresh();
+        } catch (err) {
+          settle(`${a.label} was sent; the workspace did not redraw: ${err.message}`);
+        }
       },
     }, a.label));
-    return el("article", { class: "strip blocked full", "data-mission": mission.id, "data-question": q.id },
+    const open = () => { location.href = href; };
+    return el("article", {
+      class: "strip blocked full",
+      "data-mission": mission.id,
+      "data-question": q.id,
+      tabindex: "0",
+      title: `${q.title} · ${mission.name}`,
+      onclick: (e) => { if (!e.target.closest("button, input, a")) open(); },
+      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } },
+    },
       el("div", { class: "strip-line" },
         ctx.lamp("blocked"),
         el("div", { class: "strip-id" }, el("h4", { class: "strip-name", title: q.title }, q.title)),
         el("span", { class: "strip-state", title: KIND[q.kind] ?? q.kind }, el("b", {}, KIND[q.kind] ?? q.kind)),
         el("span", { class: "strip-when", title: q.at }, ago(q.at)),
         el("span", { class: "strip-where", title: mission.name }, el("a", { href }, mission.name)),
-        el("div", { class: "strip-acts" }, ...buttons)),
+        el("div", { class: "strip-acts" })),
       el("div", { class: "strip-say" },
         el("p", { class: "claude" }, el("span", { class: "who" }, "asks"), q.body),
         note ? el("p", {}, el("span", { class: "who" }, "note"), note) : null,
-        el("p", {}, hint)));
+        el("p", {}, el("span", { class: "who" }, "answer"), ...buttons, hint)));
   });
 };
