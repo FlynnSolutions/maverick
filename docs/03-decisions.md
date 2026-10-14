@@ -547,3 +547,49 @@ wanted, it is what Progress looks like while a mission flies.
 answers, so while the app is open missions move every 15 s rather than every 60 s. It stands.
 
 **Not decided here:** the palette (a variants round of its own) and the map view.
+
+## M21: A finding carries its structure, the Result is triage, and the summary only reads ✅ built
+
+**A finding says what it is at the source.** The RIO writes every finding as one line,
+`KIND(area, severity): headline. detail`: KIND is `BLOCKER`, `NOTE` or `UNVERIFIED`; the area is
+a path or a plain name; the severity is `fix` (must change before merge), `ship` (fine to merge as
+is) or `check` (a claim nobody could verify); the headline is one sentence a person who will not
+open the code can act on, and the detail is the evidence. `rioBrief` says so in one line with an
+example. `findingsOf` still only sorts by kind (M19); `parseFinding` (`src/findings.ts`) turns a
+line into a `Finding`. The old `KIND: prose` and bare prose are still read, in area `general`,
+with the kind's severity (a blocker is `fix`, an unverified claim `check`, a note `ship`) and the
+first sentence as the headline, so a mission flown before this reads the same way. A finding's key
+is its task id and the first 8 hex of the sha1 of its line, stable across views.
+
+**The Result section is triage, not a list.** Three buckets in a fixed order, Fix before merge,
+Unverified, Fine to ship, each with its count, only the first open; inside each, findings are
+grouped by area, a chip and the headline on the row, the detail folded. A finding whose area is
+a path also puts its chip beside that file's row in the merged diff, linking back to it. The rail's Result badge
+counts what is left to fix, `<n> to fix`, not how many notes there are. The view derives the
+readings from the carried lines and the findings files on every read (`MissionView.readings`);
+nothing about a finding is stored but the mark a person put on it.
+
+**Read and later are a person's marks, and later writes the checklist.** Each finding has a
+`read` checkbox and a `later` button, posted to the readings route and kept on the task
+(`MissionTask.readings`, by key). `later` also appends one backlog line to the project's first
+tracker, committed the way the board commits, and says so in the ledger; a second click never
+writes the line twice. A mark is final: the route takes no unmark.
+
+**The summary is a read-only pass over the record.** `summarize` spawns one session under the RIO
+agent and its tool list, with no Edit or Write, briefed with the mission's report and its
+readings in triage order. It writes three bullets to `<record dir>/<id>-summary.md` and nothing
+else; the sweep reads the file into `Mission.summary` once the session is over, or records why it
+failed. The page shows the bullets under `What I must read`, first in Result. It is refused
+before anything has merged and while one is already running.
+
+**Why:** what a mission left for Cory to read was a wall of prose, every RIO note and unverified
+claim printed verbatim under its task, and he does not usually open the code. Cory's call on
+2026-10-14 was six changes, all of them: structure at the source, triage, grouping by area,
+marks that mean something, the note beside the files it is about, and a pass that asks the record.
+
+**Rejected: the page guessing structure from prose.** A page that infers severity from wording
+reads the same note two ways on two days; the RIO knows what it meant, so it writes it down.
+**Rejected: keeping a list of later items in Maverick.** That is a second store (M1); the
+tracker already is the list.
+
+**Not decided here:** how a RIO judges (unchanged from M19), the palette, and the map.
