@@ -495,3 +495,51 @@ the milestone. The Strike Lead sent in on a collision keeps both sides, includin
 test one side added, and writes no product code. On the first mission the shared dev URL ran
 an unmerged task branch twice, two deployers flipped one knob, a lint rule was dropped at a
 merge, and the Lead's unreviewed wiring broke tests within minutes.
+
+## M20: The mission page has four anchors, and the workspace is the inbox ✅ built
+
+**The mission page has four fixed anchors** in a left rail, the same before, during and after
+the flight: The ask, Plan, Progress, Result. Above them the mission's status is one of four
+words: `working`, `waiting for you`, `error`, `done`. The page updates from a server stream and
+each section patches itself in place, so an open session or a half-typed note survives an
+update; it never rebuilds itself.
+
+**A question is a feed entry, answered in place.** Everything waiting on a person (a handed-back
+task, a held milestone, an escalation, a pause, the plan at the gate) is a `Question` with its
+answers as buttons and a note field where an answer needs one. It is pinned at the top of
+Progress, repeated as a strip in the workspace, and pushed as a macOS notification by the app.
+Both surfaces post the same routes and offer only the answers the server will take. There is no
+browser prompt anywhere.
+
+**The workspace is the inbox**, and the page the app opens on. Four groups, top to bottom,
+always in this order: Needs you, Working, Ready to review, Done. A row is a session, a task or a
+mission, with a lamp and its diff stats.
+
+**A reply box to the Strike Lead** sits at the bottom of Progress: one line, to pause and say
+what you see. It lands in the ledger as a `decision:` line (M18), and is typed into the Strike
+Lead's terminal when that terminal is still open.
+
+**The word follows the questions** (Cory's call on m1-t1). A mission with an open question is
+`waiting for you`; one with none never is, whatever escalation it once had, and reads `done` in
+review or closed and `working` otherwise. `error` is kept for what no answer settles: a report
+or ledger that could not be written, or a proof runner that was killed.
+
+**Prior art.** Every shipping agent product has converged on this page, read on 2026-10-13:
+Devin's four anchors (Task, Plan, PR, Summary), Jules's plan as steps then an activity feed,
+Linear's typed feed (thought, action, elicitation, response, error) and its four statuses,
+Superset's and Conductor's diff-first review and In progress / Ready for review grouping,
+Factory Missions' pause-and-tell-the-orchestrator, and Claude Code on the web keeping a question
+answerable after the agent goes idle. The record, with links, is
+`deliverables/plans/mission-ui-2026-10-13.md`; the mockups are in `.ui-design/mockups/`.
+
+**Why:** flying the first fixture mission, Cory could not tell what a milestone was, what a
+task was for, what was running, or where a question from an agent was waiting. The page was
+separate, polled every eight seconds and rebuilt itself; every question was a `window.prompt`;
+the workspace knew a mission only as a row.
+
+**Rejected: Factory's three-pane Mission Control as a page, and the thread as the whole page.**
+Four layouts were drawn on one invented mission (`.ui-design/mockups/options.html`); the inbox
+in front of the four anchors, with the thread's reply box, was chosen. If Mission Control is ever
+wanted, it is what Progress looks like while a mission flies.
+
+**Not decided here:** the palette (a variants round of its own) and the map view.
