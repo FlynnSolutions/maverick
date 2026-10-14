@@ -18,14 +18,18 @@ const HEADLINE_MAX = 120;
 /** `web/signin/` and `web/signin` are one area; a plain name is left as it was written. */
 export const areaName = (area: string): string => area.trim().replace(/\/+$/, "");
 
+/** A `. ` that ends a sentence: not the one inside `e.g. `, `i.e. `, `etc. ` or `vs. `. */
+const STOP = /(?<!\b(?:e\.g|i\.e|etc|vs))\. /i;
+
 /**
- * The first sentence and the rest. With no `. ` in it, a line under 120 characters is all
- * headline; a longer one is cut at the last space before 120, and what follows is the detail.
+ * The first sentence and the rest. A first sentence (or, with no `. `, a whole line) shorter
+ * than 120 characters is the headline; a longer one is cut at the last space before 120, and
+ * what follows is the detail.
  */
 const split = (text: string): { headline: string; detail: string } => {
-  const stop = text.indexOf(". ");
-  if (stop >= 0) return { headline: text.slice(0, stop + 1), detail: text.slice(stop + 2).trim() };
-  if (text.length < HEADLINE_MAX) return { headline: text, detail: "" };
+  const stop = text.search(STOP);
+  const end = stop >= 0 ? stop + 1 : text.length;
+  if (end < HEADLINE_MAX) return { headline: text.slice(0, end), detail: text.slice(end).trim() };
   const space = text.lastIndexOf(" ", HEADLINE_MAX);
   const cut = space > 0 ? space : HEADLINE_MAX;
   return { headline: text.slice(0, cut), detail: text.slice(cut).trim() };
@@ -35,23 +39,27 @@ const split = (text: string): { headline: string; detail: string } => {
  * One list item's text, as `findingsOf` hands it over or as `settleReview` carried it.
  * `KIND(area, severity): headline. detail` says everything; `KIND: prose`, a carried
  * `unverified: prose` and bare prose (a carried note) are read in area `general` with the
- * kind's severity. A severity the line names but this does not know falls back to the kind's.
+ * kind's severity. A severity the line names but this does not know falls back to the kind's,
+ * and a parenthetical that is only a severity leaves the area `general`. A line that leads with
+ * a kind keeps it whatever follows: a space before the colon or the parenthetical, parentheses
+ * inside the area, or a parenthetical with no colon after it.
  * `taskId` is part of the signature callers share with `keyOf`; the record itself does not carry it.
  */
 export const parseFinding = (line: string, taskId: string): Finding => {
   const raw = line.trim();
-  const m = raw.match(/^(BLOCKER|NOTE|UNVERIFIED)(?:\(([^)]*)\))?:\s*(.*)$/i);
-  const kind = (m?.[1].toUpperCase() ?? "NOTE") as Finding["kind"];
+  const lead = raw.match(/^(BLOCKER|NOTE|UNVERIFIED)\s*[(:]/i);
+  const kind = (lead?.[1].toUpperCase() ?? "NOTE") as Finding["kind"];
+  const m = raw.match(/^(?:BLOCKER|NOTE|UNVERIFIED)\s*(?:\((.*?)\)\s*)?:\s*(.*)$/i) ?? raw.match(/^(?:BLOCKER|NOTE|UNVERIFIED)\s*\((.*)\)\s*(.*)$/i);
   let area = "general";
   let severity = SEVERITY[kind];
-  if (m?.[2] !== undefined) {
-    const comma = m[2].lastIndexOf(",");
-    const named = comma >= 0 ? m[2].slice(comma + 1).trim().toLowerCase() : "";
+  if (m?.[1] !== undefined) {
+    const comma = m[1].lastIndexOf(",");
+    const named = m[1].slice(comma + 1).trim().toLowerCase();
     const known = named === "fix" || named === "ship" || named === "check";
     if (known) severity = named;
-    area = areaName(known ? m[2].slice(0, comma) : m[2]) || "general";
+    area = areaName(known ? m[1].slice(0, Math.max(comma, 0)) : m[1]) || "general";
   }
-  return { kind, area, severity, ...split(m ? m[3].trim() : raw), raw };
+  return { kind, area, severity, ...split(m ? m[2].trim() : raw), raw };
 };
 
 /** A finding's name across views: the task it came from and the first 8 hex of the sha1 of its line. */

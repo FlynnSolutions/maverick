@@ -31,6 +31,27 @@ test("a parenthetical without a known severity is all area, and the kind decides
   assert.equal(parseFinding("NOTE(): empty.", "t").area, "general");
 });
 
+test("a line that leads with a kind keeps it when the parenthetical is untidy", () => {
+  const cases: [string, Finding["kind"], string, Finding["severity"], string][] = [
+    ["BLOCKER(web/signin (form), fix): the button submits twice. Two POSTs.", "BLOCKER", "web/signin (form)", "fix", "the button submits twice."],
+    ["BLOCKER (src/worker, fix): never stops.", "BLOCKER", "src/worker", "fix", "never stops."],
+    ["BLOCKER(src/worker, fix) : never stops.", "BLOCKER", "src/worker", "fix", "never stops."],
+    ["BLOCKER(src/worker, fix) never stops.", "BLOCKER", "src/worker", "fix", "never stops."],
+    ["blocker : spaced colon.", "BLOCKER", "general", "fix", "spaced colon."],
+    ["BLOCKER(a, fix): x (y): z", "BLOCKER", "a", "fix", "x (y): z"],
+  ];
+  for (const [line, kind, area, severity, headline] of cases) {
+    const f = parseFinding(line, "t");
+    assert.deepEqual([f.kind, f.area, f.severity, f.headline], [kind, area, severity, headline], line);
+  }
+  assert.equal(parseFinding("Blocker removed, all good.", "t").kind, "NOTE");
+});
+
+test("a parenthetical that is only a severity leaves the area general", () => {
+  const f = parseFinding("NOTE(fix): bare severity.", "t");
+  assert.deepEqual([f.area, f.severity], ["general", "fix"]);
+});
+
 test("the old shape is read in area general with the kind's severity", () => {
   const cases: [string, Finding["kind"], Finding["severity"]][] = [
     ["BLOCKER: the worker never stops. It loops.", "BLOCKER", "fix"],
@@ -64,6 +85,20 @@ test("headline: the first sentence, else the whole line under 120 characters, el
   assert.ok(f.headline.length <= 120, `headline is ${f.headline.length} characters`);
   assert.ok(!f.headline.endsWith(" ") && f.detail.length > 0);
   assert.equal(`${f.headline} ${f.detail}`, long);
+  const edge = `${"x".repeat(115)} yyy`;
+  assert.equal(edge.length, 119);
+  assert.equal(parseFinding(edge, "t").headline, edge);
+  assert.equal(parseFinding(`${edge}y`, "t").headline, "x".repeat(115));
+  assert.equal(parseFinding(`${edge}. tail`, "t").headline, `${edge}.`);
+  const late = parseFinding(`${"word ".repeat(40)}end. tail`, "t");
+  assert.ok(late.headline.length <= 120, `headline is ${late.headline.length} characters`);
+  assert.ok(late.detail.endsWith("end. tail"));
+});
+
+test("an abbreviation does not end the headline", () => {
+  const f = parseFinding("BLOCKER: use e.g. a cap here. More.", "t");
+  assert.deepEqual([f.headline, f.detail], ["use e.g. a cap here.", "More."]);
+  assert.equal(parseFinding("NOTE: one i.e. two. Three.", "t").headline, "one i.e. two.");
 });
 
 test("areaName drops a trailing slash and leaves plain names alone", () => {
