@@ -146,6 +146,36 @@ whether it was also typed into the Strike Lead's terminal, which happens only wh
 is open. An empty reply is a 400; a reply with neither a ledger nor an open terminal to land in
 is an error, not an ok.
 
+## Read the result
+
+The Result section is the mission's findings in three buckets (M21): Fix before merge,
+Unverified, Fine to ship. Each finding's `read` checkbox and `later` button post the readings
+route, with the finding's `key` from `view.readings`:
+
+```bash
+curl -s -X POST "http://localhost:8766/api/missions/<id>/tasks/<task>/readings?project=<project>" \
+  -H 'content-type: application/json' -d '{"key":"<task>:<8 hex>","state":"later"}'
+```
+
+It answers the mission. `state` is `read` or `later`; a missing key or state, an unknown task or
+a key no finding of that task has is an error. `later` also appends one line under the backlog
+heading of the project's first tracker, `` - [ ] `[ENG]` **<headline>** (from mission <id>,
+<task title>; <area>) ``, commits it, and logs it to the ledger; it is not written twice. A
+project whose first tracker has no backlog heading refuses it. There is no unmark.
+
+The `summarize` button above the buckets is the summarize route:
+
+```bash
+curl -s -X POST "http://localhost:8766/api/missions/<id>/summarize?project=<project>"
+```
+
+It answers the mission with `summary.started` set, and spawns one session as the `rioAgent`
+with the RIO's tool list (no Edit or Write), briefed with the report and the readings. That
+session writes three bullets to `<record dir>/<id>-summary.md`, beside the record in `console-sessions/missions/<project>/`;
+the sweep reads it once the session is over and the record carries `summary: { at, text }`, or
+`summary.failed` with why. It is refused while nothing has merged and while a summary is already
+running. A summary asked again replaces the last one.
+
 **The notification** comes from the app, not the server: `app/main.mjs` polls
 `GET /api/workspace?project=<id>` for every registered project every 15 s and shows a macOS
 notification for each question that was not there on the previous poll (`src/notify.ts`). The

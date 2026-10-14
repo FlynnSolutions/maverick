@@ -34,11 +34,11 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | `Formation` | `src/formations.ts` | `session-console/` | `name` (phonetic callsign), `lead`, `members[]` |
 | `ShipRun` | `src/ships.ts` | `console-sessions/ships/<project>/<version>.json` | `version`, `steps[]` |
 | `ShipStep` | `src/ships.ts` | within the run | `prompt`, `status`, `claudeId`, `report`, `artifacts[]` |
-| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `repos[]`, `land`, `formation`, `milestones[]`, `contracts[]`, `requirements[]` |
+| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `repos[]`, `land`, `formation`, `milestones[]`, `contracts[]`, `requirements[]`, `summary` |
 | `MissionRepo` | `src/missions.ts` | within the mission | `label`, `path`, `base`, `branch`, `integration`, `landed` |
 | `Milestone` | `src/missions.ts` | within the mission | `n`, `title`, `done`, `tasks[]`, `merged`, `mergeShas`, `walkthrough` |
 | `MilestoneWalkthrough` | `src/missions.ts` | within the milestone | `claudeId`, `doc`, `progress`, `failed`, `waived` |
-| `MissionTask` | `src/missions.ts` | within the milestone | `repo`, `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict`, `head`, `touches[]`, `needs[]`, `strayed[]`, `carried[]` |
+| `MissionTask` | `src/missions.ts` | within the milestone | `repo`, `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict`, `head`, `touches[]`, `needs[]`, `strayed[]`, `carried[]`, `readings` |
 | release labels | `src/releases.ts` | `session-console/releases.json` | the two planned slots' names and deploy dates only |
 | `Breakdown` | `src/breakdowns.ts` | parsed from `deliverables/breakdowns/<brainstorm>.md`, never stored | `topic`, `items[]` (title, kind, size, call), `already[]`, `problems[]` |
 
@@ -80,7 +80,9 @@ anywhere bumps the minor, fixes alone bump the patch.
 | `Question` | `src/questions.ts` | `id`, `kind` (`handed-back`, `collision`, `landing`, `proof`, `plan`, `paused`, `gate`), `title`, `body`, `at`, `taskId?`, `milestone?`, `answers[]` |
 | `FeedEntry` | `src/feed.ts` | `at`, `kind` (`thought`, `action`, `question`, `response`, `error`), `who` (`you`, `Maverick`, `Wingman`, `RIO`, `Strike Lead`), `text`, `milestone?`, `taskId?` |
 | `StatusWord` | `src/questions.ts` | `working`, `waiting for you`, `error`, `done` |
-| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`: the JSON of `GET /api/missions/:id` and of each stream event |
+| `Finding` | `src/findings.ts` | `kind` (`BLOCKER`, `NOTE`, `UNVERIFIED`), `area`, `severity` (`fix`, `ship`, `check`), `headline`, `detail`, `raw` |
+| `Reading` | `src/missions.ts` | a `Finding` plus `key`, `taskId`, `taskTitle`, `milestone` and `state?` (`read`, `later`) |
+| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`, `readings`: the JSON of `GET /api/missions/:id` and of each stream event |
 | `WorkspaceMission` | `src/missions.ts` | the `Mission` record plus `word`, `questions` and `diffstat` (one `+N −M` line over its merged tasks), as `GET /api/workspace?project=` lists it |
 
 A question's `id` is stable while the thing it asks about is open: `task:<task id>`,
@@ -97,6 +99,24 @@ otherwise `statusWord`'s answer, read as `done` in review or closed and `working
 it would have said `waiting for you` with nothing to answer (Cory's call on m1-t1). `error` is
 for what no answer settles: a report or ledger that could not be written, a proof runner killed
 by a signal.
+
+**A finding is read from its line, never stored** (M21). A RIO writes
+`KIND(area, severity): headline. detail`; `parseFinding` makes it a `Finding`, and the old
+`KIND: prose` or bare prose reads as area `general`, the kind's severity (`BLOCKER` is `fix`,
+`UNVERIFIED` is `check`, `NOTE` is `ship`) and the first sentence as the headline. `raw` is the
+line as written, and a finding's key is `<task id>:<first 8 hex of the sha1 of raw>`, the same
+on every view. `readings` is every task's carried findings and, for a handed-back task, its
+findings file, in triage order: the `fix` bucket, then `check`, then `ship`, each grouped by area
+in the order the areas first appear.
+
+What is stored is a person's marks and the summary:
+
+- `MissionTask.readings` is `Record<key, "read" | "later">`, set by the readings route. A mark is
+  final. `later` has also put one line under the backlog heading of the project's first tracker.
+- `Mission.summary` is `{ started?, claudeId?, at?, text?, failed? }`. `started` and `claudeId`
+  are the claim on the read-only session asked for it; once that session is over, the sweep
+  reads `<record dir>/<id>-summary.md` (beside the record) and replaces the claim with `at` and
+  `text`, its three bullets, or sets `failed` to why there is none.
 
 ## Known limits
 
