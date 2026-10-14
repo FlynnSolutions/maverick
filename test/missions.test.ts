@@ -6,13 +6,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, sweepMissions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 import { closeTerminal, openTerminal } from "../src/terminal.ts";
@@ -727,4 +727,137 @@ test("markReading records read, and later also puts one backlog line on the firs
   assert.equal(execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" }), "", "committed, nothing left loose");
   const decisions = parsePlan(readFileSync(ledger, "utf8")).log.filter((l) => / decision: /.test(l));
   assert.deepEqual(decisions.map((l) => l.replace(/^\S+ \S+ /, "")), ['decision: m1-t1 finding "focus is lost." marked later by Cory']);
+});
+
+/* ---------- the summarizer ---------- */
+
+/**
+ * A `claude` of the test's own, first on PATH: `agents` prints what the test put in agents.json,
+ * anything else is a spawn, which records its working directory and arguments and prints the
+ * line `spawnBackgroundAgent` reads the id from, or fails while a `fail` file exists.
+ */
+const fakeClaude = mkdtempSync(join(tmpdir(), "mv-m3-t1-claude-"));
+made.push(fakeClaude);
+writeFileSync(join(fakeClaude, "claude"), `#!/bin/sh
+if [ "$1" = agents ]; then cat "${fakeClaude}/agents.json"; exit 0; fi
+if [ -e "${fakeClaude}/fail" ]; then echo "no credits" >&2; exit 1; fi
+pwd > "${fakeClaude}/cwd"
+printf '%s\\0' "$@" > "${fakeClaude}/args"
+echo "backgrounded · 5eed1"
+`, "utf8");
+chmodSync(join(fakeClaude, "claude"), 0o755);
+const agentsSay = (list: Array<{ id: string; state: string }>) => writeFileSync(join(fakeClaude, "agents.json"), JSON.stringify(list.map((a) => ({ ...a, kind: "background" }))), "utf8");
+const spawnedWith = () => readFileSync(join(fakeClaude, "args"), "utf8").split("\0").slice(0, -1);
+const realPath = process.env.PATH;
+process.env.PATH = `${fakeClaude}:${realPath}`;
+after(() => { process.env.PATH = realPath; });
+
+/** A mission on its own project, so a sweep here never reaches the other tests' flying records. Milestone 1 merged unless told otherwise. */
+const summaryFixture = (id: string, patch: Partial<Mission> = {}) => {
+  const root = tempRepo("mv-m3-t1-root");
+  made.push(root.dir);
+  const project = { id: "p-m3-t1", name: "P", path: root.dir, trackers: [] } as never;
+  const mission = {
+    id, project: "p-m3-t1", name: id, brief: "b", status: "review", created: "2026-10-14T07:00:00Z",
+    approved: "2026-10-14T07:30:00Z", plan: "plan.md", trackerIndex: 0, land: "merge", rev: 1,
+    repos: [{ label: "root", path: root.dir, base: "main", branch: `mission/${id}`, integration: root.dir, land: "merge" }],
+    milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-14T07:30:00Z", merged: "2026-10-14T09:00:00Z", tasks: [
+      { id: "m1-t1", title: "The worker", intent: "Build the worker.", repo: "root", status: "passed", attempts: 1, verdict: "pass with notes", carried: ["NOTE(src/worker, ship): the worker logs every poll. Noisy, not wrong."] }] }],
+    ...patch,
+  };
+  mkdirSync(join(sessions, "missions", "p-m3-t1"), { recursive: true });
+  writeFileSync(join(sessions, "missions", "p-m3-t1", `${id}.json`), JSON.stringify(mission), "utf8");
+  return { project, root: root.dir, file: join(sessions, "missions", "p-m3-t1", `${id}-summary.md`) };
+};
+const recordOf = (id: string): Mission => JSON.parse(readFileSync(join(sessions, "missions", "p-m3-t1", `${id}.json`), "utf8")) as Mission;
+
+test("summarizeMission refuses a mission that has merged nothing, and touches no record or agent", async () => {
+  rmSync(join(fakeClaude, "args"), { force: true });
+  const { project } = summaryFixture("unmerged", { status: "planned", milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-14T07:30:00Z", tasks: [{ id: "m1-t1", title: "t", intent: "i", repo: "root", status: "passed", attempts: 1 }] }] as never });
+  await assert.rejects(() => summarizeMission(project, "unmerged"), /has merged nothing yet/);
+  assert.equal(recordOf("unmerged").summary, undefined);
+  assert.equal(existsSync(join(fakeClaude, "args")), false, "nothing was spawned");
+});
+
+test("summarizeMission spawns one read-only rio in the project, records it, and refuses a second while it runs", async () => {
+  const { project, root, file } = summaryFixture("asked");
+  writeFileSync(file, "- a summary from an earlier run\n", "utf8");
+  const mission = await summarizeMission(project, "asked");
+  const id = mission.summary?.claudeId;
+  assert.equal(id, "5eed1");
+  assert.ok(mission.summary?.started && !mission.summary.at && !mission.summary.failed);
+  assert.deepEqual(recordOf("asked").summary, mission.summary, "the record on disk carries the claim and the id");
+  assert.equal(existsSync(file), false, "an earlier summary's file is gone, so it cannot be read as this one's");
+  assert.equal(readFileSync(join(fakeClaude, "cwd"), "utf8").trim(), root, "spawned in the project path");
+  const args = spawnedWith();
+  assert.equal(args[args.indexOf("--agent") + 1], "rio");
+  assert.equal(args[args.indexOf("--tools") + 1], "Bash,Read,Grep,Glob");
+  const brief = args.at(-1)!;
+  assert.ok(brief.includes(`Write the three bullets to ${file}`), "the brief names the file");
+  assert.match(brief, /exactly three markdown bullets/);
+  assert.match(brief, /ship · src\/worker · NOTE · m1-t1 The worker: the worker logs every poll\. Noisy, not wrong\./, "the brief carries the findings");
+  assert.match(brief, /# Mission report: asked/, "the brief carries the report");
+  await assert.rejects(() => summarizeMission(project, "asked"), /already being summarized/);
+  assert.equal(recordOf("asked").summary?.claudeId, id, "the refusal left the running claim alone");
+});
+
+// The agent listing is cached per project path for a sweep's lifetime and longer, so each of
+// these asks it once, on a fixture of its own.
+test("the sweep leaves a summary alone while its session is still working, even with a file half written", async () => {
+  const { project, file } = summaryFixture("working");
+  const { summary } = await summarizeMission(project, "working");
+  agentsSay([{ id: summary!.claudeId!, state: "working" }]);
+  writeFileSync(file, "- Fix the sign-in page first.\n", "utf8");
+  await sweepMissions(project);
+  assert.deepEqual(recordOf("working").summary, summary);
+});
+
+test("the sweep reads the summary once its session has ended, and the view carries it", async () => {
+  const { project, file } = summaryFixture("landed");
+  const { summary } = await summarizeMission(project, "landed");
+  const bullets = "- Fix the sign-in page: it loses focus.\n- Nobody checked the deploy.\n- The worker is safe to merge.\n";
+  writeFileSync(file, bullets, "utf8");
+  agentsSay([{ id: summary!.claudeId!, state: "done" }]);
+  await sweepMissions(project);
+  const landed = recordOf("landed").summary!;
+  assert.deepEqual(Object.keys(landed).sort(), ["at", "text"]);
+  assert.equal(landed.text, bullets.trim());
+  assert.ok(!Number.isNaN(Date.parse(landed.at!)));
+  assert.deepEqual((await missionView(project, "landed")).summary, landed);
+  const again = await summarizeMission(project, "landed");
+  assert.ok(again.summary?.started && !again.summary.at, "a landed summary can be asked for again");
+});
+
+test("a summarizer that ends without its file is a failed summary with the reason, and the button is live again", async () => {
+  const { project, file } = summaryFixture("silent");
+  const { summary } = await summarizeMission(project, "silent");
+  agentsSay([{ id: summary!.claudeId!, state: "exited" }]);
+  await sweepMissions(project);
+  const failed = recordOf("silent").summary!;
+  assert.equal(failed.failed, `the session finished without writing ${file}`);
+  assert.equal(failed.at, undefined);
+  assert.equal((await missionView(project, "silent")).summary?.failed, failed.failed);
+  assert.ok((await summarizeMission(project, "silent")).summary?.claudeId, "a failed summary does not block the next");
+});
+
+test("the sweep settles a summary on a mission still in the air, through recordFinished", async () => {
+  const { project, file } = summaryFixture("paused", { status: "paused", pausedFor: "lunch" });
+  const { summary } = await summarizeMission(project, "paused");
+  writeFileSync(file, "- one\n- two\n- three\n", "utf8");
+  agentsSay([{ id: summary!.claudeId!, state: "done" }]);
+  await sweepMissions(project);
+  assert.equal(recordOf("paused").summary?.text, "- one\n- two\n- three");
+});
+
+test("a summarizer that cannot be spawned says why on the record and leaves the button live", async () => {
+  const { project } = summaryFixture("unspawned");
+  writeFileSync(join(fakeClaude, "fail"), "", "utf8");
+  try {
+    const mission = await summarizeMission(project, "unspawned");
+    assert.match(mission.summary?.failed ?? "", /^could not start the summarizer: .*no credits/s);
+    assert.equal(recordOf("unspawned").summary?.failed, mission.summary?.failed);
+  } finally {
+    rmSync(join(fakeClaude, "fail"), { force: true });
+  }
+  assert.ok((await summarizeMission(project, "unspawned")).summary?.claudeId);
 });
