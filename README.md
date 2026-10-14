@@ -195,10 +195,11 @@ own; change the two sets at the top of `web/app.js` to retune it.
 
 The Workspace view shows every Claude session on the machine as a panel: interactive ones
 from the registry, background ones from `claude agents`, grouped by project and ordered by
-what needs the pilot: a **Needs you** band first (sessions waiting on input), then the
-formations (a lead session and the task sessions it watches, hung off a hairline, with the
-audit verdict on each), then Working, Idle and Finished, with closed formations folded to
-one line. A panel carries the status lamp, where the session lives, and the last exchange;
+what needs the pilot in four groups, always in this order: **Needs you** (sessions waiting
+on input, ones that ended on a question, and missions' open questions), **Working** (busy
+sessions and the formations, a lead session and the task sessions it watches, hung off a
+hairline, with the audit verdict on each), **Ready to review** (replies to read, missions at
+the result gate) and **Done**, with closed formations folded to one line. A panel carries the status lamp, where the session lives, and the last exchange;
 `dock` is its one action. Click it and the session opens full screen as a conversation
 read from its transcript (`/api/transcript`, polled incrementally): your prompts as
 panels, Claude's replies as rendered markdown, runs of tool calls folded into one line of
