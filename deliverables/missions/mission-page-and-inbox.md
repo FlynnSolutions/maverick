@@ -79,8 +79,9 @@ _done when: with the server running, the workspace (`/?view=workspace`) renders 
 - [~] **The four groups**
   - touches: web/command.js, web/style.css
   - needs: m3-t1
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: b4c1b72
   In `web/command.js`, `projectSection` composes four groups in this order and nothing else at the top level: `Needs you` (sessions that are blocked or waiting, every mission's `inboxRows` from `web/inbox.js`, and the `Needs action` sessions that carry a question), `Working` (busy sessions, formations and shells, missions whose `word` is `working` as one row each with their `diffstat`), `Ready to review` (missions in `review`, sessions whose last turn was Claude's and are idle under an hour), `Done` (done and stale sessions, closed missions, the closed list). Each group is a `rack` with the existing heading pattern and count; `Needs you` keeps `.rack.needs`, the loudest. Mission rows reuse `missionRow` with the diff stats added in the `where` column. Drag and drop between formation racks keeps working; the formation tabs stay. In `web/style.css`, only what the regrouping needs (a `.rack.review` heading colour); nothing else moves. Remove the old racks that these replace (`Shells`, `Idle`, `Stale`, `Background`), folding their strips into the groups above.
 
 ## Milestone 4 — The question reaches you, and the page is where you start
@@ -173,3 +174,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-14 09:45 m3-t1 Questions on the workspace feed: handed-back to passed (RIO: mixed): accepted by Cory over the RIO: Cory's call: the one open blocker is layout, and inbox.js cannot fix it because the rule that breaks it lives in style.css, which m3-t2 owns. m3-t2: give the inbox strip's answers their own block under the say line, `.strip-say .inbox-answers { display: flex; flex-wrap: wrap; gap: 6px; }` with `white-space: nowrap` on its buttons and the status hint on its own line, never inside the flex paragraph; then render the Needs you rack at 1440 and 390 with tools/cdp.mjs inside `.rack.needs` with a long hint and a refused post, and keep every button 28 px tall with its label on one line. The RIO's note that the answers left the acts column stands: that is the right call, keep it.
 - 2026-10-14 09:45 decision: m3-t1 accepted by Cory over the RIO: Cory's call: the one open blocker is layout, and inbox.js cannot fix it because the rule that breaks it lives in style.css, which m3-t2 owns. m3-t2: give the inbox strip's answers their own block under the say line, `.strip-say .inbox-answers { display: flex; flex-wrap: wrap; gap: 6px; }` with `white-space: nowrap` on its buttons and the status hint on its own line, never inside the flex paragraph; then render the Needs you rack at 1440 and 390 with tools/cdp.mjs inside `.rack.needs` with a long hint and a refused post, and keep every button 28 px tall with its label on one line. The RIO's note that the answers left the acts column stands: that is the right call, keep it.
 - 2026-10-14 09:45 m3-t2 The four groups: pending to flying
+- 2026-10-14 09:55 m3-t2 The four groups: flying to reviewing
