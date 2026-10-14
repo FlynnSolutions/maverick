@@ -1298,6 +1298,9 @@ body.ask-open { overflow: hidden; }
 .strip-say .you { color: var(--ink-soft); }
 .strip-say .claude { color: var(--ink); }
 .strip-say .empty { color: var(--ink-faint); font-style: italic; }
+/* A question's answers are a block of their own that wraps, each label on one line at button height. */
+.strip-say .inbox-answers { display: flex; flex-wrap: wrap; gap: 6px; }
+.strip-say .inbox-answers button { white-space: nowrap; }
 
 /* Density: what needs you is lifted and louder; what is finished recedes. */
 .strip.full .strip-line { min-height: 46px; }
