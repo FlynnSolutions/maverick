@@ -12,6 +12,9 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="ship.css" />
   <link rel="stylesheet" href="mission.css" />
+  <link rel="stylesheet" href="mission/plan.css" />
+  <link rel="stylesheet" href="mission/progress.css" />
+  <link rel="stylesheet" href="mission/result.css" />
 </head>
 <body>
   <header class="bar">
@@ -20,10 +23,22 @@
     <span id="status" class="status" role="status"></span>
     <a id="board-link" class="button-link" href="/">Board</a>
   </header>
-  <main class="ship-page" id="page">
-    <section class="ship-top" id="top"></section>
-    <nav class="ship-nav" id="nav" aria-label="Milestones"></nav>
-    <section class="ship-detail" id="detail"></section>
+  <main class="mv-page" id="page">
+    <nav class="mv-rail" id="rail" aria-label="Mission">
+      <div class="mv-word" id="word"></div>
+      <div class="mv-trouble" id="trouble"></div>
+      <a href="#ask">The ask<span class="n"></span></a>
+      <a href="#plan">Plan<span class="n"></span></a>
+      <a href="#progress">Progress<span class="n"></span></a>
+      <a href="#result">Result<span class="n"></span></a>
+      <div class="mv-controls" id="controls"></div>
+    </nav>
+    <div class="mv-content">
+      <section id="ask" class="mv-ask"></section>
+      <section id="plan"></section>
+      <section id="progress"></section>
+      <section id="result"></section>
+    </div>
   </main>
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>

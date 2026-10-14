@@ -1,12 +1,38 @@
-// The mission page: one mission, saved, revisitable. Milestones down the left, the selected
-// one's detail as the main read. Cory is in the loop exactly twice and both gates live here:
-// the plan he blesses before anything spawns, and the finished mission he reads and tests.
+// The mission page: one mission, saved, revisitable. Four fixed anchors down the left (The ask,
+// Plan, Progress, Result) and the status in one word above them, the same four places before,
+// during and after. Cory is in the loop exactly twice and both gates live here: the plan he
+// blesses before anything spawns, and the finished mission he reads and tests.
 
-import { jetSvg } from "./jet.js";
+/**
+ * The module contract. Plan, Progress and Result are each a module the shell loads once the
+ * plan is approved:
+ *
+ *   web/mission/<name>.js exports
+ *     mount(host: Element, view: MissionView, ctx): { update(view: MissionView): void }
+ *   web/mission/<name>.css is its stylesheet, linked from mission.html.
+ *
+ * `host` is the module's own `<section>` (#plan, #progress, #result). The module owns
+ * everything inside it, its heading included; the shell never writes into it after the mount.
+ * An `h2` written directly under the section takes the shell's section-heading style.
+ * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
+ * and must patch in place, so an open session or a half-typed note survives it.
+ *
+ * `ctx` is { el, text, btn, lamp, api, post, act, projectId, missionId, openSession, fmtTime }:
+ *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
+ *   text(s), btn(label, onclick, cls)
+ *   lamp(status, band)           web/lamp.js's lamp
+ *   api(path, init), post(path, body)  fetch JSON; throw with the server's error on a non-2xx
+ *   act(path, body, said)        posts to /api/missions/<id>/<path>?project=, sets the status
+ *                                line to `said` (or the error), and refreshes every module
+ *   projectId, missionId
+ *   openSession(taskId, under)   mounts the task's session (its RIO's while it is reviewing,
+ *                                its Wingman's otherwise) as a terminal under `under`
+ *   fmtTime(iso)                 a clock time, or "" for none
+ */
+
 import { lamp } from "./lamp.js";
 import { readableOn, recall } from "./theme.js";
 import { render as renderMarkdown } from "./markdown.js";
-import { stopWalkthrough, walkthroughPanel } from "./walkthrough.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -21,8 +47,8 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 const text = (s) => document.createTextNode(s);
-/** replaceChildren stringifies a null into the word "null"; el() filters. Everything goes through here. */
-const show = (...nodes) => $("#detail").replaceChildren(...nodes.filter((n) => n !== null && n !== undefined && n !== false));
+/** replaceChildren stringifies a null into the word "null"; el() filters. A section's contents go through here. */
+const fill = (host, ...nodes) => host.replaceChildren(...nodes.filter((n) => n !== null && n !== undefined && n !== false));
 const btn = (label, onclick, cls = "") => el("button", { type: "button", class: cls, onclick }, label);
 const api = async (path, init) => {
   const res = await fetch(path, init);
@@ -41,9 +67,7 @@ const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "nu
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
 const missionId = params.get("mission");
-let project = null;
 let mission = null;
-let selected = params.get("at") ?? null;
 
 const missionUrl = () => `/api/missions/${encodeURIComponent(missionId)}?project=${encodeURIComponent(projectId)}`;
 const actionUrl = (action) => `/api/missions/${encodeURIComponent(missionId)}/${action}?project=${encodeURIComponent(projectId)}`;
@@ -119,101 +143,186 @@ const watchSession = async (host, claudeId, title) => {
     host.replaceChildren(el("p", { class: "mv-empty" }, `could not attach: ${err.message}`));
   }
 };
+/**
+ * A module patches its own rows and may drop the one a session was opened under. The terminal
+ * would go on streaming into a detached node, so a session whose screen has left the page is let go.
+ */
+const reapSessions = () => {
+  for (const [claudeId, held] of watching) if (held !== true && !held.term.element?.isConnected) stopWatching(claudeId);
+};
 
-/* ---------- data ---------- */
-let lastPayload = "";
-const load = async (force = false) => {
-  const res = await fetch(missionUrl());
-  const body = await res.text();
-  if (!res.ok) throw new Error(JSON.parse(body).error ?? `${res.status} on ${missionUrl()}`);
-  // A poll that changed nothing must not rebuild the page: re-rendering collapses whatever
-  // findings you had open and drops you back to the top of the panel every eight seconds.
-  // The walkthrough's own saves change the record every few seconds while it is being walked;
-  // repainting on those would reload the document under the person answering it.
-  const next = JSON.parse(body);
-  const shape = JSON.stringify(next, (k, v) => (k === "progress" ? undefined : v));
-  if (!force && shape === lastPayload) return;
-  // A repaint disposes every mounted terminal, so a poll holds off while one is open, the way
-  // the workspace holds off during a rename. The page says so rather than quietly going stale.
-  if (!force && attached.length) {
-    lastPayload = "";
-    $("#status").textContent = "paused while you are watching a session · click the verb again to resume";
+/** ctx.openSession: the task's session under the element the module passes, with its own way to close. */
+const tasksOf = (m) => m.tasks ?? [];
+const allTasks = () => mission.milestones.flatMap(tasksOf);
+const openSession = (taskId, under) => {
+  const task = allTasks().find((t) => t.id === taskId);
+  const claudeId = task?.status === "reviewing" ? task.review?.claudeId : task?.claudeId ?? task?.review?.claudeId;
+  if (!claudeId) {
+    setStatus(`${task?.title ?? taskId} has no session to open`, true);
     return;
   }
-  lastPayload = shape;
-  mission = next;
-  const keys = [...mission.milestones.map((m) => `m${m.n}`), "plan", "review"];
-  if (!selected || !keys.includes(selected)) {
-    const open = mission.milestones.find((m) => !m.merged) ?? mission.milestones.at(-1);
-    const atTheGate = mission.status === "interviewing" || mission.status === "planned";
-    selected = !atTheGate && open ? `m${open.n}` : "plan";
+  if (watching.has(claudeId)) {
+    setStatus(`${task.title}'s session is already open on this page`);
+    return;
   }
-  renderAll();
+  const screen = el("div", { class: "term" });
+  const well = el("div", { class: "mv-session" },
+    el("div", { class: "mv-session-head" }, el("span", { class: "muted small mono" }, `session ${claudeId}`), btn("stop watching", () => { stopWatching(claudeId); well.remove(); }, "ghost")),
+    screen);
+  under.append(well);
+  watchSession(screen, claudeId, task.title);
 };
+
+/* ---------- data ---------- */
 const act = async (action, body, said) => {
   try {
     await post(actionUrl(action), body);
     setStatus(said);
-    await load(true);
+    await load();
   } catch (err) {
     setStatus(err.message, true);
   }
 };
 
-/* ---------- render ---------- */
-const tasksOf = (m) => m.tasks ?? [];
-/** A milestone's merges, one per repo it touched. */
-const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${repo} ${sha}`).join(" · ");
-/** The walkthrough's state and whether it still blocks the close, derived by the server so the page and the gate cannot disagree. */
-const walkState = (m) => mission.walk?.[m.n]?.state ?? "none";
-const needsWalking = (m) => Boolean(mission.walk?.[m.n]?.needed);
-/** Derived in one place: the nav and the detail head disagreed about a handed-back milestone. */
-const inTheAir = (m) => m.dispatched || tasksOf(m).some((t) => t.status !== "pending");
-const milestoneState = (m) => (m.merged ? (needsWalking(m) ? "walking" : "passed") : tasksOf(m).some((t) => t.status === "handed-back") ? "handed-back" : inTheAir(m) ? "flying" : "pending");
-const WALK_LABEL = { none: "merged · not walked", building: "merged · walkthrough on its way", failed: "merged · no walkthrough", waived: "merged · waived" };
-/** And its word, for the same reason: three places had spelled it three ways. */
-const milestoneLabel = (m) => {
-  if (!m.merged) return milestoneState(m) === "handed-back" ? "needs you" : inTheAir(m) ? (m.dispatched ? "flying" : "started early") : "not sent yet";
-  const w = walkState(m);
-  if (!needsWalking(m)) return w === "waived" ? WALK_LABEL.waived : "merged";
-  if (w === "walking") return `walk it · ${m.walkthrough.progress ? `${m.walkthrough.progress.answered} of ${m.walkthrough.progress.total}` : "not started"}`;
-  return WALK_LABEL[w];
-};
-const goTo = (key) => { selected = key; history.replaceState(null, "", `?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(missionId)}&at=${key}`); renderAll(); };
-const allTasks = () => mission.milestones.flatMap(tasksOf);
+const ctx = { el, text, btn, lamp, api, post, act, projectId, missionId, openSession, fmtTime };
 
-const renderTop = () => {
-  const tasks = allTasks();
-  const passed = tasks.filter((t) => t.status === "passed").length;
-  const pct = tasks.length ? (passed / tasks.length) * 100 : 0;
-  $("#crumb").replaceChildren(text("Mission "), el("b", {}, mission.name));
-  $("#top").replaceChildren(
-    el("div", { class: "ship-progress" }, el("div", { class: "runway" }, el("div", { class: "fill", style: `width:${pct}%` }), el("div", { class: "jet-marker", style: `left:${pct}%` }, jetSvg("jet-glyph")))),
-    el("div", { class: "summary" },
-      el("span", { class: `verdict ${mission.status}` }, mission.status),
-      el("span", {}, `${passed} of ${tasks.length || "?"} tasks passed`),
-      el("span", {}, `${mission.milestones.filter((m) => m.merged).length} of ${mission.milestones.length} milestones merged`),
-      ...(mission.repos ?? []).map((r) => el("span", { title: `${r.label} lands against ${r.base}` }, r.branch))));
+/* ---------- the rail: one word, four anchors, and the brakes ---------- */
+const WORD = {
+  "waiting for you": { cls: "caution", lamp: ["blocked", "work"] },
+  done: { cls: "hud", lamp: ["done", "work"] },
+  error: { cls: "threat", lamp: ["idle", "warm"] },
+  working: { cls: "", lamp: ["busy", "work"] },
+};
+const renderWord = () => {
+  const word = mission.word ?? "working";
+  const look = WORD[word] ?? WORD.working;
+  const open = mission.questions?.length ?? 0;
+  const chip = $("#word");
+  chip.className = `mv-word ${look.cls}`;
+  chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
 };
 
-const renderNav = () => {
-  const nav = $("#nav");
-  const entry = (key, n, title, badge, cls = "") => el("button", {
-    type: "button",
-    class: `nav-step ${cls}${key === selected ? " selected" : ""}`,
-    onclick: () => goTo(key),
-  }, el("span", { class: "lamp" }), el("span", { class: "n" }, n), el("span", { class: "t", title }, title), badge ?? el("span", {}));
-
-  const items = [entry("plan", "P", mission.approved ? "The plan, as approved" : "The plan, and the gate", el("span", { class: `verdict ${mission.approved ? "passed" : mission.status}` }, mission.approved ? "approved" : mission.status))];
-  mission.milestones.forEach((m) => {
-    const state = milestoneState(m);
-    items.push(entry(`m${m.n}`, String(m.n), m.title, el("span", { class: `verdict ${state}` }, milestoneLabel(m)), state));
-  });
-  const done = mission.status === "review" || mission.status === "closed";
-  items.push(el("h3", {}, "The result"), entry("review", "R", "What the mission built", el("span", { class: `verdict ${done ? "passed" : mission.status}` }, mission.status === "closed" ? "closed" : mission.status === "review" ? "ready" : mission.status === "paused" ? "paused" : "in flight")));
-  nav.replaceChildren(...items);
+/**
+ * The reason behind the word. A failed report or ledger write has no question to answer and
+ * cannot reach the feed, because the ledger is what failed, so this line is the only place it
+ * shows. A landing that failed gets the one thing that can be done about it.
+ */
+let troubleKey = null;
+const renderTrouble = () => {
+  const trouble = mission.trouble ?? "";
+  if (trouble === troubleKey) return;
+  troubleKey = trouble;
+  fill($("#trouble"),
+    trouble ? el("p", { class: "mv-warn" }, trouble) : null,
+    /could not land/.test(trouble) ? btn("try landing it again", () => act("land", {}, "landing again"), "primary") : null,
+    /could not land/.test(trouble) ? el("span", { class: "muted small" }, "rebase the branch it named first; nothing here will force it") : null);
 };
 
+const count = (id, label, needs = false) => {
+  const n = $(`#rail a[href="#${id}"] .n`);
+  n.textContent = label;
+  n.classList.toggle("needs", needs);
+};
+const renderCounts = () => {
+  const ms = mission.milestones ?? [];
+  const merged = ms.filter((m) => m.merged).length;
+  if (mission.approved) {
+    const at = ms.find((m) => !m.merged) ?? ms.at(-1);
+    count("plan", ms.length ? `milestone ${at.n} of ${ms.length}` : "no milestones");
+  } else {
+    const planned = mission.planDoc?.parsed?.milestones?.length ?? 0;
+    count("plan", planned ? `${planned} milestone${planned === 1 ? "" : "s"}` : "no plan yet", Boolean(mission.questions?.length));
+  }
+  const open = mission.questions?.length ?? 0;
+  // Before approval the only question is the gate, and the gate is drawn in Plan.
+  if (!mission.approved) count("progress", "not yet");
+  else count("progress", open ? `${open} question${open === 1 ? "" : "s"}` : "live", open > 0);
+  count("result", mission.status === "closed" ? "closed" : merged ? `${merged} of ${ms.length} merged` : "not yet");
+};
+
+/**
+ * Pause, resume and stop belong to the whole mission, not to a section, so they sit under the
+ * anchors. Each asks in place: a note field for the pause, a second button for the stop.
+ */
+let controlsKey = "";
+let controlsLive = -1;
+let asking = false;
+const renderControls = () => {
+  const live = allTasks().filter((t) => t.status === "flying" || t.status === "reviewing").length;
+  const key = `${mission.status}:${Boolean(mission.approved)}`;
+  // The live count moves all the time a mission flies; a question half answered is not wiped for it.
+  if (key === controlsKey && (asking || live === controlsLive)) return;
+  controlsKey = key;
+  controlsLive = live;
+  asking = false;
+  const box = $("#controls");
+  if (!mission.approved || ["closed", "abandoned"].includes(mission.status)) return fill(box);
+  const resting = () => {
+    asking = false;
+    fill(box,
+      mission.status === "paused"
+        ? btn("resume", () => act("resume", {}, "mission resumed"), "primary")
+        : ["flying", "blocked"].includes(mission.status) ? btn("pause", askPause, "ghost") : null,
+      btn("stop this mission", askStop, "ghost danger"));
+  };
+  const askPause = () => {
+    asking = true;
+    const note = el("input", { type: "text", class: "mv-note", "aria-label": "Why pause the mission", placeholder: "why, in a line; kept in the ledger" });
+    fill(box,
+      el("p", { class: "muted small" }, "Nothing new starts; what is running finishes and is recorded."),
+      note,
+      el("div", { class: "mv-controls-row" },
+        btn("pause it", () => act("pause", { note: note.value.trim() }, "mission paused"), "primary"),
+        btn("not yet", () => { resting(); box.querySelector("button")?.focus(); }, "ghost")));
+    note.addEventListener("keydown", (e) => { if (e.key === "Enter") act("pause", { note: note.value.trim() }, "mission paused"); });
+    note.focus();
+  };
+  const askStop = () => {
+    asking = true;
+    fill(box,
+      el("p", { class: "mv-warn" }, `This stops ${live} running session${live === 1 ? "" : "s"} and ends the mission; pause is the one that can be resumed. Every branch and worktree is left exactly as it is, so nothing built so far is lost.`),
+      el("div", { class: "mv-controls-row" },
+        btn("yes, stop it", () => act("abandon", {}, "mission stopped"), "ghost danger"),
+        btn("not yet", () => { resting(); box.querySelector("button")?.focus(); }, "ghost")));
+    // Not on the button that stops: a held Enter would repeat into it and the two steps become one.
+    box.querySelector("button:last-of-type")?.focus();
+  };
+  resting();
+};
+
+/** The anchor whose section is nearest the top of the view is the one marked `on`. */
+const spy = () => {
+  const links = new Map([...document.querySelectorAll("#rail a[href^='#']")].map((a) => [a.hash.slice(1), a]));
+  const mark = (id) => {
+    for (const [key, a] of links) {
+      a.classList.toggle("on", key === id);
+      if (key === id) a.setAttribute("aria-current", "location");
+      else a.removeAttribute("aria-current");
+    }
+  };
+  const seen = new Set();
+  const observer = new IntersectionObserver((entries) => {
+    for (const e of entries) (e.isIntersecting ? seen.add(e.target.id) : seen.delete(e.target.id));
+    const first = [...links.keys()].find((id) => seen.has(id));
+    if (first) mark(first);
+  }, { rootMargin: "-64px 0px -55% 0px" });
+  for (const id of links.keys()) observer.observe(document.getElementById(id));
+  for (const [id, a] of links) a.addEventListener("click", () => mark(id));
+};
+
+/* ---------- the ask: the shell's own section ---------- */
+const renderAsk = () => {
+  fill($("#ask"),
+    el("h2", {}, "The ask"),
+    el("h1", {}, el("span", { class: "name" }, mission.name), mission.brief),
+    el("p", { class: "mv-ask-meta" }, [
+      `opened ${fmtTime(mission.created)}`,
+      mission.approved ? `approved ${fmtTime(mission.approved)}` : "not approved yet",
+      mission.planCommit ? `planned into the tracker as ${mission.planCommit}` : null,
+    ].filter(Boolean).join(" · ")));
+};
+
+/* ---------- the plan, and the first gate: the shell's until it is approved ---------- */
 const LANDS = {
   merge: (base) => `stays on the mission branch; nothing touches ${base}`,
   pr: (base) => `a pull request against ${base}, merged by you`,
@@ -254,62 +363,46 @@ const costBand = (cost) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "sessions it spawns"), el("span", { class: "v" }, String(cost.sessions))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "you are asked"), el("span", { class: "v" }, "twice")));
 
-/* ---------- the plan, and the first gate ---------- */
-const renderPlan = () => {
+/** Approving is a decision, not a click: the first press says what it costs, the second flies. */
+const approveButton = (doc) => {
+  const box = el("div", { class: "mv-confirm" });
+  const arm = btn("approve and fly", () => {
+    fill(box,
+      el("p", { class: "why" }, `This writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. It is the last thing you are asked until the result.`),
+      btn(`yes, approve "${mission.name}"`, () => act("approve", {}, "approved; the first milestone is out"), "primary"),
+      btn("not yet", () => { fill(box, arm); arm.focus(); }, "ghost"));
+    box.querySelector("button:last-of-type")?.focus();
+  }, "primary");
+  box.append(arm);
+  return box;
+};
+
+const gateBlocks = () => {
   const doc = mission.planDoc ?? {};
   const parsed = doc.parsed;
-  const blocks = [
-    el("div", { class: "detail-head" }, el("h1", {}, mission.name), el("span", { class: `verdict ${mission.status}` }, mission.status),
-      mission.approved && !["closed", "abandoned"].includes(mission.status)
-        ? el("span", { class: "actions" },
-          mission.status === "paused"
-            ? btn("resume", () => act("resume", {}, "mission resumed"), "primary")
-            : ["flying", "blocked"].includes(mission.status) ? btn("pause", async () => {
-              const note = window.prompt("Pause the mission. Nothing new starts; what is running finishes and is recorded. Why?");
-              if (note === null) return;
-              await act("pause", { note }, "mission paused");
-            }, "ghost") : null,
-          btn("stop this mission", async () => {
-            const live = allTasks().filter((t) => t.status === "flying" || t.status === "reviewing").length;
-            if (!window.confirm(`Stop "${mission.name}"?\n\nThis stops ${live} running session(s) and ends the mission; pause is the one that can be resumed. Every branch and worktree is left exactly as it is, so nothing built so far is lost.`)) return;
-            await act("abandon", {}, "mission stopped");
-          }, "ghost danger"))
-        : null),
-    el("div", { class: "detail-meta" },
-      el("span", {}, `opened ${fmtTime(mission.created)}`),
-      mission.approved ? el("span", {}, `approved ${fmtTime(mission.approved)}`) : null,
-      mission.planCommit ? el("span", {}, `planned into the tracker as ${mission.planCommit}`) : null),
-    el("section", { class: "panel" }, el("h2", {}, "The line you opened with"), el("p", { class: "mv-plan" }, mission.brief)),
-  ];
-
-  if (!mission.approved) {
-    const gate = [];
-    if (!doc.found) {
-      gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the session below; it will not plan off your first line.`));
-    } else if (parsed?.problems?.length) {
-      gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. Tell the Strike Lead in the session below; these are the reasons a Wingman would be sent out under-briefed:"),
-        el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
-    } else {
-      gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
-        parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
-          el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
-        costBand(doc.cost),
-        reposBand(doc.repos ?? []),
-        preflightBand(doc.preflight),
-        doc.wingmanAgent
-          ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, which carries its standing orders: own one task, do not widen it, never push or merge, never grade its own work.`)
-          : el("p", { class: "mv-warn" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
-        el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
-        el("div", { class: "gate-actions" },
-          doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : btn("approve and fly", async () => {
-            const ok = window.confirm(`Approve "${mission.name}"?\n\nThis writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. It is the last thing you are asked until the result.`);
-            if (!ok) return;
-            await act("approve", {}, "approved; the first milestone is out");
-          }, "primary"),
-          el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")));
-    }
-    blocks.push(el("section", { class: "panel mv-gate" }, el("h2", {}, "The gate"), ...gate));
+  const blocks = [];
+  const gate = [];
+  if (!doc.found) {
+    gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the session below; it will not plan off your first line.`));
+  } else if (parsed?.problems?.length) {
+    gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. Tell the Strike Lead in the session below; these are the reasons a Wingman would be sent out under-briefed:"),
+      el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
+  } else {
+    gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
+      parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
+        el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
+      costBand(doc.cost),
+      reposBand(doc.repos ?? []),
+      preflightBand(doc.preflight),
+      doc.wingmanAgent
+        ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, which carries its standing orders: own one task, do not widen it, never push or merge, never grade its own work.`)
+        : el("p", { class: "mv-warn" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
+      el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
+      el("div", { class: "gate-actions" },
+        doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
+        el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")));
   }
+  blocks.push(el("section", { class: "panel mv-gate" }, el("h2", {}, "The gate"), ...gate));
 
   if (parsed?.contracts?.length) {
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
@@ -327,249 +420,157 @@ const renderPlan = () => {
   } else if (doc.text) {
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
   }
-
-  // The interview is a conversation, so its session lives here rather than in a panel over the page.
-  if (!mission.approved) {
-    const host = el("div", { class: "term" });
-    blocks.push(el("section", { class: "panel mv-interview" },
-      el("h2", {}, "The Strike Lead", el("span", { class: "spacer" }), btn("start a new interview session", () => act("interview", {}, "a new Strike Lead session is open"), "ghost")),
-      el("div", { class: "mv-term-well" }, host)));
-    const gone = () => host.replaceChildren(el("p", { class: "mv-empty" }, "The Strike Lead's session is not running any more: terminals do not survive a restart of the server. Start a new interview above; it opens with the same brief."));
-    if (mission.interview?.terminalId) {
-      api("/api/terminals").then((open) => {
-        const live = open.find((x) => x.id === mission.interview.terminalId && x.exitCode === null);
-        if (live) requestAnimationFrame(() => mountTerminal(host, live.id));
-        else gone();
-      }).catch(gone);
-    } else {
-      host.replaceChildren(el("p", { class: "mv-empty" }, "No Strike Lead session is attached. Start one above."));
-    }
-  }
-  show(...blocks);
+  return blocks;
 };
 
-/* ---------- a milestone in flight ---------- */
-/**
- * A button that mounts a session's terminal in `host` and, on a second click, closes it. The
- * close is also how the page starts polling again: while a terminal is mounted a repaint would
- * dispose it mid-keystroke, so load() holds off.
- */
-const watchButton = (label, host, idOf, title) => btn(label, (e) => {
-  const id = idOf();
-  if (!id) return;
-  const open = host.querySelector(".mv-term-well");
-  if (open) {
-    stopWatching(id);
-    open.remove();
-    e.target.textContent = label;
-    load(true).catch(() => {});
-    return;
+/** The interview is a conversation, so its session lives here rather than in a panel over the page. */
+const interviewPanel = () => {
+  const host = el("div", { class: "term" });
+  const panel = el("section", { class: "panel mv-interview" },
+    el("h2", {}, "The Strike Lead", el("span", { class: "spacer" }), btn("start a new interview session", () => act("interview", {}, "a new Strike Lead session is open"), "ghost")),
+    el("div", { class: "mv-term-well" }, host));
+  const gone = () => host.replaceChildren(el("p", { class: "mv-empty" }, "The Strike Lead's session is not running any more: terminals do not survive a restart of the server. Start a new interview above; it opens with the same brief."));
+  if (mission.interview?.terminalId) {
+    api("/api/terminals").then((open) => {
+      const live = open.find((x) => x.id === mission.interview.terminalId && x.exitCode === null);
+      if (live) requestAnimationFrame(() => mountTerminal(host, live.id));
+      else gone();
+    }).catch(gone);
+  } else {
+    host.replaceChildren(el("p", { class: "mv-empty" }, "No Strike Lead session is attached. Start one above."));
   }
-  const well = host.appendChild(el("div", { class: "mv-term-well" }, el("div", { class: "term" })));
-  e.target.textContent = "stop watching";
-  watchSession(well.querySelector(".term"), id, title);
-}, "ghost");
-
-const taskRow = (task) => {
-  const findings = mission.findings?.[task.id];
-  const diff = mission.diffstat?.[task.id];
-  const live = task.status === "flying" || task.status === "reviewing";
-  const row = el("div", { class: "mv-task" });
-  row.append(
-    live ? lamp("busy") : el("span", { class: `dot ${task.status}` }),
-    el("span", { class: "t", title: task.title }, task.title),
-    el("span", { class: `verdict ${task.status}` }, task.status === "reviewing" ? "in review" : task.status),
-    el("span", { class: "mv-acts" },
-      task.claudeId || task.review?.claudeId ? watchButton(live ? "watch" : "read it back", row, () => (task.status === "reviewing" ? task.review?.claudeId : task.claudeId), task.title) : null,
-      task.status === "handed-back" ? btn("send it back out", () => act(`tasks/${task.id}/retry`, {}, `${task.title} is flying again`), "primary") : null,
-      task.status === "handed-back" ? btn("accept it over the RIO", async () => {
-        const note = window.prompt(`Accept "${task.title}" over its RIO?\n\nSay why; it is kept on the task.`, "");
-        if (note === null) return;
-        await act(`tasks/${task.id}/accept`, { note }, `${task.title} accepted`);
-      }, "ghost") : null),
-    el("div", { class: "meta" }, [
-      task.repo,
-      `attempt ${task.attempts}`,
-      task.branch,
-      task.claudeId ? `session ${task.claudeId}` : null,
-      task.verdict ? `RIO: ${task.verdict}` : null,
-      task.commits ? `${task.commits.length} commit${task.commits.length === 1 ? "" : "s"}` : null,
-    ].filter(Boolean).join(" · ")),
-    task.note ? el("div", { class: "note" }, task.note) : null,
-    diff ? el("pre", { class: "diffstat" }, diff) : null,
-    findings ? el("details", {}, el("summary", { class: "muted small" }, "what its RIO found"), renderMarkdown(findings.replace(/^verdict:.*\n?/i, ""), { project: projectId })) : null,
-    task.carried?.length ? el("details", {}, el("summary", { class: "muted small" }, `${task.carried.length} note(s) carried`), el("ul", {}, ...task.carried.map((n) => el("li", {}, n)))) : null);
-  return row;
-};
-
-/* ---------- the walkthrough: a milestone is done when a person has been through it, not when the RIO said so ---------- */
-const waive = async (m) => {
-  const note = window.prompt(`Let milestone ${m.n} through without walking it?\n\nSay why; it is kept on the milestone.`, "");
-  if (note === null) return;
-  await act(`milestones/${m.n}/walkthrough`, { waive: { note } }, `milestone ${m.n} waived`);
-};
-
-const walkthroughSection = (m) => {
-  if (!m.merged) return null;
-  const w = m.walkthrough;
-  const state = walkState(m);
-  const head = (label) => el("h2", {}, "Walkthrough", el("span", { class: "spacer" }), el("span", { class: "muted small mono" }, label));
-  if (state === "none") {
-    return needsWalking(m)
-      ? el("section", { class: "panel mv-gate" }, head("not built"), el("p", { class: "mv-plan" }, "This milestone merged before walkthroughs existed, so there is no document to walk. Waive it to let the mission land."), el("div", { class: "gate-actions" }, btn("waive it", () => waive(m), "ghost")))
-      : null;
-  }
-  if (state === "waived") return el("section", { class: "panel" }, head(`waived ${fmtTime(w.waived.at)}`), el("p", { class: "mv-plan" }, w.waived.note));
-  if (state === "failed") return el("section", { class: "panel mv-gate" }, head("no document"), el("p", { class: "mv-warn" }, w.failed), el("div", { class: "gate-actions" }, btn("waive it", () => waive(m), "ghost"), el("span", { class: "muted small" }, "or write the document yourself on the mission branch and reopen this page")));
-  if (state === "building") {
-    const section = el("section", { class: "panel mv-gate" }, head(`session ${w.claudeId} · since ${fmtTime(w.started)}`),
-      el("p", { class: "mv-plan" }, "A session is writing the test walkthrough for this milestone in the integration worktree. When it has committed the document, it shows here for you to walk."));
-    section.append(el("div", { class: "gate-actions" }, watchButton("watch", section, () => w.claudeId, `walkthrough m${m.n}`)));
-    return section;
-  }
-  const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(w.doc)}`;
-  const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, onSave: async (progress) => {
-    w.progress = progress;
-    try {
-      await post(actionUrl(`milestones/${m.n}/walkthrough`), { progress: { total: progress.total, answered: progress.answered, verdicts: progress.verdicts, updatedAt: progress.updatedAt } });
-      if (progress.answered >= progress.total) setStatus(`milestone ${m.n} walked`);
-    } catch (err) {
-      setStatus(err.message, true);
-    }
-  } });
-  panel.querySelector("h2").append(state === "walked" ? el("span", { class: "verdict passed" }, "walked") : btn("waive it", () => waive(m), "ghost"));
   return panel;
 };
 
-const renderMilestone = (m) => {
-  const tasks = tasksOf(m);
-  show(
-    el("div", { class: "detail-head" },
-      el("h1", {}, `Milestone ${m.n} — ${m.title}`),
-      el("span", { class: `verdict ${milestoneState(m)}` }, milestoneLabel(m))),
-    el("div", { class: "detail-meta" },
-      el("span", {}, `done when ${m.done}`),
-      m.dispatched ? el("span", {}, `sent ${fmtTime(m.dispatched)}`) : null,
-      m.merged ? el("span", {}, `merged ${fmtTime(m.merged)}${merges(m) ? ` · ${merges(m)}` : ""}`) : null),
-    mission.escalation ? el("section", { class: "panel mv-gate" }, el("h2", {}, "This is a question about the plan"),
-      el("p", { class: "mv-warn" }, mission.escalation)) : null,
-    mission.trouble ? el("section", { class: "panel" }, el("h2", {}, "Needs you"), el("p", { class: "mv-plan" }, mission.trouble),
-      /could not land|still could not land/.test(mission.trouble)
-        ? el("div", { class: "gate-actions" },
-            btn("try landing it again", () => act("land", {}, "landing again"), "primary"),
-            el("span", { class: "muted small" }, "rebase the branch it named first; nothing here will force it"))
-        : null) : null,
-    m.resolve ? el("section", { class: "panel" },
-      el("h2", {}, "The Strike Lead is reconciling it", el("span", { class: "spacer" }), el("span", { class: "muted small mono" }, `session ${m.resolve.claudeId}`)),
-      el("p", { class: "mv-plan" }, `Two tasks in this milestone touched the same lines in ${m.resolve.repo}: ${(m.resolve.paths ?? []).join(", ")}. The Strike Lead wrote the plan that put them together, so it is finishing the merge in the integration worktree. It keeps both behaviours or it aborts and says why; it never takes one side to make the conflict go away.`)) : null,
-    m.proof ? el("section", { class: "panel" }, el("h2", {}, m.proof.ok ? "The proof passed on the merged tree" : "The proof failed on the merged tree"),
-      el("p", { class: "muted small" }, `run ${fmtTime(m.proof.at)}`), el("pre", { class: "mv-proof" }, m.proof.output.split("\n").slice(-20).join("\n"))) : null,
-    m.hold ? el("section", { class: "panel" }, el("h2", {}, "Held, for you"),
-      el("p", { class: "mv-plan" }, m.hold.reason),
-      m.hold.kind === "collision" ? el("p", { class: "muted small" }, `The paths that collided: ${(m.conflicts ?? []).join(", ")}, each prefixed with the repo it is in. Nothing is half-applied. Reconcile them yourself in the integration worktree, or change the plan; then release the milestone and the sweep merges again.`) : null,
-      m.hold.kind === "proof" ? el("p", { class: "muted small" }, "Fix it in the integration worktree, then release the milestone: the proof runs again on what you fixed before anything lands.") : null,
-      m.hold.kind === "landing" ? el("p", { class: "muted small" }, "\"Land again\" on the result page is the release for this one, because landing pushes.") : null,
-      m.hold.kind !== "landing" ? btn("release it", async () => {
-        const note = window.prompt("What did you do to settle it? Kept in the ledger.");
-        if (!note) return;
-        await act(`milestones/${m.n}/release`, { note }, `milestone ${m.n} released`);
-      }, "primary") : null) : null,
-    walkthroughSection(m),
-    el("section", { class: "panel" },
-      el("h2", {}, "Tasks", el("span", { class: "spacer" }), el("span", { class: "muted small" }, "one Wingman each in its own worktree, with a RIO in the back seat that did not write the code")),
-      tasks.length ? el("div", {}, ...tasks.map(taskRow)) : el("p", { class: "mv-empty" }, "No tasks in this milestone.")));
+/**
+ * The gate repaints when what it shows changes; the interview below it only when its session
+ * does, because a repaint would dispose the terminal being typed into.
+ */
+let gateKey = "";
+let interviewKey = "";
+const renderGate = () => {
+  const plan = $("#plan");
+  if (!plan.querySelector(".mv-gate-host")) {
+    fill(plan, el("h2", {}, "Plan"), el("div", { class: "mv-gate-host" }), el("div", { class: "mv-interview-host" }));
+    fill($("#progress"), el("h2", {}, "Progress"), el("p", { class: "mv-empty" }, "Nothing has flown yet. What the mission does shows here once you approve the plan."));
+    fill($("#result"), el("h2", {}, "Result"), el("p", { class: "mv-empty" }, "not yet"));
+  }
+  const nextGate = JSON.stringify([mission.planDoc, mission.plan, mission.name]);
+  if (nextGate !== gateKey) {
+    gateKey = nextGate;
+    fill(plan.querySelector(".mv-gate-host"), ...gateBlocks());
+  }
+  const nextInterview = mission.interview?.terminalId ?? "";
+  if (nextInterview !== interviewKey || !plan.querySelector(".mv-interview")) {
+    interviewKey = nextInterview;
+    detachTerminal();
+    fill(plan.querySelector(".mv-interview-host"), interviewPanel());
+  }
 };
 
-/** The report panel: fetched when opened, not on every repaint, and a server failure is said, not shown as a blank. */
-const reportSection = () => {
-  const box = el("div", {});
-  const details = el("details", { class: "mv-report" }, el("summary", { class: "muted small" }, "the report: what a person reads in the morning"),
-    el("p", { class: "muted small" }, "Generated from the record, the ledger and the RIOs' own findings, not written by the agent that flew it. ", el("a", { href: `${actionUrl("report")}`, target: "_blank" }, "raw markdown ↗")), box);
-  details.addEventListener("toggle", async () => {
-    if (!details.open || box.childElementCount) return;
-    try {
-      const r = await fetch(actionUrl("report"));
-      if (!r.ok) throw new Error((await r.json().catch(() => ({ error: r.statusText }))).error ?? r.statusText);
-      box.replaceChildren(renderMarkdown(await r.text(), { project: projectId }));
-    } catch (err) {
-      box.replaceChildren(el("p", { class: "mv-warn" }, `could not load the report: ${err.message}`));
-    }
-  });
-  return details;
-};
+/* ---------- after the blessing: Plan, Progress and Result are modules ---------- */
+const MODULES = ["plan", "progress", "result"];
+const TITLES = { plan: "Plan", progress: "Progress", result: "Result" };
+const mounted = new Map();
+let modulesUp = null;
 
-/* ---------- the second gate: what the mission built ---------- */
-const renderReview = () => {
-  const tasks = allTasks();
-  const passed = tasks.filter((t) => t.status === "passed");
-  const unwalked = mission.milestones.filter(needsWalking);
-  const ready = mission.status === "review" && !unwalked.length;
-  const closed = mission.status === "closed";
-  const byPr = (mission.repos ?? []).some((r) => r.land === "pr");
-  const landsAnywhere = (mission.repos ?? []).some((r) => r.land !== "merge");
-  show(
-    el("div", { class: "detail-head" }, el("h1", {}, "What the mission built"), el("span", { class: `verdict ${mission.status}` }, mission.status)),
-    el("div", { class: "detail-meta" },
-      el("span", {}, `${passed.length} of ${tasks.length} tasks passed`),
-      ...(mission.repos ?? []).map((r) => el("span", { title: `lands against ${r.base}` }, `${r.label} · ${r.branch}`)),
-      mission.finished ? el("span", {}, `finished ${fmtTime(mission.finished)}`) : null),
-    el("section", { class: "panel mv-gate" }, el("h2", {}, "Your second and last gate"),
-      el("p", { class: "why" }, closed
-        ? (byPr
-            ? "Closed. Its items are ticked in the tracker and its pull requests are open below. Maverick has not merged anything and will not: this project's own rules say so."
-            : `Closed. Its items are ticked in the tracker and the mission branches are waiting for the ship, which is what merges. Everything below is still here to read.`)
-        : ready
-          ? (byPr
-              ? `Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks the tracker and opens one pull request per repo against its base. It stops there. This project forbids a tool merging, so the merge is yours.`
-              : `Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks each passed item in the tracker and hands the branches on; Maverick does not merge a mission to a base, the ship does.`)
-          : mission.status === "review"
-            ? `Every milestone merged. ${unwalked.length} of them still to walk: a milestone is done when you have been through its walkthrough, not when its RIO said pass. Nothing lands before that.`
-            : `Not finished: ${mission.milestones.filter((m) => !m.merged).length} of ${mission.milestones.length} milestones still to merge.`),
-      mission.status === "review" && unwalked.length ? el("div", { class: "gate-actions" },
-        ...unwalked.map((m) => btn(`walk milestone ${m.n}`, () => goTo(`m${m.n}`), "primary"))) : null,
-      reportSection(),
-      (mission.repos ?? []).some((r) => r.landed) ? el("div", { class: "mv-repos" }, el("span", { class: "muted" }, "landed:"),
-        ...(mission.repos ?? []).filter((r) => r.landed).map((r) => (r.landed.startsWith("http")
-          ? el("a", { href: r.landed, target: "_blank" }, `${r.label} ↗`)
-          : el("span", { title: `pushed to ${r.base}` }, `${r.label} · ${r.landed}`)))) : null,
-      ready ? el("div", { class: "gate-actions" },
-        btn(landsAnywhere ? "close it and land the work" : "close the mission and tick its items", async () => {
-          const lands = (mission.repos ?? []).filter((r) => r.land !== "merge");
-          const what = lands.length
-            ? `Then, per repo: ${lands.map((r) => `${r.label} ${r.land === "push" ? `pushed to ${r.base}` : `a pull request against ${r.base}`}`).join(", ")}.`
-            : "The mission branches are left for the ship.";
-          if (!window.confirm(`Close "${mission.name}"?\n\nThis ticks ${passed.length} item(s) in the tracker in one commit. ${what}`)) return;
-          await act("close", {}, byPr ? "closed; pull requests opened" : "mission closed; its items are ticked");
-        }, "primary"),
-        el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}&view=workspace` }, "back to the workspace"),
-      ) : null,
-      closed ? el("div", { class: "gate-actions" },
-        btn("take back the worktrees", async () => {
-          if (!window.confirm("Remove the worktree each task was built in?\n\nThe branches stay, so nothing is lost. Only the directories go.")) return;
-          try {
-            const { removed } = await post(actionUrl("tidy"), {});
-            setStatus(removed.length ? `${removed.length} worktree(s) removed` : "nothing left to remove");
-          } catch (err) {
-            setStatus(err.message, true);
-          }
-        }, "ghost"),
-        el("span", { class: "muted small" }, "the branches stay; this only clears the directories")) : null),
-    ...mission.milestones.map((m) => el("section", { class: "panel" },
-      el("h2", {}, `Milestone ${m.n} — ${m.title}`, el("span", { class: "spacer" }),
-        m.merged ? el("span", { class: `verdict ${milestoneState(m)}` }, needsWalking(m) ? "not walked" : ({ walked: "walked", waived: "waived" }[walkState(m)] ?? "nothing to walk")) : null,
-        merges(m) ? el("span", { class: "muted small mono" }, `merged as ${merges(m)}`) : null),
-      ...tasksOf(m).map(taskRow))));
+/** One module that will not load is one line in its own section, not a broken page. */
+const mountModule = async (name) => {
+  const host = document.getElementById(name);
+  try {
+    const mod = await import(`./mission/${name}.js`);
+    host.replaceChildren();
+    const handle = mod.mount(host, mission, ctx);
+    if (typeof handle?.update !== "function") throw new Error("its mount returned no update");
+    mounted.set(name, handle);
+  } catch (err) {
+    fill(host, el("h2", {}, TITLES[name]), el("p", { class: "mv-empty" }, `The ${name} module did not load: ${err.message}`));
+  }
 };
-
-const renderAll = () => {
+const mountModules = () => {
+  // The gate's interview session is done with once the plan is approved.
   detachTerminal();
-  stopWalkthrough();
-  renderTop();
-  renderNav();
-  if (selected === "plan") renderPlan();
-  else if (selected === "review") renderReview();
-  else renderMilestone(mission.milestones.find((m) => `m${m.n}` === selected) ?? mission.milestones[0]);
+  modulesUp = Promise.all(MODULES.map(mountModule));
+  return modulesUp;
 };
+const updateModules = () => {
+  reapSessions();
+  for (const [name, handle] of mounted) {
+    try {
+      handle.update(mission);
+    } catch (err) {
+      setStatus(`the ${name} section did not update: ${err.message}`, true);
+    }
+  }
+};
+
+/* ---------- paint: the first one builds, every one after patches ---------- */
+const paint = () => {
+  $("#crumb").replaceChildren(text("Mission "), el("b", {}, mission.name));
+  renderWord();
+  renderTrouble();
+  renderCounts();
+  renderControls();
+  renderAsk();
+  if (!mission.approved) return renderGate();
+  if (!modulesUp) return mountModules();
+  updateModules();
+};
+
+let lastPayload = "";
+/** A view that changed nothing is not handed on: a walkthrough's own saves land every few seconds. */
+const apply = (next) => {
+  const shape = JSON.stringify(next, (k, v) => (k === "progress" ? undefined : v));
+  if (shape === lastPayload) return;
+  lastPayload = shape;
+  mission = next;
+  paint();
+};
+const load = async () => apply(await api(missionUrl()));
+
+/**
+ * The stream is the fast path: the server writes the view whenever the record or its ledger
+ * changes. EventSource reconnects on its own, so one error is a blip; two in a row and the
+ * page falls back to asking every eight seconds, which also drives the server's sweep. The
+ * first poll the server answers means it is back, so the stream is opened again.
+ */
+const listen = () => {
+  let errors = 0;
+  const source = new EventSource(actionUrl("stream"));
+  source.onmessage = (e) => {
+    errors = 0;
+    try {
+      apply(JSON.parse(e.data));
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+  source.onerror = () => {
+    errors += 1;
+    if (errors < 2) return;
+    source.close();
+    setStatus("the live stream dropped; checking every 8 s instead");
+    poll();
+  };
+};
+let pollTimer = 0;
+const poll = () => {
+  // A hidden tab would otherwise keep driving a full server sweep, and its git calls, forever.
+  pollTimer = window.setInterval(async () => {
+    if (document.hidden || ["closed", "abandoned"].includes(mission?.status)) return;
+    try {
+      await load();
+    } catch (err) {
+      setStatus(err.message, true);
+      return;
+    }
+    window.clearInterval(pollTimer);
+    pollTimer = 0;
+    setStatus("the live stream is back");
+    listen();
+  }, 8000);
+};
+document.addEventListener("visibilitychange", () => { if (pollTimer && !document.hidden) load().catch(() => {}); });
 
 const boot = async () => {
   if (!projectId || !missionId) {
@@ -577,7 +578,7 @@ const boot = async () => {
     return;
   }
   const projects = await api("/api/projects");
-  project = projects.find((p) => p.id === projectId);
+  const project = projects.find((p) => p.id === projectId);
   if (!project) {
     setStatus(`no project "${projectId}"`, true);
     return;
@@ -588,10 +589,12 @@ const boot = async () => {
   $("#board-link").replaceChildren(text("Workspace"));
   $("#board-link").href = workspace;
   $("#back").href = workspace;
+  spy();
   await load();
-  // Reloading rebuilds the detail, which would tear down a terminal being typed into.
-  // A hidden tab would otherwise keep driving a full server sweep, and its git calls, forever.
-  window.setInterval(() => { if (!document.hidden && mission?.status === "flying" && selected !== "plan") load().catch((err) => setStatus(err.message, true)); }, 8000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && mission?.status === "flying") load().catch(() => {}); });
+  await modulesUp;
+  // The sections were empty when the browser tried the hash; now they have their height.
+  const target = location.hash.slice(1);
+  if (["ask", "plan", "progress", "result"].includes(target)) document.getElementById(target).scrollIntoView();
+  listen();
 };
 boot().catch((err) => setStatus(err.message, true));
