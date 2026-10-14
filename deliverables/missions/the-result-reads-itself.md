@@ -8,14 +8,16 @@ _done when: `npm test` passes; `findingsOf` in `src/audits.ts` sorts `- NOTE(web
 
 - [~] **The finding record**
   - touches: src/findings.ts, test/findings.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 2
+  - commit: b9e3242
   Write `src/findings.ts`, pure. Export the `Finding` contract below and `parseFinding(line: string, taskId: string): Finding`. The line is one list item's text as `findingsOf` hands it over (the `- ` and any bold already stripped): the new shape `KIND(area, severity): headline. detail` where KIND is BLOCKER, NOTE or UNVERIFIED (case-insensitive), area is a path or a plain name (`web/signin`, `the sign-in form`), severity is one of `fix`, `ship`, `check`; and the old shape `KIND: free prose` or bare prose, where the area is `general`, the severity follows the kind (BLOCKER is `fix`, UNVERIFIED is `check`, NOTE is `ship`), and the headline is the first sentence (up to the first `. ` or the whole line under 120 characters), the detail the rest. A `carried` line that begins `unverified: ` (the way `settleReview` stores them) is an UNVERIFIED. Export `triage(findings: Finding[]): { fix: Finding[]; check: Finding[]; ship: Finding[] }`, each bucket grouped by area in first-seen order, and `areaName(area: string): string` that turns `web/signin/` into `web/signin` and leaves plain names alone. `test/findings.test.ts` pins both shapes, the fallback headline rule, every severity default, the carried `unverified:` prefix, and the triage order. No I/O.
 
 - [~] **The RIO writes the shape, and the sorter reads it**
   - touches: src/audits.ts, src/briefs.ts, test/briefs.test.ts, test/missions.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 2
+  - commit: 3607ae8
   In `src/audits.ts`, `findingsOf` accepts an optional parenthetical after the kind: `^(BLOCKER|NOTE|UNVERIFIED)(?:\([^)]*\))?:\s*(.*)$`, keeping the whole text after the colon as the finding (the parenthetical is for `src/findings.ts` to read; `findingsOf` only sorts), and the existing test at `test/missions.test.ts` gains one case per kind in the new shape. In `src/briefs.ts`, `rioBrief` tells the RIO how to write a finding, in one line placed right where it says `each starting "BLOCKER:"`: every finding is `- KIND(area, severity): headline. detail`, area the path or the plain name of what it is about, severity `fix` (must change before merge), `ship` (fine to merge as is), `check` (a claim the RIO could not verify), headline one sentence a person who will not open the code can act on, detail the evidence; with one example of each kind. `RIO_CHECKLIST` gets no new line; this is the format of the answer, not a check. `test/briefs.test.ts` pins the format line and the example in the RIO brief and its absence from the Wingman brief. `settleReview` and `verdictOf` are untouched.
 
 - [ ] **The view carries the readings and remembers what was read**
@@ -88,3 +90,5 @@ _done when: `docs/03-decisions.md` carries M21; the runbook, data model and glos
 - 2026-10-14 12:25 m1-t2 The RIO writes the shape, and the sorter reads it: flying to reviewing
 - 2026-10-14 12:28 m1-t1 The finding record: reviewing to flying
 - 2026-10-14 12:28 m1-t2 The RIO writes the shape, and the sorter reads it: reviewing to flying
+- 2026-10-14 12:30 m1-t1 The finding record: flying to reviewing
+- 2026-10-14 12:30 m1-t2 The RIO writes the shape, and the sorter reads it: flying to reviewing
