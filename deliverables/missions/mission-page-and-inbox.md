@@ -24,8 +24,9 @@ _done when: `npm test` passes, `GET /api/missions/<id>?project=<p>` on a mission
 - [~] **The view, the stream and the reply**
   - touches: server.ts, src/missions.ts, test/missions.test.ts
   - needs: m1-t1, m1-t2
-  - status: flying
+  - status: reviewing
   - attempt: 2
+  - commit: 235ea6f
   In `src/missions.ts`, make `missionView` also return `word: statusWord(mission)`, `questions: questionsOf({ ...mission, findings })` and `feed: feedOf(log, mission)` where `log` is the ledger: read the plan on the mission branch the way `missionReport` does (`ledgerRepoFor` and the integration worktree path; `parsePlan(text).log`), empty when the mission is not approved yet or the file cannot be read, never a throw. Add `export const sayToStrikeLead(project, id, text)`: appends `decision: Cory to the Strike Lead: <text>` to the ledger through the same write path every other ledger line uses (`writeThenSync` with a note; read how `pauseMission` records its note) and, when `mission.interview?.terminalId` names a terminal that is still open, sends the text plus a newline into it with the terminal module's input function (`server.ts` shows how terminals take input); return `{ ok: true, sent: boolean }`. In `server.ts`: `POST /api/missions/:id/say` with `{ text }` (empty text is a 400 through the existing error path); `GET /api/missions/:id/stream` as `text/event-stream` following the pattern of `/api/transcript/stream`: write `data: <JSON of missionView>` once on connect, then whenever the mission record file changes (watch the file at `missionPath`, with a 1 s poll as the backstop, and a `: ping` comment every 15 s); stop everything on `close`. Extend the route regex that lists actions. Tests in `test/missions.test.ts`: `missionView` carries the three new fields on a fixture mission with a ledger (use `tempRepo` from `test/fixtures.ts`), and `sayToStrikeLead` writes the line and reports `sent: false` with no terminal.
 
 ## Milestone 2 — The mission page: four anchors
@@ -121,3 +122,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 21:56 m1-t3 The view, the stream and the reply: pending to flying
 - 2026-10-13 22:02 m1-t3 The view, the stream and the reply: flying to reviewing
 - 2026-10-13 22:08 m1-t3 The view, the stream and the reply: reviewing to flying
+- 2026-10-13 22:12 m1-t3 The view, the stream and the reply: flying to reviewing
