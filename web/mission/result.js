@@ -82,15 +82,28 @@ const mergedOf = (view) => {
   return groups;
 };
 
-/** Every carried note, the unverified ones first: those are claims nobody checked, not opinions. */
-const UNVERIFIED = /^unverified(\s*\(|\s*:)/i;
-const toRead = (view) => {
-  const notes = view.milestones.flatMap((m) => m.tasks).flatMap((task) => (task.carried ?? []).map((line) => ({
-    unverified: UNVERIFIED.test(line),
-    text: line.replace(/^unverified\s*:\s*/i, ""),
-    title: task.title,
-  })));
-  return [...notes.filter((n) => n.unverified), ...notes.filter((n) => !n.unverified)];
+/* ---------- triage: the view's readings in three buckets, each grouped by area ---------- */
+/** In the order they are read: what blocks the merge, then the claims nobody checked, then the rest. */
+const BUCKETS = [
+  { severity: "fix", title: "Fix before merge", none: "nothing to fix before you merge" },
+  { severity: "check", title: "Unverified", none: "nothing left unverified" },
+  { severity: "ship", title: "Fine to ship", none: "nothing noted as fine to ship" },
+];
+/** The view's readings arrive grouped by area within each bucket; this only cuts them at each new area. */
+const byArea = (readings) => {
+  const areas = new Map();
+  for (const r of readings) areas.set(r.area, [...(areas.get(r.area) ?? []), r]);
+  return [...areas];
+};
+const rowId = (key) => `rd-${key.replace(/[^a-z0-9-]/gi, "-")}`;
+/**
+ * Whether a merged-files row draws an area: the file or directory itself, a file inside it, or a
+ * folded directory holding it. A plain-name area (`general`, `the sign-in form`) is no path, so
+ * it matches no row and is read only in its bucket.
+ */
+const draws = (path, area) => {
+  const p = path.replace(/\/+$/, "");
+  return p === area || p.startsWith(`${area}/`) || (path.endsWith("/") && path !== "./" && area.startsWith(path));
 };
 
 export const mount = (host, view, ctx) => {
@@ -100,7 +113,7 @@ export const mount = (host, view, ctx) => {
   const sum = el("div", { class: "rs-sum" });
   const files = el("ul", { class: "rs-files", "aria-label": "What merged, by task" });
   const readHead = el("h2", {}, "To read before you merge", el("span", { class: "n" }));
-  const read = el("ul", { class: "rs-read", "aria-label": "To read before you merge" });
+  const read = el("div", { class: "rs-read" });
   const walks = el("ul", { class: "rs-walks", "aria-label": "Milestones: walkthroughs and proofs" });
   const gate = el("div", { class: "rs-gate" });
   const root = el("div", { class: "mv-result" }, el("h2", {}, "Result", count), sum, files, readHead, read, walks, gate);
@@ -133,7 +146,15 @@ export const mount = (host, view, ctx) => {
     ];
   };
 
-  const drawFiles = (merged) => merged.flatMap(({ m, tasks }) => [
+  /** A finding's chip on a merged-files row: a link to its row in the buckets, which it unfolds. */
+  const fileChip = (r) => el("a", {
+    class: `rs-chip ${r.severity}${r.state ? " marked" : ""}`,
+    href: `#${rowId(r.key)}`,
+    title: `${r.kind}: ${r.headline}`,
+    onclick: (e) => { e.preventDefault(); reveal(r.key); },
+  }, r.severity);
+
+  const drawFiles = (merged, chipsOf) => merged.flatMap(({ m, tasks }) => [
     el("li", { class: "rs-ms" }, `Milestone ${m.n} · ${m.title}`),
     ...tasks.flatMap(({ task, own, rows, from, fromFiles }) => [
       el("li", { class: "rs-task" },
@@ -141,7 +162,7 @@ export const mount = (host, view, ctx) => {
         el("span", { class: "n" }, own ? plural(own.files, "file") : ""),
         own ? el("span", { class: "pm" }, el("b", {}, `+${own.plus}`), " ", el("i", {}, `−${own.minus}`)) : el("span", { class: "pm" }, "no diff recorded")),
       ...rows.map((r) => el("li", { class: "rs-file" },
-        el("span", { class: "d", title: r.path }, r.path),
+        el("span", { class: "d" }, el("span", { class: "p", title: r.path }, r.path), ...chipsOf(r.path).map(fileChip)),
         el("span", { class: "n" }, r.files > 1 ? plural(r.files, "file") : ""),
         el("span", { class: "pm" }, r.changes === null ? "binary" : plural(r.changes, "line")))),
       from.length ? el("li", { class: "rs-file rs-from" },
@@ -149,11 +170,91 @@ export const mount = (host, view, ctx) => {
     ]),
   ]);
 
-  const drawRead = (notes) => notes.length
-    ? notes.map((n) => el("li", {},
-        el("span", { class: `w${n.unverified ? " u" : ""}` }, n.unverified ? "unverified" : "carried"),
-        el("span", {}, n.text, " ", el("span", { class: "t" }, n.title))))
-    : [el("li", { class: "rs-none" }, "Nothing carried. Every task that passed did so with nothing left for you to read.")];
+  /*
+   * The buckets are rebuilt only when the findings themselves change. A mark is painted onto the
+   * row it belongs to, so marking one never folds a bucket or a `why` the reader had open, and
+   * what was open is remembered across a rebuild too.
+   */
+  const rows = new Map();
+  const opened = new Map();
+  const whys = new Set();
+
+  /** A mark is posted and the row waits, disabled, for the view that carries it; a failure is said on the status line and the row goes back to what the view last said. */
+  const mark = async (r, state) => {
+    const row = rows.get(r.key);
+    row.box.disabled = true;
+    row.later.disabled = true;
+    await ctx.act(`tasks/${r.taskId}/readings`, { key: r.key, state }, state === "read" ? `read: ${r.headline}` : `on the checklist: ${r.headline}`);
+    const now = latest.readings?.find((x) => x.key === r.key);
+    if (now) paint(now);
+  };
+
+  /** Read and later are both final: the route takes no unmark, so a marked row keeps its mark and its controls go quiet. */
+  const paint = (r) => {
+    const row = rows.get(r.key);
+    if (!row) return;
+    row.li.classList.toggle("read", r.state === "read");
+    row.li.classList.toggle("later", r.state === "later");
+    row.box.checked = r.state === "read";
+    row.box.disabled = Boolean(r.state);
+    row.later.disabled = Boolean(r.state);
+    row.slot.replaceChildren(r.state === "later" ? el("span", { class: "rs-onlist" }, "on the checklist") : row.later);
+  };
+
+  const drawFinding = (r) => {
+    const id = rowId(r.key);
+    const box = el("input", { type: "checkbox", "aria-label": `read: ${r.headline}`, onchange: () => mark(r, "read") });
+    const later = btn("later", () => mark(r, "later"), "ghost");
+    later.setAttribute("aria-label", `later: put "${r.headline}" on the checklist`);
+    const slot = el("span", { class: "rs-slot" });
+    const detail = el("p", { class: "rs-detail", id: `${id}-why`, hidden: !whys.has(r.key) },
+      r.detail || "No detail beyond the headline.", " ", el("span", { class: "t" }, `From ${r.taskTitle}, milestone ${r.milestone}.`));
+    const why = btn("why", () => {
+      detail.hidden = !detail.hidden;
+      why.setAttribute("aria-expanded", String(!detail.hidden));
+      if (detail.hidden) whys.delete(r.key);
+      else whys.add(r.key);
+    }, "ghost");
+    why.setAttribute("aria-expanded", String(!detail.hidden));
+    why.setAttribute("aria-controls", detail.id);
+    const li = el("li", { class: "rs-finding", id, tabindex: "-1" },
+      el("span", { class: `rs-chip ${r.severity}`, title: r.kind }, r.severity),
+      el("span", { class: "h", title: r.headline }, r.headline),
+      why,
+      el("label", { class: "rs-rd" }, box, "read"),
+      slot,
+      detail);
+    rows.set(r.key, { li, box, later, slot });
+    return li;
+  };
+
+  const drawBucket = (b, list) => {
+    if (!list.length) return el("div", { class: "rs-bucket rs-empty" }, el("span", { class: "h" }, b.title), el("span", { class: "n" }, "0"), el("span", {}, b.none));
+    const bucket = el("details", { class: `rs-bucket ${b.severity}` },
+      el("summary", {}, el("span", { class: "h" }, b.title), el("span", { class: "n" }, String(list.length))),
+      ...byArea(list).flatMap(([area, found]) => [
+        el("h3", { class: "rs-area" }, area),
+        el("ul", { class: "rs-findings", "aria-label": `${b.title}, ${area}` }, ...found.map(drawFinding)),
+      ]));
+    bucket.open = opened.get(b.severity) ?? b === BUCKETS[0];
+    bucket.addEventListener("toggle", () => opened.set(b.severity, bucket.open));
+    return bucket;
+  };
+
+  const drawRead = (readings) => {
+    rows.clear();
+    return BUCKETS.map((b) => drawBucket(b, readings.filter((r) => r.severity === b.severity)));
+  };
+
+  /** A chip on a file row leads here: the bucket unfolds and the row takes focus. */
+  const reveal = (key) => {
+    const row = rows.get(key);
+    if (!row) return;
+    const bucket = row.li.closest("details");
+    if (bucket) bucket.open = true;
+    row.li.scrollIntoView({ block: "center" });
+    row.li.focus({ preventScroll: true });
+  };
 
   /** The walk and the proof for each merged milestone, as the review page showed them. */
   const drawWalks = (v) => v.milestones.filter((m) => m.merged).map((m) => el("li", {},
@@ -272,14 +373,18 @@ export const mount = (host, view, ctx) => {
       mergedKey = key;
       merged = mergedOf(v);
     }
-    const notes = toRead(v);
+    const readings = v.readings ?? [];
+    const chipsOf = (path) => readings.filter((r) => draws(path, r.area));
     const closing = v.status === "review" || v.status === "closed";
     count.textContent = v.status === "closed" ? "closed" : v.status === "review" ? "ready" : merged.length ? "so far" : "not yet";
     patch(sum, [merged.map((g) => g.tasks.map((t) => [t.own, t.files])), v.milestones[0]?.title, branchOf(v)], () => drawSum(v, merged));
-    patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, rows, from, fromFiles])]), () => drawFiles(merged));
+    patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, from, fromFiles,
+      rows.map((r) => [r, chipsOf(r.path).map((c) => [c.key, c.severity, c.kind, c.headline, Boolean(c.state)])])])]), () => drawFiles(merged, chipsOf));
     files.hidden = !merged.length;
-    readHead.lastChild.textContent = notes.length ? `${notes.filter((n) => n.unverified).length} unverified · ${notes.length} in all` : "";
-    patch(read, notes, () => drawRead(notes));
+    const unread = readings.filter((r) => !r.state).length;
+    readHead.lastChild.textContent = readings.length ? `${unread} unread · ${readings.length} in all` : "";
+    patch(read, readings.map((r) => [r.key, r.severity, r.kind, r.area, r.headline, r.detail, r.taskTitle, r.milestone]), () => drawRead(readings));
+    readings.forEach(paint);
     patch(walks, closing ? v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired]) : [], () => (closing ? drawWalks(v) : []));
     walks.hidden = !closing;
     patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status)] : null, () => drawGate(v));
