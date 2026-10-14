@@ -14,10 +14,15 @@
 .mv-word.hud { background: var(--hud-dim); color: var(--hud); }
 .mv-word.threat { background: var(--threat-dim); color: var(--threat); }
 .mv-rail a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
+.mv-rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mv-rail a:hover { background: var(--steel); color: var(--ink); }
 .mv-rail a.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam-strong); }
 .mv-rail a .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 .mv-rail a .n.needs { color: var(--caution); }
+/* The reason behind the word, when there is one: an error has to say what broke, on the page. */
+.mv-trouble { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: -6px 0 14px; }
+.mv-trouble:empty { display: none; }
+.mv-trouble .mv-warn { margin: 0; padding: 8px 10px; overflow-wrap: anywhere; }
 .mv-controls { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 18px; padding: 0 10px; }
 .mv-controls:empty { display: none; }
 .mv-controls p { margin: 0; }
@@ -51,6 +56,7 @@
   .mv-page { grid-template-columns: minmax(0, 1fr); }
   .mv-rail { position: static; flex-direction: row; flex-wrap: wrap; }
   .mv-word { margin: 0 8px 0 0; }
+  .mv-trouble { flex-basis: 100%; margin: 8px 0; }
   .mv-controls { flex-basis: 100%; margin-top: 8px; padding: 0; }
 }
 

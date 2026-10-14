@@ -161,7 +161,10 @@ const openSession = (taskId, under) => {
     setStatus(`${task?.title ?? taskId} has no session to open`, true);
     return;
   }
-  if (watching.has(claudeId)) return;
+  if (watching.has(claudeId)) {
+    setStatus(`${task.title}'s session is already open on this page`);
+    return;
+  }
   const screen = el("div", { class: "term" });
   const well = el("div", { class: "mv-session" },
     el("div", { class: "mv-session-head" }, el("span", { class: "muted small mono" }, `session ${claudeId}`), btn("stop watching", () => { stopWatching(claudeId); well.remove(); }, "ghost")),
@@ -199,6 +202,22 @@ const renderWord = () => {
   chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
 };
 
+/**
+ * The reason behind the word. A failed report or ledger write has no question to answer and
+ * cannot reach the feed, because the ledger is what failed, so this line is the only place it
+ * shows. A landing that failed gets the one thing that can be done about it.
+ */
+let troubleKey = null;
+const renderTrouble = () => {
+  const trouble = mission.trouble ?? "";
+  if (trouble === troubleKey) return;
+  troubleKey = trouble;
+  fill($("#trouble"),
+    trouble ? el("p", { class: "mv-warn" }, trouble) : null,
+    /could not land/.test(trouble) ? btn("try landing it again", () => act("land", {}, "landing again"), "primary") : null,
+    /could not land/.test(trouble) ? el("span", { class: "muted small" }, "rebase the branch it named first; nothing here will force it") : null);
+};
+
 const count = (id, label, needs = false) => {
   const n = $(`#rail a[href="#${id}"] .n`);
   n.textContent = label;
@@ -212,10 +231,12 @@ const renderCounts = () => {
     count("plan", ms.length ? `milestone ${at.n} of ${ms.length}` : "no milestones");
   } else {
     const planned = mission.planDoc?.parsed?.milestones?.length ?? 0;
-    count("plan", planned ? `${planned} milestone${planned === 1 ? "" : "s"}` : "no plan yet");
+    count("plan", planned ? `${planned} milestone${planned === 1 ? "" : "s"}` : "no plan yet", Boolean(mission.questions?.length));
   }
   const open = mission.questions?.length ?? 0;
-  count("progress", open ? `${open} question${open === 1 ? "" : "s"}` : "live", open > 0);
+  // Before approval the only question is the gate, and the gate is drawn in Plan.
+  if (!mission.approved) count("progress", "not yet");
+  else count("progress", open ? `${open} question${open === 1 ? "" : "s"}` : "live", open > 0);
   count("result", mission.status === "closed" ? "closed" : merged ? `${merged} of ${ms.length} merged` : "not yet");
 };
 
@@ -224,19 +245,28 @@ const renderCounts = () => {
  * anchors. Each asks in place: a note field for the pause, a second button for the stop.
  */
 let controlsKey = "";
+let controlsLive = -1;
+let asking = false;
 const renderControls = () => {
   const live = allTasks().filter((t) => t.status === "flying" || t.status === "reviewing").length;
-  const key = `${mission.status}:${Boolean(mission.approved)}:${live}`;
-  if (key === controlsKey) return;
+  const key = `${mission.status}:${Boolean(mission.approved)}`;
+  // The live count moves all the time a mission flies; a question half answered is not wiped for it.
+  if (key === controlsKey && (asking || live === controlsLive)) return;
   controlsKey = key;
+  controlsLive = live;
+  asking = false;
   const box = $("#controls");
   if (!mission.approved || ["closed", "abandoned"].includes(mission.status)) return fill(box);
-  const resting = () => fill(box,
-    mission.status === "paused"
-      ? btn("resume", () => act("resume", {}, "mission resumed"), "primary")
-      : ["flying", "blocked"].includes(mission.status) ? btn("pause", askPause, "ghost") : null,
-    btn("stop this mission", askStop, "ghost danger"));
+  const resting = () => {
+    asking = false;
+    fill(box,
+      mission.status === "paused"
+        ? btn("resume", () => act("resume", {}, "mission resumed"), "primary")
+        : ["flying", "blocked"].includes(mission.status) ? btn("pause", askPause, "ghost") : null,
+      btn("stop this mission", askStop, "ghost danger"));
+  };
   const askPause = () => {
+    asking = true;
     const note = el("input", { type: "text", class: "mv-note", "aria-label": "Why pause the mission", placeholder: "why, in a line; kept in the ledger" });
     fill(box,
       el("p", { class: "muted small" }, "Nothing new starts; what is running finishes and is recorded."),
@@ -248,12 +278,14 @@ const renderControls = () => {
     note.focus();
   };
   const askStop = () => {
+    asking = true;
     fill(box,
       el("p", { class: "mv-warn" }, `This stops ${live} running session${live === 1 ? "" : "s"} and ends the mission; pause is the one that can be resumed. Every branch and worktree is left exactly as it is, so nothing built so far is lost.`),
       el("div", { class: "mv-controls-row" },
         btn("yes, stop it", () => act("abandon", {}, "mission stopped"), "ghost danger"),
         btn("not yet", () => { resting(); box.querySelector("button")?.focus(); }, "ghost")));
-    box.querySelector("button")?.focus();
+    // Not on the button that stops: a held Enter would repeat into it and the two steps become one.
+    box.querySelector("button:last-of-type")?.focus();
   };
   resting();
 };
@@ -339,7 +371,7 @@ const approveButton = (doc) => {
       el("p", { class: "why" }, `This writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. It is the last thing you are asked until the result.`),
       btn(`yes, approve "${mission.name}"`, () => act("approve", {}, "approved; the first milestone is out"), "primary"),
       btn("not yet", () => { fill(box, arm); arm.focus(); }, "ghost"));
-    box.querySelector("button")?.focus();
+    box.querySelector("button:last-of-type")?.focus();
   }, "primary");
   box.append(arm);
   return box;
@@ -476,6 +508,7 @@ const updateModules = () => {
 const paint = () => {
   $("#crumb").replaceChildren(text("Mission "), el("b", {}, mission.name));
   renderWord();
+  renderTrouble();
   renderCounts();
   renderControls();
   renderAsk();
@@ -498,7 +531,8 @@ const load = async () => apply(await api(missionUrl()));
 /**
  * The stream is the fast path: the server writes the view whenever the record or its ledger
  * changes. EventSource reconnects on its own, so one error is a blip; two in a row and the
- * page falls back to asking every eight seconds, which also drives the server's sweep.
+ * page falls back to asking every eight seconds, which also drives the server's sweep. The
+ * first poll the server answers means it is back, so the stream is opened again.
  */
 const listen = () => {
   let errors = 0;
@@ -519,11 +553,24 @@ const listen = () => {
     poll();
   };
 };
+let pollTimer = 0;
 const poll = () => {
   // A hidden tab would otherwise keep driving a full server sweep, and its git calls, forever.
-  window.setInterval(() => { if (!document.hidden && !["closed", "abandoned"].includes(mission?.status)) load().catch((err) => setStatus(err.message, true)); }, 8000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) load().catch(() => {}); });
+  pollTimer = window.setInterval(async () => {
+    if (document.hidden || ["closed", "abandoned"].includes(mission?.status)) return;
+    try {
+      await load();
+    } catch (err) {
+      setStatus(err.message, true);
+      return;
+    }
+    window.clearInterval(pollTimer);
+    pollTimer = 0;
+    setStatus("the live stream is back");
+    listen();
+  }, 8000);
 };
+document.addEventListener("visibilitychange", () => { if (pollTimer && !document.hidden) load().catch(() => {}); });
 
 const boot = async () => {
   if (!projectId || !missionId) {
