@@ -42,8 +42,8 @@ _done when: with the server running, `node tools/cdp.mjs "http://localhost:8767/
 
 - [~] **The plan module**
   - touches: web/mission/plan.js, web/mission/plan.css
-  - status: reviewing
-  - attempt: 1
+  - status: flying
+  - attempt: 2
   Write `web/mission/plan.js` per the module contract, matching the Plan section of `/mockups/mission.html`: one `<details class="step">` per milestone, open unless done, a lamp (`ctx.lamp`), `Milestone n` and the title, one status word on the right (`done <time>`, `waiting for you`, `working since <time>`, `not started`) derived from the milestone (`merged`, `hold`, tasks' statuses, `dispatched`), the done-when line as prose under the heading, then one row per task: lamp by task status (the map in the mockup), title, the task's `intent` as a second line, the status word with attempt count, `after <task title>` for a pending task whose `needs` are not all passed, and for a flying, reviewing or handed-back task a link `open the session` that calls `ctx.openSession(task.id)` and takes the session panel under the row. A handed-back task shows the question's answers inline: find the question for the task in `view.questions` and render each answer as a button that calls `ctx.act(answer.path, body)` with a note field beside the primary when the answer wants one; no prompt. `update(view)` patches in place by id (keep a map of row elements), never rebuilding, so an open session stays open. The milestone walkthrough controls that today's `walkthroughSection` renders stay available here under a done milestone, unchanged in behaviour. Style in `plan.css` with the tokens; nothing in `mission.css`.
 
 - [~] **The progress module**
@@ -143,3 +143,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-13 22:26 m2-t3 The progress module: built to flying
 - 2026-10-13 22:26 m2-t4 The result module: built to reviewing
 - 2026-10-13 22:28 m2-t3 The progress module: flying to reviewing
+- 2026-10-13 22:31 m2-t2 The plan module: reviewing to flying
