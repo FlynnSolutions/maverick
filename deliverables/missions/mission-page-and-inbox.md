@@ -91,8 +91,9 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 
 - [~] **The notification**
   - touches: app/main.mjs, src/notify.ts, test/notify.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 5ea2e58
   `src/notify.ts`: `newQuestions(before: Array<{ missionId, questions }>, after: same): Array<{ missionId, missionName, question }>` returning the questions present in `after` and not in `before`, matched by `missionId` and question `id`; pure, tested in `test/notify.test.ts`. In `app/main.mjs`, after the window opens, poll `/api/workspace` every 15 s, feed each pair to `newQuestions`, and for each result fire an Electron `Notification` titled with the mission name and bodied with the question title; clicking it focuses the window and loads `/mission.html?project=<id>&mission=<id>#progress`. No dependency; `Notification` is Electron's own. Nothing fires on the first poll.
 
 - [~] **Workspace first**
@@ -183,3 +184,4 @@ _done when: `npm test` and `npm run lint` pass; `test/notify.test.ts` pins which
 - 2026-10-14 10:01 m4-t1 The notification: pending to flying
 - 2026-10-14 10:01 m4-t2 Workspace first: pending to flying
 - 2026-10-14 10:04 m4-t2 Workspace first: flying to reviewing
+- 2026-10-14 10:05 m4-t1 The notification: flying to reviewing
