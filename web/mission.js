@@ -243,7 +243,12 @@ const renderCounts = () => {
   // Before approval the only question is the gate, and the gate is drawn in Plan.
   if (!mission.approved) count("progress", "not yet");
   else count("progress", open ? `${open} question${open === 1 ? "" : "s"}` : "live", open > 0);
-  count("result", mission.status === "closed" ? "closed" : merged ? `${merged} of ${ms.length} merged` : "not yet");
+  // A finding Cory has marked, read or later, is off the count: later is already on the checklist.
+  const unread = (mission.readings ?? []).filter((r) => !r.state);
+  const fix = unread.filter((r) => r.severity === "fix").length;
+  if (fix) count("result", `${fix} to fix`, true);
+  else if (unread.length) count("result", `${unread.length} to read`);
+  else count("result", merged ? "read" : "not yet");
 };
 
 /**
