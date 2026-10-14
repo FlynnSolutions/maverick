@@ -1,0 +1,252 @@
+// The plan, as the mission page mounts it after approval: one step per milestone with a status
+// word, one row per task with its intent, and the handed-back task's question answered in place.
+// The page keeps a stream open and calls update() on every event, so nothing here rebuilds: rows
+// are patched by id, and a session opened under a row is still open after the next event.
+
+import { walkthroughPanel } from "../walkthrough.js";
+
+/** The task's lamp and word, the map in /mockups/mission.html. `built` is between the two: the Wingman is done and its RIO is on the way. */
+const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
+const WORD = { passed: "done", flying: "working", built: "built", reviewing: "in review", "handed-back": "waiting for you", pending: "waiting" };
+const STEP_LAMP = { done: ["done", "work"], waiting: ["blocked", "work"], working: ["busy", "work"], pending: ["idle", "stale"] };
+/** The states with a session worth opening: a Wingman flying, a RIO reading, or the last of either before it was handed back. */
+const LIVE = new Set(["flying", "reviewing", "handed-back"]);
+
+const tasksOf = (m) => m.tasks ?? [];
+const stepState = (m) =>
+  m.merged ? "done"
+    : m.hold || tasksOf(m).some((t) => t.status === "handed-back") ? "waiting"
+      : m.dispatched || tasksOf(m).some((t) => t.status !== "pending") ? "working"
+        : "pending";
+/** A milestone started early has no dispatch stamp; its first task's start stands in. */
+const since = (m) => m.dispatched ?? tasksOf(m).map((t) => t.started).filter(Boolean).sort()[0];
+
+export const mount = (host, view, ctx) => {
+  const { el, text, lamp, fmtTime } = ctx;
+  const steps = new Map();
+  const rows = new Map();
+  let current = view;
+
+  const stepWord = (m, s) =>
+    s === "done" ? `done ${fmtTime(m.merged)}`
+      : s === "waiting" ? "waiting for you"
+        : s === "working" ? (since(m) ? `working since ${fmtTime(since(m))}` : "working")
+          : "not started";
+  const titleOf = (id) => current.milestones.flatMap(tasksOf).find((t) => t.id === id)?.title ?? id;
+  const waitsOn = (task) => {
+    if (task.status !== "pending") return [];
+    const passed = new Set(current.milestones.flatMap(tasksOf).filter((t) => t.status === "passed").map((t) => t.id));
+    return (task.needs ?? []).filter((id) => !passed.has(id));
+  };
+  const swapLamp = (holder, [status, band]) => {
+    const key = `${status} ${band}`;
+    if (holder.dataset.lamp === key) return;
+    holder.dataset.lamp = key;
+    holder.replaceChildren(lamp(status, band));
+  };
+
+  /* ---------- the handed-back task's question, answered in the row ---------- */
+  const answersFor = (task, question) => {
+    const box = el("div", { class: "plan-answers" });
+    const wanted = question.answers.some((a) => a.body?.length);
+    const note = wanted ? el("input", { type: "text", class: "plan-note", placeholder: "why, in a line; kept in the ledger", "aria-label": `note for ${task.title}` }) : null;
+    const answers = [...question.answers].sort((a, b) => Number(Boolean(b.primary)) - Number(Boolean(a.primary)));
+    const opts = el("div", { class: "plan-opts" }, ...answers.map((a) => ctx.btn(a.label, async () => {
+      const keys = a.body ?? [];
+      if (keys.length && !note.value.trim()) {
+        note.focus();
+        note.setAttribute("aria-invalid", "true");
+        return;
+      }
+      await ctx.act(a.path, Object.fromEntries(keys.map((k) => [k, note.value.trim()])), `${task.title}: ${a.label}`);
+    }, a.primary ? "primary" : "")));
+    if (note) note.addEventListener("input", () => note.removeAttribute("aria-invalid"));
+    box.append(opts, note ? el("div", { class: "plan-note-row" }, note) : null);
+    return box;
+  };
+
+  /* ---------- a task row ---------- */
+  const makeRow = (task) => {
+    const r = {
+      lamp: el("span", { class: "plan-lamp" }),
+      title: el("span", { class: "t" }),
+      intent: el("span", { class: "i" }),
+      word: el("span", { class: "w" }),
+      answers: el("div", { class: "plan-q" }),
+      session: el("div", { class: "plan-session" }),
+      question: "",
+    };
+    r.li = el("li", { "data-task": task.id }, r.lamp, r.title, r.intent, r.word, r.answers, r.session);
+    rows.set(task.id, r);
+    return r;
+  };
+  const patchRow = (task) => {
+    const r = rows.get(task.id) ?? makeRow(task);
+    r.li.className = task.status;
+    swapLamp(r.lamp, LAMP[task.status] ?? LAMP.pending);
+    r.title.textContent = task.title;
+    r.title.title = task.title;
+    r.intent.textContent = task.intent ?? "";
+    r.intent.title = task.intent ?? "";
+    r.intent.hidden = !task.intent;
+    const waits = waitsOn(task);
+    r.word.replaceChildren(
+      el("b", { class: task.status === "handed-back" ? "needs" : task.status === "passed" ? "ok" : "" }, WORD[task.status] ?? task.status),
+      task.attempts ? ` · attempt ${task.attempts}` : "",
+      ...(waits.length ? [el("br"), `after ${waits.map(titleOf).join(", ")}`] : []),
+      ...(LIVE.has(task.status) ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); ctx.openSession(task.id, r.session); } }, "open the session")] : []));
+    // The answers are rebuilt only when the question itself changes, so a half-written note survives the next event.
+    const question = task.status === "handed-back" ? (current.questions ?? []).find((q) => q.taskId === task.id) : null;
+    const key = question ? JSON.stringify([question.id, question.answers]) : "";
+    if (key !== r.question) {
+      r.question = key;
+      r.answers.replaceChildren(...(question ? [answersFor(task, question)] : []));
+    }
+    r.answers.hidden = !question;
+    return r.li;
+  };
+
+  /* ---------- the walkthrough under a done milestone, as today's walkthroughSection has it ---------- */
+  const walkUrl = (n) => `/api/missions/${encodeURIComponent(ctx.missionId)}/milestones/${n}/walkthrough?project=${encodeURIComponent(ctx.projectId)}`;
+  const waiveRow = (m) => {
+    const note = el("input", { type: "text", class: "plan-note", placeholder: "why it is let through unwalked; kept on the milestone", "aria-label": `why milestone ${m.n} is waived` });
+    note.addEventListener("input", () => note.removeAttribute("aria-invalid"));
+    return el("div", { class: "plan-note-row" }, note, ctx.btn("waive it", async () => {
+      if (!note.value.trim()) {
+        note.focus();
+        note.setAttribute("aria-invalid", "true");
+        return;
+      }
+      await ctx.act(`milestones/${m.n}/walkthrough`, { waive: { note: note.value.trim() } }, `milestone ${m.n} waived`);
+    }, "ghost"));
+  };
+  const walkHead = (label) => el("h4", {}, "Walkthrough", el("span", { class: "plan-walk-meta" }, label));
+  const walkBody = (m) => {
+    const w = m.walkthrough;
+    const walk = current.walk?.[m.n] ?? { state: "none", needed: false };
+    if (walk.state === "none") {
+      return walk.needed
+        ? [walkHead("not built"), el("p", {}, "This milestone merged before walkthroughs existed, so there is no document to walk. Waive it to let the mission land."), waiveRow(m)]
+        : [];
+    }
+    if (walk.state === "waived") return [walkHead(`waived ${fmtTime(w.waived.at)}`), el("p", {}, w.waived.note)];
+    if (walk.state === "failed") return [walkHead("no document"), el("p", { class: "warn" }, w.failed), waiveRow(m), el("p", { class: "plan-walk-meta" }, "or write the document yourself on the mission branch and reopen this page")];
+    if (walk.state === "building") {
+      return [walkHead(`session ${w.claudeId} · since ${fmtTime(w.started)}`),
+        el("p", {}, "A session is writing the test walkthrough for this milestone in the integration worktree. When it has committed the document, it shows here for you to walk.")];
+    }
+    const url = `/files?project=${encodeURIComponent(ctx.projectId)}&path=${encodeURIComponent(w.doc)}`;
+    const said = el("p", { class: "plan-walk-meta", hidden: true });
+    const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, onSave: async (progress) => {
+      w.progress = progress;
+      try {
+        await ctx.post(walkUrl(m.n), { progress: { total: progress.total, answered: progress.answered, verdicts: progress.verdicts, updatedAt: progress.updatedAt } });
+        said.classList.remove("warn");
+        said.textContent = progress.answered >= progress.total ? `milestone ${m.n} walked` : "";
+        said.hidden = !said.textContent;
+      } catch (e) {
+        said.classList.add("warn");
+        said.textContent = e.message;
+        said.hidden = false;
+      }
+    } });
+    panel.querySelector("h2").append(walk.state === "walked" ? el("span", { class: "verdict passed" }, "walked") : null);
+    return [panel, said, walk.state === "walked" ? null : waiveRow(m)];
+  };
+  /**
+   * The walkthrough panel keeps one clock and one storage listener for the whole page, so only
+   * one may be mounted: it is built when its milestone is opened and dropped when another is.
+   */
+  let walking = null;
+  const patchWalk = (s) => {
+    const m = s.m;
+    const walk = current.walk?.[m.n] ?? { state: "none", needed: false };
+    const key = m.merged ? JSON.stringify([walk.state, walk.needed, m.walkthrough?.doc, m.walkthrough?.claudeId, m.walkthrough?.waived, m.walkthrough?.failed]) : "";
+    const lazy = walk.state === "walking" || walk.state === "walked";
+    if (lazy && !s.details.open) {
+      if (walking === s) walking = null;
+      s.walkKey = "";
+      s.walk.replaceChildren();
+      s.walk.hidden = true;
+      return;
+    }
+    if (key === s.walkKey) return;
+    s.walkKey = key;
+    if (lazy) {
+      if (walking && walking !== s) walking.details.open = false;
+      walking = s;
+    }
+    const nodes = key ? walkBody(m).filter(Boolean) : [];
+    s.walk.replaceChildren(...nodes);
+    s.walk.hidden = !nodes.length;
+  };
+
+  /* ---------- a milestone step ---------- */
+  const makeStep = (m) => {
+    const s = {
+      lamp: el("span", { class: "plan-lamp" }),
+      n: el("span", { class: "n" }),
+      title: text(""),
+      word: el("span", { class: "w" }),
+      gives: el("p", { class: "gives" }),
+      tasks: el("ul", { class: "tasks" }),
+      walk: el("div", { class: "plan-walk", hidden: true }),
+      walkKey: "",
+      state: "",
+      m,
+    };
+    s.details = el("details", { class: "step" },
+      el("summary", {}, s.lamp, el("h3", {}, s.n, s.title), s.word),
+      el("div", { class: "body" }, s.gives, s.tasks, s.walk));
+    s.details.addEventListener("toggle", () => patchWalk(s));
+    s.li = el("li", { "data-milestone": String(m.n) }, s.details);
+    steps.set(m.n, s);
+    return s;
+  };
+  const patchStep = (m) => {
+    const s = steps.get(m.n) ?? makeStep(m);
+    s.m = m;
+    const state = stepState(m);
+    // Open unless done, decided when the step first shows and again when it becomes done; a step you opened or closed yourself stays as you left it.
+    if (state !== s.state && (s.state === "" || state === "done")) s.details.open = state !== "done";
+    s.state = state;
+    s.details.className = `step ${state}`;
+    swapLamp(s.lamp, STEP_LAMP[state]);
+    s.n.textContent = `Milestone ${m.n}`;
+    s.title.textContent = m.title;
+    s.word.textContent = stepWord(m, state);
+    s.gives.textContent = m.done ? `Done when ${m.done}` : "";
+    s.gives.hidden = !m.done;
+    const ids = tasksOf(m).map((t) => t.id);
+    for (const [id, r] of rows) if (r.li.parentElement === s.tasks && !ids.includes(id)) { r.li.remove(); rows.delete(id); }
+    tasksOf(m).forEach((t, i) => {
+      const li = patchRow(t);
+      if (s.tasks.children[i] !== li) s.tasks.insertBefore(li, s.tasks.children[i] ?? null);
+    });
+    patchWalk(s);
+    return s.li;
+  };
+
+  const count = el("span", { class: "n" });
+  const list = el("ol", { class: "plan-steps" });
+  host.append(el("h2", { class: "plan-head" }, "Plan", count), list);
+
+  const update = (next) => {
+    current = next;
+    const milestones = next.milestones ?? [];
+    const taskCount = milestones.flatMap(tasksOf).length;
+    count.textContent = [
+      `${milestones.length} milestone${milestones.length === 1 ? "" : "s"}`,
+      `${taskCount} task${taskCount === 1 ? "" : "s"}`,
+      next.approved ? `approved ${fmtTime(next.approved)}` : null,
+    ].filter(Boolean).join(" · ");
+    const ns = milestones.map((m) => m.n);
+    for (const [n, s] of steps) if (!ns.includes(n)) { s.li.remove(); steps.delete(n); }
+    milestones.forEach((m, i) => {
+      const li = patchStep(m);
+      if (list.children[i] !== li) list.insertBefore(li, list.children[i] ?? null);
+    });
+  };
+  update(view);
+  return { update };
+};

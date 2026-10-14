@@ -1,0 +1,62 @@
+/* The plan module: steps you expand, with a status word each, as /mockups/mission.html draws them. */
+.plan-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; font: 600 15px var(--sans); color: var(--ink); }
+.plan-head .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.plan-steps { list-style: none; margin: 0; padding: 0; }
+.step { border-radius: 6px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); margin-bottom: 8px; }
+.step.waiting { box-shadow: 0 0 0 1px var(--caution); }
+.step.working { box-shadow: 0 0 0 1px var(--seam-strong); }
+.step.done { background: transparent; }
+.step > summary { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; list-style: none; border-radius: 6px; }
+.step > summary::-webkit-details-marker { display: none; }
+.step > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.step .plan-lamp { display: inline-flex; }
+.step > summary .lamp { width: 16px; height: 16px; }
+.step > summary h3 { margin: 0; font: 600 16px/1.3 var(--sans); color: var(--ink); }
+.step > summary h3 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); margin-right: 8px; }
+.step.done > summary h3 { font-weight: 500; color: var(--ink-soft); }
+.step > summary .w { font: 500 12.5px var(--sans); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.step.waiting > summary .w { color: var(--caution); }
+.step.done > summary .w { color: var(--hud); }
+.step.working > summary .w { color: var(--ink-soft); }
+.step .body { padding: 0 14px 12px 42px; }
+.step .gives { margin: 0 0 10px; font-size: 13.5px; line-height: 1.55; color: var(--ink-soft); max-width: 64ch; }
+
+/* One row per task: lamp, title, intent under it, the word on the right. */
+.step .tasks { list-style: none; margin: 0; padding: 0; }
+.step .tasks li { display: grid; grid-template-columns: 14px minmax(0, 1fr) 170px; gap: 2px 10px; align-items: baseline; padding: 7px 0; box-shadow: inset 0 -1px 0 var(--seam-soft); }
+.step .tasks li:last-child { box-shadow: none; }
+.step .tasks .plan-lamp { align-self: center; }
+.step .tasks .lamp { width: 14px; height: 14px; }
+.step .tasks .t { font: 500 13.5px var(--sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* An intent is the Wingman's whole brief; the row shows its opening and the title attribute keeps the rest. */
+.step .tasks .i { grid-column: 2; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); max-width: 56ch; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.step .tasks .w { grid-column: 3; grid-row: 1 / span 2; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; text-align: right; }
+.step .tasks .w b { font-weight: 500; color: var(--ink-soft); }
+.step .tasks .w b.needs { color: var(--caution); }
+.step .tasks .w b.ok { color: var(--hud); }
+.step .tasks .w a { color: var(--accent-hot); text-decoration: none; }
+.step .tasks .w a:hover { text-decoration: underline; }
+.step .tasks .w a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+
+/* The handed-back task's question, answered in the row, in the feed's caution dress. */
+.step .tasks .plan-q { grid-column: 2 / -1; }
+.plan-answers { margin-top: 6px; padding: 10px 12px; border-radius: 6px; background: var(--caution-dim); box-shadow: 0 0 0 1px var(--caution); }
+.plan-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-opts button { height: 32px; padding: 0 12px; font: 500 13px var(--sans); }
+.plan-answers .plan-opts button.primary { background: var(--caution); color: #1a1408; border-color: transparent; }
+.plan-note-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.plan-note { flex: 1; height: 30px; padding: 0 10px; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font-size: 13px; }
+.plan-note::placeholder { color: var(--ink-faint); }
+.plan-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plan-note[aria-invalid="true"] { border-color: var(--caution); }
+
+/* The session, opened under its row across the whole width. */
+.step .tasks .plan-session { grid-column: 1 / -1; }
+.step .tasks .plan-session:empty { display: none; }
+
+/* The walkthrough under a done milestone. */
+.plan-walk { margin-top: 12px; padding-top: 10px; box-shadow: inset 0 1px 0 var(--seam-soft); font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
+.plan-walk h4 { display: flex; gap: 10px; align-items: baseline; margin: 0 0 6px; font: 600 13.5px var(--sans); color: var(--ink); }
+.plan-walk p { margin: 0 0 8px; max-width: 64ch; }
+.plan-walk-meta { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
+.plan-walk .warn { color: var(--threat); }
