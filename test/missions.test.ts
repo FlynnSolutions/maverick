@@ -4,13 +4,15 @@
  * a field and not a `###` group.
  */
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
 import { closeTerminal, openTerminal } from "../src/terminal.ts";
@@ -649,4 +651,78 @@ test("before approval with no Strike Lead terminal, a reply has nowhere to go an
   const { project, ledger } = viewFixture("nowhere", { approved: undefined, status: "interviewing" });
   await assert.rejects(() => sayToStrikeLead(project, "nowhere", "hello"), /nowhere to say it/);
   assert.equal(readFileSync(ledger, "utf8"), FLOWN, "nothing was written");
+});
+
+/* ---------- the readings ---------- */
+
+/** The key as the contract spells it, worked out here rather than through `keyOf`, so a drift in either is caught. */
+const keyFor = (taskId: string, raw: string) => `${taskId}:${createHash("sha1").update(raw).digest("hex").slice(0, 8)}`;
+
+const CARRIED = [
+  "NOTE(web/signin, ship): focus is lost. The Wingman called it out of scope.",
+  "unverified: the migration was not run on a copy.",
+  "UNVERIFIED(deploy, check): the stack was not deployed. Only synthesized.",
+  "the copy on the empty state reads oddly.",
+];
+
+/** The view fixture with a passed task carrying two lines of each shape and a handed-back task whose findings file holds one blocker of each. */
+const readingsFixture = (id: string) => {
+  const dir = mkdtempSync(join(tmpdir(), "mv-m1-t3-findings-"));
+  made.push(dir);
+  const file = join(dir, "m1-t2.md");
+  writeFileSync(file, "verdict: mixed\n\n- BLOCKER: the lock leaks on retry.\n- BLOCKER(src/worker/, fix): the worker never stops. It spins on an empty queue.\n", "utf8");
+  return viewFixture(id, { milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-09T07:30:00Z", tasks: [
+    { id: "m1-t1", title: "Already passed", intent: "Build the first thing.", repo: "root", status: "passed", attempts: 1, verdict: "pass with notes", carried: CARRIED },
+    { id: "m1-t2", title: "In review now", intent: "Build the second thing.", repo: "root", status: "handed-back", attempts: 2, verdict: "mixed", note: "the RIO said mixed", review: { claudeId: "c-m1-t3", file, started: "2026-10-09T08:00:00Z" } }] }] as never });
+};
+
+test("missionView's readings are every carried and handed-back finding, keyed by task and line, in triage order grouped by area", async () => {
+  const { project } = readingsFixture("readings");
+  const view = await missionView(project, "readings");
+  assert.deepEqual(view.readings.map((r) => [r.severity, r.area, r.kind, r.taskId, r.headline]), [
+    ["fix", "general", "BLOCKER", "m1-t2", "the lock leaks on retry."],
+    ["fix", "src/worker", "BLOCKER", "m1-t2", "the worker never stops."],
+    ["check", "general", "UNVERIFIED", "m1-t1", "the migration was not run on a copy."],
+    ["check", "deploy", "UNVERIFIED", "m1-t1", "the stack was not deployed."],
+    ["ship", "web/signin", "NOTE", "m1-t1", "focus is lost."],
+    ["ship", "general", "NOTE", "m1-t1", "the copy on the empty state reads oddly."],
+  ]);
+  assert.deepEqual(view.readings.filter((r) => r.taskId === "m1-t1").map((r) => r.key).sort(), CARRIED.map((line) => keyFor("m1-t1", line)).sort());
+  assert.equal(view.readings[0].key, keyFor("m1-t2", "BLOCKER: the lock leaks on retry."), "a blocker the file did not shape is read, and keyed, as one");
+  assert.equal(view.readings[1].key, keyFor("m1-t2", "BLOCKER(src/worker/, fix): the worker never stops. It spins on an empty queue."));
+  assert.deepEqual(view.readings.map((r) => [r.taskTitle, r.milestone, r.state]).slice(0, 1), [["In review now", 1, undefined]]);
+  assert.equal(view.readings[4].detail, "The Wingman called it out of scope.");
+});
+
+test("markReading records read, and later also puts one backlog line on the first tracker and a decision in the ledger, once", async () => {
+  const { project: bare, ledger } = readingsFixture("marked");
+  const root = (bare as { path: string }).path;
+  const checklist = join(root, "CHECKLIST.md");
+  writeFileSync(checklist, "# Checklist\n\n## 🔥 Priority\n\n- [ ] `[ENG]` **Something urgent**\n\n## 📋 Backlog\n\n- [ ] `[ENG]` **An old idea**\n\n## ✅ Shipped\n", "utf8");
+  execFileSync("git", ["-C", root, "add", "CHECKLIST.md"]);
+  execFileSync("git", ["-C", root, "commit", "-q", "-m", "the tracker"]);
+  const project = { ...(bare as object), trackers: [{ label: "CHECKLIST", path: checklist }] } as never;
+  const read = keyFor("m1-t1", CARRIED[3]);
+  const later = keyFor("m1-t1", CARRIED[0]);
+
+  await assert.rejects(() => markReading(project, "marked", "m1-t1", "m1-t1:00000000", "read"), /no finding "m1-t1:00000000"/);
+  await assert.rejects(() => markReading(project, "marked", "m1-t1", read, "soon" as never), /"read" or "later"/);
+
+  const once = await markReading(project, "marked", "m1-t1", read, "read");
+  assert.deepEqual(once.milestones[0].tasks[0].readings, { [read]: "read" });
+  assert.equal(execFileSync("git", ["-C", root, "log", "-1", "--format=%s"], { encoding: "utf8" }).trim(), "the tracker", "read touches no tracker");
+
+  await markReading(project, "marked", "m1-t1", later, "later");
+  await markReading(project, "marked", "m1-t1", later, "later");
+  const view = await missionView(project, "marked");
+  assert.deepEqual(view.readings.filter((r) => r.state).map((r) => [r.key, r.state]), [[later, "later"], [read, "read"]]);
+  const line = "- [ ] `[ENG]` **focus is lost.** (from mission marked, Already passed; web/signin)";
+  const tracker = readFileSync(checklist, "utf8");
+  assert.equal(tracker.split("\n").filter((l) => l === line).length, 1, "a second later writes no second line");
+  const backlog = parseTracker(tracker).sections.find((s) => s.heading === "📋 Backlog")!;
+  assert.deepEqual(backlog.groups.flatMap((g) => g.items.map((i) => i.firstLine)), ["- [ ] `[ENG]` **An old idea**", line]);
+  assert.match(execFileSync("git", ["-C", root, "log", "-1", "--format=%s"], { encoding: "utf8" }), /^console: later from mission "marked": focus is lost\./);
+  assert.equal(execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" }), "", "committed, nothing left loose");
+  const decisions = parsePlan(readFileSync(ledger, "utf8")).log.filter((l) => / decision: /.test(l));
+  assert.deepEqual(decisions.map((l) => l.replace(/^\S+ \S+ /, "")), ['decision: m1-t1 finding "focus is lost." marked later by Cory']);
 });

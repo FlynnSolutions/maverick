@@ -21,7 +21,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, landAgain, ledgerPath, listMissions, missionPath, missionQuestions, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, missionPath, missionQuestions, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
@@ -711,11 +711,16 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const project = await requireProject(url);
     return sendJson(res, 200, await recordWalkthrough(project, missionWalk[1], Number(missionWalk[2]), await readJson<WalkthroughPatch>(req)));
   }
-  const missionTask = path.match(/^\/api\/missions\/([a-z0-9-]+)\/tasks\/([a-z0-9-]+)\/(retry|accept)$/);
+  const missionTask = path.match(/^\/api\/missions\/([a-z0-9-]+)\/tasks\/([a-z0-9-]+)\/(retry|accept|readings)$/);
   if (method === "POST" && missionTask) {
     const project = await requireProject(url);
     const [, id, taskId, action] = missionTask;
     if (action === "retry") return sendJson(res, 200, await retryTask(project, id, taskId));
+    if (action === "readings") {
+      const { key, state } = await readJson<{ key?: string; state?: "read" | "later" }>(req);
+      if (!key || !state) throw new Error("a reading needs a key and a state");
+      return sendJson(res, 200, await markReading(project, id, taskId, key, state));
+    }
     return sendJson(res, 200, await acceptTask(project, id, taskId, (await readJson<{ note?: string }>(req)).note ?? ""));
   }
   // The walkthrough document's own "send to Claude" button posts here (relative /feedback), exactly as the
