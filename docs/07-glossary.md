@@ -36,6 +36,10 @@ The vocabulary is aviation, and it is load-bearing: the words carry the model.
 | **Paused** | a mission a person has stopped spawning for, with a reason in the ledger; what runs finishes and is recorded, and it resumes from the file. Distinct from **blocked**, where a person is needed for one task and the rest flies on, and from **abandoned**, which ends it. |
 | **Contract** | a thing one task makes and another uses (a type, an id, a codec, an env flag, a function), named in the plan's `## Contracts` section with its owner and shape before any task starts. |
 | **Blocker, note** | the two kinds of finding a RIO writes. A blocker stops the task until fixed; a note is fixed if cheap, else carried to the result (M19). |
+| **Anchor** | one of the mission page's four fixed places in its left rail, the same before, during and after the flight: The ask, Plan, Progress, Result (M20). |
+| **Status word** | a mission's state in one of four words, shown above the anchors and on its workspace row: working, waiting for you, error, done. It follows the questions: waiting for you exactly when one is open. |
+| **Question** | anything a mission is waiting on a person for (a task handed back, a held milestone, an escalation, a pause, the plan at the gate), with its answers as buttons. A feed entry pinned at the top of Progress, a strip in Needs you, a macOS notification from the app; answered in place from any of them. |
+| **Inbox** | the workspace, grouped by what needs you: Needs you, Working, Ready to review, Done, always in that order. The page the app opens on. |
 | **Gate** | one of the two places a mission stops for Cory: the plan before anything spawns, and the result before anything ships. |
 | **Audit parent** | a session record with role `audit` that owns a group of task sessions and returns a verdict. |
 | **Callsign** | a project's short label, from its `maverick.json`, shown beside the name in the top bar. |
