@@ -2,6 +2,32 @@
 // one's detail as the main read. Cory is in the loop exactly twice and both gates live here:
 // the plan he blesses before anything spawns, and the finished mission he reads and tests.
 
+/**
+ * The module contract. Plan, Progress and Result are each a module the shell loads once the
+ * plan is approved:
+ *
+ *   web/mission/<name>.js exports
+ *     mount(host: Element, view: MissionView, ctx): { update(view: MissionView): void }
+ *   web/mission/<name>.css is its stylesheet, linked from mission.html.
+ *
+ * `host` is the module's own `<section>` (#plan, #progress, #result). The module owns
+ * everything inside it, its heading included; the shell never writes into it after the mount.
+ * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
+ * and must patch in place, so an open session or a half-typed note survives it.
+ *
+ * `ctx` is { el, text, btn, lamp, api, post, act, projectId, missionId, openSession, fmtTime }:
+ *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
+ *   text(s), btn(label, onclick, cls)
+ *   lamp(status, band)           web/lamp.js's lamp
+ *   api(path, init), post(path, body)  fetch JSON; throw with the server's error on a non-2xx
+ *   act(path, body, said)        posts to /api/missions/<id>/<path>?project=, sets the status
+ *                                line to `said` (or the error), and refreshes every module
+ *   projectId, missionId
+ *   openSession(taskId, under)   mounts the task's session (its RIO's while it is reviewing,
+ *                                its Wingman's otherwise) as a terminal under `under`
+ *   fmtTime(iso)                 a clock time, or "" for none
+ */
+
 import { jetSvg } from "./jet.js";
 import { lamp } from "./lamp.js";
 import { readableOn, recall } from "./theme.js";
