@@ -3,7 +3,7 @@
 // The page keeps a stream open and calls update() on every event, so nothing here rebuilds: rows
 // are patched by id, and a session opened under a row is still open after the next event.
 
-import { walkthroughPanel } from "../walkthrough.js";
+import { stopWalkthrough, walkthroughPanel } from "../walkthrough.js";
 
 /** The task's lamp and word, the map in /mockups/mission.html. `built` is between the two: the Wingman is done and its RIO is on the way. */
 const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
@@ -61,7 +61,9 @@ export const mount = (host, view, ctx) => {
       await ctx.act(a.path, Object.fromEntries(keys.map((k) => [k, note.value.trim()])), `${task.title}: ${a.label}`);
     }, a.primary ? "primary" : "")));
     if (note) note.addEventListener("input", () => note.removeAttribute("aria-invalid"));
-    box.append(opts, note ? el("div", { class: "plan-note-row" }, note) : null);
+    // DOM append stringifies a null into the word "null", so the note row goes in only when there is one.
+    box.append(opts);
+    if (note) box.append(el("div", { class: "plan-note-row" }, note));
     return box;
   };
 
@@ -103,6 +105,8 @@ export const mount = (host, view, ctx) => {
       r.answers.replaceChildren(...(question ? [answersFor(task, question)] : []));
     }
     r.answers.hidden = !question;
+    // A task that has left the live states has no session worth watching; the page lets go of a screen that leaves it.
+    if (!LIVE.has(task.status)) r.session.replaceChildren();
     return r.li;
   };
 
@@ -150,7 +154,7 @@ export const mount = (host, view, ctx) => {
         said.hidden = false;
       }
     } });
-    panel.querySelector("h2").append(walk.state === "walked" ? el("span", { class: "verdict passed" }, "walked") : null);
+    if (walk.state === "walked") panel.querySelector("h2").append(el("span", { class: "verdict passed" }, "walked"));
     return [panel, said, walk.state === "walked" ? null : waiveRow(m)];
   };
   /**
@@ -158,13 +162,19 @@ export const mount = (host, view, ctx) => {
    * one may be mounted: it is built when its milestone is opened and dropped when another is.
    */
   let walking = null;
+  /** Letting go of the mounted panel stops its clock too, or it goes on saving for a panel no longer on the page. */
+  const letGo = (s) => {
+    if (walking !== s) return;
+    walking = null;
+    stopWalkthrough();
+  };
   const patchWalk = (s) => {
     const m = s.m;
     const walk = current.walk?.[m.n] ?? { state: "none", needed: false };
     const key = m.merged ? JSON.stringify([walk.state, walk.needed, m.walkthrough?.doc, m.walkthrough?.claudeId, m.walkthrough?.waived, m.walkthrough?.failed]) : "";
     const lazy = walk.state === "walking" || walk.state === "walked";
     if (lazy && !s.details.open) {
-      if (walking === s) walking = null;
+      letGo(s);
       s.walkKey = "";
       s.walk.replaceChildren();
       s.walk.hidden = true;
@@ -175,7 +185,7 @@ export const mount = (host, view, ctx) => {
     if (lazy) {
       if (walking && walking !== s) walking.details.open = false;
       walking = s;
-    }
+    } else letGo(s);
     const nodes = key ? walkBody(m).filter(Boolean) : [];
     s.walk.replaceChildren(...nodes);
     s.walk.hidden = !nodes.length;
@@ -241,7 +251,7 @@ export const mount = (host, view, ctx) => {
       next.approved ? `approved ${fmtTime(next.approved)}` : null,
     ].filter(Boolean).join(" · ");
     const ns = milestones.map((m) => m.n);
-    for (const [n, s] of steps) if (!ns.includes(n)) { s.li.remove(); steps.delete(n); }
+    for (const [n, s] of steps) if (!ns.includes(n)) { letGo(s); s.li.remove(); steps.delete(n); }
     milestones.forEach((m, i) => {
       const li = patchStep(m);
       if (list.children[i] !== li) list.insertBefore(li, list.children[i] ?? null);
