@@ -31,11 +31,13 @@ import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
-import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
+import { listTerminals, openTerminal, writeInput, type TerminalInfo } from "./terminal.ts";
 import { FIELD_LINE, MARKER, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
 import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
+import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
+import { feedOf, type FeedEntry } from "./feed.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -229,7 +231,7 @@ export interface Mission {
 /* ---------- storage ---------- */
 
 const missionsDir = (projectId: string): string => join(config.sessionsDir, "missions", projectId);
-const missionPath = (projectId: string, id: string): string => join(missionsDir(projectId), `${id}.json`);
+export const missionPath = (projectId: string, id: string): string => join(missionsDir(projectId), `${id}.json`);
 
 export const readMission = async (projectId: string, id: string): Promise<Mission | null> => {
   try {
@@ -654,6 +656,9 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
   }
 };
 
+const noteTrouble = (project: Project, id: string, why: string) =>
+  changeMission(project.id, id, (fresh) => { fresh.trouble = [fresh.trouble, why].filter(Boolean).join(" · "); }).catch(() => undefined);
+
 /**
  * The record is written first and the ledger follows it, so what the file says is what landed
  * (M11: a write the record refuses must not already be in the ledger). A ledger that could not
@@ -661,7 +666,7 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
  */
 const recorded = async (project: Project, mission: Mission, decisions: string[] = []): Promise<Mission> => {
   const why = await syncPlan(project, mission, decisions);
-  if (why) await changeMission(project.id, mission.id, (fresh) => { fresh.trouble = [fresh.trouble, why].filter(Boolean).join(" · "); }).catch(() => undefined);
+  if (why) await noteTrouble(project, mission.id, why);
   return mission;
 };
 const writeThenSync = async (project: Project, mission: Mission, decisions: string[] = []): Promise<Mission> => {
@@ -1707,6 +1712,42 @@ export const pauseMission = async (project: Project, id: string, note: string): 
   return recorded(project, mission, [`paused by Cory: ${note.trim()}`]);
 };
 
+/** How long the Strike Lead's terminal is given to take the reply in before Enter follows it. */
+const SUBMIT_BEAT_MS = 180;
+
+/**
+ * Cory's reply to the Strike Lead. Once the mission is approved it goes into the ledger as a
+ * decision, like every other thing a person does; before that there is no ledger to write, and
+ * the open interview terminal is the only place it can go. It is typed into the Strike Lead's
+ * terminal whenever that terminal is still open.
+ *
+ * The reply is one line: a ledger decision is one bullet, so a newline in it would start a line
+ * of plan of its own. Enter is its own write a beat after the text, as the composer does: sent
+ * with the text it lands inside a bracketed paste, or reads as a newline, and nothing submits.
+ * When the ledger refuses the line and no terminal is open the reply landed nowhere, which is a
+ * failure, not an ok.
+ */
+export const sayToStrikeLead = async (project: Project, id: string, text: string): Promise<{ ok: true; sent: boolean }> => {
+  const said = text.trim().replace(/\s+/g, " ");
+  if (!said) throw new Error("say something; an empty reply is not sent");
+  const fresh = await missionOr404(project.id, id);
+  const terminalId = fresh.interview?.terminalId;
+  const open = Boolean(terminalId && listTerminals().find((t) => t.id === terminalId && t.exitCode === null));
+  if (!fresh.approved && !open) throw new Error(`${fresh.name} has no ledger before approval and no open Strike Lead terminal; there is nowhere to say it`);
+  if (fresh.approved) {
+    const mission = await changeMission(project.id, id, (mission) => mission);
+    const why = await syncPlan(project, mission, [`Cory to the Strike Lead: ${said}`]);
+    if (why && !open) throw new Error(`the reply was not sent: ${why}, and no Strike Lead terminal is open`);
+    if (why) await noteTrouble(project, id, why);
+  }
+  if (open) {
+    await writeInput(terminalId!, Buffer.from(said));
+    await new Promise((r) => setTimeout(r, SUBMIT_BEAT_MS));
+    await writeInput(terminalId!, Buffer.from("\r"));
+  }
+  return { ok: true, sent: open };
+};
+
 /**
  * Release a milestone a person settled by hand. What release means is the hold's kind: a
  * collision they reconciled in the integration worktree is merged again; a proof is run again
@@ -1903,7 +1944,34 @@ const remembered = async (key: string, read: () => Promise<string>, keep: boolea
   return value;
 };
 
-export const missionView = async (project: Project, id: string): Promise<Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView> }> => {
+/** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
+export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; word: StatusWord; questions: Question[]; feed: FeedEntry[] };
+
+/**
+ * The word follows the questions (Cory's call on m1-t1): a mission with nothing open is never
+ * "waiting for you", whatever escalation it once had. A stale escalation on a review mission is
+ * history, not a question.
+ */
+export const wordFor = (mission: Mission, questions: Question[]): StatusWord => {
+  if (questions.length) return "waiting for you";
+  const word = statusWord(mission);
+  if (word !== "waiting for you") return word;
+  return mission.status === "review" || mission.status === "closed" ? "done" : "working";
+};
+
+/** The ledger's log for the view: empty before approval or when the file cannot be read, never a throw. */
+const ledgerLog = async (project: Project, mission: Mission): Promise<string[]> => {
+  if (!mission.approved) return [];
+  try {
+    const ledger = planOnBranch(project.path, mission.plan, mission.repos);
+    await ledgerRepoFor(mission, ledger);
+    return parsePlan(await readFile(ledger, "utf8")).log;
+  } catch {
+    return [];
+  }
+};
+
+export const missionView = async (project: Project, id: string): Promise<MissionView> => {
   const mission = await missionOr404(project.id, id);
   const findings: Record<string, string> = {};
   const diffstat: Record<string, string> = {};
@@ -1922,5 +1990,6 @@ export const missionView = async (project: Project, id: string): Promise<Mission
       if (stat) diffstat[task.id] = stat;
     }
   }));
-  return { ...mission, findings, diffstat, walk };
+  const questions = questionsOf({ ...mission, findings });
+  return { ...mission, findings, diffstat, walk, word: wordFor(mission, questions), questions, feed: feedOf(await ledgerLog(project, mission), mission) };
 };
