@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Question queue · mockup · Maverick</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+  <link rel="stylesheet" href="../mission.css" />
+  <link rel="stylesheet" href="mock.css" />
+</head>
+<body>
+  <div id="bar"></div>
+  <main class="mock-page" id="page">
+    <section data-option="a">
+      <div class="mission-head">
+        <h1>Orbit: sign-in, claims and the dashboard</h1>
+        <span class="verdict paused" style="text-transform:uppercase">needs you</span>
+        <span class="meta">mission/orbit · milestone 2 of 3 in the air · 3 flying · 1 handed back</span>
+        <span class="tools"><label class="toggle"><input type="checkbox" /> focus: only what moves</label><button type="button" class="ghost">pause</button></span>
+      </div>
+      <section class="rack needs">
+        <h4><span>Needs you</span><span class="n">3 open · 1 answered this morning</span></h4>
+        <div class="qcards" id="cards-a"></div>
+      </section>
+      <p class="below">Below this sits the flight plan, unchanged. The queue is the top of the mission page because it is the loudest thing on it; when it is empty the page opens on the plan.</p>
+    </section>
+
+    <section data-option="b">
+      <div class="mission-head">
+        <h1>Orbit: sign-in, claims and the dashboard</h1>
+        <span class="verdict paused" style="text-transform:uppercase">needs you</span>
+        <span class="meta">mission/orbit · milestone 2 of 3 in the air</span>
+      </div>
+      <div class="qsplit">
+        <aside class="qcol" id="col-b"></aside>
+        <section class="qfocus" id="focus-b"></section>
+      </div>
+      <p class="below">The column is the same one the workspace rail shows beside the sessions, so a question is reachable from any page; opening it lands here, on the one question, with the plan one click away.</p>
+    </section>
+
+    <p class="mock-foot"><b>Both options share:</b> every question is a card with what is asked, where it came from, the context folded under it (plan excerpt or the RIO's findings verbatim), the answers as buttons that say what each one does, and a note field whose text goes to the ledger as a <code>decision:</code> line. No browser prompt. The lock reticle means blocked on you; the acquiring reticle means yours to confirm but nothing is waiting. The agents sit in the bar on every page.</p>
+  </main>
+  <script type="module">
+    import { el, lamp, bar, options, findings } from "./mock.js";
+    import { mission, KIND } from "./mock-data.js";
+
+    document.querySelector("#bar").replaceWith(bar("orbit"));
+
+    const answerRow = (a, key) => el("div", { class: `q-answer${a.danger ? " danger" : ""}` },
+      el("button", { type: "button", class: a.primary ? "primary" : "", "data-key": key }, a.label),
+      el("span", { class: "effect" }, a.effect));
+
+    const card = (q, { focus = false } = {}) => el("article", { class: "qcard" },
+      lamp(q.lamp === "lock" ? "blocked" : "busy", q.lamp === "lock" ? "work" : "action"),
+      el("div", { class: "q-head" }, el("span", { class: "q-n" }, `Q${q.n}`), el("span", { class: "q-kind" }, KIND[q.kind]), el("span", { class: "q-from" }, `${q.from} · ${q.at}`)),
+      el("h3", { class: "q-title" }, q.title),
+      el("p", { class: "q-body" }, q.body),
+      q.context ? el("details", { class: "q-context", open: focus }, el("summary", {}, q.context.label), findings(q.context.text)) : null,
+      el("div", { class: "q-answers" }, ...q.answers.map((a, i) => answerRow(a, String(i + 1)))),
+      el("div", { class: "q-note" }, el("input", { type: "text", placeholder: "why, in a line; it is kept on the ledger" }), el("span", { class: "hint" }, "enter commits")),
+    );
+
+    const answered = (q) => el("div", { class: "q-answered" },
+      el("span", { class: "lamp" }),
+      el("span", {}, `${q.title} · `, el("span", { class: "ans" }, el("b", {}, q.answer), ` (${q.by}: ${q.note})`)),
+      el("span", { class: "ans" }, q.at));
+
+    // Option A: cards at the top of the mission page.
+    document.querySelector("#cards-a").append(...mission.questions.map((q) => card(q)), ...mission.answered.map(answered));
+
+    // Option B: a column and one question in focus.
+    let on = mission.questions[0].n;
+    const col = document.querySelector("#col-b");
+    const focus = document.querySelector("#focus-b");
+    const paintB = () => {
+      col.replaceChildren(
+        el("h4", {}, el("span", {}, "Needs you"), el("span", { class: "n" }, `${mission.questions.length} open`)),
+        ...mission.questions.map((q) => el("div", { class: `qrow${q.n === on ? " on" : ""}`, onclick: () => { on = q.n; paintB(); } },
+          lamp(q.lamp === "lock" ? "blocked" : "busy", q.lamp === "lock" ? "work" : "action"),
+          el("span", { class: "t" }, q.title),
+          el("span", { class: "m" }, `Q${q.n} · ${KIND[q.kind]} · ${q.at}`))),
+        ...mission.answered.map((q) => el("div", { class: "qrow done" }, el("span", { class: "lamp" }), el("span", { class: "t" }, q.title), el("span", { class: "m" }, `${q.answer} · ${q.at}`))),
+      );
+      const q = mission.questions.find((x) => x.n === on);
+      const i = mission.questions.indexOf(q);
+      focus.replaceChildren(
+        el("div", { class: "qfocus-foot" }, `question ${i + 1} of ${mission.questions.length}`, el("span", { class: "spacer" }), el("kbd", {}, "1"), el("kbd", {}, "2"), el("kbd", {}, "3"), " answer · ", el("kbd", {}, "↵"), " commit · ", el("kbd", {}, "j"), el("kbd", {}, "k"), " next, previous"),
+        card(q, { focus: true }),
+        el("div", { class: "where" }, "in the plan: ", el("a", { href: "flight-plan.html#a" }, "milestone 2, Sign-in and the claims pipeline"), " · ", el("a", { href: "#" }, q.kind === "rio" ? "open the RIO's session" : "open the Strike Lead")),
+      );
+      focus.classList.add("arrive");
+      setTimeout(() => focus.classList.remove("arrive"), 300);
+    };
+    paintB();
+    document.addEventListener("keydown", (e) => {
+      if (!document.querySelector('[data-option="b"]').classList.contains("on") || e.target.tagName === "INPUT") return;
+      const i = mission.questions.findIndex((x) => x.n === on);
+      if (e.key === "j" && i < mission.questions.length - 1) { on = mission.questions[i + 1].n; paintB(); }
+      if (e.key === "k" && i > 0) { on = mission.questions[i - 1].n; paintB(); }
+    });
+
+    options(document.querySelector("#page"), [
+      ["a", "A · cards at the top", "The queue is the top band of the mission page: every open question as a lifted card, answered ones collapsed to a line beneath."],
+      ["b", "B · one at a time", "A column of questions, one in focus, keyboard answers, with the plan a link away. The column is the same one the workspace rail shows."],
+    ]);
+  </script>
+</body>
+</html>

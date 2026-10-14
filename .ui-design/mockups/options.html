@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Four ways to lay out a mission · options · Maverick</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+  <link rel="stylesheet" href="mock.css" />
+  <style>
+    html { -webkit-font-smoothing: antialiased; }
+    .opts { max-width: 1100px; margin: 0 auto; padding: 28px 24px 96px; }
+    .opts > h1 { font: 500 22px/1.3 var(--sans); letter-spacing: -0.01em; color: var(--ink); margin: 0 0 6px; }
+    .opts > p.lead { margin: 0 0 28px; font-size: 14px; color: var(--ink-soft); max-width: 70ch; line-height: 1.5; }
+    .cell { display: grid; grid-template-columns: 440px minmax(0, 1fr); gap: 24px; padding: 20px 0 28px; box-shadow: inset 0 -1px 0 var(--seam); }
+    .cell.rec .wire { box-shadow: 0 0 0 1px var(--accent); }
+    .num { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+    .cell h2 { font: 600 17px/1.3 var(--sans); color: var(--ink); margin: 4px 0 2px; }
+    .from { font-size: 12.5px; color: var(--ink-faint); margin: 0 0 12px; }
+    .cell dl { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 12px; margin: 0 0 12px; font-size: 13.5px; line-height: 1.5; }
+    .cell dt { color: var(--ink-faint); font-size: 12.5px; padding-top: 1px; }
+    .cell dd { margin: 0; color: var(--ink-soft); }
+    .cell dd b { color: var(--ink); font-weight: 500; }
+    .verdict { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 4px; font: 600 12px var(--sans); }
+    .verdict.keep { background: var(--hud-dim); color: var(--hud); }
+    .verdict.maybe { background: var(--caution-dim); color: var(--caution); }
+    .verdict.no { background: var(--threat-dim); color: var(--threat); }
+    .honest { margin: 8px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink); max-width: 60ch; }
+    .cell a.see { display: inline-block; margin-top: 10px; font-size: 13px; color: var(--accent-hot); text-decoration: none; }
+
+    /* wireframes: real blocks, same frame, same scale */
+    .wire { position: relative; height: 300px; border-radius: 6px; background: var(--carbon); box-shadow: 0 0 0 1px var(--seam-strong); overflow: hidden; font: 500 9.5px/1.3 var(--sans); color: var(--ink-faint); }
+    .wire .bar { position: absolute; left: 0; right: 0; top: 0; height: 22px; background: var(--gunmetal); box-shadow: inset 0 -1px 0 var(--seam); display: flex; align-items: center; padding: 0 10px; gap: 10px; }
+    .wire .bar .pill { margin-left: auto; padding: 1px 6px; border-radius: 3px; background: var(--caution-dim); color: var(--caution); }
+    .wire .box { position: absolute; border-radius: 4px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); padding: 6px 8px; overflow: hidden; }
+    .wire .box.lift { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
+    .wire .box.needs { box-shadow: 0 0 0 1px var(--caution); background: var(--caution-dim); color: var(--ink); }
+    .wire .box.done { background: transparent; }
+    .wire .box h5 { margin: 0 0 3px; font: 600 10px var(--sans); color: var(--ink-soft); }
+    .wire .box.needs h5 { color: var(--caution); }
+    .wire .line { height: 5px; border-radius: 2px; background: var(--seam-strong); margin: 4px 0; }
+    .wire .line.short { width: 55%; } .wire .line.mid { width: 75%; }
+    .wire .row { display: flex; gap: 5px; align-items: center; margin: 4px 0; }
+    .wire .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cold); flex: 0 0 auto; }
+    .wire .dot.on { background: #ff9a2b; } .wire .dot.ok { background: var(--hud); } .wire .dot.q { background: var(--caution); }
+    .wire .btn { display: inline-block; padding: 2px 6px; border-radius: 3px; background: var(--caution); color: #1a1408; font-weight: 600; }
+    .wire .nav { position: absolute; left: 10px; top: 32px; width: 70px; display: flex; flex-direction: column; gap: 4px; }
+    .wire .nav span { padding: 3px 6px; border-radius: 3px; }
+    .wire .nav span.on { background: var(--panel); color: var(--ink); }
+    .wire .nav span.st { background: var(--caution-dim); color: var(--caution); font-weight: 600; margin-bottom: 4px; }
+    .wire .tag { position: absolute; right: 8px; bottom: 6px; font-family: var(--mono); font-size: 9px; color: var(--ink-ghost); }
+
+    .combo { margin-top: 36px; padding: 18px 20px; border-radius: 6px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam-strong); }
+    .combo h2 { font: 600 17px var(--sans); color: var(--ink); margin: 0 0 8px; }
+    .combo p { margin: 0 0 8px; font-size: 14px; line-height: 1.55; color: var(--ink-soft); max-width: 72ch; }
+    .combo ol { margin: 8px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--ink-soft); }
+    .combo ol b { color: var(--ink); font-weight: 500; }
+    .src { margin-top: 28px; font-size: 12.5px; line-height: 1.6; color: var(--ink-faint); max-width: 90ch; }
+    .src a { color: var(--accent-hot); text-decoration: none; }
+    @media (max-width: 820px) { .cell { grid-template-columns: 1fr; } .wire { height: 240px; } }
+  </style>
+</head>
+<body>
+  <div id="bar"></div>
+  <main class="opts">
+    <h1>Four ways to lay out a mission, from the products that already ship one</h1>
+    <p class="lead">Same frame, same scale, same invented mission in every cell. Pick by number. The verdict and the honest sentence are mine; the pick is yours. The combination at the bottom is what I would build.</p>
+
+    <!-- 1 -->
+    <div class="cell rec">
+      <div class="wire">
+        <div class="bar"><span>Maverick · skyline / orbit</span><span class="pill">waiting for you · 2</span></div>
+        <div class="nav"><span class="st">Waiting · 2</span><span>The ask</span><span>Plan</span><span class="on">Progress</span><span>Result</span></div>
+        <div class="box" style="left:92px;top:32px;right:10px;height:34px"><h5>The ask</h5><div class="line mid"></div><div class="line short"></div></div>
+        <div class="box" style="left:92px;top:74px;right:10px;height:74px"><h5>Plan · milestone 2 of 3</h5><div class="row"><span class="dot ok"></span><div class="line short"></div></div><div class="row"><span class="dot q"></span><div class="line mid"></div></div><div class="row"><span class="dot"></span><div class="line short"></div></div></div>
+        <div class="box" style="left:92px;top:156px;right:10px;height:98px"><h5>Progress · live feed</h5><div class="row"><span class="dot on"></span><div class="line mid"></div></div><div class="row"><span class="dot ok"></span><div class="line short"></div></div><div class="box needs" style="position:static;margin-top:4px;padding:5px 7px"><h5>Question · Audit log</h5><span class="btn">Send it out</span> <span class="btn" style="background:var(--panel);color:var(--ink-soft)">Accept</span></div></div>
+        <div class="box done" style="left:92px;top:262px;right:10px;height:30px"><h5>Result · so far</h5><div class="line short"></div></div>
+        <div class="tag">one page, four anchors</div>
+      </div>
+      <div>
+        <div class="num">1</div>
+        <h2>The session page: four anchors, one scroll</h2>
+        <p class="from">Devin (Task, Plan, PR, Summary) · Jules (plan steps, then a feed) · Linear (typed feed, four statuses)</p>
+        <dl>
+          <dt>What you see first</dt><dd>The ask in one sentence, then the plan, then the live feed. The status is one of four words in the rail.</dd>
+          <dt>A question</dt><dd>An entry in the feed with its answers as buttons, pinned at the top of Progress, and the status flips to <b>Waiting for you</b>.</dd>
+          <dt>After it lands</dt><dd>Same page. Result fills in: diff by directory, what to read, the PR.</dd>
+          <dt>Cost to build</dt><dd>Low. It is the current mission page reorganised; the data is already there.</dd>
+        </dl>
+        <span class="verdict keep">keep</span>
+        <p class="honest">Easiest to follow because there is only one place and it never changes shape. It gets long on a mission with twenty tasks; the rail is what keeps it navigable.</p>
+        <a class="see" href="mission.html">See it built →</a>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="cell">
+      <div class="wire">
+        <div class="bar"><span>Maverick · skyline / orbit · Mission Control</span><span class="pill">waiting for you · 2</span></div>
+        <div class="box" style="left:10px;top:32px;width:120px;bottom:10px"><h5>Features</h5><div class="row"><span class="dot ok"></span><div class="line short"></div></div><div class="row"><span class="dot ok"></span><div class="line mid"></div></div><div class="row"><span class="dot on"></span><div class="line mid"></div></div><div class="row"><span class="dot on"></span><div class="line short"></div></div><div class="row"><span class="dot q"></span><div class="line mid"></div></div><div class="row"><span class="dot"></span><div class="line short"></div></div><div class="row"><span class="dot"></span><div class="line mid"></div></div></div>
+        <div class="box" style="left:140px;top:32px;right:140px;bottom:10px"><h5>Log</h5><div class="row"><span>09:48</span><div class="line mid"></div></div><div class="row"><span>09:52</span><div class="line short"></div></div><div class="box needs" style="position:static;margin:4px 0;padding:5px 7px"><h5>Question</h5><span class="btn">Answer</span></div><div class="row"><span>09:55</span><div class="line mid"></div></div><div class="row"><span>09:58</span><div class="line short"></div></div></div>
+        <div class="box" style="right:10px;top:32px;width:120px;bottom:10px"><h5>Validation</h5><div class="row"><span class="dot ok"></span><span>M1 proof</span></div><div class="row"><span class="dot"></span><span>M2 proof</span></div><div class="line short" style="margin-top:10px"></div><div class="line mid"></div><div class="line short"></div></div>
+        <div class="tag">three panes, one screen</div>
+      </div>
+      <div>
+        <div class="num">2</div>
+        <h2>Mission Control: three panes, nothing scrolls</h2>
+        <p class="from">Factory Missions (feature list, progress log, validation output in one view) · Devin (actions grouped by step)</p>
+        <dl>
+          <dt>What you see first</dt><dd>Everything at once: the milestone and task list, the log, the proofs. A pilot's panel.</dd>
+          <dt>A question</dt><dd>Lands in the log and lights the task in the list. You can also talk to the Strike Lead from here, Factory style: pause, say what you see, ask it to recover.</dd>
+          <dt>After it lands</dt><dd>The same screen stops moving. The debrief has to be a separate page.</dd>
+          <dt>Cost to build</dt><dd>Medium. Three live panes to keep in step; the ledger stream does most of it.</dd>
+        </dl>
+        <span class="verdict maybe">maybe</span>
+        <p class="honest">Best for watching a flight in progress, worst for understanding one you did not watch. Dense by design; it is the view that reads as a cockpit.</p>
+      </div>
+    </div>
+
+    <!-- 3 -->
+    <div class="cell">
+      <div class="wire">
+        <div class="bar"><span>Maverick · skyline · Workspace</span><span class="pill">needs you · 2</span></div>
+        <div class="box needs" style="left:10px;top:32px;right:10px;height:62px"><h5>Needs you · 2</h5><div class="row"><span class="dot q"></span><span>Audit log · out of retries</span><span class="btn" style="margin-left:auto">Answer</span></div><div class="row"><span class="dot q"></span><span>Who owns events.ts</span><span class="btn" style="margin-left:auto">Answer</span></div></div>
+        <div class="box" style="left:10px;top:102px;right:10px;height:62px"><h5>Working · 3</h5><div class="row"><span class="dot on"></span><span>Sign-in form · attempt 2</span><span style="margin-left:auto">+310 −42</span></div><div class="row"><span class="dot on"></span><span>Claims worker · RIO in</span><span style="margin-left:auto">+226 −9</span></div><div class="row"><span class="dot on"></span><span>Export to CSV</span><span style="margin-left:auto">+48</span></div></div>
+        <div class="box" style="left:10px;top:172px;right:10px;height:46px"><h5>Ready to review · 1</h5><div class="row"><span class="dot ok"></span><span>Milestone 1 · landed 09:30</span><span style="margin-left:auto">+240 −11</span></div></div>
+        <div class="box done" style="left:10px;top:226px;right:10px;height:40px"><h5>Done · 2</h5><div class="row"><span class="dot ok"></span><span>Session contract</span></div></div>
+        <div class="tag">the inbox; click a row for option 1</div>
+      </div>
+      <div>
+        <div class="num">3</div>
+        <h2>The inbox: every mission and session grouped by what it needs from you</h2>
+        <p class="from">Superset (In progress / Ready for review, diff stats per row) · Conductor (see at a glance, then review and merge) · Linear (waiting for input as a state)</p>
+        <dl>
+          <dt>What you see first</dt><dd>Four groups, top to bottom: Needs you, Working, Ready to review, Done. Each row is one task or milestone with its diff stats. This is the workspace.</dd>
+          <dt>A question</dt><dd>Is a row in Needs you with an Answer button. Answer it without opening anything.</dd>
+          <dt>After it lands</dt><dd>The mission moves to Done; click it for the session page (option 1).</dd>
+          <dt>Cost to build</dt><dd>Low. The workspace already has racks sorted by urgency; this renames and regroups them.</dd>
+        </dl>
+        <span class="verdict keep">keep</span>
+        <p class="honest">The most logical front door: the top of the page is always what you have to do. It is a list, not a story; it needs option 1 behind it to say why.</p>
+        <a class="see" href="question-queue.html#b">The Needs you group, built →</a>
+      </div>
+    </div>
+
+    <!-- 4 -->
+    <div class="cell">
+      <div class="wire">
+        <div class="bar"><span>Maverick · skyline / orbit</span><span class="pill">waiting for you</span></div>
+        <div class="box" style="left:60px;top:32px;right:10px;height:30px"><h5>you</h5><div class="line mid"></div></div>
+        <div class="box lift" style="left:10px;top:70px;right:60px;height:54px"><h5>Maverick · here is the plan</h5><div class="row"><span class="dot"></span><div class="line short"></div></div><div class="row"><span class="dot"></span><div class="line mid"></div></div><span class="btn" style="background:var(--accent);color:#04101f">Approve</span></div>
+        <div class="box lift" style="left:10px;top:132px;right:60px;height:40px"><h5>Maverick · milestone 1 landed</h5><div class="line mid"></div></div>
+        <div class="box needs" style="left:10px;top:180px;right:60px;height:48px"><h5>Maverick · Audit log is out of retries</h5><span class="btn">Send it out</span> <span class="btn" style="background:var(--panel);color:var(--ink-soft)">Accept</span></div>
+        <div class="box" style="left:10px;top:236px;right:10px;height:30px;background:var(--carbon);box-shadow:0 0 0 1px var(--seam)"><span style="color:var(--ink-ghost)">Reply to the Strike Lead…</span></div>
+        <div class="tag">one thread per mission</div>
+      </div>
+      <div>
+        <div class="num">4</div>
+        <h2>The thread: a mission is a conversation</h2>
+        <p class="from">Claude Code on the web (a session is a chat; questions wait in it) · Factory (talk to the orchestrator in plain language) · Jules (plan inline, approve in the thread)</p>
+        <dl>
+          <dt>What you see first</dt><dd>A chat. The plan is a message with an Approve button. Progress is messages. A question is a message you reply to.</dd>
+          <dt>A question</dt><dd>The newest message, with buttons, and a reply box for anything else.</dd>
+          <dt>After it lands</dt><dd>The last message is the summary with the PR. Scroll up for history.</dd>
+          <dt>Cost to build</dt><dd>Lowest. One list of messages and a reply box.</dd>
+        </dl>
+        <span class="verdict no">no, on its own</span>
+        <p class="honest">Nothing is easier to follow for one agent. With nine tasks in the air it becomes a firehose, and the plan scrolls out of sight the moment work starts. Worth stealing the reply box.</p>
+      </div>
+    </div>
+
+    <div class="combo">
+      <h2>What I would build: 3 in front of 1, with 4's reply box</h2>
+      <p>The workspace is the inbox (3). The top group is always what needs you, answerable in place. Click any row and you land on the mission's session page (1), scrolled to that task. The session page has four fixed anchors and never changes shape, before, during or after the flight. At the bottom of Progress sits a reply box to the Strike Lead (4), so "pause and tell it what you see" is one line, not a form. Mission Control (2) is not a page; it is what Progress looks like while the mission is flying, if you ever want the three-pane view, and it can come later.</p>
+      <ol>
+        <li><b>Workspace</b> = Needs you · Working · Ready to review · Done. Rows carry diff stats and a lamp.</li>
+        <li><b>Mission page</b> = The ask · Plan · Progress · Result, left rail, one status word.</li>
+        <li><b>A question</b> appears in both places with the same buttons, and in a macOS notification.</li>
+        <li><b>Reply box</b> at the bottom of Progress, to the Strike Lead.</li>
+      </ol>
+    </div>
+
+    <p class="src">Sources: <a href="https://docs.devin.ai/release-notes/2025">Devin release notes</a> · <a href="https://jules.google/docs/review-plan/">Jules plan review</a> · <a href="https://linear.app/developers/agent-best-practices">Linear agent sessions</a> · <a href="https://superset.sh/">Superset</a> · <a href="https://conductor.build/">Conductor</a> · <a href="https://docs.factory.com/missions/overview">Factory Missions</a> · <a href="https://factory.com/news/missions">Factory, Introducing Missions</a> · <a href="https://code.claude.com/docs/en/claude-code-on-the-web">Claude Code on the web</a> · <a href="https://github.com/pablodelucca/pixel-agents">Pixel Agents</a></p>
+  </main>
+  <script type="module">
+    import { bar } from "./mock.js";
+    document.querySelector("#bar").replaceWith(bar("options"));
+  </script>
+</body>
+</html>
