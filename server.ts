@@ -21,7 +21,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, landAgain, ledgerPath, listMissions, missionPath, missionQuestions, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
@@ -347,6 +347,45 @@ const openTerminalFor = async (body: OpenTerminalBody) => {
   }
 };
 
+/* ---------- server-sent events ---------- */
+
+/**
+ * One scaffold for every stream: a watcher on the file is the fast path and a slow poll catches
+ * what fs.watch misses (a file replaced rather than written in place). `next` returns what to
+ * send, or nothing when nothing changed. The close is listened for before the first flush, so a
+ * client gone during it cannot leave the timers running for the life of the process.
+ */
+const eventStream = <T>(req: IncomingMessage, res: ServerResponse, on: { file: string; every: number; ping?: number; next: () => Promise<T | undefined> }): void => {
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+  let sending = false;
+  const flush = async () => {
+    if (sending || res.writableEnded) return;
+    sending = true;
+    try {
+      const payload = await on.next();
+      if (payload !== undefined && !res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch {
+      /* the file may not exist yet, or was caught mid-write; the next tick tries again */
+    } finally {
+      sending = false;
+    }
+  };
+  let watcher: FSWatcher | null = null;
+  try {
+    watcher = watch(on.file, () => void flush());
+  } catch {
+    /* no file to watch yet: the poll carries it */
+  }
+  const backstop = setInterval(() => void flush(), on.every);
+  const ping = on.ping ? setInterval(() => { if (!res.writableEnded) res.write(": ping\n\n"); }, on.ping) : undefined;
+  req.on("close", () => {
+    clearInterval(backstop);
+    clearInterval(ping);
+    watcher?.close();
+  });
+  void flush();
+};
+
 /* ---------- static ---------- */
 
 const serveStatic = async (pathname: string, res: ServerResponse): Promise<void> => {
@@ -442,41 +481,37 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const sessionId = url.searchParams.get("session");
     if (!cwd || !sessionId) throw new Error("transcript stream needs cwd and session");
     let offset = Number(url.searchParams.get("from") ?? 0);
-    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    let sending = false;
-    const flush = async () => {
-      if (sending || res.writableEnded) return;
-      sending = true;
-      try {
+    eventStream(req, res, {
+      file: transcriptPath(cwd, sessionId),
+      every: 2500,
+      next: async () => {
         const page = await readTranscript(cwd, sessionId, offset);
         offset = page.offset;
-        if (page.events.length || page.title) res.write(`data: ${JSON.stringify(page)}\n\n`);
-      } catch {
-        /* the file may not exist yet; the next tick tries again */
-      } finally {
-        sending = false;
-      }
-    };
-    let watcher: FSWatcher | null = null;
-    try {
-      watcher = watch(transcriptPath(cwd, sessionId), () => void flush());
-    } catch {
-      /* no file to watch yet: the interval carries it */
-    }
-    const backstop = setInterval(() => void flush(), 2500);
-    void flush();
-    req.on("close", () => {
-      clearInterval(backstop);
-      watcher?.close();
+        return page.events.length || page.title ? page : undefined;
+      },
     });
     return;
   }
+  // What every mission asks, for the shell's notification poll: no sweep, no git, so a poll every
+  // few seconds costs a record read per mission and nothing else.
+  if (method === "GET" && path === "/api/questions") {
+    return sendJson(res, 200, { missions: await missionQuestions(await requireProject(url)) });
+  }
   if (method === "GET" && path === "/api/workspace") {
     const lan = lanAddress();
+    // With a project it also carries that project's missions, each with what it asks and its
+    // merged diff, swept first the way the mission list is.
+    let missions: WorkspaceMission[] | undefined;
+    if (url.searchParams.get("project")) {
+      const project = await requireProject(url);
+      await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
+      missions = await workspaceMissions(project);
+    }
     return sendJson(res, 200, {
       host: config.host,
       lanUrl: config.host === "127.0.0.1" || !lan ? null : `http://${lan}:${config.port}/review.html?key=${accessKey}`,
       lanHint: config.host === "127.0.0.1" ? "start with SESSION_CONSOLE_HOST=0.0.0.0 to reach the console from your phone" : null,
+      ...(missions ? { missions } : {}),
     });
   }
   if (method === "POST" && path === "/api/remove") {
@@ -603,16 +638,47 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, { mission, terminal });
     }
   }
-  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|report))?$/);
+  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|report|say|stream))?$/);
   if (missionAction) {
     const project = await requireProject(url);
     const [, id, action] = missionAction;
+    // Before the blessing the page reads the plan document; after it, only the run. Parsing
+    // the plan on every poll of a mission that is already flying buys nothing.
+    const page = async () => {
+      const view = await missionView(project, id);
+      return view.approved ? view : { ...view, planDoc: await previewPlan(project, id) };
+    };
     if (method === "GET" && !action) {
       await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
-      // Before the blessing the page reads the plan document; after it, only the run. Parsing
-      // the plan on every poll of a mission that is already flying buys nothing.
-      const view = await missionView(project, id);
-      return sendJson(res, 200, view.approved ? view : { ...view, planDoc: await previewPlan(project, id) });
+      return sendJson(res, 200, await page());
+    }
+    // The page's live feed: the view once on connect, then again whenever the record (or the
+    // ledger it writes just after) changes. The record's mtime and the ledger's together say
+    // whether anything moved; the view is only rebuilt when they did.
+    if (method === "GET" && action === "stream") {
+      const record = missionPath(project.id, id);
+      const first = await page();
+      const ledger = ledgerPath(project, first);
+      const stamp = async () => (await Promise.all([record, ledger].map((f) => (f ? stat(f).then((s) => s.mtimeMs, () => 0) : 0)))).join(":");
+      let seen = "";
+      eventStream(req, res, {
+        file: record,
+        every: 1000,
+        ping: 15_000,
+        next: async () => {
+          const now = await stamp();
+          if (now === seen) return undefined;
+          const view = seen ? await page() : first;
+          seen = now;
+          return view;
+        },
+      });
+      return;
+    }
+    if (method === "POST" && action === "say") {
+      const text = (await readJson<{ text?: string }>(req)).text ?? "";
+      if (!text.trim()) return sendJson(res, 400, { error: "say something; an empty reply is not sent" });
+      return sendJson(res, 200, await sayToStrikeLead(project, id, text));
     }
     if (method === "GET" && action === "report") {
       // Built before any header goes out, so a failure is a 500 with its reason, not an empty 200.

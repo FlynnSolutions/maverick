@@ -1,0 +1,451 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mission page and inbox: milestone 3 walkthrough</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+    --radius:10px; --maxw:1000px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+      --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+      --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+      --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+    --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+    --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+    --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em;
+    background:var(--line2);padding:.08em .38em;border-radius:5px;border:1px solid var(--line);
+    word-break:break-word;}
+  a{color:var(--accent)}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 120px}
+  header.mast{max-width:var(--maxw);margin:0 auto;padding:36px 20px 20px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:30px;line-height:1.15;margin:.28em 0 .1em;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:15px;max-width:72ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .progwrap{position:sticky;top:0;z-index:20;background:var(--bg);
+    border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:6px}
+  .progrow{max-width:var(--maxw);margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:14px}
+  .bar{flex:1;height:8px;background:var(--line2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s ease}
+  .pct{font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;white-space:nowrap}
+  .tools{display:flex;gap:8px}
+  button.btn{font:inherit;font-size:12.5px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+  button.btn:hover{color:var(--ink);border-color:var(--accent)}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:var(--radius);padding:16px 18px;margin:18px 0}
+  .callout h3{margin:0 0 8px;font-size:15px}
+  .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px;margin-top:4px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px 16px;margin:18px 0 6px}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:28px}
+  @media(max-width:640px){nav.toc ol{columns:1}}
+  nav.toc li{margin:4px 0;break-inside:avoid}
+  nav.toc a{text-decoration:none;color:var(--ink)}
+  nav.toc a:hover{color:var(--accent)}
+  nav.toc .c{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px}
+  section.pillar{margin:30px 0 0}
+  .phead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:10px 0 8px;border-bottom:2px solid var(--line);position:sticky;top:44px;background:var(--bg);z-index:5}
+  .phead h2{margin:0;font-size:21px;letter-spacing:-.01em}
+  .phead .pc{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .tc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    margin:12px 0;overflow:hidden}
+  .tc-head{display:flex;gap:11px;align-items:flex-start;padding:13px 40px 13px 15px;cursor:pointer;user-select:none;position:relative}
+  .tc-head:after{content:"\25BE";position:absolute;right:15px;top:13px;color:var(--faint);transition:transform .15s}
+  .tc-head:hover:after{color:var(--accent)}
+  .tc.collapsed .tc-head:after{transform:rotate(-90deg)}
+  .tc-title{font-weight:600;font-size:15px;flex:1}
+  .caseid{display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    font-weight:700;color:var(--muted);background:var(--line2);border:1px solid var(--line);
+    border-radius:5px;padding:0 6px;margin-right:8px;vertical-align:1px}
+  .tc-actions{display:inline-flex;gap:8px;align-items:center;margin-left:auto;flex:none}
+  .verdict{display:inline-flex;gap:3px}
+  .vbtn{font:inherit;font-size:13px;font-weight:800;width:27px;height:24px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--faint);cursor:pointer;line-height:1;padding:0}
+  .vbtn:hover{border-color:var(--accent);color:var(--ink)}
+  .vbtn.v-pass.on{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+  .vbtn.v-partial.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+  .vbtn.v-fail.on{background:#fdecec;border-color:#e0554c;color:#b3261e}
+  :root[data-theme="dark"] .vbtn.v-fail.on{background:#2c1514;color:#f0918a;border-color:#7a3b36}
+  .vbtn.v-blocked.on{background:var(--line2);border-color:var(--faint);color:var(--ink)}
+  .vbtn.v-defer.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .notebtn{font:inherit;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;white-space:nowrap}
+  .notebtn:hover{border-color:var(--accent);color:var(--accent)}
+  .notebtn.has{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .notebtn.sendbtn.sent{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+  .vchip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--setup);
+    background:var(--setup-soft);border:1px solid var(--setup);border-radius:5px;padding:0 5px;margin-left:7px;vertical-align:1px}
+  .notearea{width:100%;font:inherit;font-size:13px;border:1px solid var(--warn);border-radius:7px;padding:7px 9px;margin:0 0 11px;background:var(--warn-soft);color:var(--ink);resize:vertical;box-sizing:border-box}
+  .tc[data-v="pass"]{border-left:3px solid var(--good)}
+  .tc[data-v="partial"]{border-left:3px solid var(--warn)}
+  .tc[data-v="fail"]{border-left:3px solid #d3453b}
+  .tc[data-v="blocked"]{border-left:3px solid var(--faint)}
+  .tc[data-v="defer"]{border-left:3px solid var(--accent)}
+  #breakdown{display:inline-flex;gap:9px;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  #breakdown .p{color:var(--good)} #breakdown .pa{color:var(--warn)} #breakdown .f{color:#d3453b} #breakdown .bl{color:var(--muted)}
+  #barFill{width:100%;height:100%;background:transparent;display:flex}
+  .bar .seg{height:100%;display:block}
+  .bar .seg-pass{background:var(--good)} .bar .seg-partial{background:var(--warn)}
+  .bar .seg-blocked{background:var(--faint)} .bar .seg-fail{background:#d3453b}
+  .progrow.filters{margin-top:9px;gap:8px;flex-wrap:wrap}
+  .flabel{font-size:12.5px;color:var(--muted)} .flabel b{color:var(--ink);font-weight:600}
+  .fchip{font:inherit;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 13px;cursor:pointer;color:var(--muted)}
+  .fchip:hover{border-color:var(--accent)}
+  .fchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .cpanel{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}
+  .cbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(760px,100%);max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+  .chead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+  .chead .csub{color:var(--muted);font-size:12.5px}
+  #compileText{flex:1;min-height:340px;border:0;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);color:var(--ink);resize:none;outline:none}
+  .tc.done .tc-title{color:var(--done);text-decoration:line-through;text-decoration-thickness:1px}
+  .tc-body{padding:0 15px 14px 43px;font-size:14px}
+  .tc.collapsed .tc-body{display:none}
+  .why{color:var(--muted);margin:0 0 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;margin-right:7px;vertical-align:1px}
+  .tag.setup{background:var(--setup-soft);color:var(--setup)}
+  .tag.ask{background:var(--warn-soft);color:var(--warn)}
+  .setup-line{background:var(--setup-soft);border:1px solid var(--line);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .ask-line{background:var(--warn-soft);border:1px solid var(--warn);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .auto-note{background:var(--accent-soft);border:1px solid var(--line);border-radius:7px;
+    padding:6px 11px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+  .auto-note b{color:var(--ink)}
+  .hist{background:var(--line2);border:1px solid var(--line);border-left:3px solid var(--faint);
+    border-radius:7px;padding:7px 11px;margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .hist .hr{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:3px}
+  .hist p{margin:0 0 6px}
+  .hist p:last-child{margin-bottom:0}
+  .notearea::placeholder{color:var(--faint)}
+  .fix-note{background:var(--good-soft);border:1px solid var(--good);border-radius:7px;
+    padding:7px 11px;margin:0 0 11px;font-size:12.5px;color:var(--ink)}
+  .fix-note b{color:var(--good)}
+  .fix-note.pending{background:var(--warn-soft);border-color:var(--warn)}
+  .fix-note.pending b{color:var(--warn)}
+  .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:10px 0 4px}
+  ol.steps{margin:0 0 4px;padding-left:20px} ol.steps li{margin:4px 0}
+  ul.exp{margin:0;padding-left:0;list-style:none}
+  ul.exp li{margin:5px 0;padding-left:22px;position:relative}
+  ul.exp li:before{content:"\2713";position:absolute;left:2px;color:var(--good);font-weight:800}
+  .exp-wrap{background:var(--good-soft);border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin-top:4px}
+  .guide{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--line2);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 12px;font-size:13px}
+  .guide .who b{color:var(--accent)}
+  .guide .sep{color:var(--muted)}
+  .glink{display:inline-flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);
+    border-radius:6px;padding:3px 10px;color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px}
+  .glink:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .glink:before{content:"\2197";font-size:11px}
+  .pswitch{font-weight:650;text-decoration:none;border-bottom:1px dashed currentColor}
+  .pswitch:hover{opacity:.75}
+  @media(max-width:640px){
+    .progrow{flex-wrap:wrap} .tools{flex-wrap:wrap}
+    .tc-head{flex-wrap:wrap} .tc-actions{flex-wrap:wrap;margin-left:0}
+    .tc-body{padding-left:15px}
+  }
+</style>
+
+
+<header class="mast">
+  <div class="eyebrow">Mission page and inbox · milestone 3</div>
+  <h1>The workspace is the inbox</h1>
+  <p class="sub">The workspace regrouped into four groups, Needs you, Working, Ready to review and Done, with missions placed by their status word, a mission's merged diff on its row, and each open question a Needs you row answered in place through the route the mission page posts.</p>
+  <div class="meta"><span><b>Branch</b> mission/mission-page-and-inbox</span><span><b>Tasks</b> questions on the workspace feed, the four groups</span><span><b>Cases</b> 8</span></div>
+</header>
+<div class="progwrap">
+  <div class="progrow">
+    <span class="pct" id="pctText">0 / 0</span>
+    <span id="breakdown"></span>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="tools">
+      <button class="btn" id="compileBtn" style="font-weight:700;color:var(--accent);border-color:var(--accent)">&#128203; Compile findings</button>
+      <button class="btn" id="themeBtn">Theme</button>
+      <button class="btn" id="expandBtn">Collapse all</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div class="progrow filters">
+    <span class="flabel">Show:</span>
+    <button class="fchip on" data-f="all">All</button>
+    <button class="fchip" data-f="work">Needs work</button>
+    <button class="fchip" data-f="notes">Has notes</button>
+    <button class="fchip" data-f="untested">Untested</button>
+  </div>
+</div>
+<div id="compilePanel" class="cpanel" style="display:none">
+  <div class="cbox">
+    <div class="chead"><b>Findings (markdown)</b><span class="csub">paste this back to iterate</span><span style="flex:1"></span>
+      <button class="btn" id="copyBtn">Copy</button><button class="btn" id="closeBtn">Close</button></div>
+    <textarea id="compileText" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="callout">
+    <h3>Before you start: put this branch on 8767</h3>
+    <p>When this was written, the server on 8767 ran the main checkout (<code>/Users/coryflynn/Projects/maverick</code>, on main), which has none of this milestone: its <code>/api/workspace</code> answers without a <code>missions</code> field. Stop it and start it again from the integration worktree:</p>
+    <p><code>cd /Users/coryflynn/Projects/maverick/.claude/worktrees/mission-page-and-inbox-integration-root &amp;&amp; SESSION_CONSOLE_PORT=8767 node server.ts</code></p>
+    <p>Then open <a href="http://localhost:8767/?project=maverick&amp;view=workspace" target="_blank">localhost:8767/?project=maverick&amp;view=workspace</a>. It reads your real home, so the rows are your real sessions and the live mission (milestone 4 flying while you walk). The live mission only asks you something on demand when it is paused, so the question cases pause it from the mission page and answer from the workspace. Those cases say so; the pause stops nothing that is running, and the resume puts it back.</p>
+  </div>
+  <div class="callout">
+    <h3>Known going in</h3>
+    <p>The RIOs passed both tasks (the first one accepted by you over a mixed verdict) and left these open. They are not cases; note them if you hit them.</p>
+    <dl class="kv">
+      <dt>two groups</dt><dd>A closed or abandoned mission whose trouble is a broken report or ledger reads <code>error</code> and is listed in Needs you and again in Done, with only <code>open</code> in Needs you.</dd>
+      <dt>below the groups</dt><dd>Brainstorms and an "open a mission" line still sit under the four groups. Deliberate: they are the only way to open either from here. Accept or reject it in g1.</dd>
+      <dt>fresh session</dt><dd>A session idle under an hour that has not replied yet (no last reply) is drawn in Done with the stale band, so a just-opened session reads as finished.</dd>
+      <dt>labels</dt><dd>The answer button carries the answer's own word (<code>resume</code>, <code>approve</code>, <code>send it out again</code>), not the word "Answer".</dd>
+      <dt>phone width</dt><dd>The where column (and with it the mission's <code>+N −M</code>) is hidden at 390 px, a mission row's <code>open</code> overlaps its state text, and the usage bar overflows the page. All three predate this milestone.</dd>
+      <dt>coupling</dt><dd>The workspace rearranges the strip markup web/inbox.js draws. If inbox.js changes that markup, the whole workspace stops painting, not one strip.</dd>
+    </dl>
+  </div>
+  <nav class="toc">
+    <ol>
+      <li><a href="#groups">The four groups</a> <span class="c" id="toc-groups"></span></li>
+      <li><a href="#ask">A question answered from the workspace</a> <span class="c" id="toc-ask"></span></li>
+      <li><a href="#done">The milestone's done check</a> <span class="c" id="toc-done"></span></li>
+    </ol>
+  </nav>
+
+  <section class="pillar" id="groups" data-key="groups">
+    <div class="phead"><h2>The four groups</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="g1"><div class="tc-head"><span class="tc-title">Four groups, in order, and nothing else above them</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Open the workspace on 8767 (link above) at a normal desktop width.</li><li>Read the group headings top to bottom, then scroll to the end of the page.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Group headings in this order: <code>Needs you</code> (large, caution colour, the jet glyph), <code>Working</code>, <code>Ready to review</code> (ink, brighter than Working), <code>Done</code> (faint). Each carries a count. A group with nothing in it is not drawn; the rest keep the order.</li>
+        <li>None of the old racks: no <code>Missions</code>, <code>Shells</code>, <code>Needs action</code>, <code>Idle</code>, <code>Stale · idle over a day</code> or <code>Background · done</code>.</li>
+        <li>Below Done: the Brainstorms rack, then a quiet <code>open a mission</code> button. Pressing it opens the new-mission flow (close it without starting one).</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="g2"><div class="tc-head"><span class="tc-title">Sessions land in the group their state says</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Walk each group and, for a few rows, compare the row with what you know of that session (open it if unsure).</li><li>If you have a session open, send it a short prompt that ends with a question back to you, e.g. <code>ask me one yes or no question, nothing else</code>, and wait for its reply.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Needs you: sessions blocked or waiting (a permission prompt reads <code>BLOCKED permission prompt</code>), and a session whose last reply, under an hour old, ends in a question mark.</li>
+        <li>Working: busy sessions, your formations (the formation tabs render and still switch), shells, and the live mission's row (<code>working</code>).</li>
+        <li>Ready to review: sessions that replied within the hour without asking, and any mission at review.</li>
+        <li>Done: finished sessions, sessions idle past the hour (dimmer, the stale band), closed and abandoned missions, then the closed list.</li>
+        <li>The session you prompted moves from Working to Needs you once it asks; no session shows in two groups.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="g3"><div class="tc-head"><span class="tc-title">A mission row says how far it is and how big it is</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Find the mission-page-and-inbox row (in Working while it flies).</li><li>Compare its total with <code>git -C /Users/coryflynn/Projects/maverick/.claude/worktrees/mission-page-and-inbox-integration-root diff --shortstat main...mission/mission-page-and-inbox</code>.</li><li>Press its <code>open</code>.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The where column reads <code>n/12 tasks · m/4 milestones · +N −M</code> (when this was written: <code>3/4 milestones · +2480 −484</code>). Hover to see it whole if it clips.</li>
+        <li>The total counts only merged milestones' passed tasks, with a task's merged sibling counted once, so it sits near the git total but need not equal it (git also counts walkthroughs and the mission file). Note it if it is wildly off.</li>
+        <li><code>open</code> lands on the mission page for that mission.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="g4"><div class="tc-head"><span class="tc-title">Narrow window</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Narrow the window to phone width (or the responsive view at 390) and scroll the workspace.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The four groups keep their order and stay readable; strips wrap rather than overflow. The issues under "phone width" above are known and predate this milestone; note anything beyond them.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="ask" data-key="ask">
+    <div class="phead"><h2>A question answered from the workspace</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="q1"><div class="tc-head"><span class="tc-title">A paused mission asks in Needs you</span></div><div class="tc-body">
+      <p class="ask-line"><span class="tag ask">writes</span>This pauses the live mission. Nothing new starts while it is paused; what is running finishes. q2 resumes it, so do q2 straight after (run dc1 in between if you want the check to see a question).</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>Open the <a href="http://localhost:8767/mission.html?project=maverick&amp;mission=mission-page-and-inbox" target="_blank">mission page</a> in a second tab, press <code>pause</code>, type <code>walkthrough m3 check</code>, press <code>pause it</code>.</li><li>Go back to the workspace tab and wait a few seconds (or press the refresh arrow at the top right).</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>A row in Needs you: lock lamp, name <code>the mission is paused</code>, state <code>PAUSED</code>, a when, and the mission's name as a link in the where column.</li>
+        <li>Under it, <code>asks</code> with your reason (<code>walkthrough m3 check</code>), then <code>answer</code> with one primary button, <code>resume</code>, and an empty status line under the buttons.</li>
+        <li>The mission's own row is no longer in Working (it now waits for you through the question, not a second row).</li>
+        <li>Clicking the row's text (not the button) opens the mission page; so does Tab to the row and Enter.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="q2"><div class="tc-head"><span class="tc-title">Resume from the workspace posts the mission page's route</span></div><div class="tc-body">
+      <p class="ask-line"><span class="tag ask">writes</span>This resumes the live mission you paused in q1.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>Open the browser's DevTools on the workspace tab, Network panel, filter <code>missions</code>.</li><li>Press <code>resume</code> on the paused row.</li><li>Look at the mission page tab.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>One request: <code>POST /api/missions/mission-page-and-inbox/resume?project=maverick</code>, answered 200. That is the URL the mission page builds for its own resume (web/mission.js <code>actionUrl</code>).</li>
+        <li>The workspace redraws: the paused row is gone, and the mission's row is back in Working.</li>
+        <li>The mission page's word moves off <code>waiting for you</code> and Progress has your pause and the resume in the feed.</li>
+        <li>No browser dialog at any point.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="q3"><div class="tc-head"><span class="tc-title">An answer that needs a reason refuses an empty note in place</span></div><div class="tc-body">
+      <p class="setup-line"><span class="tag setup">when it happens</span>Needs a task handed back, a milestone held, or an escalation. None can be made on demand on the live mission; if none comes up while you walk, defer (»).</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>On that question's row in Needs you, press the answer that sends a note (<code>accept it over the RIO</code>, <code>release</code> or <code>pause</code>) with the note empty.</li><li>Compare the answers with the same question on the mission page's Progress.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>A <code>note</code> field sits above the answers. The empty press sends nothing: the status line says <code>&lt;answer&gt; needs a line of why first</code> and the cursor goes to the field.</li>
+        <li>Long labels like <code>send it out again</code> sit on one line each and wrap as a block, inside the strip.</li>
+        <li>The workspace offers the same answers as the mission page, primary first, and never <code>release</code> on a landing hold.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="done" data-key="done">
+    <div class="phead"><h2>The milestone's done check</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="dc1"><div class="tc-head"><span class="tc-title">The done-when, run as written</span></div><div class="tc-body">
+      <div class="lbl">Setup</div><p class="setup-line">Save this as <code>/tmp/check-m3.js</code> (it is not in the repo). It reads the groups, then presses the first question's primary answer with every POST refused in the page, so nothing is really answered:</p>
+<pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px">(async () =&gt; {
+  const q = (s, r = document) =&gt; [...r.querySelectorAll(s)];
+  const groups = q(".cc-project &gt; section.rack").map((r) =&gt; r.querySelector("h4 &gt; span:not(.n)")?.textContent.trim());
+  const rows = q(".rack.needs article[data-question]").map((a) =&gt; ({
+    mission: a.dataset.mission, question: a.dataset.question,
+    answers: q(".inbox-answers button", a).map((b) =&gt; b.textContent),
+  }));
+  const posted = [];
+  const real = window.fetch;
+  window.fetch = (url, opts = {}) =&gt; {
+    if ((opts.method ?? "GET") === "POST") { posted.push(`POST ${url} ${opts.body ?? ""}`); return Promise.resolve(new Response('{"error":"refused by the check"}', { status: 409 })); }
+    return real(url, opts);
+  };
+  const first = document.querySelector(".rack.needs article[data-question]");
+  first?.querySelector(".inbox-answers button.primary")?.click();
+  await new Promise((r) =&gt; setTimeout(r, 600));
+  window.fetch = real;
+  const hint = first?.querySelector("[role=status]")?.textContent ?? null;
+  return JSON.stringify({ groups, rows, posted, hint }, null, 1);
+})()</pre>
+      <div class="lbl">Steps</div><ol class="steps">
+        <li>Best while the mission is paused (between q1 and q2). In the integration worktree: <code>node tools/cdp.mjs "http://localhost:8767/?project=maverick&amp;view=workspace" --eval /tmp/check-m3.js --wait 6000</code></li>
+        <li><code>npm run lint</code></li>
+      </ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>groups</code> starts with <code>Needs you</code>, <code>Working</code>, <code>Ready to review</code>, <code>Done</code> in that order (any empty one missing, the order kept), then <code>Brainstorms</code>.</li>
+        <li>While paused: <code>rows</code> holds <code>{"mission": "mission-page-and-inbox", "question": "paused", "answers": ["resume"]}</code>, <code>posted</code> is <code>["POST /api/missions/mission-page-and-inbox/resume?project=maverick {}"]</code>, and <code>hint</code> is <code>resume failed: refused by the check</code>. (Not paused: <code>rows</code>, <code>posted</code> empty, <code>hint</code> null.)</li>
+        <li>Lint exits 0. (It is <code>node --check</code> only: a syntax pass.)</li>
+      </ul></div></div></div>
+  </section>
+
+</div>
+<script>
+(function(){
+  var KEY="maverick-mission-page-and-inbox-m3-walkthrough";
+  var VERDS=[["pass","Pass","✓"],["partial","Partial","~"],["fail","Fail","✗"],["blocked","Blocked","⛔"],["defer","Defer","»"]];
+  var state={};
+  try{var sv=JSON.parse(localStorage.getItem(KEY)||"null"); if(sv&&typeof sv==="object")state=sv;}catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  function get(id){var e=state[id]||{};return{v:e.v||"",n:e.n||""};}
+  function put(id,e){if(!e.v&&!(e.n&&e.n.trim()))delete state[id];else state[id]=e;save();}
+  function setV(id,v){var e=get(id);put(id,{v:(e.v===v?"":v),n:e.n});paint(id);render();}
+  function setN(id,n){var e=get(id);put(id,{v:e.v,n:n});paintNote(id);render();}
+  [].forEach.call(document.querySelectorAll('.tc'),function(tc){
+    var id=tc.dataset.id, head=tc.querySelector('.tc-head'), title=tc.querySelector('.tc-title');
+    if(title){var s=document.createElement('span');s.className='caseid';s.textContent=id;title.insertBefore(s,title.firstChild);}
+    var acts=document.createElement('div'); acts.className='tc-actions';
+    var vc=document.createElement('div'); vc.className='verdict';
+    VERDS.forEach(function(vd){
+      var b=document.createElement('button'); b.type='button'; b.className='vbtn v-'+vd[0]; b.dataset.v=vd[0];
+      b.title=vd[1]; b.textContent=vd[2];
+      b.addEventListener('click',function(e){e.stopPropagation();setV(id,vd[0]);});
+      vc.appendChild(b);
+    });
+    var nb=document.createElement('button'); nb.type='button'; nb.className='notebtn'; nb.textContent='+ note';
+    nb.addEventListener('click',function(e){e.stopPropagation();
+      var na=tc.querySelector('.notearea'); na.style.display=(na.style.display==='none')?'':'none';
+      if(na.style.display!=='none'){tc.classList.remove('collapsed'); na.focus();}});
+    var sb=document.createElement('button'); sb.type='button'; sb.className='notebtn sendbtn'; sb.textContent='→ Claude';
+    sb.title='Send this case’s verdict and note to Claude';
+    sb.addEventListener('click',function(e){e.stopPropagation();
+      var st=get(id); sb.disabled=true;
+      fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({caseId:id,caseVersion:1,verdict:st.v,note:st.n.trim()})})
+      .then(function(r){if(!r.ok)throw new Error(r.status);sb.textContent='✓ sent';sb.classList.add('sent');})
+      .catch(function(){sb.textContent='✗ retry';})
+      .then(function(){sb.disabled=false;setTimeout(function(){sb.textContent='→ Claude';sb.classList.remove('sent');},2000);});});
+    acts.appendChild(vc); acts.appendChild(nb); acts.appendChild(sb); head.appendChild(acts);
+    var na=document.createElement('textarea'); na.className='notearea'; na.rows=2;
+    na.placeholder="Note for "+id+": what is wrong, partial or blocked";
+    na.value=get(id).n; na.style.display=get(id).n.trim()?'':'none';
+    na.addEventListener('click',function(e){e.stopPropagation();});
+    na.addEventListener('input',function(){setN(id,na.value);});
+    var body=tc.querySelector('.tc-body'); body.insertBefore(na,body.firstChild);
+    head.addEventListener('click',function(e){
+      if(e.target.closest('.verdict')||e.target.closest('.notebtn'))return;
+      tc.classList.toggle('collapsed');});
+    paint(id);
+  });
+  function paint(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var v=get(id).v;
+    tc.setAttribute('data-v',v);
+    [].forEach.call(tc.querySelectorAll('.vbtn'),function(b){b.classList.toggle('on',b.dataset.v===v);}); paintNote(id);}
+  function paintNote(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var has=!!get(id).n.trim();
+    var nb=tc.querySelector('.notebtn:not(.sendbtn)'); nb.classList.toggle('has',has); nb.textContent=has?'📝 note':'+ note';}
+  var FILTER='all';
+  function match(id){var e=get(id);
+    if(FILTER==='work')return e.v==='partial'||e.v==='fail'||e.v==='blocked';
+    if(FILTER==='notes')return !!e.n.trim();
+    if(FILTER==='untested')return !e.v;
+    return true;}
+  function counts(){var c={total:0,reviewed:0,pass:0,partial:0,fail:0,blocked:0,defer:0,notes:0};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var e=get(tc.dataset.id);c.total++;
+      if(e.v){c.reviewed++;c[e.v]++;} if(e.n.trim())c.notes++;}); return c;}
+  function render(){var c=counts();
+    document.getElementById('pctText').textContent=c.reviewed+' / '+c.total;
+    document.getElementById('breakdown').innerHTML='<span class="p">✓'+c.pass+'</span><span class="pa">~'+c.partial+'</span><span class="f">✗'+c.fail+'</span><span class="bl">⛔'+c.blocked+'</span>';
+    var bar=document.getElementById('barFill'), t=c.total||1; bar.innerHTML='';
+    [['pass',c.pass],['partial',c.partial],['blocked',c.blocked],['fail',c.fail],['defer',c.defer]].forEach(function(x){
+      if(x[1]){var seg=document.createElement('i');seg.className='seg seg-'+x[0];seg.style.width=(x[1]/t*100)+'%';bar.appendChild(seg);}});
+    [].forEach.call(document.querySelectorAll('section.pillar'),function(p){
+      var bs=p.querySelectorAll('.tc'),d=0;[].forEach.call(bs,function(tc){if(get(tc.dataset.id).v)d++;});
+      p.querySelector('.phead .pc').textContent=d+' / '+bs.length;
+      var tt=document.getElementById('toc-'+p.dataset.key); if(tt)tt.textContent='('+d+'/'+bs.length+')';});
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){tc.style.display=match(tc.dataset.id)?'':'none';});}
+  function compile(){var g={fail:[],blocked:[],partial:[],defer:[],passn:[],noverdict:[]};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var id=tc.dataset.id,e=get(id);
+      var title=tc.querySelector('.tc-title').textContent.replace(id,'').trim();
+      var row={id:id,title:title,n:e.n.trim()};
+      if(e.v==='pass'){if(row.n)g.passn.push(row);}
+      else if(e.v)g[e.v].push(row);
+      else if(row.n)g.noverdict.push(row);});
+    var c=counts();
+    var md='# Mission page and inbox, milestone 3 walkthrough: findings\n\nReviewed '+c.reviewed+'/'+c.total+' · ✓'+c.pass+' pass · ~'+c.partial+' partial · ✗'+c.fail+' fail · ⛔'+c.blocked+' blocked · »'+c.defer+' defer · ✎'+c.notes+' noted\n';
+    function S(h,a){if(!a.length)return'';var s='\n## '+h+' ('+a.length+')\n';a.forEach(function(x){s+='- ['+x.id+'] '+x.title+(x.n?': '+x.n:'')+'\n';});return s;}
+    var out=S('✗ Fail',g.fail)+S('⛔ Blocked',g.blocked)+S('~ Partial',g.partial)+S('» Defer',g.defer)+S('✓ Pass (noted)',g.passn)+S('✎ Noted, no verdict',g.noverdict);
+    return md+(out||'\n_No findings recorded._\n');}
+  var eb=document.getElementById('expandBtn'),collapsed=false;
+  eb.addEventListener('click',function(){collapsed=!collapsed;
+    [].forEach.call(document.querySelectorAll('.tc'),function(el){el.classList.toggle('collapsed',collapsed);});
+    eb.textContent=collapsed?'Expand all':'Collapse all';});
+  // Reset asks in the page: the first press arms it, a second within 4 s clears.
+  var rb=document.getElementById('resetBtn'),armed=0;
+  rb.addEventListener('click',function(){
+    if(!armed){rb.textContent='Press again to clear all';armed=setTimeout(function(){armed=0;rb.textContent='Reset';},4000);return;}
+    clearTimeout(armed);armed=0;rb.textContent='Reset';state={};save();
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){paint(tc.dataset.id);var na=tc.querySelector('.notearea');na.value='';na.style.display='none';});render();});
+  var root=document.documentElement,tkey="maverick-test-theme",tv=null;
+  try{tv=localStorage.getItem(tkey);}catch(e){} if(tv)root.setAttribute('data-theme',tv);
+  document.getElementById('themeBtn').addEventListener('click',function(){var cur=root.getAttribute('data-theme');
+    var next=cur==='dark'?'light':(cur==='light'?'dark':(matchMedia('(prefers-color-scheme: dark)').matches?'light':'dark'));
+    root.setAttribute('data-theme',next);try{localStorage.setItem(tkey,next);}catch(e){}});
+  [].forEach.call(document.querySelectorAll('.fchip'),function(ch){ch.addEventListener('click',function(){
+    FILTER=ch.dataset.f; [].forEach.call(document.querySelectorAll('.fchip'),function(c){c.classList.toggle('on',c===ch);}); render();});});
+  var panel=document.getElementById('compilePanel'),ta=document.getElementById('compileText'),cpy=document.getElementById('copyBtn');
+  document.getElementById('compileBtn').addEventListener('click',function(){ta.value=compile();panel.style.display='flex';ta.focus();ta.select();});
+  document.getElementById('closeBtn').addEventListener('click',function(){panel.style.display='none';});
+  panel.addEventListener('click',function(e){if(e.target===panel)panel.style.display='none';});
+  cpy.addEventListener('click',function(){ta.select();
+    if(navigator.clipboard){navigator.clipboard.writeText(ta.value).then(function(){cpy.textContent='Copied ✓';setTimeout(function(){cpy.textContent='Copy';},1500);});}});
+  render();
+})();
+</script>

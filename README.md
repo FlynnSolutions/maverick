@@ -13,7 +13,7 @@ Maverick is one screen over the projects on your machine, one project at a time.
 - **The picker.** Import a directory and Maverick finds the tracker files it recognises (`deliverables/CHECKLIST.md`, `CHECKLIST.md`, `PUNCHLIST.md`, `TODO.md`, `NEXT_STEPS.md`). That file is the source of truth from then on.
 - **The board.** The checklist's sections become lanes: Backlog, Roadmap, In progress, Done. Drag a card and the move is written back as one line move and committed in the tracker's own repo, so every other open session sees it. Releases are computed from the changelog and the merged pull requests, and a card can be planned into the next one.
 - **Sessions.** The workspace shows every Claude Code session on the machine, grouped by what needs you. Open one full screen to read it as a conversation and type into it, spawn a background session on a card, or open a terminal inside the console.
-- **Missions.** A Strike Lead interviews you in a terminal and writes a plan of milestones. You approve it once; then one Wingman per task builds in its own worktree, a RIO that did not write the code reviews each one, and a milestone that passes merges into a mission branch that you walk through before it lands. It never merges into `main`.
+- **Missions.** A Strike Lead interviews you in a terminal and writes a plan of milestones. You approve it once; then one Wingman per task builds in its own worktree, a RIO that did not write the code reviews each one, and a milestone that passes merges into a mission branch that you walk through before it lands. It never merges into `main`. Its page has four fixed places (The ask, Plan, Progress, Result) and one word for where it stands, and anything it needs from you is a question you answer where you see it.
 - **The ship.** A ship wizard runs the project's own ship workflow phase by phase, each phase a session you can watch, with the walkthrough and the architecture doc built on the way.
 - **The calendar.** Due dates, releases, and ship days on a cadence you set, with a banner on the morning of.
 
@@ -195,10 +195,11 @@ own; change the two sets at the top of `web/app.js` to retune it.
 
 The Workspace view shows every Claude session on the machine as a panel: interactive ones
 from the registry, background ones from `claude agents`, grouped by project and ordered by
-what needs the pilot: a **Needs you** band first (sessions waiting on input), then the
-formations (a lead session and the task sessions it watches, hung off a hairline, with the
-audit verdict on each), then Working, Idle and Finished, with closed formations folded to
-one line. A panel carries the status lamp, where the session lives, and the last exchange;
+what needs the pilot in four groups, always in this order: **Needs you** (sessions waiting
+on input, ones that ended on a question, and missions' open questions), **Working** (busy
+sessions and the formations, a lead session and the task sessions it watches, hung off a
+hairline, with the audit verdict on each), **Ready to review** (replies to read, missions at
+the result gate) and **Done**, with closed formations folded to one line. A panel carries the status lamp, where the session lives, and the last exchange;
 `dock` is its one action. Click it and the session opens full screen as a conversation
 read from its transcript (`/api/transcript`, polled incrementally): your prompts as
 panels, Claude's replies as rendered markdown, runs of tool calls folded into one line of
@@ -247,8 +248,8 @@ that follows it. A move relocates that whole block and touches nothing else.
 
 A **mission** is one bounded piece of work run end to end, and you are in it exactly twice.
 
-Open one from the Missions rack in the Workspace, which is where a mission belongs: it is a
-bundle of sessions. A **Strike Lead** starts in an embedded terminal and *interviews*
+Open one from the Workspace (**open a mission**, under its four groups), which is where a
+mission belongs: it is a bundle of sessions. A **Strike Lead** starts in an embedded terminal and *interviews*
 you: it reads the repo, probes what done means and what is out of scope, and refuses to plan off
 your first line. When you agree, it writes a plan to `deliverables/missions/<id>.md` as
 milestones, each with one testable "done when" line and its tasks.
@@ -273,6 +274,27 @@ The second gate is the result: every task with its diff, its verdict and its fin
 branch you can check out and test, and a report generated from the record and the RIOs' own
 findings rather than written by the agent that flew it. Closing ticks the items in the tracker. **Maverick never merges
 a mission into main**: the ship wizard does, with you in it phase by phase.
+
+### What you see while it flies
+
+A mission has its own page with four fixed anchors down the left, the same before, during and
+after the flight: **The ask** (what you asked for), **Plan** (one step per milestone, a row per
+task with what it is for), **Progress** (what has happened, read from the ledger as a feed) and
+**Result** (the merged diff first, task by task, then the second gate). Above them is one word for
+where the mission stands: **working**, **waiting for you**, **error** or **done**. The page
+follows the mission live from a server stream, so a session you opened under a task, or a note
+half typed, is still there after the next update.
+
+Anything the mission needs from you is a **question**: a task handed back, a milestone held, the
+plan at the gate, a pause. It is pinned at the top of Progress with its answers as buttons,
+repeated as a strip in the Workspace's **Needs you** group, and, in the app, shown as a macOS
+notification that opens the mission when you click it. You answer it where you see it; there is
+no prompt dialog. At the bottom of Progress a reply box says one line to the Strike Lead; it is
+written to the ledger, and typed into the Strike Lead's terminal if that is still open.
+
+The Workspace is the inbox, and the app opens on it, on the project you had open last: **Needs
+you**, **Working**, **Ready to review**, **Done**, always in that order, with each mission's
+merged diff on its row (`docs/03-decisions.md`, M20).
 
 ### The Wingman and the RIO agents
 

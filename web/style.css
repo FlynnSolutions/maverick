@@ -569,7 +569,7 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .forms button.on b { color: var(--accent-hot); }
 .forms .new { width: 28px; padding: 0; justify-content: center; }
 .forms .new .icon { width: 14px; height: 14px; }
-.formation .rack > h4 .spacer, .rack.missions > h4 .spacer { flex: 1; }
+.formation .rack > h4 .spacer { flex: 1; }
 .formation .rack > h4 button { height: 24px; font-size: 11.5px; }
 .lead-rack > h4 { color: var(--accent-hot); }
 .lead-rack .strip { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent); }
@@ -1236,9 +1236,9 @@ body.ask-open { overflow: hidden; }
 .rack > h4 { display: flex; align-items: center; gap: 8px; margin: 0; font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink-soft); }
 .rack > h4 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
 .rack.needs > h4 { font-size: 19px; color: var(--caution); }
-.rack.stale > h4, .rack.done > h4 { color: var(--ink-faint); }
+.rack.done > h4 { color: var(--ink-faint); }
 /* Your move, but nothing is blocked on it: brighter than the quiet racks, no signal colour. */
-.rack.action > h4 { color: var(--ink); }
+.rack.review > h4 { color: var(--ink); }
 .rack .jet-glyph.band { width: 24px; height: 24px; }
 .rack-strips { display: flex; flex-direction: column; gap: 3px; }
 
@@ -1298,6 +1298,9 @@ body.ask-open { overflow: hidden; }
 .strip-say .you { color: var(--ink-soft); }
 .strip-say .claude { color: var(--ink); }
 .strip-say .empty { color: var(--ink-faint); font-style: italic; }
+/* A question's answers are a block of their own that wraps, each label on one line at button height. */
+.strip-say .inbox-answers { display: flex; flex-wrap: wrap; gap: 6px; }
+.strip-say .inbox-answers button { white-space: nowrap; }
 
 /* Density: what needs you is lifted and louder; what is finished recedes. */
 .strip.full .strip-line { min-height: 46px; }
@@ -1594,9 +1597,8 @@ body.cc-full-open { overflow: hidden; }
 .cc-ask.sent { opacity: 0.55; pointer-events: none; }
 
 
-/* A shell is somewhere you work, not something you supervise, so its rack is quiet and its
-   strips carry the terminal's own shape rather than an engine. */
-.rack.shells > h4 { color: var(--ink-soft); }
+/* A shell is somewhere you work, not something you supervise, so its strips carry the
+   terminal's own shape rather than an engine. */
 .forms .new.shell .icon { width: 15px; height: 15px; }
 .strip.shell .strip-name { font-family: var(--mono); font-size: 12.5px; }
 

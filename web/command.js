@@ -8,6 +8,7 @@ import { render as renderMd } from "./markdown.js";
 import { jetSvg } from "./jet.js";
 import { lamp } from "./lamp.js";
 import { icon } from "./icons.js";
+import { inboxRows } from "./inbox.js";
 
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5 };
@@ -100,7 +101,6 @@ const assemble = (all) => {
 
 export const mountCommandCenter = (root, ctx) => {
   const { el, text, api, post, ask, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops, setStatus } = ctx;
-  const DAY = 86400000;
   let all = null;
   let model = null;
   let timer = null;
@@ -659,22 +659,27 @@ export const mountCommandCenter = (root, ctx) => {
         el("button", { type: "button", class: "ghost", onclick: () => disband(f) }, "disband this formation")));
   };
 
-  const rack = (name, sessions, cls = "", full = false) =>
-    sessions.length
+  /** One of the workspace's four groups: a rack of rows already drawn. `n` counts what a row holds more than one of. */
+  const rack = (name, rows, cls = "", n = rows.length) =>
+    rows.length
       ? el("section", { class: `rack ${cls}` },
-          el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(sessions.length))),
+          el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(n))),
           // The same rule as a formation's flight: past one open strip the rack shares columns.
-          el("div", { class: `rack-strips${sessions.filter((x) => opened.has(x.key)).length > 1 ? " grid" : ""}` },
-            ...sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, cls))))
+          el("div", { class: `rack-strips${rows.filter((x) => x.classList.contains("open")).length > 1 ? " grid" : ""}` }, ...rows))
       : null;
+  const strips = (sessions, full, band) => sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, band));
 
   /**
    * Missions live here rather than on the board, because a mission is a bundle of sessions and
-   * this is the page that holds those. A mission at its gate is waiting on the pilot, so it
-   * wears the reticle and sorts above everything else, the way any other waiting thing does.
+   * this is the page that holds those. The lamp follows the mission's own word, the one its page
+   * shows above the rail: what wants you wears the reticle and sorts above everything else, the
+   * way any other waiting thing does.
    */
-  const MISSION_LAMP = { interviewing: "waiting", planned: "waiting", flying: "busy", blocked: "blocked", paused: "idle", review: "waiting", closed: "done" };
-  // A paused mission carries its reason in trouble, which is not the red lamp's "needs you".
+  // The word picks the lamp, except that a mission in review is done with its flying and not with
+  // you: it waits to be walked and closed, so it wears the reticle, not the finished lamp.
+  const WORD_LAMP = { "waiting for you": "blocked", error: "idle", done: "done", working: "busy" };
+  const lampOf = (m) => (m.status === "review" ? "waiting" : WORD_LAMP[m.word] ?? "busy");
+  /** What the status says beyond the word, for the note column when nothing has gone wrong. */
   const MISSION_SAYS = {
     interviewing: "the Strike Lead is interviewing you",
     planned: "waiting on your approval",
@@ -685,45 +690,40 @@ export const mountCommandCenter = (root, ctx) => {
     closed: "closed",
   };
 
-  /** A strip that is a link to its own page: the article shell, with click and keyboard opening it, around one strip line. */
-  const pageStrip = ({ status, title, open }, line) => el("article", {
+  /** A strip that is a link to its own page: the article shell, with click and keyboard opening it, around a strip line and whatever sits under it. */
+  const pageStrip = ({ status, title, open }, ...children) => el("article", {
     class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" || status === "blocked" ? " full" : ""}`,
     tabindex: "0",
     title,
     onclick: (e) => { if (!e.target.closest("button, input")) open(); },
     onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } },
-  }, line);
+  }, ...children);
 
   const missionRow = (m) => {
-    const tasks = m.milestones.flatMap((x) => x.tasks ?? []);
+    const tasks = m.milestones.flatMap((x) => x.tasks);
     const passed = tasks.filter((t) => t.status === "passed").length;
     const merged = m.milestones.filter((x) => x.merged).length;
-    const status = m.trouble && m.status !== "paused" ? "blocked" : MISSION_LAMP[m.status];
+    const status = lampOf(m);
     const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
     const openMission = () => { location.href = href; };
-    return pageStrip({ status, title: `${m.name} · ${MISSION_SAYS[m.status] ?? m.status}`, open: openMission }, stripLine({
-      // waiting and blocked both draw the lock: a mission at its gate is blocked on the pilot,
-      // which is what the lock means, and the band is ignored for those two anyway.
+    return pageStrip({ status, title: `${m.name} · ${m.word}`, open: openMission }, stripLine({
       status,
       name: el("h4", { class: "strip-name" }, m.name),
-      state: MISSION_SAYS[m.status] ?? m.status,
-      note: m.escalation ? clip(m.escalation, 90) : m.trouble ? clip(m.trouble, 90) : null,
+      state: m.word,
+      note: m.escalation ? clip(m.escalation, 90) : m.trouble ? clip(m.trouble, 90) : MISSION_SAYS[m.status] ?? null,
       when: age(Date.parse(m.approved ?? m.created)),
-      where: tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "),
+      where: [tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "), m.diffstat].filter(Boolean).join(" · "),
       acts: [el("button", { type: "button", class: "act", title: "open this mission", onclick: openMission }, "open")],
     }));
   };
 
-  const missionsRack = () => {
-    const mine = [...missions].sort((a, b) => (rank[MISSION_LAMP[a.status]] ?? 4) - (rank[MISSION_LAMP[b.status]] ?? 4));
-    return el("section", { class: "rack missions" },
-      el("h4", {}, el("span", {}, "Missions"), el("span", { class: "n" }, String(missions.length)),
-        el("span", { class: "spacer" }),
-        el("button", { type: "button", class: "ghost", onclick: newMission }, "open one")),
-      mine.length
-        ? el("div", { class: "rack-strips" }, ...mine.map(missionRow))
-        : el("p", { class: "muted small cc-empty" }, "None. A mission is for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve."));
-  };
+  /** A mission's open questions as Needs you strips, drawn by web/inbox.js on this page's strip builders. */
+  const questionRows = (m) => inboxRows(m, { el, post, refresh: load, projectId: ctx.projectId, stripLine, pageStrip, age });
+
+  /** Missions open here, because the page that lists them is this one. */
+  const missionFoot = () => el("p", { class: "muted small cc-empty" },
+    missions.length ? null : text("A mission is for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve. "),
+    el("button", { type: "button", class: "ghost", onclick: newMission }, "open a mission"));
 
   /* The brainstorms, and where each one stands on its way to the board. The verbs live on the breakdown page. */
   const BRAINSTORM_SAYS = { "not broken down": "written; nothing proposed yet", proposing: "a CAG is proposing items", "proposal waiting": "a proposal is waiting at the gate", "broken down": "on the board" };
@@ -784,36 +784,39 @@ export const mountCommandCenter = (root, ctx) => {
     }
     const loose = sessions.filter((s) => !used.has(s.key)).sort((a, b) => (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || (b.at ?? 0) - (a.at ?? 0));
     const is = (...st) => (s) => st.includes(s.status);
-    const shells = loose.filter((s) => s.isShell);
-    const needs = loose.filter(is("waiting", "blocked"));
-    const working = loose.filter(is("busy", "running"));
+    const shells = loose.filter((s) => s.isShell && s.status === "shell");
+    const blocked = loose.filter(is("waiting", "blocked"));
+    const busy = loose.filter(is("busy", "running"));
     const done = loose.filter((s) => finished(s.status));
-    const idle = loose.filter((s) => !needs.includes(s) && !working.includes(s) && !done.includes(s) && !shells.includes(s));
-    // Idle within a day is a session you are between turns on; older is a tab you have probably moved on from.
-    const stale = idle.filter((s) => s.at && Date.now() - s.at > DAY);
+    const idle = loose.filter((s) => !blocked.includes(s) && !busy.includes(s) && !done.includes(s) && !shells.includes(s));
     // Between turns for under an hour is a conversation you are in the middle of; it is your move.
     const recent = idle.filter((s) => s.at && Date.now() - s.at <= HOUR);
-    const fresh = idle.filter((s) => !stale.includes(s) && !recent.includes(s));
-    const busy = sessions.filter(is("busy", "running")).length;
-    const waiting = sessions.filter(is("waiting", "blocked")).length;
-    // The missions rack is always drawn, even empty: it is the only way to open one.
-    // No project heading: the bar already names the project, and every rack carries its own
-    // count. The line here only repeats what is above it and what is below it.
+    // Of those, the ones Claude ended on a question want an answer; the rest want reading.
+    const asking = recent.filter((s) => /\?\s*$/.test(plain(s.lastReply)));
+    const replied = recent.filter((s) => !asking.includes(s) && s.lastReply);
+    // Idle past the hour is a tab you have moved on from, which is stale here.
+    const stale = idle.filter((s) => !asking.includes(s) && !replied.includes(s));
+    const byLamp = (a, b) => (rank[lampOf(a)] ?? 4) - (rank[lampOf(b)] ?? 4);
+    const mine = [...missions].sort(byLamp);
+    // A mission that wants you with no question to answer would otherwise have no row at all.
+    const stuck = mine.filter((m) => (m.word === "waiting for you" || m.word === "error") && !m.questions?.length && m.status !== "review");
+    const needs = [...strips(blocked, true, "needs"), ...mine.flatMap(questionRows), ...stuck.map(missionRow), ...strips(asking, true, "action")];
+    const working = [...strips(busy, true, "working"), ...formations, ...strips(shells, false, "working"), ...mine.filter((m) => m.word === "working").map(missionRow)];
+    const review = [...mine.filter((m) => m.status === "review").map(missionRow), ...strips(replied, true, "action")];
+    const over = mine.filter((m) => m.status === "closed" || m.status === "abandoned");
+    const ended = [...strips(done, false, "done"), ...strips(stale, false, "stale"), ...over.map(missionRow)];
+    // No project heading: the bar already names the project, and every group carries its own
+    // count. Four groups, always in this order, then the brainstorms and the way to open a mission.
     return el(
       "section",
       { class: "cc-project" },
-      missionsRack(),
+      !sessions.length && !formations.length && !closed.length && !missions.length ? el("p", { class: "muted small cc-empty" }, "No sessions in this project.") : null,
+      rack("Needs you", needs, "needs"),
+      rack("Working", working, "working"),
+      rack("Ready to review", review, "review"),
+      rack("Done", closed.length ? [...ended, el("ul", { class: "cc-closed" }, ...closed)] : ended, "done", ended.length + closed.length),
       brainstormsRack(),
-      !sessions.length && !formations.length && !closed.length ? el("p", { class: "muted small cc-empty" }, "No sessions in this project.") : null,
-      rack("Needs you", needs, "needs", true),
-      rack("Shells", shells, "shells"),
-      ...formations,
-      rack("Working", working, "working", true),
-      rack("Needs action", recent, "action", true),
-      rack("Idle", fresh, "idle"),
-      rack("Stale · idle over a day", stale, "stale"),
-      rack("Background · done", done, "done"),
-      closed.length ? el("ul", { class: "cc-closed" }, ...closed) : null,
+      missionFoot(),
     );
   };
 
@@ -1769,7 +1772,8 @@ export const mountCommandCenter = (root, ctx) => {
       [all, formations, missions, brainstorms] = await Promise.all([
         api("/api/sessions/all"),
         api(`/api/formations?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
-        api(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
+        // The workspace's missions carry what each asks, its status word and its merged diff.
+        api(`/api/workspace?project=${encodeURIComponent(ctx.projectId)}`).then((w) => w.missions ?? []).catch(() => []),
         api(`/api/brainstorms?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
       ]);
       paint();

@@ -72,6 +72,32 @@ Wingman looks like an unowned session.
 the two planned slots' labels are persisted. A version is computed from its contents: a feature
 anywhere bumps the minor, fixes alone bump the patch.
 
+**What a mission shows its person is derived from the record and the ledger on every read**
+(M20), never stored, so the page, the inbox and the notification cannot disagree:
+
+| Type | Defined in | Shape |
+|---|---|---|
+| `Question` | `src/questions.ts` | `id`, `kind` (`handed-back`, `collision`, `landing`, `proof`, `plan`, `paused`, `gate`), `title`, `body`, `at`, `taskId?`, `milestone?`, `answers[]` |
+| `FeedEntry` | `src/feed.ts` | `at`, `kind` (`thought`, `action`, `question`, `response`, `error`), `who` (`you`, `Maverick`, `Wingman`, `RIO`, `Strike Lead`), `text`, `milestone?`, `taskId?` |
+| `StatusWord` | `src/questions.ts` | `working`, `waiting for you`, `error`, `done` |
+| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`: the JSON of `GET /api/missions/:id` and of each stream event |
+| `WorkspaceMission` | `src/missions.ts` | the `Mission` record plus `word`, `questions` and `diffstat` (one `+N −M` line over its merged tasks), as `GET /api/workspace?project=` lists it |
+
+A question's `id` is stable while the thing it asks about is open: `task:<task id>`,
+`hold:<milestone>`, `escalation`, `paused`, `gate`. Each answer is
+`{ label, method: "POST", path, body?, primary? }`, where `path` is relative to
+`/api/missions/<id>/` and `body` names the keys the page must supply (a `note`, say); exactly one
+answer is primary. Questions come out oldest first, and an ended mission asks none.
+
+A feed entry is one line of the ledger's `## Log`, in the ledger's order. A line `src/feed.ts`
+cannot read is still an entry, a `thought` carrying the raw line, never dropped.
+
+`word` is `wordFor(mission, questions)`: `waiting for you` exactly when a question is open;
+otherwise `statusWord`'s answer, read as `done` in review or closed and `working` elsewhere when
+it would have said `waiting for you` with nothing to answer (Cory's call on m1-t1). `error` is
+for what no answer settles: a report or ledger that could not be written, a proof runner killed
+by a signal.
+
 ## Known limits
 
 - PRs are read from the last 400 merged per repo, so old versions undercount

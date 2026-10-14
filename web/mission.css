@@ -1,7 +1,81 @@
-/* The mission page. It borrows the ship page's frame (nav left, detail right) because a
-   mission and a ship are the same shape of thing: a saved run you come back to. What it adds
-   is the gate, which has to be loud enough that approving is a decision and not a click. */
+/* The mission page. Four fixed anchors on the left, the same four places before, during and
+   after a mission, and one status word above them. This file is the shell's: the frame, the
+   rail, the ask, and the gate the shell still draws until the plan is approved. Plan, Progress
+   and Result style themselves in web/mission/<name>.css once they are mounted. */
 
+.mv-page { display: grid; grid-template-columns: 200px minmax(0, 760px); gap: 40px; max-width: 1040px; margin: 0 auto; padding: 24px 24px 96px; }
+
+/* The rail. It never moves, so it is the one place the status and the way back to each section always are. */
+.mv-rail { position: sticky; top: 70px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.mv-word { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 10px; border-radius: 5px; font: 600 13px var(--sans); color: var(--ink); background: var(--steel); }
+.mv-word:empty { visibility: hidden; }
+.mv-word .lamp { width: 14px; height: 14px; flex: none; }
+.mv-word.caution { background: var(--caution-dim); color: var(--caution); }
+.mv-word.hud { background: var(--hud-dim); color: var(--hud); }
+.mv-word.threat { background: var(--threat-dim); color: var(--threat); }
+.mv-rail a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
+.mv-rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mv-rail a:hover { background: var(--steel); color: var(--ink); }
+.mv-rail a.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam-strong); }
+.mv-rail a .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.mv-rail a .n.needs { color: var(--caution); }
+/* The reason behind the word, when there is one: an error has to say what broke, on the page. */
+.mv-trouble { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: -6px 0 14px; }
+.mv-trouble:empty { display: none; }
+.mv-trouble .mv-warn { margin: 0; padding: 8px 10px; overflow-wrap: anywhere; }
+.mv-controls { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 18px; padding: 0 10px; }
+.mv-controls:empty { display: none; }
+.mv-controls p { margin: 0; }
+.mv-controls .mv-warn { margin: 0; padding: 8px 10px; }
+.mv-controls-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.mv-controls .danger { color: var(--threat); }
+.mv-note { align-self: stretch; height: 30px; padding: 0 10px; background: var(--carbon); border: 1px solid var(--seam); border-radius: var(--radius-s); color: var(--ink); font: 13px var(--sans); min-width: 0; }
+.mv-note::placeholder { color: var(--ink-faint); }
+.mv-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mv-note[aria-invalid="true"] { border-color: var(--caution); }
+
+/* The answer row a question draws wherever it sits (web/answers.js): the buttons in the feed's
+   caution dress, then the note and the hint on a line of their own. */
+.mv-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.mv-opts button { height: 32px; padding: 0 12px; font: 500 13px var(--sans); }
+.mv-opts button.primary { background: var(--caution); color: var(--carbon); border-color: transparent; }
+.mv-opts button.primary:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
+.mv-opts button:disabled { opacity: 0.6; cursor: progress; }
+.mv-note-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.mv-note-row .mv-note { flex: 1; min-width: 200px; }
+.mv-hint { font-size: 12px; color: var(--caution); }
+.mv-hint:empty { display: none; }
+
+/* The four sections. A heading straight under one is the shell's, whichever module wrote it. */
+.mv-content { min-width: 0; }
+.mv-content > section { margin: 0 0 48px; scroll-margin-top: 70px; }
+.mv-content > section > h2 { font: 600 13px var(--sans); letter-spacing: 0.02em; color: var(--ink-faint); margin: 0 0 10px; display: flex; gap: 10px; align-items: baseline; }
+.mv-content > section > h2 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; }
+
+/* The ask: the mission's name and the sentence it was opened with. */
+.mv-ask h1 { margin: 0 0 6px; font: 500 22px/1.35 var(--sans); letter-spacing: -0.01em; color: var(--ink); max-width: 34ch; text-wrap: balance; }
+.mv-ask h1 .name { font-family: var(--display); font-weight: 600; color: var(--ink-soft); margin-right: 10px; }
+.mv-ask .mv-ask-meta { margin: 0; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+
+/* Before the blessing the Plan section is the gate, panels stacked at the deck's spacing. */
+.mv-gate-host, .mv-interview-host { display: flex; flex-direction: column; gap: 16px; }
+.mv-interview-host { margin-top: 16px; }
+
+/* A session opened from a module's row: the shell's well, under whatever the module passed. */
+.mv-session { margin-top: 8px; background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
+.mv-session-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 0 6px; }
+.mv-session .term { height: 34vh; min-height: 260px; }
+
+@media (max-width: 900px) {
+  .mv-page { grid-template-columns: minmax(0, 1fr); }
+  .mv-rail { position: static; flex-direction: row; flex-wrap: wrap; }
+  .mv-word { margin: 0 8px 0 0; }
+  .mv-trouble { flex-basis: 100%; margin: 8px 0; }
+  .mv-controls { flex-basis: 100%; margin-top: 8px; padding: 0; }
+}
+
+/* The gate. One surface, lifted, and the cost above the verb rather than beneath it. It has to be
+   loud enough that approving is a decision and not a click. */
 .mv-band {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -15,7 +89,6 @@
 .mv-band .k { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .mv-band .v { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
-/* The gate. One surface, lifted, and the cost above the verb rather than beneath it. */
 .mv-gate { background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
 /* A lifted surface is brighter, so its secondary text comes up a step to stay readable on it. */
 .mv-gate h2 { color: var(--ink-soft); }
@@ -26,46 +99,14 @@
 .mv-problems li { margin: 2px 0; }
 .mv-overlaps { margin: 10px 0 0; padding-left: 18px; color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
-.mv-proof { font-size: 12px; white-space: pre-wrap; max-height: 320px; overflow: auto; }
 .mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; }
 .mv-preflight li { margin: 3px 0; display: flex; gap: 8px; align-items: baseline; }
 .mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-faint); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
-
-/* A milestone's tasks: the strip's columns, at the strip's density, in the page's own frame. */
-.mv-task {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto auto;
-  gap: 12px;
-  align-items: center;
-  padding: 9px 12px;
-  border-radius: var(--radius-s);
-  background: var(--carbon);
-  box-shadow: inset 0 0 0 1px var(--seam-soft);
-  margin-bottom: 8px;
-}
-.mv-task .lamp { width: 14px; height: 14px; }
-.mv-task .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cold); justify-self: center; }
-.mv-task .dot.passed { background: var(--ok); }
-.mv-task .dot.pending { background: var(--cold); }
-.mv-task .dot.handed-back { background: var(--threat); }
-.mv-task .t { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mv-task .mv-acts { display: flex; gap: 6px; }
-.mv-task .meta { grid-column: 2 / -1; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
-.mv-task .note { grid-column: 2 / -1; font-size: 12.5px; color: var(--caution); }
-.mv-task details { grid-column: 2 / -1; }
-.mv-task details summary { cursor: pointer; }
-.mv-task pre.diffstat { grid-column: 2 / -1; margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); background: transparent; box-shadow: none; padding: 0; white-space: pre-wrap; }
-
-/* The live states, the good one and the bad one are the badge's own, in style.css. What is
-   left here is the quiet end of the mission's vocabulary: nothing has happened to these yet,
-   and `pending` must not borrow the accent, which is the colour of something running. */
-.verdict.interviewing, .verdict.planned, .verdict.pending, .verdict.review, .verdict.closed { color: var(--ink-soft); background: var(--panel); }
-/* Merged but not yet walked: the person's turn, so it reads as a warning rather than a pass. */
-.verdict.walking { color: var(--warn); background: rgba(242, 210, 91, 0.16); }
-.nav-step.walking .lamp { background: var(--warn); }
+.mv-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mv-confirm .why { flex-basis: 100%; margin: 0; }
 
 /* The interview is a conversation, so it gets a real terminal inside the mission's own view. */
 /* The terminal's dark is a well inside the panel, never the panel itself: a control that
@@ -73,7 +114,6 @@
 .mv-interview .mv-term-well { background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
 .mv-interview .term { height: 46vh; min-height: 320px; }
 
-.mv-plan { max-width: 78ch; }
 .mv-milestone { margin-bottom: 18px; }
 .mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
 .mv-milestone > .done { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 10px; }
@@ -89,8 +129,6 @@
 /* Which repo a task lands in. A multi-repo project plans across several, and the order they
    land in is the whole point of the milestones, so the repo reads on the task and not once. */
 .mv-repo { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-faint); margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--panel); }
-.mv-repos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-.mv-repos a, .mv-repos span { font-family: var(--mono); font-size: 12px; }
 
 /* What happens to each repo when it is done. The one that reaches a shared branch on its own
    is drawn as a caution, because it is the only thing here that acts without a second pair of
@@ -105,8 +143,3 @@
    the page that must not be skimmed. It gets the deck's own darker surface to sit on and a
    caution ring, rather than a lighter shade of warning on a brighter panel. */
 .mv-warn { margin: 10px 0 0; padding: 8px 12px; font-size: 12.5px; color: var(--caution); max-width: 74ch; background: var(--carbon); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--caution); }
-
-/* A session's screen inside the task it belongs to. The row is a grid, so the well spans it. */
-.mv-task .mv-term-well { grid-column: 1 / -1; margin-top: 8px; background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
-.mv-task .mv-term-well .term { height: 34vh; min-height: 260px; }
-.detail-head .actions .danger { color: var(--threat); }

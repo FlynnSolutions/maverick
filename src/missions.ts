@@ -31,11 +31,13 @@ import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
-import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
+import { listTerminals, openTerminal, writeInput, type TerminalInfo } from "./terminal.ts";
 import { FIELD_LINE, MARKER, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
 import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
+import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
+import { feedOf, type FeedEntry } from "./feed.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -229,7 +231,7 @@ export interface Mission {
 /* ---------- storage ---------- */
 
 const missionsDir = (projectId: string): string => join(config.sessionsDir, "missions", projectId);
-const missionPath = (projectId: string, id: string): string => join(missionsDir(projectId), `${id}.json`);
+export const missionPath = (projectId: string, id: string): string => join(missionsDir(projectId), `${id}.json`);
 
 export const readMission = async (projectId: string, id: string): Promise<Mission | null> => {
   try {
@@ -654,6 +656,9 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
   }
 };
 
+const noteTrouble = (project: Project, id: string, why: string) =>
+  changeMission(project.id, id, (fresh) => { fresh.trouble = [fresh.trouble, why].filter(Boolean).join(" · "); }).catch(() => undefined);
+
 /**
  * The record is written first and the ledger follows it, so what the file says is what landed
  * (M11: a write the record refuses must not already be in the ledger). A ledger that could not
@@ -661,7 +666,7 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
  */
 const recorded = async (project: Project, mission: Mission, decisions: string[] = []): Promise<Mission> => {
   const why = await syncPlan(project, mission, decisions);
-  if (why) await changeMission(project.id, mission.id, (fresh) => { fresh.trouble = [fresh.trouble, why].filter(Boolean).join(" · "); }).catch(() => undefined);
+  if (why) await noteTrouble(project, mission.id, why);
   return mission;
 };
 const writeThenSync = async (project: Project, mission: Mission, decisions: string[] = []): Promise<Mission> => {
@@ -1707,6 +1712,41 @@ export const pauseMission = async (project: Project, id: string, note: string): 
   return recorded(project, mission, [`paused by Cory: ${note.trim()}`]);
 };
 
+/** How long the Strike Lead's terminal is given to take the reply in before Enter follows it. */
+const SUBMIT_BEAT_MS = 180;
+
+/**
+ * Cory's reply to the Strike Lead. Once the mission is approved it goes into the ledger as a
+ * decision, like every other thing a person does; before that there is no ledger to write, and
+ * the open interview terminal is the only place it can go. It is typed into the Strike Lead's
+ * terminal whenever that terminal is still open.
+ *
+ * The reply is one line: a ledger decision is one bullet, so a newline in it would start a line
+ * of plan of its own. Enter is its own write a beat after the text, as the composer does: sent
+ * with the text it lands inside a bracketed paste, or reads as a newline, and nothing submits.
+ * When the ledger refuses the line and no terminal is open the reply landed nowhere, which is a
+ * failure, not an ok.
+ */
+export const sayToStrikeLead = async (project: Project, id: string, text: string): Promise<{ ok: true; sent: boolean }> => {
+  const said = text.trim().replace(/\s+/g, " ");
+  if (!said) throw new Error("say something; an empty reply is not sent");
+  const fresh = await missionOr404(project.id, id);
+  const terminalId = fresh.interview?.terminalId;
+  const open = Boolean(terminalId && listTerminals().find((t) => t.id === terminalId && t.exitCode === null));
+  if (!fresh.approved && !open) throw new Error(`${fresh.name} has no ledger before approval and no open Strike Lead terminal; there is nowhere to say it`);
+  if (fresh.approved) {
+    const why = await syncPlan(project, fresh, [`Cory to the Strike Lead: ${said}`]);
+    if (why && !open) throw new Error(`the reply was not sent: ${why}, and no Strike Lead terminal is open`);
+    if (why) await noteTrouble(project, id, why);
+  }
+  if (open) {
+    await writeInput(terminalId!, Buffer.from(said));
+    await new Promise((r) => setTimeout(r, SUBMIT_BEAT_MS));
+    await writeInput(terminalId!, Buffer.from("\r"));
+  }
+  return { ok: true, sent: open };
+};
+
 /**
  * Release a milestone a person settled by hand. What release means is the hold's kind: a
  * collision they reconciled in the integration worktree is merged again; a proof is run again
@@ -1903,18 +1943,41 @@ const remembered = async (key: string, read: () => Promise<string>, keep: boolea
   return value;
 };
 
-export const missionView = async (project: Project, id: string): Promise<Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView> }> => {
-  const mission = await missionOr404(project.id, id);
+/** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
+export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; word: StatusWord; questions: Question[]; feed: FeedEntry[] };
+
+/** Where the ledger is once a mission is approved: the plan on the mission branch. Null before that, or when the plan names no repo. */
+export const ledgerPath = (project: Project, mission: Mission): string | null => {
+  if (!mission.approved) return null;
+  try {
+    return planOnBranch(project.path, mission.plan, mission.repos);
+  } catch {
+    return null;
+  }
+};
+
+/** The ledger's log for the view: a plain read, empty before approval or when the file cannot be read, never a throw. */
+const ledgerLog = async (project: Project, mission: Mission): Promise<string[]> => {
+  const ledger = ledgerPath(project, mission);
+  if (!ledger) return [];
+  return readFile(ledger, "utf8").then((text) => parsePlan(text).log, () => []);
+};
+
+/**
+ * Each task's RIO findings and diff stat, both remembered once the task has settled. `only`
+ * narrows it to the tasks a caller will read, and `diff: false` skips git altogether: the
+ * workspace and the question poll want far less than the page, and a stat is a git spawn.
+ */
+const statsOf = async (mission: Mission, only: (task: MissionTask) => boolean = () => true, diff = true): Promise<{ findings: Record<string, string>; diffstat: Record<string, string> }> => {
   const findings: Record<string, string> = {};
   const diffstat: Record<string, string> = {};
-  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const settled = (task: MissionTask) => task.status === "passed" || task.status === "handed-back";
-  await Promise.all(mission.milestones.flatMap((m) => m.tasks).map(async (task) => {
+  await Promise.all(mission.milestones.flatMap((m) => m.tasks).filter(only).map(async (task) => {
     if (task.review) {
       const text = await remembered(`findings:${task.review.file}`, () => readFile(task.review!.file, "utf8").catch(() => ""), settled(task));
       if (text) findings[task.id] = text;
     }
-    if (task.branch) {
+    if (diff && task.branch) {
       const repo = mission.repos.find((r) => r.label === task.repo);
       const from = task.base ?? repo?.branch;
       if (!repo || !from) return;
@@ -1922,5 +1985,87 @@ export const missionView = async (project: Project, id: string): Promise<Mission
       if (stat) diffstat[task.id] = stat;
     }
   }));
-  return { ...mission, findings, diffstat, walk };
+  return { findings, diffstat };
 };
+
+/** What every view derives from the record the same way: the findings and stats it asked for, the questions, the word. */
+const asked = async (mission: Mission, only?: (task: MissionTask) => boolean, diff = true): Promise<{ findings: Record<string, string>; diffstat: Record<string, string>; questions: Question[]; word: StatusWord }> => {
+  const { findings, diffstat } = await statsOf(mission, only, diff);
+  const questions = questionsOf({ ...mission, findings });
+  return { findings, diffstat, questions, word: statusWord(mission, questions) };
+};
+
+export const missionView = async (project: Project, id: string): Promise<MissionView> => {
+  const mission = await missionOr404(project.id, id);
+  const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
+  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
+  return { ...mission, findings, diffstat, walk, word, questions, feed: feedOf(log, mission) };
+};
+
+/** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
+export type WorkspaceMission = Mission & { word: StatusWord; questions: Question[]; diffstat: string };
+
+/** A task's stat read the way the result page reads it: its totals line, and each file with its changed lines. */
+type ReadStat = { order: number; plus: number; minus: number; files: Array<{ path: string; changes: number | null }> };
+const readStat = (stat: string, order: number): ReadStat => {
+  const lines = stat.trim().split("\n");
+  const last = lines.at(-1) ?? "";
+  const files = lines.slice(0, -1).flatMap((line) => {
+    const m = line.match(/^\s*(.+?)\s+\|\s+(\d+|Bin)\b/);
+    // A rename is drawn `src/{old => new}/a.ts` or `old => new`; the file is where it went.
+    const path = m?.[1].replace(/\{[^{}]*? => ([^{}]*)\}/g, "$1").replace(/\/\/+/g, "/").replace(/^.* => /, "");
+    return m && path ? [{ path, changes: m[2] === "Bin" ? null : Number(m[2]) }] : [];
+  });
+  return { order, files, plus: Number(last.match(/(\d+) insertions?\(\+\)/)?.[1] ?? 0), minus: Number(last.match(/(\d+) deletions?\(-\)/)?.[1] ?? 0) };
+};
+
+/**
+ * Whether `a` is a sibling that `b` merged into its own branch: every file of `a` is in `b`'s stat
+ * with the same count of changed lines. The same test as `inside` in web/mission/result.js, so the
+ * workspace's total and the mission page's agree.
+ */
+const inside = (a: ReadStat, b: ReadStat): boolean => a.files.length > 0 && a !== b
+  && a.files.every((f) => b.files.some((g) => g.path === f.path && g.changes === f.changes))
+  && (b.files.length > a.files.length || b.order > a.order);
+
+/**
+ * `+N −M` over the passed tasks of merged milestones. A task that merged a sibling (a `needs:`)
+ * carries the sibling's lines in its own stat, so each task counts only its diff less the
+ * outermost siblings inside it, as the mission page's result does. Empty when nothing has merged
+ * or git gave no stat for any of it.
+ */
+const mergedStat = (mission: Mission, diffstat: Record<string, string>): string => {
+  const stats = mission.milestones.filter((m) => m.merged).flatMap((m) => m.tasks).filter((t) => t.status === "passed")
+    .map((t) => diffstat[t.id]).filter(Boolean).map(readStat);
+  if (!stats.length) return "";
+  let plus = 0;
+  let minus = 0;
+  for (const t of stats) {
+    const within = stats.filter((a) => inside(a, t));
+    // Only the outermost: a sibling inside another sibling is already in that one's count.
+    const direct = within.filter((a) => !within.some((b) => inside(a, b)));
+    plus += t.plus - direct.reduce((n, a) => n + a.plus, 0);
+    minus += t.minus - direct.reduce((n, a) => n + a.minus, 0);
+  }
+  return `+${plus} −${minus}`;
+};
+
+/** The tasks a question reads findings for, and the merged total reads stats for; the rest of a mission is not asked. */
+const askedAbout = (mission: Mission): ((task: MissionTask) => boolean) => {
+  const merged = new Set(mission.milestones.filter((m) => m.merged).flatMap((m) => m.tasks));
+  return (task) => task.status === "handed-back" || (task.status === "passed" && merged.has(task));
+};
+
+/** Every mission in the project as the workspace draws it, so a row can say what it asks without opening it. */
+export const workspaceMissions = async (project: Project): Promise<WorkspaceMission[]> =>
+  Promise.all((await listMissions(project.id)).map(async (mission) => {
+    const { diffstat, questions, word } = await asked(mission, askedAbout(mission));
+    return { ...mission, word, questions, diffstat: mergedStat(mission, diffstat) };
+  }));
+
+/** What a mission asks, and nothing else: no sweep, no git, findings only for what is handed back. The notification poll reads this. */
+export const missionQuestions = async (project: Project): Promise<Array<{ id: string; name: string; questions: Question[] }>> =>
+  Promise.all((await listMissions(project.id)).map(async (mission) => {
+    const { questions } = await asked(mission, (task) => task.status === "handed-back", false);
+    return { id: mission.id, name: mission.name, questions };
+  }));

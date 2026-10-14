@@ -1,6 +1,6 @@
 // The console UI. Plain DOM and fetch; the same file runs in a browser or an Electron
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
-// selects it, no parameter shows the picker.
+// selects it, no parameter reopens the last one, and `?pick` shows the picker.
 import { jetSvg } from "./jet.js";
 import { readableOn } from "./theme.js";
 import { strike, loading, missile, flares, flyby } from "./afterburner.js";
@@ -142,6 +142,7 @@ const renderPicker = async () => {
             onclick: async () => {
               if (!(await ask({ title: `Forget "${p.name}"?`, body: "The directory is untouched.", confirm: "forget" }))) return;
               await api(`/api/projects/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+              try { if (localStorage.getItem("mv.project") === p.id) localStorage.removeItem("mv.project"); } catch {}
               renderPicker();
             },
           },
@@ -710,10 +711,10 @@ const openDrawer = (trackerIndex, item) => {
 /* ---------- calendar ---------- */
 
 let calendarMonth = today().slice(0, 7);
-let view = "board";
-try { view = ["calendar", "workspace"].includes(localStorage.getItem("console.view")) ? localStorage.getItem("console.view") : "board"; } catch {}
+let view = "workspace";
+try { view = ["board", "calendar"].includes(localStorage.getItem("console.view")) ? localStorage.getItem("console.view") : "workspace"; } catch {}
 const viewParam = new URLSearchParams(location.search).get("view");
-if (viewParam === "calendar" || viewParam === "workspace") view = viewParam;
+if (["board", "calendar", "workspace"].includes(viewParam)) view = viewParam;
 // A pop-out window is already pinned to what it is showing, so it drops the navigation: the
 // bar, the page title, the tab row and the instruments. Set before first paint, not after,
 // or the chrome flashes in and out on the way.
@@ -1775,16 +1776,25 @@ const applyTheme = (theme) => {
 /* ---------- boot ---------- */
 
 const boot = async () => {
-  if (!projectId) return renderPicker();
+  if (!projectId) {
+    // The page is where you start: no project in the URL reopens the last one, unless the
+    // picker was asked for by name.
+    let last = null;
+    try { last = localStorage.getItem("mv.project"); } catch {}
+    if (last && !new URLSearchParams(location.search).has("pick")) return location.replace(`/?project=${encodeURIComponent(last)}`);
+    return renderPicker();
+  }
   setStatus("loading");
   $("#status").classList.add("loading");
   const projects = await api("/api/projects");
   project = projects.find((p) => p.id === projectId);
   if (!project) {
+    try { if (localStorage.getItem("mv.project") === projectId) localStorage.removeItem("mv.project"); } catch {}
     setStatus(`no project "${projectId}"`, true);
     return renderPicker();
   }
   document.title = `${project.name} · Maverick`;
+  try { localStorage.setItem("mv.project", projectId); } catch {}
   applyTheme(project.theme);
 
   // The project is identity, not a form field: a pill carrying its own accent, opening a list.
@@ -1803,7 +1813,7 @@ const boot = async () => {
           el("span", { class: "dot", style: `background:${p.theme?.accent ?? "var(--accent)"}` }),
           el("b", {}, p.name),
           el("i", {}, p.path.replace(/^\/Users\/[^/]+\//, "~/")))),
-        el("a", { class: "pick-row all", href: "/" }, el("span", { class: "dot none" }), el("b", {}, "All projects")));
+        el("a", { class: "pick-row all", href: "/?pick" }, el("span", { class: "dot none" }), el("b", {}, "All projects")));
       const r = anchor.getBoundingClientRect();
       pickMenu.style.top = `${r.bottom + 8}px`;
       pickMenu.style.left = `${r.left}px`;
@@ -1816,7 +1826,7 @@ const boot = async () => {
     el("span", { class: "dot", style: `background:${project.theme?.accent ?? "var(--accent)"}` }),
     el("b", {}, project.name),
     icon("chevron"));
-  pick.replaceChildren(pickBtn);
+  pick.replaceChildren(pickBtn, btn("change project", () => { location.href = "/?pick"; }, "ghost"));
   pick.hidden = false;
   window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePick(); });
 
