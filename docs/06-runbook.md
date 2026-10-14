@@ -117,6 +117,48 @@ is `land: "pr"` with
 
 Everything is optional. A repo the plan never names gets no branch, however many the project has.
 
+## Follow a mission and answer it
+
+The app opens on the workspace of the last project it showed; `/?pick` brings the picker back.
+The workspace is the inbox (M20): Needs you, Working, Ready to review, Done. A mission's open
+questions are strips in Needs you, answered there with the same buttons the mission page has.
+
+The mission page reads one stream. To watch it by hand:
+
+```bash
+curl -N "http://localhost:8766/api/missions/<id>/stream?project=<project>"
+```
+
+It sends `data: <MissionView>` on connect and again within about a second of the mission record
+or its ledger changing, and `: ping` every 15 s. If the page loses it twice in a row it says so
+on the status line and polls every 8 s until the stream answers again.
+
+The reply box at the bottom of Progress is the `say` route:
+
+```bash
+curl -s -X POST "http://localhost:8766/api/missions/<id>/say?project=<project>" \
+  -H 'content-type: application/json' -d '{"text":"hold milestone 2, the API is wrong"}'
+```
+
+It answers `{ "ok": true, "sent": <bool> }`. The reply is folded to one line. Once the mission is
+approved it is appended to the ledger as `decision: Cory to the Strike Lead: <text>`; `sent` says
+whether it was also typed into the Strike Lead's terminal, which happens only while that terminal
+is open. An empty reply is a 400; a reply with neither a ledger nor an open terminal to land in
+is an error, not an ok.
+
+**The notification** comes from the app, not the server: `app/main.mjs` polls
+`GET /api/workspace?project=<id>` for every registered project every 15 s and shows a macOS
+notification for each question that was not there on the previous poll (`src/notify.ts`). The
+first poll of a project only remembers, so opening the app does not announce what was already
+waiting. Clicking one brings the window up on that mission's Progress, replacing whatever page
+was open. A project whose workspace read fails logs `question poll for <id>: ...` on every poll.
+`node server.ts` in a browser tab shows no notification.
+
+That poll has a side effect: `GET /api/workspace?project=` sweeps the project's missions before
+it answers, so while the app is open each project's missions are swept every 15 s, on top of
+the server's own sweep every 60 s. A project with nothing in the air only has its mission list
+read.
+
 ## Check its agent readiness
 
 ```bash
