@@ -21,7 +21,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionPath, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, sweepMissions, tidyWorktrees, type WalkthroughPatch } from "./src/missions.ts";
+import { abandonMission, acceptTask, approveMission, closeMission, landAgain, listMissions, missionPath, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
 import { planOnBranch } from "./src/briefs.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
@@ -474,10 +474,19 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
   if (method === "GET" && path === "/api/workspace") {
     const lan = lanAddress();
+    // With a project it also carries that project's missions, each with what it asks and its
+    // merged diff, swept first the way the mission list is.
+    let missions: WorkspaceMission[] | undefined;
+    if (url.searchParams.get("project")) {
+      const project = await requireProject(url);
+      await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
+      missions = await workspaceMissions(project);
+    }
     return sendJson(res, 200, {
       host: config.host,
       lanUrl: config.host === "127.0.0.1" || !lan ? null : `http://${lan}:${config.port}/review.html?key=${accessKey}`,
       lanHint: config.host === "127.0.0.1" ? "start with SESSION_CONSOLE_HOST=0.0.0.0 to reach the console from your phone" : null,
+      ...(missions ? { missions } : {}),
     });
   }
   if (method === "POST" && path === "/api/remove") {

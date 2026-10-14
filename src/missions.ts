@@ -1971,11 +1971,10 @@ const ledgerLog = async (project: Project, mission: Mission): Promise<string[]> 
   }
 };
 
-export const missionView = async (project: Project, id: string): Promise<MissionView> => {
-  const mission = await missionOr404(project.id, id);
+/** Each task's RIO findings and diff stat, both remembered once the task has settled. */
+const statsOf = async (mission: Mission): Promise<{ findings: Record<string, string>; diffstat: Record<string, string> }> => {
   const findings: Record<string, string> = {};
   const diffstat: Record<string, string> = {};
-  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const settled = (task: MissionTask) => task.status === "passed" || task.status === "handed-back";
   await Promise.all(mission.milestones.flatMap((m) => m.tasks).map(async (task) => {
     if (task.review) {
@@ -1990,6 +1989,43 @@ export const missionView = async (project: Project, id: string): Promise<Mission
       if (stat) diffstat[task.id] = stat;
     }
   }));
+  return { findings, diffstat };
+};
+
+export const missionView = async (project: Project, id: string): Promise<MissionView> => {
+  const mission = await missionOr404(project.id, id);
+  const { findings, diffstat } = await statsOf(mission);
+  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const questions = questionsOf({ ...mission, findings });
   return { ...mission, findings, diffstat, walk, word: wordFor(mission, questions), questions, feed: feedOf(await ledgerLog(project, mission), mission) };
 };
+
+/** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
+export type WorkspaceMission = Mission & { word: StatusWord; questions: Question[]; diffstat: string };
+
+/**
+ * `+N −M` over the passed tasks of merged milestones, summed from the last line of each task's
+ * stat ("3 files changed, 120 insertions(+), 4 deletions(-)"). Empty when nothing has merged or
+ * git gave no stat for any of it. A plain sum: a task that merged a sibling counts it twice,
+ * which the result page's own total corrects for and this does not.
+ */
+const mergedStat = (mission: Mission, diffstat: Record<string, string>): string => {
+  const stats = mission.milestones.filter((m) => m.merged).flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => diffstat[t.id]).filter(Boolean);
+  if (!stats.length) return "";
+  let plus = 0;
+  let minus = 0;
+  for (const stat of stats) {
+    const last = stat.trim().split("\n").at(-1) ?? "";
+    plus += Number(last.match(/(\d+) insertions?\(\+\)/)?.[1] ?? 0);
+    minus += Number(last.match(/(\d+) deletions?\(-\)/)?.[1] ?? 0);
+  }
+  return `+${plus} −${minus}`;
+};
+
+/** Every mission in the project as the workspace draws it, so a row can say what it asks without opening it. */
+export const workspaceMissions = async (project: Project): Promise<WorkspaceMission[]> =>
+  Promise.all((await listMissions(project.id)).map(async (mission) => {
+    const { findings, diffstat } = await statsOf(mission);
+    const questions = questionsOf({ ...mission, findings });
+    return { ...mission, word: wordFor(mission, questions), questions, diffstat: mergedStat(mission, diffstat) };
+  }));
