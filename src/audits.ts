@@ -8,6 +8,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.ts";
+import { LEADS_WITH_KIND } from "./findings.ts";
 import { backgroundAgents, spawnBackgroundAgent } from "./git.ts";
 import type { Project } from "./projects.ts";
 import { readSessions, type SessionRecord } from "./sessions.ts";
@@ -113,23 +114,19 @@ const listLine = (line: string): string | undefined => {
 export interface Findings { blockers: string[]; notes: string[]; unsorted: string[] }
 
 /**
- * What a RIO wrote, sorted by the word each line starts with: `BLOCKER:`, `NOTE:`,
- * `UNVERIFIED:` (carried with the notes, so it reaches the page), or none. The kind may carry
- * `(area, severity)` before its colon; that is `src/findings.ts`'s to read, so such a line is
- * kept whole as `KIND(area, severity): text`, and the old `KIND: text` keeps only the text.
- * What an unsorted line means is the verdict's business (`settleReview`); this only reads.
+ * What a RIO wrote, sorted by the word each line starts with: `BLOCKER`, `NOTE`, `UNVERIFIED`
+ * (carried with the notes, so it reaches the page), or none. Each line is kept whole, so
+ * `src/findings.ts` reads one shape wherever a line ends up. What an unsorted line means is the
+ * verdict's business (`settleReview`); this only sorts.
  */
 export const findingsOf = (findings: string): Findings => {
   const out: Findings = { blockers: [], notes: [], unsorted: [] };
   for (const raw of findings.split(/\r?\n/)) {
     const line = listLine(raw);
     if (line === undefined || /^verdict:/i.test(line)) continue;
-    const sorted = line.match(/^(BLOCKER|NOTE|UNVERIFIED)(?:\s*\(([^)]*)\))?:\s*(.*)$/i);
-    const kind = sorted?.[1].toUpperCase();
-    const shaped = sorted?.[2] !== undefined ? `${kind}(${sorted[2].trim()}): ${sorted[3]}` : undefined;
-    if (kind === "BLOCKER") out.blockers.push(shaped ?? sorted![3]);
-    else if (kind === "NOTE") out.notes.push(shaped ?? sorted![3]);
-    else if (kind === "UNVERIFIED") out.notes.push(shaped ?? `unverified: ${sorted![3]}`);
+    const kind = line.match(LEADS_WITH_KIND)?.[1].toUpperCase();
+    if (kind === "BLOCKER") out.blockers.push(line);
+    else if (kind) out.notes.push(line);
     else out.unsorted.push(line);
   }
   return out;

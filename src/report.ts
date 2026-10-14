@@ -4,6 +4,7 @@
  * is quietly left out: on the first mission the interim report missed three incidents and one
  * line claimed an audit that had not run. What the record does not hold is said to be missing.
  */
+import { parseFinding, type Finding } from "./findings.ts";
 import type { Mission, MissionTask } from "./missions.ts";
 
 const tasksOf = (mission: Mission): Array<{ n: number; task: MissionTask }> => mission.milestones.flatMap((m) => m.tasks.map((task) => ({ n: m.n, task })));
@@ -13,8 +14,8 @@ const line = (n: number, t: MissionTask): string => `${t.id} ${t.title} (milesto
 /** The ledger says what each line is right after its stamp (`decision:`, `auto:`, `held:`); nothing in the prose after that is read. */
 const DECISION = /^\S+ \S+ decision: /;
 const AUTOMATIC = /^\S+ \S+ auto: /;
-/** A carried unverified claim, as `settleReview` stores the old shape (`unverified: prose`) or the new one (`UNVERIFIED(area, check): ...`). */
-const UNVERIFIED = /^unverified(\s*\(|\s*:)/i;
+/** A carried line as the report prints it: where it came from, the headline, then the detail when there is one. */
+const printed = ({ where, finding: f }: { where: string; finding: Finding }): string => `${where}: ${f.headline}${f.detail ? ` ${f.detail}` : ""}`;
 
 /** The report as markdown. `findings` is each task's RIO text by task id, verbatim; `log` is the ledger's, or undefined when it could not be read. */
 export const reportFor = (mission: Mission, findings: Record<string, string>, log?: string[]): string => {
@@ -24,8 +25,10 @@ export const reportFor = (mission: Mission, findings: Record<string, string>, lo
   const unfinished = all.filter(({ task }) => !["passed", "handed-back"].includes(task.status));
   const auto = (log ?? []).filter((l) => AUTOMATIC.test(l));
   const byCory = (log ?? []).filter((l) => DECISION.test(l));
-  const unverified = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => UNVERIFIED.test(c)).map((c) => `${line(n, task)}: ${c.replace(/^unverified\s*:\s*/i, "")}`));
-  const carried = all.flatMap(({ n, task }) => (task.carried ?? []).filter((c) => !UNVERIFIED.test(c)).map((c) => `${line(n, task)}: ${c}`));
+  // A carried line is an unverified claim or a note by the kind it names, in either shape `settleReview` stored.
+  const rode = all.flatMap(({ n, task }) => (task.carried ?? []).map((c) => ({ where: line(n, task), finding: parseFinding(c) })));
+  const unverified = rode.filter((c) => c.finding.kind === "UNVERIFIED").map(printed);
+  const carried = rode.filter((c) => c.finding.kind !== "UNVERIFIED").map(printed);
   const strayed = all.filter(({ task }) => task.strayed?.length).map(({ n, task }) => `${line(n, task)}: ${task.strayed!.join(", ")}`);
   const section = (title: string, body: string[], none: string): string[] => [`## ${title}`, "", ...(body.length ? body.map((b) => `- ${b}`) : [`_${none}_`]), ""];
   return [

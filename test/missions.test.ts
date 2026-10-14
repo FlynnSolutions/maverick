@@ -12,9 +12,9 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, sweepMissions, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
-import { addItem, applyMove, parseTracker } from "../src/trackers.ts";
+import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
 import { closeTerminal, openTerminal } from "../src/terminal.ts";
 
 const PLAN = `# Mission: the Strike Lead
@@ -347,23 +347,23 @@ test("a RIO's verdict is one of four, and its findings sort into blockers and no
   assert.equal(verdictOf("verdict: Pass\n"), "pass");
   assert.equal(verdictOf("verdict: mixed"), "mixed");
   assert.equal(verdictOf("no verdict here"), "pending");
-  assert.deepEqual(findingsOf("verdict: mixed\r\n- BLOCKER: the test is vacuous\n- **NOTE:** a stray log line\n1. note: lower case too\n- **BLOCKER: bold all through**\n- UNVERIFIED: the deploy\nprose that is not a list line\n  indented evidence under a finding\n---\n1.5 GB of logs"), { blockers: ["the test is vacuous", "bold all through"], notes: ["a stray log line", "lower case too", "unverified: the deploy"], unsorted: [] });
-  assert.deepEqual(findingsOf("verdict: fail\n- the logger drops errors (major)\n- NOTE: stray log line\n- the deletion is keyed on the wrong id\n\nNote: I could not run the deploy."), { blockers: [], notes: ["stray log line"], unsorted: ["the logger drops errors (major)", "the deletion is keyed on the wrong id"] }, "a sentence is not a finding; an unsorted list line is kept for the verdict to judge");
+  assert.deepEqual(findingsOf("verdict: mixed\r\n- BLOCKER: the test is vacuous\n- **NOTE:** a stray log line\n1. note: lower case too\n- **BLOCKER: bold all through**\n- UNVERIFIED: the deploy\nprose that is not a list line\n  indented evidence under a finding\n---\n1.5 GB of logs"), { blockers: ["BLOCKER: the test is vacuous", "BLOCKER: bold all through"], notes: ["NOTE: a stray log line", "note: lower case too", "UNVERIFIED: the deploy"], unsorted: [] }, "each line is kept whole, as written, for src/findings.ts to read");
+  assert.deepEqual(findingsOf("verdict: fail\n- the logger drops errors (major)\n- NOTE: stray log line\n- the deletion is keyed on the wrong id\n\nNote: I could not run the deploy."), { blockers: [], notes: ["NOTE: stray log line"], unsorted: ["the logger drops errors (major)", "the deletion is keyed on the wrong id"] }, "a sentence is not a finding; an unsorted list line is kept for the verdict to judge");
   for (const text of ["verdict: fail", "verdict: fail\nThe logger drops every error.", "verdict: mixed\n| BLOCKER | logger |", "verdict: fail\n## Blockers\n\nprose"]) {
     assert.deepEqual(findingsOf(text), { blockers: [], notes: [], unsorted: [] }, text);
   }
-  assert.deepEqual(findingsOf("verdict: mixed\n- NOTE: parent\n  - evidence: line 12\n+ BLOCKER: plus bullet\n-NOTE: no space\n  - BLOCKER: and the secret is committed"), { blockers: ["plus bullet", "and the secret is committed"], notes: ["parent", "no space"], unsorted: [] }, "indented evidence belongs to its finding, but an indented blocker is still a blocker");
-  assert.deepEqual(findingsOf("verdict: mixed\n- BLOCKER(src/worker, fix): a failed job is retried forever. line 42\n- NOTE(web/signin, ship): focus is lost. The Wingman called it out of scope.\n- **UNVERIFIED(deploy, check):** the staging deploy\n  - BLOCKER(src/auth, fix): the secret is committed"), { blockers: ["BLOCKER(src/worker, fix): a failed job is retried forever. line 42", "BLOCKER(src/auth, fix): the secret is committed"], notes: ["NOTE(web/signin, ship): focus is lost. The Wingman called it out of scope.", "UNVERIFIED(deploy, check): the staging deploy"], unsorted: [] }, "the (area, severity) shape sorts by its kind and keeps the parenthetical for src/findings.ts to read");
-  assert.deepEqual(findingsOf("verdict: mixed\n- NOTE (web/x, ship): space before the parenthetical\n- note( src/a , fix ):lower case\n  - BLOCKER (src/b, fix): indented"), { blockers: ["BLOCKER(src/b, fix): indented"], notes: ["NOTE(web/x, ship): space before the parenthetical", "NOTE(src/a , fix): lower case"], unsorted: [] }, "a space before the parenthetical still sorts, and the line is written back in the one shape");
+  assert.deepEqual(findingsOf("verdict: mixed\n- NOTE: parent\n  - evidence: line 12\n+ BLOCKER: plus bullet\n-NOTE: no space\n  - BLOCKER: and the secret is committed"), { blockers: ["BLOCKER: plus bullet", "BLOCKER: and the secret is committed"], notes: ["NOTE: parent", "NOTE: no space"], unsorted: [] }, "indented evidence belongs to its finding, but an indented blocker is still a blocker");
+  assert.deepEqual(findingsOf("verdict: mixed\n- BLOCKER(src/worker, fix): a failed job is retried forever. line 42\n- NOTE(web/signin, ship): focus is lost. The Wingman called it out of scope.\n- **UNVERIFIED(deploy, check):** the staging deploy\n  - BLOCKER(src/auth, fix): the secret is committed"), { blockers: ["BLOCKER(src/worker, fix): a failed job is retried forever. line 42", "BLOCKER(src/auth, fix): the secret is committed"], notes: ["NOTE(web/signin, ship): focus is lost. The Wingman called it out of scope.", "UNVERIFIED(deploy, check): the staging deploy"], unsorted: [] }, "the (area, severity) shape sorts by its kind and is kept whole for src/findings.ts to read");
+  assert.deepEqual(findingsOf("verdict: mixed\n- NOTE (web/x, ship): space before the parenthetical\n- note( src/a , fix ):lower case\n  - BLOCKER (src/b, fix): indented"), { blockers: ["BLOCKER (src/b, fix): indented"], notes: ["NOTE (web/x, ship): space before the parenthetical", "note( src/a , fix ):lower case"], unsorted: [] }, "a space before the parenthetical still sorts, and the line is not rewritten: parseFinding reads it as it is");
 });
 
 test("the merge-with-notes rule: notes carry, a blocker stops, and retries come first", () => {
   const notes = "verdict: mixed\n- NOTE: a\n- NOTE: b";
   const blocker = "verdict: fail\n- BLOCKER: x\n- NOTE: y";
-  assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: tidy later", "pass with notes"), { status: "passed", carried: ["tidy later"] });
+  assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: tidy later", "pass with notes"), { status: "passed", carried: ["NOTE: tidy later"] });
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass", "pass"), { status: "passed" });
   assert.deepEqual(settleReview({ attempts: 1 }, notes, "mixed"), { status: "retry" }, "attempts left: back out, whatever the severities");
-  assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, notes, "mixed"), { status: "passed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 2 note(s) carried", carried: ["a", "b"] });
+  assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, notes, "mixed"), { status: "passed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 2 note(s) carried", carried: ["NOTE: a", "NOTE: b"] });
   assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, blocker, "fail"), { status: "handed-back", note: "the RIO said fail after 2 attempts with 1 blocker(s) open; this one is yours" });
   // In a fail or a mixed, an unsorted list line is a blocker, one sorted line does not let the rest through, and listing nothing is a blocker too.
   assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail\n- NOTE: tidy\n- the real defect\n\nNote: prose", "fail").status, "handed-back");
@@ -371,7 +371,7 @@ test("the merge-with-notes rule: notes carry, a blocker stops, and retries come 
   assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: mixed\n- NOTE: a", "mixed").status, "passed", "mixed, notes only, out of retries: merges");
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass\n- BLOCKER: it does not build", "pass"), { status: "retry" }, "a pass with a blocker in it is a mixed");
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass\n- the deletion is keyed on the wrong id", "pass"), { status: "passed", carried: ["the deletion is keyed on the wrong id"] }, "on a pass an unsorted line rides as a note rather than vanishing");
-  assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: a\n- UNVERIFIED: the deploy", "pass with notes"), { status: "passed", carried: ["a", "unverified: the deploy"] });
+  assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: a\n- UNVERIFIED: the deploy", "pass with notes"), { status: "passed", carried: ["NOTE: a", "UNVERIFIED: the deploy"] }, "a carried line keeps its kind, so the report and the page read it as the verdict did");
 });
 
 test("a task starts when what it needs has passed, wherever that is, and a task with no needs starts with its milestone", () => {
@@ -668,14 +668,14 @@ const CARRIED = [
 ];
 
 /** The view fixture with a passed task carrying two lines of each shape and a handed-back task whose findings file holds one blocker of each. */
-const readingsFixture = (id: string) => {
+const readingsFixture = (id: string, patch: Partial<Mission> = {}) => {
   const dir = mkdtempSync(join(tmpdir(), "mv-m1-t3-findings-"));
   made.push(dir);
   const file = join(dir, "m1-t2.md");
   writeFileSync(file, "verdict: mixed\n\n- BLOCKER: the lock leaks on retry.\n- BLOCKER(src/worker/, fix): the worker never stops. It spins on an empty queue.\n", "utf8");
   return viewFixture(id, { milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-09T07:30:00Z", tasks: [
     { id: "m1-t1", title: "Already passed", intent: "Build the first thing.", repo: "root", status: "passed", attempts: 1, verdict: "pass with notes", carried: CARRIED },
-    { id: "m1-t2", title: "In review now", intent: "Build the second thing.", repo: "root", status: "handed-back", attempts: 2, verdict: "mixed", note: "the RIO said mixed", review: { claudeId: "c-m1-t3", file, started: "2026-10-09T08:00:00Z" } }] }] as never });
+    { id: "m1-t2", title: "In review now", intent: "Build the second thing.", repo: "root", status: "handed-back", attempts: 2, verdict: "mixed", note: "the RIO said mixed", review: { claudeId: "c-m1-t3", file, started: "2026-10-09T08:00:00Z" } }] }] as never, ...patch });
 };
 
 test("missionView's readings are every carried and handed-back finding, keyed by task and line, in triage order grouped by area", async () => {
@@ -696,14 +696,15 @@ test("missionView's readings are every carried and handed-back finding, keyed by
   assert.equal(view.readings[4].detail, "The Wingman called it out of scope.");
 });
 
-test("markReading records read, and later also puts one backlog line on the first tracker and a decision in the ledger, once", async () => {
-  const { project: bare, ledger } = readingsFixture("marked");
+test("markReading records read, and later also puts one backlog item on the mission's tracker and a decision in the ledger, once", async () => {
+  const { project: bare, ledger } = readingsFixture("marked", { trackerIndex: 1 });
   const root = (bare as { path: string }).path;
   const checklist = join(root, "CHECKLIST.md");
   writeFileSync(checklist, "# Checklist\n\n## 🔥 Priority\n\n- [ ] `[ENG]` **Something urgent**\n\n## 📋 Backlog\n\n- [ ] `[ENG]` **An old idea**\n\n## ✅ Shipped\n", "utf8");
   execFileSync("git", ["-C", root, "add", "CHECKLIST.md"]);
   execFileSync("git", ["-C", root, "commit", "-q", "-m", "the tracker"]);
-  const project = { ...(bare as object), trackers: [{ label: "CHECKLIST", path: checklist }] } as never;
+  // The mission's tracker is the second one, so a write to the first would be caught.
+  const project = { ...(bare as object), trackers: [{ label: "ELSEWHERE", path: join(root, "ELSEWHERE.md") }, { label: "CHECKLIST", path: checklist }] } as never;
   const read = keyFor("m1-t1", CARRIED[3]);
   const later = keyFor("m1-t1", CARRIED[0]);
 
@@ -718,11 +719,14 @@ test("markReading records read, and later also puts one backlog line on the firs
   await markReading(project, "marked", "m1-t1", later, "later");
   const view = await missionView(project, "marked");
   assert.deepEqual(view.readings.filter((r) => r.state).map((r) => [r.key, r.state]), [[later, "later"], [read, "read"]]);
-  const line = "- [ ] `[ENG]` **focus is lost.** (from mission marked, Already passed; web/signin)";
   const tracker = readFileSync(checklist, "utf8");
-  assert.equal(tracker.split("\n").filter((l) => l === line).length, 1, "a second later writes no second line");
+  assert.equal(tracker.split("\n").filter((l) => l === `  - finding: ${later}`).length, 1, "a second later writes no second item");
   const backlog = parseTracker(tracker).sections.find((s) => s.heading === "📋 Backlog")!;
-  assert.deepEqual(backlog.groups.flatMap((g) => g.items.map((i) => i.firstLine)), ["- [ ] `[ENG]` **An old idea**", line]);
+  const items = backlog.groups.flatMap((g) => g.items);
+  assert.deepEqual(items.map((i) => i.firstLine), ["- [ ] `[ENG]` **An old idea**", "- [ ] `[ENG]` **focus is lost.**"]);
+  assert.deepEqual(items[1].fields, { created: today(), source: "mission marked, Already passed", mission: "marked", area: "web/signin", finding: later }, "written the way the mission's own items are, with the finding's key to find it by");
+  assert.match(items[1].body, /The Wingman called it out of scope\./, "the detail rides under the headline");
+  assert.equal(existsSync(join(root, "ELSEWHERE.md")), false, "the first tracker is not the mission's");
   assert.match(execFileSync("git", ["-C", root, "log", "-1", "--format=%s"], { encoding: "utf8" }), /^console: later from mission "marked": focus is lost\./);
   assert.equal(execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" }), "", "committed, nothing left loose");
   const decisions = parsePlan(readFileSync(ledger, "utf8")).log.filter((l) => / decision: /.test(l));
@@ -730,6 +734,15 @@ test("markReading records read, and later also puts one backlog line on the firs
 });
 
 /* ---------- the summarizer ---------- */
+
+test("summaryState is the one word the page and the sweep share: unmerged, none, running, failed, written", () => {
+  const on = (summary: Mission["summary"], merged = true): Mission => ({ milestones: [{ merged: merged ? "2026-10-14T09:00:00Z" : undefined }], summary }) as unknown as Mission;
+  assert.equal(summaryState(on(undefined, false)), "unmerged");
+  assert.equal(summaryState(on(undefined)), "none");
+  assert.equal(summaryState(on({ started: "s" })), "running");
+  assert.equal(summaryState(on({ started: "s", claudeId: "c", failed: "it died" })), "failed");
+  assert.equal(summaryState(on({ at: "a", text: "- one" })), "written");
+});
 
 /**
  * A `claude` of the test's own, first on PATH: `agents` prints what the test put in agents.json,
@@ -823,7 +836,9 @@ test("the sweep reads the summary once its session has ended, and the view carri
   assert.deepEqual(Object.keys(landed).sort(), ["at", "text"]);
   assert.equal(landed.text, bullets.trim());
   assert.ok(!Number.isNaN(Date.parse(landed.at!)));
-  assert.deepEqual((await missionView(project, "landed")).summary, landed);
+  const view = await missionView(project, "landed");
+  assert.deepEqual(view.summary, landed);
+  assert.equal(view.summaryState, "written", "the view says where the summary stands, so the page does not work it out again");
   const again = await summarizeMission(project, "landed");
   assert.ok(again.summary?.started && !again.summary.at, "a landed summary can be asked for again");
 });
@@ -840,7 +855,7 @@ test("a summarizer that ends without its file is a failed summary with the reaso
   assert.ok((await summarizeMission(project, "silent")).summary?.claudeId, "a failed summary does not block the next");
 });
 
-test("the sweep settles a summary on a mission still in the air, through recordFinished", async () => {
+test("the sweep settles a summary on a mission still in the air, in the same pass as its walkthroughs", async () => {
   const { project, file } = summaryFixture("paused", { status: "paused", pausedFor: "lunch" });
   const { summary } = await summarizeMission(project, "paused");
   writeFileSync(file, "- one\n- two\n- three\n", "utf8");

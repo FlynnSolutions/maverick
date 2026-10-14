@@ -18,6 +18,9 @@ const HEADLINE_MAX = 120;
 /** `web/signin/` and `web/signin` are one area; a plain name is left as it was written. */
 export const areaName = (area: string): string => area.trim().replace(/\/+$/, "");
 
+/** A line that names its kind: the word, then its parenthetical or its colon. `findingsOf` sorts by this too. */
+export const LEADS_WITH_KIND = /^(BLOCKER|NOTE|UNVERIFIED)\s*[(:]/i;
+
 /** A `. ` that ends a sentence: not the one inside `e.g. `, `i.e. `, `etc. ` or `vs. `. */
 const STOP = /(?<!\b(?:e\.g|i\.e|etc|vs))\. /i;
 
@@ -43,11 +46,10 @@ const split = (text: string): { headline: string; detail: string } => {
  * and a parenthetical that is only a severity leaves the area `general`. A line that leads with
  * a kind keeps it whatever follows: a space before the colon or the parenthetical, parentheses
  * inside the area, or a parenthetical with no colon after it.
- * `taskId` is part of the signature callers share with `keyOf`; the record itself does not carry it.
  */
-export const parseFinding = (line: string, taskId: string): Finding => {
+export const parseFinding = (line: string): Finding => {
   const raw = line.trim();
-  const lead = raw.match(/^(BLOCKER|NOTE|UNVERIFIED)\s*[(:]/i);
+  const lead = raw.match(LEADS_WITH_KIND);
   const kind = (lead?.[1].toUpperCase() ?? "NOTE") as Finding["kind"];
   const m = raw.match(/^(?:BLOCKER|NOTE|UNVERIFIED)\s*(?:\((.*?)\)\s*)?:\s*(.*)$/i) ?? raw.match(/^(?:BLOCKER|NOTE|UNVERIFIED)\s*\((.*)\)\s*(.*)$/i);
   let area = "general";
@@ -66,12 +68,13 @@ export const parseFinding = (line: string, taskId: string): Finding => {
 export const keyOf = (finding: Finding, taskId: string): string => `${taskId}:${createHash("sha1").update(finding.raw).digest("hex").slice(0, 8)}`;
 
 /** Findings by what they ask for, each bucket grouped by area in the order the areas first appear. */
-export const triage = (findings: Finding[]): { fix: Finding[]; check: Finding[]; ship: Finding[] } => {
-  const bucket = (severity: Severity): Finding[] => {
-    const areas = new Map<string, Finding[]>();
+export const triage = <T extends Finding>(findings: T[]): { fix: T[]; check: T[]; ship: T[] } => {
+  const bucket = (severity: Severity): T[] => {
+    const areas = new Map<string, T[]>();
     for (const f of findings.filter((f) => f.severity === severity)) {
-      const area = areaName(f.area);
-      areas.set(area, [...(areas.get(area) ?? []), f]);
+      const found = areas.get(f.area);
+      if (found) found.push(f);
+      else areas.set(f.area, [f]);
     }
     return [...areas.values()].flat();
   };
