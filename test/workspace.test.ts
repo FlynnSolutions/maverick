@@ -37,6 +37,11 @@ const branch = (name: string, lines: number, cut: number) => {
 branch("t1", 3, 1);
 branch("t2", 5, 2);
 branch("t3", 7, 0);
+// t4 needs t1: it merges t1's branch into its own, then adds 4 lines of its own on top.
+git("checkout", "-q", "-b", "t4", "t1");
+writeFileSync(join(repo, "t4.txt"), "w\nx\ny\nz\n");
+git("add", ".");
+git("commit", "-q", "-m", "t4");
 
 const task = (id: string, status: string, extra: object = {}) =>
   ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, branch: id, base: seeded, ...extra });
@@ -70,4 +75,19 @@ test("a mission with nothing merged has an empty diffstat, and nothing to ask wh
   assert.equal(m.diffstat, "");
   assert.equal(m.word, "working");
   assert.deepEqual(m.questions, []);
+});
+
+test("a task that merged a sibling counts only its own lines, as the mission page's result does", async () => {
+  await seed("needs", [{ n: 1, title: "one", done: "d", merged: "2026-01-02T00:00:00Z", tasks: [task("t1", "passed"), task("t4", "passed", { needs: ["t1"] })] }]);
+  const m = (await workspaceMissions(project)).find((x) => x.id === "needs");
+  assert.ok(m);
+  // t1: +3 −1. t4's own stat is +7 −1 because it carries t1; less t1 that is +4 −0. Summed naively it would read +10 −2.
+  assert.equal(m.diffstat, "+7 −1");
+});
+
+test("only passed tasks of a merged milestone are counted", async () => {
+  await seed("partial", [{ n: 1, title: "one", done: "d", merged: "2026-01-02T00:00:00Z", tasks: [task("t1", "passed"), task("t3", "handed-back", { verdict: "fail", note: "n" })] }]);
+  const m = (await workspaceMissions(project)).find((x) => x.id === "partial");
+  assert.ok(m);
+  assert.equal(m.diffstat, "+3 −1");
 });
