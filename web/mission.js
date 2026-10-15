@@ -412,14 +412,14 @@ const gateBlocks = () => {
         doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
         el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")));
   }
-  blocks.push(el("section", { class: "panel mv-gate" }, el("h2", {}, "The gate"), ...gate));
+  blocks.push(el("section", { class: "mv-gate" }, el("h2", {}, "The gate"), ...gate));
 
   if (parsed?.contracts?.length) {
-    blocks.push(el("section", { class: "panel" }, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
+    blocks.push(el("section", {}, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
       el("ul", {}, ...parsed.contracts.map((c) => el("li", {}, el("strong", {}, c.name), ` (${c.owner}): ${c.shape}`)))));
   }
   if (parsed?.milestones?.length) {
-    blocks.push(el("section", { class: "panel" }, el("h2", {}, "The plan"),
+    blocks.push(el("section", {}, el("h2", {}, "The plan"),
       ...parsed.milestones.map((m) => el("div", { class: "mv-milestone" },
         el("h3", {}, el("span", {}, `Milestone ${m.n} — ${m.title}`)),
         el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
@@ -428,7 +428,7 @@ const gateBlocks = () => {
           t.needs?.length || t.touches?.length ? el("p", { class: "muted small" }, [t.needs?.length ? `starts after ${t.needs.join(", ")}` : null, t.touches?.length ? `owns ${t.touches.join(", ")}` : null].filter(Boolean).join(" · ")) : null,
           el("p", {}, t.intent)))))));
   } else if (doc.text) {
-    blocks.push(el("section", { class: "panel" }, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
+    blocks.push(el("section", {}, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
   }
   return blocks;
 };
@@ -436,7 +436,7 @@ const gateBlocks = () => {
 /** The interview is a conversation, so its session lives here rather than in a panel over the page. */
 const interviewPanel = () => {
   const host = el("div", { class: "term" });
-  const panel = el("section", { class: "panel mv-interview" },
+  const panel = el("section", { class: "mv-interview" },
     el("h2", {}, "The Strike Lead", el("span", { class: "spacer" }), btn("start a new interview session", () => act("interview", {}, "a new Strike Lead session is open"), "ghost")),
     el("div", { class: "mv-term-well" }, host));
   const gone = () => host.replaceChildren(el("p", { class: "mv-empty" }, "The Strike Lead's session is not running any more: terminals do not survive a restart of the server. Start a new interview above; it opens with the same brief."));
