@@ -1,0 +1,478 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Progress reads itself: milestone 2 walkthrough</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+    --radius:10px; --maxw:1000px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+      --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+      --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+      --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+    --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+    --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+    --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em;
+    background:var(--line2);padding:.08em .38em;border-radius:5px;border:1px solid var(--line);
+    word-break:break-word;}
+  a{color:var(--accent)}
+  pre{overflow-wrap:anywhere}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 120px}
+  header.mast{max-width:var(--maxw);margin:0 auto;padding:36px 20px 20px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:30px;line-height:1.15;margin:.28em 0 .1em;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:15px;max-width:72ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .progwrap{position:sticky;top:0;z-index:20;background:var(--bg);
+    border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:6px}
+  .progrow{max-width:var(--maxw);margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:14px}
+  .bar{flex:1;height:8px;background:var(--line2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s ease}
+  .pct{font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;white-space:nowrap}
+  .tools{display:flex;gap:8px}
+  button.btn{font:inherit;font-size:12.5px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+  button.btn:hover{color:var(--ink);border-color:var(--accent)}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:var(--radius);padding:16px 18px;margin:18px 0}
+  .callout h3{margin:0 0 8px;font-size:15px}
+  .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px;margin-top:4px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px 16px;margin:18px 0 6px}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:28px}
+  @media(max-width:640px){nav.toc ol{columns:1}}
+  nav.toc li{margin:4px 0;break-inside:avoid}
+  nav.toc a{text-decoration:none;color:var(--ink)}
+  nav.toc a:hover{color:var(--accent)}
+  nav.toc .c{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px}
+  section.pillar{margin:30px 0 0}
+  .phead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:10px 0 8px;border-bottom:2px solid var(--line);position:sticky;top:44px;background:var(--bg);z-index:5}
+  .phead h2{margin:0;font-size:21px;letter-spacing:-.01em}
+  .phead .pc{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .tc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    margin:12px 0;overflow:hidden}
+  .tc-head{display:flex;gap:11px;align-items:flex-start;padding:13px 40px 13px 15px;cursor:pointer;user-select:none;position:relative}
+  .tc-head:after{content:"\25BE";position:absolute;right:15px;top:13px;color:var(--faint);transition:transform .15s}
+  .tc-head:hover:after{color:var(--accent)}
+  .tc.collapsed .tc-head:after{transform:rotate(-90deg)}
+  .tc-title{font-weight:600;font-size:15px;flex:1}
+  .caseid{display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    font-weight:700;color:var(--muted);background:var(--line2);border:1px solid var(--line);
+    border-radius:5px;padding:0 6px;margin-right:8px;vertical-align:1px}
+  .tc-actions{display:inline-flex;gap:8px;align-items:center;margin-left:auto;flex:none}
+  .verdict{display:inline-flex;gap:3px}
+  .vbtn{font:inherit;font-size:13px;font-weight:800;width:27px;height:24px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--faint);cursor:pointer;line-height:1;padding:0}
+  .vbtn:hover{border-color:var(--accent);color:var(--ink)}
+  .vbtn.v-pass.on{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+  .vbtn.v-partial.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+  .vbtn.v-fail.on{background:#fdecec;border-color:#e0554c;color:#b3261e}
+  :root[data-theme="dark"] .vbtn.v-fail.on{background:#2c1514;color:#f0918a;border-color:#7a3b36}
+  .vbtn.v-blocked.on{background:var(--line2);border-color:var(--faint);color:var(--ink)}
+  .vbtn.v-defer.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .notebtn{font:inherit;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;white-space:nowrap}
+  .notebtn:hover{border-color:var(--accent);color:var(--accent)}
+  .notebtn.has{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .notebtn.sendbtn.sent{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+  .vchip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--setup);
+    background:var(--setup-soft);border:1px solid var(--setup);border-radius:5px;padding:0 5px;margin-left:7px;vertical-align:1px}
+  .notearea{width:100%;font:inherit;font-size:13px;border:1px solid var(--warn);border-radius:7px;padding:7px 9px;margin:0 0 11px;background:var(--warn-soft);color:var(--ink);resize:vertical;box-sizing:border-box}
+  .tc[data-v="pass"]{border-left:3px solid var(--good)}
+  .tc[data-v="partial"]{border-left:3px solid var(--warn)}
+  .tc[data-v="fail"]{border-left:3px solid #d3453b}
+  .tc[data-v="blocked"]{border-left:3px solid var(--faint)}
+  .tc[data-v="defer"]{border-left:3px solid var(--accent)}
+  #breakdown{display:inline-flex;gap:9px;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  #breakdown .p{color:var(--good)} #breakdown .pa{color:var(--warn)} #breakdown .f{color:#d3453b} #breakdown .bl{color:var(--muted)}
+  #barFill{width:100%;height:100%;background:transparent;display:flex}
+  .bar .seg{height:100%;display:block}
+  .bar .seg-pass{background:var(--good)} .bar .seg-partial{background:var(--warn)}
+  .bar .seg-blocked{background:var(--faint)} .bar .seg-fail{background:#d3453b}
+  .progrow.filters{margin-top:9px;gap:8px;flex-wrap:wrap}
+  .flabel{font-size:12.5px;color:var(--muted)} .flabel b{color:var(--ink);font-weight:600}
+  .fchip{font:inherit;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 13px;cursor:pointer;color:var(--muted)}
+  .fchip:hover{border-color:var(--accent)}
+  .fchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .cpanel{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}
+  .cbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(760px,100%);max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+  .chead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+  .chead .csub{color:var(--muted);font-size:12.5px}
+  #compileText{flex:1;min-height:340px;border:0;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);color:var(--ink);resize:none;outline:none}
+  .tc.done .tc-title{color:var(--done);text-decoration:line-through;text-decoration-thickness:1px}
+  .tc-body{padding:0 15px 14px 43px;font-size:14px}
+  .tc.collapsed .tc-body{display:none}
+  .why{color:var(--muted);margin:0 0 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;margin-right:7px;vertical-align:1px}
+  .tag.setup{background:var(--setup-soft);color:var(--setup)}
+  .tag.ask{background:var(--warn-soft);color:var(--warn)}
+  .setup-line{background:var(--setup-soft);border:1px solid var(--line);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .ask-line{background:var(--warn-soft);border:1px solid var(--warn);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .auto-note{background:var(--accent-soft);border:1px solid var(--line);border-radius:7px;
+    padding:6px 11px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+  .auto-note b{color:var(--ink)}
+  .hist{background:var(--line2);border:1px solid var(--line);border-left:3px solid var(--faint);
+    border-radius:7px;padding:7px 11px;margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .hist .hr{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:3px}
+  .hist p{margin:0 0 6px}
+  .hist p:last-child{margin-bottom:0}
+  .notearea::placeholder{color:var(--faint)}
+  .fix-note{background:var(--good-soft);border:1px solid var(--good);border-radius:7px;
+    padding:7px 11px;margin:0 0 11px;font-size:12.5px;color:var(--ink)}
+  .fix-note b{color:var(--good)}
+  .fix-note.pending{background:var(--warn-soft);border-color:var(--warn)}
+  .fix-note.pending b{color:var(--warn)}
+  .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:10px 0 4px}
+  ol.steps{margin:0 0 4px;padding-left:20px} ol.steps li{margin:4px 0}
+  ul.exp{margin:0;padding-left:0;list-style:none}
+  ul.exp li{margin:5px 0;padding-left:22px;position:relative}
+  ul.exp li:before{content:"\2713";position:absolute;left:2px;color:var(--good);font-weight:800}
+  .exp-wrap{background:var(--good-soft);border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin-top:4px}
+  .guide{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--line2);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 12px;font-size:13px}
+  .guide .who b{color:var(--accent)}
+  .guide .sep{color:var(--muted)}
+  .glink{display:inline-flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);
+    border-radius:6px;padding:3px 10px;color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px}
+  .glink:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .glink:before{content:"\2197";font-size:11px}
+  .pswitch{font-weight:650;text-decoration:none;border-bottom:1px dashed currentColor}
+  .pswitch:hover{opacity:.75}
+  @media(max-width:640px){
+    .progrow{flex-wrap:wrap} .tools{flex-wrap:wrap}
+    .tc-head{flex-wrap:wrap} .tc-actions{flex-wrap:wrap;margin-left:0}
+    .tc-body{padding-left:15px}
+  }
+</style>
+
+
+
+
+
+<header class="mast">
+  <div class="eyebrow">Progress reads itself · milestone 2</div>
+  <h1>Cards</h1>
+  <p class="sub">Progress on the mission page is now one card per task: lamp, title and the chips of its last move on the head row, and under it a timeline with one line per attempt. Your decisions are cards beside the task they concern, open questions are pinned at the top, and every automatic move is folded under <code>show every move</code>. A verdict chip scrolls to the task's triage row in Result, whose rows and summary bullets are cards too. After approval, the sections are set apart by space, not panels, and the ask's sentence spans its column. You walk all of it in the browser against a scratch copy of the finished mission-page-and-inbox mission.</p>
+  <div class="meta"><span><b>Branch</b> mission/progress-reads-itself</span><span><b>Tasks</b> the card, Progress as cards, Result and the summary on cards, one column with no boxes</span><span><b>Cases</b> 11</span></div>
+</header>
+<div class="progwrap">
+  <div class="progrow">
+    <span class="pct" id="pctText">0 / 0</span>
+    <span id="breakdown"></span>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="tools">
+      <button class="btn" id="compileBtn" style="font-weight:700;color:var(--accent);border-color:var(--accent)">&#128203; Compile findings</button>
+      <button class="btn" id="themeBtn">Theme</button>
+      <button class="btn" id="expandBtn">Collapse all</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div class="progrow filters">
+    <span class="flabel">Show:</span>
+    <button class="fchip on" data-f="all">All</button>
+    <button class="fchip" data-f="work">Needs work</button>
+    <button class="fchip" data-f="notes">Has notes</button>
+    <button class="fchip" data-f="untested">Untested</button>
+  </div>
+</div>
+<div id="compilePanel" class="cpanel" style="display:none">
+  <div class="cbox">
+    <div class="chead"><b>Findings (markdown)</b><span class="csub">paste this back to iterate</span><span style="flex:1"></span>
+      <button class="btn" id="copyBtn">Copy</button><button class="btn" id="closeBtn">Close</button></div>
+    <textarea id="compileText" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="callout">
+    <h3>Before you start: a scratch server on 18770</h3>
+    <p>The server on 8767 runs main, which has neither <code>moves</code> nor the cards. Leave it alone. Every case uses a scratch server on <b>18770</b>, run from the integration worktree. It serves two copies of the finished mission-page-and-inbox record. The first, <code>mission-page-and-inbox</code>, is the record as it is, with one addition: milestone 4 has a hold headlined <code>Walk seed: ...</code>, so Progress has a question to pin (the real mission has none open). The second, <code>pri-gate</code>, is set back to <code>planned</code> with every task pending, so you can see the page before approval. The project's path is a throwaway git repo at <code>/tmp/pri-m2/repo</code>, holding the mission's plan and a copy of the checklist. Nothing here writes outside <code>/tmp/pri-m2</code>. Paste this in terminal 1:</p>
+<pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px">W=/Users/coryflynn/Projects/maverick/.claude/worktrees/progress-reads-itself-integration-root
+S=/tmp/pri-m2
+rm -rf "$S" &amp;&amp; mkdir -p "$S/home" "$S/sessions/missions/maverick" "$S/repo/deliverables/missions"
+cp "$W/deliverables/CHECKLIST.md" "$S/repo/deliverables/"
+git -C /Users/coryflynn/Projects/maverick show mission/mission-page-and-inbox:deliverables/missions/mission-page-and-inbox.md &gt; "$S/repo/deliverables/missions/mission-page-and-inbox.md"
+git -C "$S/repo" init -q -b mission/mission-page-and-inbox &amp;&amp; git -C "$S/repo" add -A &amp;&amp; git -C "$S/repo" -c user.name=walk -c user.email=walk@local commit -qm seed
+cp ~/.claude/console-sessions/missions/maverick/mission-page-and-inbox-m*-review*.md "$S/sessions/missions/maverick/"
+S="$S" node -e '
+const fs=require("fs"),S=process.env.S,dir=S+"/sessions/missions/maverick/",src=process.env.HOME+"/.claude/console-sessions/missions/maverick/mission-page-and-inbox.json";
+const m=JSON.parse(fs.readFileSync(src,"utf8"));
+m.repos=m.repos.map(r=&gt;({...r,path:S+"/repo",integration:S+"/repo"}));
+m.milestones[3].hold={kind:"proof",reason:"Walk seed: a hold written by the walkthrough setup so Progress has a question to pin.",at:"2026-10-14T17:30:00.000Z"};
+fs.writeFileSync(dir+"mission-page-and-inbox.json",JSON.stringify(m,null,2));
+const g=JSON.parse(JSON.stringify(m)); g.id="pri-gate"; g.name="At the gate (walk copy)"; g.status="planned"; delete g.approved; delete g.summary;
+for(const ms of g.milestones){delete ms.merged;delete ms.hold;for(const t of ms.tasks){t.status="pending";delete t.verdict;delete t.carried;delete t.note;delete t.readings;}}
+fs.writeFileSync(dir+"pri-gate.json",JSON.stringify(g,null,2));
+fs.writeFileSync(S+"/home/projects.json",JSON.stringify([{id:"maverick",name:"Maverick (scratch)",path:S+"/repo",trackers:[{label:"CHECKLIST",path:S+"/repo/deliverables/CHECKLIST.md"}]}],null,1));'
+cd "$W" &amp;&amp; SESSION_CONSOLE_PORT=18770 SESSION_CONSOLE_HOME=$S/home SESSION_CONSOLE_SESSIONS=$S/sessions node server.ts</pre>
+    <p>It prints <code>maverick: http://localhost:18770</code>. Then open <a href="http://localhost:18770/mission.html?project=maverick&amp;mission=mission-page-and-inbox" target="_blank">localhost:18770/mission.html?project=maverick&amp;mission=mission-page-and-inbox</a> in a wide window (about 1440 px). Unless a case says otherwise, "the page" means that one. Times show in your local clock, as the page draws them.</p>
+    <p><b>Do not press</b> <code>approve and fly</code> on the gate copy (case o2): it would launch real Wingman sessions against the scratch repo. No case spawns a Claude session. If the server will not start, mark every case blocked (⛔) and put the error in the note. When you are done: Ctrl+C, then <code>rm -rf /tmp/pri-m2</code>.</p>
+  </div>
+  <div class="callout">
+    <h3>Known going in</h3>
+    <p>All four tasks passed with notes. These are still open. They are not cases unless a case asks for your call, but note any you hit and think should be fixed.</p>
+    <dl class="kv">
+      <dt>summary chips</dt><dd>On the real summary, only one of the three bullets gets a chip (<code>check</code>). The chip goes on a bullet that starts with <code>fix</code>, <code>check</code> or <code>ship</code>, but the summary brief never asks the summarizer to start bullets that way, so <code>Nothing has to be fixed...</code> and <code>The rest is safe to merge...</code> get none. The fix is in <code>src/briefs.ts</code>, outside this milestone. Case c3 asks for your call.</dd>
+      <dt>long bullets</dt><dd>Each summary bullet is drawn as a card title, in medium weight, and this summary's bullets are about 500 characters each, so each wraps to 6 or 7 lines. The parent drew them in body weight. The chip and glyph are centred on the whole block, not on its first line.</dd>
+      <dt>buckets look like text</dt><dd>The <code>Unverified</code> (16) and <code>Fine to ship</code> (105) buckets in Result lost their boxed bar and have no chevron. They still fold, but only the pointer cursor says so.</dd>
+      <dt>raw markdown</dt><dd>A bullet's markdown links and italics now show as typed, where the parent rendered them. A rare case, since bullets are plain words by brief.</dd>
+      <dt>card.css twice</dt><dd><code>progress.css</code> and <code>result.css</code> each <code>@import</code> <code>card.css</code>, so it sits in the cascade twice. Nothing reverts today. The clean fix is one <code>&lt;link&gt;</code> in <code>mission.html</code>.</dd>
+      <dt>fold name</dt><dd>A screen reader reads a card's fold button with <code>why</code> run onto the title (<code>...they bite.why</code>). No screen reader was run in review.</dd>
+      <dt>retried with no review</dt><dd>An attempt that was relaunched before its review started reads <code>out · built · retried</code> with no <code>reviewed</code>, and the <code>built</code> and <code>retried</code> times can be equal. That is the ledger, not the card: see m2-t1 attempt 1.</dd>
+    </dl>
+  </div>
+  <nav class="toc">
+    <ol>
+      <li><a href="#progress">Progress, one card per task</a> <span class="c" id="toc-progress"></span></li>
+      <li><a href="#chips">Chips land in Result</a> <span class="c" id="toc-chips"></span></li>
+      <li><a href="#column">One column, no boxes</a> <span class="c" id="toc-column"></span></li>
+      <li><a href="#done">The milestone's done check</a> <span class="c" id="toc-done"></span></li>
+    </ol>
+  </nav>
+
+  <section class="pillar" id="progress" data-key="progress">
+    <div class="phead"><h2>Progress, one card per task</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="p1"><div class="tc-head"><span class="tc-title">Each milestone holds one card per task, in plan order</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Go to Progress on the page and scroll through it once, without opening anything.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The heading reads <code>Progress</code> with <code>60 entries · live</code> beside it, which becomes <code>61</code> within a minute: the sweep writes one ledger line for the seeded hold.</li>
+        <li>Four groups, each under a heading: <code>milestone 1, The record speaks the page's language</code>, <code>milestone 2, The mission page: four anchors</code>, <code>milestone 3, The workspace is the inbox</code>, <code>milestone 4, The question reaches you, and the page is where you start</code>.</li>
+        <li>Twelve task cards in plan order (3, 4, 2 and 3 per group), each with a done lamp, the task's title, and on the right the chips of its last move. For example: m1-t2 <code>10 notes</code> <code>1 unverified</code>; m1-t3 <code>2 attempts</code> <code>14 notes</code> <code>3 unverified</code>; m2-t3 <code>3 attempts</code> and nothing else; m3-t1 <code>2 attempts</code> <code>3 blockers</code> (red).</li>
+        <li>No ledger line, no <code>[carried:</code> block, no wall of text anywhere above the folds. The section reads at a glance: does it?</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="p2"><div class="tc-head"><span class="tc-title">A card's body is its attempts, one line each</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Read the first card in milestone 2 (m2-t1). Its timeline is under the head row, always visible.</li><li>Then read m1-t1, the first card in milestone 1.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>m2-t1 has three lines, like <code>attempt 1 · out 10:20 PM · built 10:26 PM · retried 10:26 PM</code>, then <code>attempt 2 · out 10:26 PM · built 10:32 PM · reviewed 10:32 PM · retried 10:41 PM</code>, then <code>attempt 3 · out 10:41 PM · built 10:47 PM · reviewed 10:47 PM · </code> and a <code>pass</code> chip.</li>
+        <li>m1-t1 has two lines, the second ending in an amber <code>mixed</code> chip. That chip is plain text, not a link, because m1-t1 carried no findings.</li>
+        <li>Only the final attempt has a verdict. A retried attempt ends in <code>retried &lt;time&gt;</code>.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="p3"><div class="tc-head"><span class="tc-title">Your decisions and the open question are cards you can see</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Look at the top of Progress, above milestone 1.</li><li>Look right under the m1-t1 card, and right under the m3-t1 card.</li><li>On one decision card, press <code>why</code>.</li><li>On the question card, press <code>release</code> (it only writes the scratch record).</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>One question card pinned at the top, with a blocked lamp: <code>milestone 4 is held: proof</code>, a time chip, the body <code>Walk seed: a hold written by the walkthrough setup...</code>, and a <code>release</code> button with a note field.</li>
+        <li>A decision card under m1-t1, titled <code>m1-t1 accepted by Cory over the RIO</code> with a time chip, and one under m3-t1, titled <code>m3-t1 accepted by Cory over the RIO</code>. Your words are under <code>why</code>, closed until you open them, and shown in full.</li>
+        <li>After <code>release</code>, the question card leaves within a few seconds, without a reload, and the rest of Progress does not jump or rebuild. An opened <code>why</code> stays open.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="p4"><div class="tc-head"><span class="tc-title">Automatic moves are folded under show every move</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Under each milestone's cards, find the fold. Open the one for milestone 2.</li><li>Close it again.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The folds read <code>show every move (14)</code>, <code>(26)</code>, <code>(9)</code> and <code>(10)</code> (milestone 4's holds the seeded hold's line once the sweep writes it), each with a fold marker, and all start closed.</li>
+        <li>Opened, milestone 2's lists 26 rows as the ledger wrote them, each with its time, a lamp, who, the text and the task it concerns. Your two decisions are not in these lists: they are the cards from p3.</li>
+        <li>No row in any fold drags a <code>[carried: ...]</code> block behind it.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="chips" data-key="chips">
+    <div class="phead"><h2>Chips land in Result</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="c1"><div class="tc-head"><span class="tc-title">A verdict chip scrolls to that task's triage row</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Reload the page so every bucket in Result starts folded.</li><li>In Progress, on m1-t2's card, click the green <code>pass with notes</code> chip at the end of its attempt line.</li><li>Scroll back up. On the same card's head row, click the <code>1 unverified</code> chip.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The first click opens the <code>Fine to ship</code> bucket, scrolls a card to the middle of the screen and shows the accent focus ring on it. That card is m1-t2's first ship finding, headlined <code>the tests pass and they bite.</code>, with a green chip.</li>
+        <li>The second opens <code>Unverified</code> and lands on m1-t2's first unverified finding, headlined <code>types.</code>, with a check-coloured chip. (A one-word headline is the old RIO format, not this milestone.)</li>
+        <li>The address bar's hash does not change.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="c2"><div class="tc-head"><span class="tc-title">A triage row is a card you can read, mark and send later</span></div><div class="tc-body">
+      <p class="why">Review could not run the success path, because it writes the live tracker. Here it only writes <code>/tmp/pri-m2</code>.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>On the card c1 landed on (<code>the tests pass and they bite.</code>), press its title to open <code>why</code>.</li><li>Tick its read box.</li><li>On another card, press <code>later</code>.</li><li><code>git -C /tmp/pri-m2/repo log -3 --format=%s</code></li><li>Scroll up to that finding's task card in Progress.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The head row holds the severity chip, the headline, the read box and <code>later</code>. The detail is folded until you press <code>why</code>.</li>
+        <li>Ticked, the box goes disabled while it posts, then stays ticked. The card dims: its title and chip go to the faint ink. The <code>121 to read</code> count in the rail drops by one for each mark.</li>
+        <li><code>later</code> becomes <code>on the checklist</code>. The log shows <code>console: later from mission "Mission page and inbox": &lt;its headline&gt;</code>, a commit to the scratch <code>CHECKLIST.md</code>.</li>
+        <li>Each mark is also a ledger line in your name, so it shows up in Progress as a new decision card under its task's card, without a reload.</li>
+        <li>Is a read card dim enough to skip, and still readable?</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="c3"><div class="tc-head"><span class="tc-title">The summary's three bullets are cards: your call on the chips</span></div><div class="tc-body">
+      <p class="setup-line"><span class="tag ask">decide</span>The task says a bullet gets a chip for the bucket it names when it starts with <code>fix</code>, <code>check</code> or <code>ship</code>. That is built, but this summary was written before the brief asked for that shape (see "summary chips").</p>
+      <div class="lbl">Steps</div><ol class="steps"><li>Go to Result and read <code>What I must read</code>.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Three cards, one per bullet, starting <code>Nothing has to be fixed before you merge</code>, <code>Check two things yourself after merging</code> and <code>The rest is safe to merge as it is</code>.</li>
+        <li>Only the second has a chip: <code>check</code>.</li>
+        <li>Pass if that is acceptable for this milestone and the brief fix can follow. Fail with a note if the first and third must have chips before this ships.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="column" data-key="column">
+    <div class="phead"><h2>One column, no boxes</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="o1"><div class="tc-head"><span class="tc-title">After approval, sections are set apart by space and the ask spans its column</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Scroll the whole page from The ask to Result.</li><li>In the console: <code>[document.querySelectorAll('.panel').length, ...[...document.querySelectorAll('.mv-content &gt; section')].map(s =&gt; getComputedStyle(s).backgroundColor + ' ' + getComputedStyle(s).marginBottom)]</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>No section sits in a box. The ask, Plan, Progress and Result are separated only by space.</li>
+        <li>The console gives <code>0</code>, then four entries of <code>rgba(0, 0, 0, 0) 48px</code>.</li>
+        <li>The ask's title <code>Mission page and inbox</code> runs the column's width, and its brief paragraph runs to about 66 characters a line instead of a narrow strip.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="o2"><div class="tc-head"><span class="tc-title">Before approval, the gate is the one lifted thing</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Open <a href="http://localhost:18770/mission.html?project=maverick&amp;mission=pri-gate" target="_blank">localhost:18770/mission.html?project=maverick&amp;mission=pri-gate</a>.</li><li>Look at the gate block. <b>Do not press</b> <code>approve and fly</code>.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The gate, with <code>approve and fly</code>, sits on a lifted background with an accent ring and a soft shadow. It is the only boxed thing on the page.</li>
+        <li>The contracts and the plan as written are plain sections with small uppercase headings, no box.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="o3"><div class="tc-head"><span class="tc-title">At phone width the page fits and the cards still work</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>Back on the page, open DevTools' device mode at 390 px wide and reload.</li><li>In the console: <code>document.documentElement.scrollWidth</code></li><li>Scroll Progress and Result. Click one verdict chip.</li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>390</code>: no sideways scroll.</li>
+        <li>Card titles cut with an ellipsis instead of pushing the chips off the row. A timeline line wraps instead of overflowing.</li>
+        <li>The read box and <code>later</code> are large enough to tap. The chip still lands on its row.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="done" data-key="done">
+    <div class="phead"><h2>The milestone's done check</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="dc1"><div class="tc-head"><span class="tc-title">Lint and the suite, run as written</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li>In a second terminal, in the integration worktree: <code>npm run lint; echo $?</code></li><li><code>npm test 2&gt;&amp;1 | tail -8</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Lint prints nothing past its header and exits <code>0</code>. It is a syntax pass only, and there are no web tests, so the cases above are this milestone's only proof.</li>
+        <li><code># tests 167</code>, <code># pass 167</code>, <code># fail 0</code> (as of 41abe2c). This milestone added no tests.</li>
+        <li>With p1 to p4, c1 and o1 passed, every line of the done-when holds.</li>
+      </ul></div></div></div>
+  </section>
+
+</div>
+<script>
+(function(){
+  var KEY="maverick-progress-reads-itself-m2-walkthrough";
+  var VERDS=[["pass","Pass","✓"],["partial","Partial","~"],["fail","Fail","✗"],["blocked","Blocked","⛔"],["defer","Defer","»"]];
+  var state={};
+  try{var sv=JSON.parse(localStorage.getItem(KEY)||"null"); if(sv&&typeof sv==="object")state=sv;}catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  function get(id){var e=state[id]||{};return{v:e.v||"",n:e.n||""};}
+  function put(id,e){if(!e.v&&!(e.n&&e.n.trim()))delete state[id];else state[id]=e;save();}
+  function setV(id,v){var e=get(id);put(id,{v:(e.v===v?"":v),n:e.n});paint(id);render();}
+  function setN(id,n){var e=get(id);put(id,{v:e.v,n:n});paintNote(id);render();}
+  [].forEach.call(document.querySelectorAll('.tc'),function(tc){
+    var id=tc.dataset.id, head=tc.querySelector('.tc-head'), title=tc.querySelector('.tc-title');
+    if(title){var s=document.createElement('span');s.className='caseid';s.textContent=id;title.insertBefore(s,title.firstChild);}
+    var acts=document.createElement('div'); acts.className='tc-actions';
+    var vc=document.createElement('div'); vc.className='verdict';
+    VERDS.forEach(function(vd){
+      var b=document.createElement('button'); b.type='button'; b.className='vbtn v-'+vd[0]; b.dataset.v=vd[0];
+      b.title=vd[1]; b.textContent=vd[2];
+      b.addEventListener('click',function(e){e.stopPropagation();setV(id,vd[0]);});
+      vc.appendChild(b);
+    });
+    var nb=document.createElement('button'); nb.type='button'; nb.className='notebtn'; nb.textContent='+ note';
+    nb.addEventListener('click',function(e){e.stopPropagation();
+      var na=tc.querySelector('.notearea'); na.style.display=(na.style.display==='none')?'':'none';
+      if(na.style.display!=='none'){tc.classList.remove('collapsed'); na.focus();}});
+    var sb=document.createElement('button'); sb.type='button'; sb.className='notebtn sendbtn'; sb.textContent='→ Claude';
+    sb.title='Send this case’s verdict and note to Claude';
+    sb.addEventListener('click',function(e){e.stopPropagation();
+      var st=get(id); sb.disabled=true;
+      fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({caseId:id,caseVersion:1,verdict:st.v,note:st.n.trim()})})
+      .then(function(r){if(!r.ok)throw new Error(r.status);sb.textContent='✓ sent';sb.classList.add('sent');})
+      .catch(function(){sb.textContent='✗ retry';})
+      .then(function(){sb.disabled=false;setTimeout(function(){sb.textContent='→ Claude';sb.classList.remove('sent');},2000);});});
+    acts.appendChild(vc); acts.appendChild(nb); acts.appendChild(sb); head.appendChild(acts);
+    var na=document.createElement('textarea'); na.className='notearea'; na.rows=2;
+    na.placeholder="Note for "+id+": what is wrong, partial or blocked";
+    na.value=get(id).n; na.style.display=get(id).n.trim()?'':'none';
+    na.addEventListener('click',function(e){e.stopPropagation();});
+    na.addEventListener('input',function(){setN(id,na.value);});
+    var body=tc.querySelector('.tc-body'); body.insertBefore(na,body.firstChild);
+    head.addEventListener('click',function(e){
+      if(e.target.closest('.verdict')||e.target.closest('.notebtn'))return;
+      tc.classList.toggle('collapsed');});
+    paint(id);
+  });
+  function paint(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var v=get(id).v;
+    tc.setAttribute('data-v',v);
+    [].forEach.call(tc.querySelectorAll('.vbtn'),function(b){b.classList.toggle('on',b.dataset.v===v);}); paintNote(id);}
+  function paintNote(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var has=!!get(id).n.trim();
+    var nb=tc.querySelector('.notebtn:not(.sendbtn)'); nb.classList.toggle('has',has); nb.textContent=has?'📝 note':'+ note';}
+  var FILTER='all';
+  function match(id){var e=get(id);
+    if(FILTER==='work')return e.v==='partial'||e.v==='fail'||e.v==='blocked';
+    if(FILTER==='notes')return !!e.n.trim();
+    if(FILTER==='untested')return !e.v;
+    return true;}
+  function counts(){var c={total:0,reviewed:0,pass:0,partial:0,fail:0,blocked:0,defer:0,notes:0};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var e=get(tc.dataset.id);c.total++;
+      if(e.v){c.reviewed++;c[e.v]++;} if(e.n.trim())c.notes++;}); return c;}
+  function render(){var c=counts();
+    document.getElementById('pctText').textContent=c.reviewed+' / '+c.total;
+    document.getElementById('breakdown').innerHTML='<span class="p">✓'+c.pass+'</span><span class="pa">~'+c.partial+'</span><span class="f">✗'+c.fail+'</span><span class="bl">⛔'+c.blocked+'</span>';
+    var bar=document.getElementById('barFill'), t=c.total||1; bar.innerHTML='';
+    [['pass',c.pass],['partial',c.partial],['blocked',c.blocked],['fail',c.fail],['defer',c.defer]].forEach(function(x){
+      if(x[1]){var seg=document.createElement('i');seg.className='seg seg-'+x[0];seg.style.width=(x[1]/t*100)+'%';bar.appendChild(seg);}});
+    [].forEach.call(document.querySelectorAll('section.pillar'),function(p){
+      var bs=p.querySelectorAll('.tc'),d=0;[].forEach.call(bs,function(tc){if(get(tc.dataset.id).v)d++;});
+      p.querySelector('.phead .pc').textContent=d+' / '+bs.length;
+      var tt=document.getElementById('toc-'+p.dataset.key); if(tt)tt.textContent='('+d+'/'+bs.length+')';});
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){tc.style.display=match(tc.dataset.id)?'':'none';});}
+  function compile(){var g={fail:[],blocked:[],partial:[],defer:[],passn:[],noverdict:[]};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var id=tc.dataset.id,e=get(id);
+      var title=tc.querySelector('.tc-title').textContent.replace(id,'').trim();
+      var row={id:id,title:title,n:e.n.trim()};
+      if(e.v==='pass'){if(row.n)g.passn.push(row);}
+      else if(e.v)g[e.v].push(row);
+      else if(row.n)g.noverdict.push(row);});
+    var c=counts();
+    var md='# Progress reads itself, milestone 2 walkthrough: findings\n\nReviewed '+c.reviewed+'/'+c.total+' · ✓'+c.pass+' pass · ~'+c.partial+' partial · ✗'+c.fail+' fail · ⛔'+c.blocked+' blocked · »'+c.defer+' defer · ✎'+c.notes+' noted\n';
+    function S(h,a){if(!a.length)return'';var s='\n## '+h+' ('+a.length+')\n';a.forEach(function(x){s+='- ['+x.id+'] '+x.title+(x.n?': '+x.n:'')+'\n';});return s;}
+    var out=S('✗ Fail',g.fail)+S('⛔ Blocked',g.blocked)+S('~ Partial',g.partial)+S('» Defer',g.defer)+S('✓ Pass (noted)',g.passn)+S('✎ Noted, no verdict',g.noverdict);
+    return md+(out||'\n_No findings recorded._\n');}
+  var eb=document.getElementById('expandBtn'),collapsed=false;
+  eb.addEventListener('click',function(){collapsed=!collapsed;
+    [].forEach.call(document.querySelectorAll('.tc'),function(el){el.classList.toggle('collapsed',collapsed);});
+    eb.textContent=collapsed?'Expand all':'Collapse all';});
+  // Reset asks in the page: the first press arms it, a second within 4 s clears.
+  var rb=document.getElementById('resetBtn'),armed=0;
+  rb.addEventListener('click',function(){
+    if(!armed){rb.textContent='Press again to clear all';armed=setTimeout(function(){armed=0;rb.textContent='Reset';},4000);return;}
+    clearTimeout(armed);armed=0;rb.textContent='Reset';state={};save();
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){paint(tc.dataset.id);var na=tc.querySelector('.notearea');na.value='';na.style.display='none';});render();});
+  var root=document.documentElement,tkey="maverick-test-theme",tv=null;
+  try{tv=localStorage.getItem(tkey);}catch(e){} if(tv)root.setAttribute('data-theme',tv);
+  document.getElementById('themeBtn').addEventListener('click',function(){var cur=root.getAttribute('data-theme');
+    var next=cur==='dark'?'light':(cur==='light'?'dark':(matchMedia('(prefers-color-scheme: dark)').matches?'light':'dark'));
+    root.setAttribute('data-theme',next);try{localStorage.setItem(tkey,next);}catch(e){}});
+  [].forEach.call(document.querySelectorAll('.fchip'),function(ch){ch.addEventListener('click',function(){
+    FILTER=ch.dataset.f; [].forEach.call(document.querySelectorAll('.fchip'),function(c){c.classList.toggle('on',c===ch);}); render();});});
+  var panel=document.getElementById('compilePanel'),ta=document.getElementById('compileText'),cpy=document.getElementById('copyBtn');
+  document.getElementById('compileBtn').addEventListener('click',function(){ta.value=compile();panel.style.display='flex';ta.focus();ta.select();});
+  document.getElementById('closeBtn').addEventListener('click',function(){panel.style.display='none';});
+  panel.addEventListener('click',function(e){if(e.target===panel)panel.style.display='none';});
+  cpy.addEventListener('click',function(){ta.select();
+    if(navigator.clipboard){navigator.clipboard.writeText(ta.value).then(function(){cpy.textContent='Copied ✓';setTimeout(function(){cpy.textContent='Copy';},1500);});}});
+  render();
+})();
+</script>
