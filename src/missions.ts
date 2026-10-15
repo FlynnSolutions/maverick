@@ -597,20 +597,30 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
 };
 
 /**
+ * What a pass carried, as the ledger counts it: ` with N notes carried`, then `, M unverified`
+ * when any line is an unverified claim. The lines themselves stay on `task.carried` and in the
+ * findings file, where the report and the Result read them; the ledger says only how many.
+ */
+const carriedCounts = (carried: string[]): string => {
+  const unverified = carried.filter((c) => parseFinding(c).kind === "UNVERIFIED").length;
+  return ` with ${carried.length - unverified} notes carried${unverified ? `, ${unverified} unverified` : ""}`;
+};
+
+/**
  * The log lines for what changed between the ledger's last state and the mission's. A line
  * says what it is after its stamp: `auto:` for a transition the merge-with-notes rule settled
  * without a person, `held:` for a milestone held for one, `decision:` (written by `recorded`)
  * for what a person did, and nothing for a plain pass or retry. The report reads those words,
- * not the prose after them.
+ * not the prose after them. A pass with notes says how many right after its verdict.
  */
-const transitions = (before: ReturnType<typeof parsePlan>, mission: Mission, stamp: string): string[] => {
+export const transitions = (before: ReturnType<typeof parsePlan>, mission: Mission, stamp: string): string[] => {
   const was = new Map(before.milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
   const heldLogged = new Set(before.log.filter((l) => /^\S+ \S+ held: /.test(l)).map((l) => l.match(/\(since ([^)]+)\)/)?.[1]));
   return [
     ...mission.milestones.flatMap((m) => m.tasks).filter((t) => {
       const prior = was.get(t.id);
       return !prior || prior.status !== t.status || prior.verdict !== t.verdict;
-    }).map((t) => `${stamp} ${t.status === "passed" && t.note?.startsWith("the RIO said") ? "auto: " : ""}${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`),
+    }).map((t) => `${stamp} ${t.status === "passed" && t.note?.startsWith("the RIO said") ? "auto: " : ""}${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.carried?.length ? carriedCounts(t.carried) : ""}${t.note ? `: ${t.note}` : ""}`),
     ...mission.milestones.filter((m) => m.hold && !heldLogged.has(m.hold.at)).map((m) => `${stamp} held: milestone ${m.n} (since ${m.hold!.at}): ${m.hold!.reason}`),
   ];
 };
@@ -1300,7 +1310,7 @@ export const settleReview = (task: Pick<MissionTask, "attempts">, findings: stri
   if (!passing && !blockers.length && !notes.length) blockers.push("the RIO wrote no sorted findings; read as a blocker");
   if (passing && !blockers.length) return { status: "passed", ...(notes.length ? { carried: notes } : {}) };
   if (task.attempts < MAX_ATTEMPTS) return { status: "retry" };
-  if (!blockers.length) return { status: "passed", note: `the RIO said ${said} after ${task.attempts} attempts with no blocker open; merged with ${notes.length} note(s) carried`, carried: notes };
+  if (!blockers.length) return { status: "passed", note: `the RIO said ${said} after ${task.attempts} attempts with no blocker open`, carried: notes };
   return { status: "handed-back", note: `the RIO said ${said} after ${task.attempts} attempts with ${blockers.length} blocker(s) open; this one is yours` };
 };
 
