@@ -8,6 +8,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.ts";
+import { LEADS_WITH_KIND } from "./findings.ts";
 import { backgroundAgents, spawnBackgroundAgent } from "./git.ts";
 import type { Project } from "./projects.ts";
 import { readSessions, type SessionRecord } from "./sessions.ts";
@@ -107,26 +108,25 @@ const listLine = (line: string): string | undefined => {
   const m = line.match(/^(\s*)(?:[-*+]|\d+[.)])(?:\s+|(?=\**[A-Z]))(.*)$/);
   if (!m) return undefined;
   const text = m[2].replace(/\*\*/g, "").trim();
-  return m[1] && !/^BLOCKER:/i.test(text) ? undefined : text;
+  return m[1] && !/^BLOCKER(?:\s*\([^)]*\))?:/i.test(text) ? undefined : text;
 };
 
 export interface Findings { blockers: string[]; notes: string[]; unsorted: string[] }
 
 /**
- * What a RIO wrote, sorted by the word each line starts with: `BLOCKER:`, `NOTE:`,
- * `UNVERIFIED:` (carried with the notes, so it reaches the page), or none. What an unsorted
- * line means is the verdict's business (`settleReview`); this only reads.
+ * What a RIO wrote, sorted by the word each line starts with: `BLOCKER`, `NOTE`, `UNVERIFIED`
+ * (carried with the notes, so it reaches the page), or none. Each line is kept whole, so
+ * `src/findings.ts` reads one shape wherever a line ends up. What an unsorted line means is the
+ * verdict's business (`settleReview`); this only sorts.
  */
 export const findingsOf = (findings: string): Findings => {
   const out: Findings = { blockers: [], notes: [], unsorted: [] };
   for (const raw of findings.split(/\r?\n/)) {
     const line = listLine(raw);
     if (line === undefined || /^verdict:/i.test(line)) continue;
-    const sorted = line.match(/^(BLOCKER|NOTE|UNVERIFIED):\s*(.*)$/i);
-    const kind = sorted?.[1].toUpperCase();
-    if (kind === "BLOCKER") out.blockers.push(sorted![2]);
-    else if (kind === "NOTE") out.notes.push(sorted![2]);
-    else if (kind === "UNVERIFIED") out.notes.push(`unverified: ${sorted![2]}`);
+    const kind = line.match(LEADS_WITH_KIND)?.[1].toUpperCase();
+    if (kind === "BLOCKER") out.blockers.push(line);
+    else if (kind) out.notes.push(line);
     else out.unsorted.push(line);
   }
   return out;

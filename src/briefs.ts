@@ -5,7 +5,7 @@
  * hand and the same miss happened six times in five hours; this file is the fix for that class.
  */
 import { join, relative } from "node:path";
-import type { Milestone, Mission, MissionRepo, MissionTask } from "./missions.ts";
+import type { Milestone, Mission, MissionRepo, MissionTask, Reading } from "./missions.ts";
 
 /** The tools a RIO runs with: no Edit, no Write. Passed at spawn, so the fence holds whether or not `rio.md` is installed. */
 export const RIO_TOOLS = "Bash,Read,Grep,Glob";
@@ -187,8 +187,32 @@ export const rioBrief = (ctx: BriefContext, file: string, previous?: string): st
     "Standing orders:",
     ...list(STANDING_ORDERS),
     "",
-    `Write your findings to ${file}, with a shell redirect. The FIRST line must be exactly one of: "verdict: pass", "verdict: pass with notes", "verdict: fail", "verdict: mixed". Then a markdown list, one finding per line, each starting "BLOCKER:" (the task does not pass until it is fixed), "NOTE:" (fix if cheap, else carried into the report) or "UNVERIFIED:" (what you could not check; it is carried too), with the evidence (file, line, command output) and whether it contradicts what the Wingman claimed. In a fail or a mixed, a list line with none of those words is read as a blocker. A pass that disagreed with nothing is a pass that read the commit messages.`,
+    `Write your findings to ${file}, with a shell redirect. The FIRST line must be exactly one of: "verdict: pass", "verdict: pass with notes", "verdict: fail", "verdict: mixed". Then a markdown list, one finding per line, each starting "BLOCKER:" (the task does not pass until it is fixed), "NOTE:" (fix if cheap, else carried into the report) or "UNVERIFIED:" (what you could not check; it is carried too), with the evidence (file, line, command output) and whether it contradicts what the Wingman claimed. Every finding is "- KIND(area, severity): headline. detail": area is the path or the plain name of what it is about, severity is "fix" (must change before merge), "ship" (fine to merge as is) or "check" (a claim you could not verify), headline is one sentence a person who will not open the code can act on, and detail is the evidence; for example "- BLOCKER(src/worker, fix): A failed job is retried forever. src/worker.ts:42 never reads attempts; the Wingman said it stops at three.", "- NOTE(web/signin, ship): Focus is lost after signing in. The Wingman called it out of scope." and "- UNVERIFIED(deploy, check): The staging deploy was not checked. No credentials in this worktree." In a fail or a mixed, a list line with none of those words is read as a blocker. A pass that disagreed with nothing is a pass that read the commit messages.`,
     "",
     "Do not fix anything. Do not commit. Do not touch the trackers. Do not spawn other agents.",
   ].join("\n");
 };
+
+/**
+ * The summarizer's brief: the mission's report and every finding, boiled down to the three things
+ * Cory must read before he merges. It reads and writes one file; its tool list is a RIO's.
+ */
+export const summaryBrief = (ctx: { missionName: string; report: string; readings: Reading[]; file: string }): string => [
+  `You are summarizing the mission "${ctx.missionName}" for Cory, who will decide whether to merge it and will not open the code to do so.`,
+  "",
+  "Below are the mission's report and every finding its RIOs left, in triage order: what must be fixed before merge first, then what nobody could check, then what is fine to ship.",
+  "",
+  "The report:",
+  "",
+  ctx.report.trim(),
+  "",
+  "The findings, one per line, as `severity · area · kind · task: headline. detail`:",
+  "",
+  ...(ctx.readings.length
+    ? ctx.readings.map((r) => `- ${r.severity} · ${r.area} · ${r.kind} · ${r.taskId} ${r.taskTitle}: ${r.headline}${r.detail ? ` ${r.detail}` : ""}`)
+    : ["- none: no RIO carried a finding"]),
+  "",
+  "Write exactly three markdown bullets, one per line, each starting \"- \", and nothing else: no heading, no preamble, no closing line. Each bullet is one thing Cory must know or do, in a sentence a person who will not open the code can act on. Order them fix first, then check, then ship: a finding that must be fixed before merge always comes before one that is fine to ship. Name the area each is about in plain words (\"the sign-in page\", \"the worker that retries jobs\"), not as a path. Where several findings say the same thing, they are one bullet. Where there are fewer than three things worth saying, say what is safe to merge as is in the remaining bullets.",
+  "",
+  `Write the three bullets to ${ctx.file}, with a shell redirect, and nowhere else. You may read the repo to understand a finding; do not change any file, do not commit, do not touch the trackers, do not spawn other agents. When the file is written, stop.`,
+].join("\n");

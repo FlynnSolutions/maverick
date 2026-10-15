@@ -82,28 +82,54 @@ const mergedOf = (view) => {
   return groups;
 };
 
-/** Every carried note, the unverified ones first: those are claims nobody checked, not opinions. */
-const UNVERIFIED = /^unverified:\s*/i;
-const toRead = (view) => {
-  const notes = view.milestones.flatMap((m) => m.tasks).flatMap((task) => (task.carried ?? []).map((line) => ({
-    unverified: UNVERIFIED.test(line),
-    text: line.replace(UNVERIFIED, ""),
-    title: task.title,
-  })));
-  return [...notes.filter((n) => n.unverified), ...notes.filter((n) => !n.unverified)];
+/* ---------- triage: the view's readings in three buckets, each grouped by area ---------- */
+/** In the order they are read: what blocks the merge, then the claims nobody checked, then the rest. */
+const BUCKETS = [
+  { severity: "fix", title: "Fix before merge", none: "nothing to fix before you merge" },
+  { severity: "check", title: "Unverified", none: "nothing left unverified" },
+  { severity: "ship", title: "Fine to ship", none: "nothing noted as fine to ship" },
+];
+/** The view's readings arrive grouped by area within each bucket; this only cuts them at each new area. */
+const byArea = (readings) => {
+  const areas = new Map();
+  for (const r of readings) {
+    const found = areas.get(r.area);
+    if (found) found.push(r);
+    else areas.set(r.area, [r]);
+  }
+  return [...areas];
+};
+const rowId = (key) => `rd-${key.replace(/[^a-z0-9-]/gi, "-")}`;
+
+/* ---------- what I must read: three bullets asked of a read-only session ---------- */
+/** How long a post that came back holds the button before its view lands; a post that failed brings no view. */
+const HOLD_MS = 2000;
+/**
+ * Whether a merged-files row draws an area: the file or directory itself, a file inside it, or a
+ * folded directory holding it. A plain-name area (`general`, `the sign-in form`) is no path, so
+ * it matches no row and is read only in its bucket.
+ */
+const draws = (path, area) => {
+  const p = path.replace(/\/+$/, "");
+  return p === area || p.startsWith(`${area}/`) || (path.endsWith("/") && path !== "./" && area.startsWith(path));
 };
 
 export const mount = (host, view, ctx) => {
   const { el, btn, fmtTime, actionUrl, LANDS } = ctx;
 
   const count = el("span", { class: "n" });
+  const mustAt = el("span", { class: "n" });
+  const mustBody = el("div", { class: "rs-must-body" });
+  const summarizeBtn = btn("summarize", () => summarize());
+  const must = el("div", { class: "rs-must", tabindex: "-1" },
+    el("h2", {}, "What I must read", mustAt), mustBody, el("div", { class: "rs-acts" }, summarizeBtn));
   const sum = el("div", { class: "rs-sum" });
   const files = el("ul", { class: "rs-files", "aria-label": "What merged, by task" });
   const readHead = el("h2", {}, "To read before you merge", el("span", { class: "n" }));
-  const read = el("ul", { class: "rs-read", "aria-label": "To read before you merge" });
+  const read = el("div", { class: "rs-read" });
   const walks = el("ul", { class: "rs-walks", "aria-label": "Milestones: walkthroughs and proofs" });
   const gate = el("div", { class: "rs-gate" });
-  const root = el("div", { class: "mv-result" }, el("h2", {}, "Result", count), sum, files, readHead, read, walks, gate);
+  const root = el("div", { class: "mv-result" }, el("h2", {}, "Result", count), must, sum, files, readHead, read, walks, gate);
   host.append(root);
 
   /** Each block is rebuilt only when what it draws changed, so nothing open inside another is lost. */
@@ -113,6 +139,47 @@ export const mount = (host, view, ctx) => {
     if (drawn.get(node) === shape) return;
     drawn.set(node, shape);
     node.replaceChildren(...draw().filter((n) => n !== null && n !== undefined && n !== false));
+  };
+
+  const drawMust = (v, state) => {
+    const s = v.summary ?? {};
+    if (state === "written") return [renderMarkdown(s.text, { project: ctx.projectId })];
+    const [cls, text] = {
+      unmerged: ["rs-pending", "Nothing has merged yet. Once a milestone lands, summarize asks a read-only session to read the report and every finding, and write here the three things you must read before you merge."],
+      none: ["rs-pending", "Not asked yet. Summarize asks a read-only session to read the report and every finding, and write here the three things you must read before you merge."],
+      running: ["rs-pending", `A read-only session is reading the report and the findings, since ${fmtTime(s.started)}.`],
+      failed: ["rs-warn", `The summary failed: ${s.failed}`],
+    }[state];
+    return [el("p", { class: cls }, text)];
+  };
+
+  /*
+   * The button is one node, relabelled in place, so a reader on it keeps it. A post that came back
+   * holds it at `summarizing...` until the view carrying the run lands, or HOLD_MS if none does.
+   */
+  let holding = false;
+  let before;
+  const paintMust = (v) => {
+    const state = v.summaryState;
+    const running = state === "running" || holding;
+    summarizeBtn.textContent = running ? "summarizing..." : state === "written" ? "summarize again" : "summarize";
+    const off = running || state === "unmerged";
+    /* A disabled button drops its focus to the page, so it moves to the block, which can hold it. */
+    if (off && document.activeElement === summarizeBtn) must.focus({ preventScroll: true });
+    summarizeBtn.disabled = off;
+    mustAt.textContent = state === "written" ? `written ${fmtTime(v.summary.at)}` : "";
+    patch(mustBody, [state, v.summary], () => drawMust(v, state));
+  };
+  const summarize = async () => {
+    before = latest.summary?.started;
+    holding = true;
+    paintMust(latest);
+    await ctx.act("summarize", {}, "summarizing: a read-only session is reading the findings");
+    setTimeout(() => {
+      if (!holding) return;
+      holding = false;
+      paintMust(latest);
+    }, HOLD_MS);
   };
 
   const drawSum = (v, merged) => {
@@ -133,27 +200,133 @@ export const mount = (host, view, ctx) => {
     ];
   };
 
-  const drawFiles = (merged) => merged.flatMap(({ m, tasks }) => [
-    el("li", { class: "rs-ms" }, `Milestone ${m.n} · ${m.title}`),
-    ...tasks.flatMap(({ task, own, rows, from, fromFiles }) => [
-      el("li", { class: "rs-task" },
-        el("span", { class: "d", title: task.title }, task.title),
-        el("span", { class: "n" }, own ? plural(own.files, "file") : ""),
-        own ? el("span", { class: "pm" }, el("b", {}, `+${own.plus}`), " ", el("i", {}, `−${own.minus}`)) : el("span", { class: "pm" }, "no diff recorded")),
-      ...rows.map((r) => el("li", { class: "rs-file" },
-        el("span", { class: "d", title: r.path }, r.path),
-        el("span", { class: "n" }, r.files > 1 ? plural(r.files, "file") : ""),
-        el("span", { class: "pm" }, r.changes === null ? "binary" : plural(r.changes, "line")))),
-      from.length ? el("li", { class: "rs-file rs-from" },
-        el("span", { class: "d", title: from.join(", ") }, `and ${plural(fromFiles, "file")} merged in from ${from.join(", ")}, counted there`)) : null,
-    ]),
-  ]);
+  /** Each finding's chips on the merged-files rows, by its key, so a mark is painted onto them rather than redrawing the block. */
+  const chips = new Map();
+  /** A finding's chip on a merged-files row: a link to its row in the buckets, which it unfolds. */
+  const fileChip = (r) => {
+    const chip = el("a", {
+      class: `chip ${r.severity}${r.state ? " marked" : ""}`,
+      href: `#${rowId(r.key)}`,
+      title: `${r.kind}: ${r.headline}`,
+      onclick: (e) => { e.preventDefault(); reveal(r.key); },
+    }, r.severity);
+    const mine = chips.get(r.key);
+    if (mine) mine.push(chip);
+    else chips.set(r.key, [chip]);
+    return chip;
+  };
 
-  const drawRead = (notes) => notes.length
-    ? notes.map((n) => el("li", {},
-        el("span", { class: `w${n.unverified ? " u" : ""}` }, n.unverified ? "unverified" : "carried"),
-        el("span", {}, n.text, " ", el("span", { class: "t" }, n.title))))
-    : [el("li", { class: "rs-none" }, "Nothing carried. Every task that passed did so with nothing left for you to read.")];
+  const drawFiles = (merged, chipsOf) => {
+    chips.clear();
+    return merged.flatMap(({ m, tasks }) => [
+      el("li", { class: "rs-ms" }, `Milestone ${m.n} · ${m.title}`),
+      ...tasks.flatMap(({ task, own, rows, from, fromFiles }) => [
+        el("li", { class: "rs-task" },
+          el("span", { class: "d", title: task.title }, task.title),
+          el("span", { class: "n" }, own ? plural(own.files, "file") : ""),
+          own ? el("span", { class: "pm" }, el("b", {}, `+${own.plus}`), " ", el("i", {}, `−${own.minus}`)) : el("span", { class: "pm" }, "no diff recorded")),
+        ...rows.map((r) => el("li", { class: "rs-file" },
+          el("span", { class: "d" }, el("span", { class: "p", title: r.path }, r.path), ...(chipsOf.get(r.path) ?? []).map(fileChip)),
+          el("span", { class: "n" }, r.files > 1 ? plural(r.files, "file") : ""),
+          el("span", { class: "pm" }, r.changes === null ? "binary" : plural(r.changes, "line")))),
+        from.length ? el("li", { class: "rs-file rs-from" },
+          el("span", { class: "d", title: from.join(", ") }, `and ${plural(fromFiles, "file")} merged in from ${from.join(", ")}, counted there`)) : null,
+      ]),
+    ]);
+  };
+
+  /*
+   * The buckets are rebuilt only when the findings themselves change. A mark is painted onto the
+   * row it belongs to, so marking one never folds a bucket or a `why` the reader had open, and
+   * what was open is remembered across a rebuild too.
+   */
+  const rows = new Map();
+  const opened = new Map();
+  const whys = new Set();
+
+  /** A mark is posted and the row waits, disabled, for the view that carries it; a failure is said on the status line and the row goes back to what the view last said. */
+  const mark = async (r, state) => {
+    const row = rows.get(r.key);
+    row.box.disabled = true;
+    row.later.disabled = true;
+    await ctx.act(`tasks/${r.taskId}/readings`, { key: r.key, state }, state === "read" ? `read: ${r.headline}` : `on the checklist: ${r.headline}`);
+    /* The controls were quietened here, not by a paint, so the next paint must not skip the row. */
+    row.state = null;
+    const now = latest.readings?.find((x) => x.key === r.key);
+    if (now) paint(now);
+  };
+
+  /**
+   * Read and later are both final: the route takes no unmark, so a marked row keeps its mark and
+   * its controls go quiet. A row is painted only when its state moved, so a stream tick never
+   * swaps out a `later` button the reader has focused.
+   */
+  const paint = (r) => {
+    const row = rows.get(r.key);
+    if (!row || row.state === r.state) return;
+    row.state = r.state;
+    row.li.classList.toggle("read", r.state === "read");
+    row.box.checked = r.state === "read";
+    row.box.disabled = Boolean(r.state);
+    row.later.disabled = Boolean(r.state);
+    row.slot.replaceChildren(r.state === "later" ? el("span", { class: "rs-onlist" }, "on the checklist") : row.later);
+    for (const chip of chips.get(r.key) ?? []) chip.classList.toggle("marked", Boolean(r.state));
+  };
+
+  const drawFinding = (r) => {
+    const id = rowId(r.key);
+    const box = el("input", { type: "checkbox", "aria-label": `read: ${r.headline}`, onchange: () => mark(r, "read") });
+    const later = btn("later", () => mark(r, "later"), "ghost");
+    later.setAttribute("aria-label", `later: put "${r.headline}" on the checklist`);
+    const slot = el("span", { class: "rs-slot" });
+    const detail = el("p", { class: "rs-detail", id: `${id}-why`, hidden: !whys.has(r.key) },
+      r.detail || "No detail beyond the headline.", " ", el("span", { class: "t" }, `From ${r.taskTitle}, milestone ${r.milestone}.`));
+    const why = btn("why", () => {
+      detail.hidden = !detail.hidden;
+      why.setAttribute("aria-expanded", String(!detail.hidden));
+      if (detail.hidden) whys.delete(r.key);
+      else whys.add(r.key);
+    }, "ghost");
+    why.setAttribute("aria-expanded", String(!detail.hidden));
+    why.setAttribute("aria-controls", detail.id);
+    const li = el("li", { class: "rs-finding", id, tabindex: "-1" },
+      el("span", { class: `chip ${r.severity}`, title: r.kind }, r.severity),
+      el("span", { class: "h", title: r.headline }, r.headline),
+      why,
+      el("label", { class: "rs-rd" }, box, "read"),
+      slot,
+      detail);
+    rows.set(r.key, { li, box, later, slot, state: null });
+    return li;
+  };
+
+  const drawBucket = (b, list) => {
+    if (!list.length) return el("div", { class: "rs-bucket rs-empty" }, el("span", { class: "h" }, b.title), el("span", { class: "n" }, "0"), el("span", {}, b.none));
+    const bucket = el("details", { class: `rs-bucket ${b.severity}` },
+      el("summary", {}, el("span", { class: "h" }, b.title), el("span", { class: "n" }, String(list.length))),
+      ...byArea(list).flatMap(([area, found]) => [
+        el("h3", { class: "rs-area" }, area),
+        el("ul", { class: "rs-findings", "aria-label": `${b.title}, ${area}` }, ...found.map(drawFinding)),
+      ]));
+    bucket.open = opened.get(b.severity) ?? b === BUCKETS[0];
+    bucket.addEventListener("toggle", () => opened.set(b.severity, bucket.open));
+    return bucket;
+  };
+
+  const drawRead = (readings) => {
+    rows.clear();
+    return BUCKETS.map((b) => drawBucket(b, readings.filter((r) => r.severity === b.severity)));
+  };
+
+  /** A chip on a file row leads here: the bucket unfolds and the row takes focus. */
+  const reveal = (key) => {
+    const row = rows.get(key);
+    if (!row) return;
+    const bucket = row.li.closest("details");
+    if (bucket) bucket.open = true;
+    row.li.scrollIntoView({ block: "center" });
+    row.li.focus({ preventScroll: true });
+  };
 
   /** The walk and the proof for each merged milestone, as the review page showed them. */
   const drawWalks = (v) => v.milestones.filter((m) => m.merged).map((m) => el("li", {},
@@ -272,14 +445,20 @@ export const mount = (host, view, ctx) => {
       mergedKey = key;
       merged = mergedOf(v);
     }
-    const notes = toRead(v);
+    const readings = v.readings ?? [];
+    const chipsOf = new Map(merged.flatMap((g) => g.tasks.flatMap((t) => t.rows.map((r) => [r.path, readings.filter((x) => draws(r.path, x.area))]))));
     const closing = v.status === "review" || v.status === "closed";
     count.textContent = v.status === "closed" ? "closed" : v.status === "review" ? "ready" : merged.length ? "so far" : "not yet";
+    if (holding && v.summary?.started !== before) holding = false;
+    paintMust(v);
     patch(sum, [merged.map((g) => g.tasks.map((t) => [t.own, t.files])), v.milestones[0]?.title, branchOf(v)], () => drawSum(v, merged));
-    patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, rows, from, fromFiles])]), () => drawFiles(merged));
+    patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, from, fromFiles,
+      rows.map((r) => [r, (chipsOf.get(r.path) ?? []).map((c) => [c.key, c.severity, c.kind, c.headline])])])]), () => drawFiles(merged, chipsOf));
     files.hidden = !merged.length;
-    readHead.lastChild.textContent = notes.length ? `${notes.filter((n) => n.unverified).length} unverified · ${notes.length} in all` : "";
-    patch(read, notes, () => drawRead(notes));
+    const unread = readings.filter((r) => !r.state).length;
+    readHead.lastChild.textContent = readings.length ? `${unread} unread · ${readings.length} in all` : "";
+    patch(read, readings.map((r) => [r.key, r.severity, r.kind, r.area, r.headline, r.detail, r.taskTitle, r.milestone]), () => drawRead(readings));
+    readings.forEach(paint);
     patch(walks, closing ? v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired]) : [], () => (closing ? drawWalks(v) : []));
     walks.hidden = !closing;
     patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status)] : null, () => drawGate(v));

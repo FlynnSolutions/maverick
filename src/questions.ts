@@ -4,6 +4,7 @@
  * so the mission page, the inbox and the workspace cannot disagree about either.
  */
 import { findingsOf } from "./audits.ts";
+import { parseFinding } from "./findings.ts";
 import type { Mission, MissionTask } from "./missions.ts";
 
 export interface Question {
@@ -47,7 +48,11 @@ export const statusWord = (mission: Mission, questions: Question[] = questionsOf
   return mission.status === "review" ? "done" : "working";
 };
 
-const blockerOf = (findings: string | undefined): string | undefined => (findings ? findingsOf(findings).blockers[0] : undefined);
+/** The first blocker's headline: the one sentence, not the line with its kind and evidence. */
+const blockerOf = (findings: string | undefined): string | undefined => {
+  const line = findings ? findingsOf(findings).blockers[0] : undefined;
+  return line === undefined ? undefined : parseFinding(line).headline;
+};
 
 type Answer = Question["answers"][number];
 

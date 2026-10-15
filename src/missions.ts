@@ -19,7 +19,7 @@
  * the same named exception `ships/` already uses.
  */
 import { spawn } from "node:child_process";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
@@ -32,12 +32,13 @@ import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, writeInput, type TerminalInfo } from "./terminal.ts";
-import { FIELD_LINE, MARKER, PRIORITY, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
-import { RIO_TOOLS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
+import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
+import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
 import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, type FeedEntry } from "./feed.ts";
+import { keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -93,6 +94,8 @@ export interface MissionTask {
   note?: string;
   /** NOTE-level findings the task passed with, or merged with when it ran out of retries. They ride to the result page and the report. */
   carried?: string[];
+  /** What Cory did with each finding, by its key (`keyOf`): read it, or put it on the checklist for later. */
+  readings?: Record<string, "read" | "later">;
 }
 
 /** Progress through the hosted walkthrough document, saved from the page as it is worked. */
@@ -226,6 +229,8 @@ export interface Mission {
   trouble?: string;
   /** Why a person paused the mission; the pause's own line, apart from whatever else is open. */
   pausedFor?: string;
+  /** The three bullets Cory must read, asked of a read-only session: running while `started` has neither `at` nor `failed`. */
+  summary?: { started?: string; claudeId?: string; at?: string; text?: string; failed?: string };
 }
 
 /* ---------- storage ---------- */
@@ -1028,6 +1033,36 @@ const settleWalkthroughs = async (project: Project, mission: Mission, state: Map
   return changed;
 };
 
+/** The summary file beside the record: `<record dir>/<id>-summary.md`. */
+const summaryFile = (mission: Mission): string => join(missionsDir(mission.project), `${mission.id}-summary.md`);
+
+/** Where the summary stands, the one reading the page and the sweep share: nothing merged to read, never asked, running, failed, or written. */
+export const summaryState = (mission: Mission): "unmerged" | "none" | "running" | "failed" | "written" => {
+  const s = mission.summary;
+  if (s?.at) return "written";
+  if (s?.failed) return "failed";
+  if (s?.started) return "running";
+  return mission.milestones.some((m) => m.merged) ? "none" : "unmerged";
+};
+
+/** A summary asked for and not yet answered either way. */
+const summarizing = (mission: Mission): boolean => summaryState(mission) === "running";
+
+/**
+ * A summarizer that has finished either left its file or it did not. A claim whose id never
+ * landed (the server died mid-spawn) is judged on time alone, so it cannot hold the button for
+ * good. Returns whether anything changed.
+ */
+const settleSummary = async (mission: Mission, state: Map<string, string>): Promise<boolean> => {
+  const s = mission.summary;
+  if (!s || !summarizing(mission) || !isOver(state, s.claudeId ?? "", s.started)) return false;
+  const file = summaryFile(mission);
+  const text = await readFile(file, "utf8").catch(() => null);
+  if (text?.trim()) mission.summary = { at: new Date().toISOString(), text: text.trim() };
+  else s.failed = text === null ? `the session finished without writing ${file}` : `the session wrote an empty ${file}`;
+  return true;
+};
+
 const reviewFile = (mission: Mission, task: MissionTask): string =>
   join(missionsDir(mission.project), `${mission.id}-${task.id}-review${task.reviews ?? 1}.md`);
 
@@ -1244,14 +1279,24 @@ const startReady = async (project: Project, mission: Mission): Promise<number> =
  * retries, a task whose open findings are notes only merges with them carried; one with an open
  * blocker stops, and with it everything that needs it, because its milestone cannot merge.
  */
-export const settleReview = (task: Pick<MissionTask, "attempts">, findings: string, said: Verdict): { status: "passed" | "retry" | "handed-back"; note?: string; carried?: string[] } => {
+const isPass = (said: Verdict | undefined): boolean => said === "pass" || said === "pass with notes";
+
+/**
+ * The findings as the verdict reads them. On a pass an unsorted line rides as a note; on a fail
+ * or a mixed it is a blocker, and is written as one so the page reads it the way the verdict did.
+ */
+const sortedFor = (findings: string, said: Verdict | undefined): { blockers: string[]; notes: string[] } => {
   const sorted = findingsOf(findings);
-  const passing = said === "pass" || said === "pass with notes";
-  // On a pass an unsorted line rides as a note; on a fail or a mixed it is a blocker, and a
-  // verdict that lists nothing at all has said nothing is safe to carry. A pass with a
+  return isPass(said)
+    ? { blockers: sorted.blockers, notes: [...sorted.notes, ...sorted.unsorted] }
+    : { blockers: [...sorted.blockers, ...sorted.unsorted.map((line) => `BLOCKER: ${line}`)], notes: sorted.notes };
+};
+
+export const settleReview = (task: Pick<MissionTask, "attempts">, findings: string, said: Verdict): { status: "passed" | "retry" | "handed-back"; note?: string; carried?: string[] } => {
+  const { blockers, notes } = sortedFor(findings, said);
+  const passing = isPass(said);
+  // A verdict that lists nothing at all has said nothing is safe to carry. A pass with a
   // blocker in it is a RIO contradicting itself, and the blocker wins.
-  const notes = passing ? [...sorted.notes, ...sorted.unsorted] : sorted.notes;
-  const blockers = passing ? sorted.blockers : [...sorted.blockers, ...sorted.unsorted];
   if (!passing && !blockers.length && !notes.length) blockers.push("the RIO wrote no sorted findings; read as a blocker");
   if (passing && !blockers.length) return { status: "passed", ...(notes.length ? { carried: notes } : {}) };
   if (task.attempts < MAX_ATTEMPTS) return { status: "retry" };
@@ -1535,16 +1580,17 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
 };
 
 const sweepOnce = async (project: Project): Promise<void> => {
-  // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough being written.
-  const missions = (await listMissions(project.id)).filter((m) => SWEPT.has(m.status) || m.milestones.some(building));
+  // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough or a summary being written.
+  const missions = (await listMissions(project.id)).filter((m) => SWEPT.has(m.status) || m.milestones.some(building) || summarizing(m));
   if (!missions.length) return;
   const cfg = await missionConfigFor(project.path);
   const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
   const state = new Map([...agents].map(([id, a]) => [id, a.state ?? ""]));
   for (const mission of missions) {
     const settledWalks = await settleWalkthroughs(project, mission, state);
+    const settledSummary = await settleSummary(mission, state);
     if (!SWEPT.has(mission.status)) {
-      if (settledWalks) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
+      if (settledWalks || settledSummary) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
       continue;
     }
     try {
@@ -1943,8 +1989,111 @@ const remembered = async (key: string, read: () => Promise<string>, keep: boolea
   return value;
 };
 
+/** A finding as the Result section draws it: the record, whose it is, and what Cory did with it. */
+export type Reading = Finding & { key: string; taskId: string; taskTitle: string; milestone: number; state?: "read" | "later" };
+
 /** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
-export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; word: StatusWord; questions: Question[]; feed: FeedEntry[] };
+export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[] };
+
+/**
+ * A task's findings as keyed records: every carried line, and for a handed-back task its findings
+ * file as its verdict read it (`sortedFor`), so an unsorted line the verdict took for a blocker
+ * is read as one here too.
+ */
+const taskFindings = (task: MissionTask, text: string | undefined): Array<Finding & { key: string }> => {
+  const lines = [...(task.carried ?? [])];
+  if (task.status === "handed-back" && text) {
+    const { blockers, notes } = sortedFor(text, task.verdict);
+    lines.push(...blockers, ...notes);
+  }
+  // The same line twice is the same finding: one key, one reading.
+  const keyed = lines.map((line) => { const f = parseFinding(line); return { ...f, key: keyOf(f, task.id) }; });
+  return [...new Map(keyed.map((f) => [f.key, f])).values()];
+};
+
+/** Every task's findings with whose they are and their state, in triage order: fix, then check, then ship, each grouped by area. */
+const readingsOf = (mission: Mission, findings: Record<string, string>): Reading[] => {
+  const all = mission.milestones.flatMap((m) => m.tasks.flatMap((task) => taskFindings(task, findings[task.id]).map((f): Reading =>
+    ({ ...f, taskId: task.id, taskTitle: task.title, milestone: m.n, state: task.readings?.[f.key] }))));
+  const { fix, check, ship } = triage(all);
+  return [...fix, ...check, ...ship];
+};
+
+/**
+ * Cory's mark on one finding. `later` also puts it on the mission's tracker, as one item under
+ * the backlog heading written the way the mission's own items are, committed the way the board
+ * commits, and says so in the ledger. The item is written before the record and only when the
+ * tracker does not already hold one with its key, so a second click, or a retry after a record
+ * write that failed, never writes it twice.
+ */
+export const markReading = async (project: Project, id: string, taskId: string, key: string, state: "read" | "later"): Promise<Mission> => {
+  if (state !== "read" && state !== "later") throw new Error(`a finding is marked "read" or "later", not "${String(state)}"`);
+  const fresh = await missionOr404(project.id, id);
+  const found = taskOn(fresh, taskId);
+  if (!found) throw new Error(`no task "${taskId}" on ${fresh.name}`);
+  const { findings } = await statsOf(fresh, (t) => t.id === taskId, false);
+  const finding = taskFindings(found, findings[taskId]).find((f) => f.key === key);
+  if (!finding) throw new Error(`no finding "${key}" on ${taskId}`);
+  if (state === "later") {
+    const tracker = project.trackers[fresh.trackerIndex];
+    if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${fresh.trackerIndex}`);
+    const before = await readFile(tracker.path, "utf8");
+    const board = parseTracker(before);
+    if (!allItems(board).some((i) => i.fields.finding === key)) {
+      const section = board.sections.find((s) => BACKLOG.test(s.heading));
+      if (!section) throw new Error(`${tracker.label} has no ${BACKLOG.source} section to write into`);
+      const block = itemBlock(finding.headline, { created: today(), source: `mission ${id}, ${found.title}`, mission: id, area: finding.area, finding: key }, finding.detail ? [finding.detail] : []);
+      await writeFile(tracker.path, addItem(before, section.heading, "", block), "utf8");
+      await commitFile(tracker.path, `console: later from mission "${fresh.name}": ${finding.headline}`);
+    }
+  }
+  let was: "read" | "later" | undefined;
+  const mission = await changeMission(project.id, id, (mission) => {
+    const task = taskOn(mission, taskId);
+    if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+    was = task.readings?.[key];
+    task.readings = { ...task.readings, [key]: state };
+    return mission;
+  });
+  return state === "later" && was !== "later" ? recorded(project, mission, [`${taskId} finding "${finding.headline}" marked later by Cory`]) : mission;
+};
+
+/**
+ * Ask a read-only session for the three things Cory must read, from the report and the findings.
+ * Refused before anything has merged, and while one is already running. A file an earlier summary
+ * left is removed first, so the sweep never reads it as this one's. The checks and the claim go
+ * through the retried change; the spawn does not, so a refused write never spawns twice, and the
+ * id is recorded on whatever record is fresh once the session is up.
+ */
+export const summarizeMission = async (project: Project, id: string): Promise<Mission> => {
+  const cfg = await missionConfigFor(project.path);
+  const started = new Date().toISOString();
+  const mission = await changeMission(project.id, id, (mission) => {
+    if (!mission.milestones.some((m) => m.merged)) throw new Error(`${mission.name} has merged nothing yet, so there is nothing to summarize`);
+    if (summarizing(mission)) throw new Error(`${mission.name} is already being summarized, since ${mission.summary!.started}`);
+    mission.summary = { started };
+    return mission;
+  });
+  const file = summaryFile(mission);
+  let claudeId: string;
+  try {
+    const [{ findings }, log] = await Promise.all([statsOf(mission, undefined, false), ledgerLog(project, mission)]);
+    const brief = summaryBrief({ missionName: mission.name, report: reportFor(mission, findings, log), readings: readingsOf(mission, findings), file });
+    await rm(file, { force: true });
+    claudeId = await spawnBackgroundAgent(project.path, `summary · ${mission.name}`, brief, cfg.rioAgent, RIO_TOOLS);
+  } catch (err) {
+    // The claim is on disk and no session is behind it: say why, and leave the button live.
+    return changeMission(project.id, id, (fresh) => {
+      if (fresh.summary?.started === started) fresh.summary.failed = `could not start the summarizer: ${(err as Error).message}`;
+      return fresh;
+    });
+  }
+  agentCache.delete(project.path);
+  return changeMission(project.id, id, (fresh) => {
+    if (fresh.summary?.started === started) fresh.summary.claudeId = claudeId;
+    return fresh;
+  });
+};
 
 /** Where the ledger is once a mission is approved: the plan on the mission branch. Null before that, or when the plan names no repo. */
 export const ledgerPath = (project: Project, mission: Mission): string | null => {
@@ -1999,7 +2148,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const mission = await missionOr404(project.id, id);
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
-  return { ...mission, findings, diffstat, walk, word, questions, feed: feedOf(log, mission) };
+  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed: feedOf(log, mission), readings: readingsOf(mission, findings) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
