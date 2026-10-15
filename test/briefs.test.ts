@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RIO_CHECKLIST, STANDING_ORDERS, planOnBranch, rioBrief, wingmanBrief, type BriefContext } from "../src/briefs.ts";
+import { RIO_CHECKLIST, STANDING_ORDERS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "../src/briefs.ts";
 
 const repo = { label: "root", path: "/p/app", base: "main", branch: "mission/x", integration: "/p/app/.claude/worktrees/x-integration-root", land: "merge" as const };
 const other = { label: "contracts", path: "/p/contracts", base: "main", branch: "mission/x", integration: "/p/contracts/.claude/worktrees/x-integration-contracts", land: "merge" as const };
@@ -105,6 +105,27 @@ test("a RIO is told the shape of a finding, with an example of each kind, and a 
   const wingman = wingmanBrief(ctx);
   for (const needle of [format, ...examples]) assert.ok(!wingman.includes(needle), `a Wingman brief carries: ${needle}`);
   assert.ok(!RIO_CHECKLIST.some((l) => l.includes("KIND(")), "the format is the answer's shape, not a check");
+});
+
+test("a RIO is told a finding is terse, and its own examples keep to it", () => {
+  const line = rioBrief(ctx, "/f.md").split("\n").find((l) => l.includes("KIND(area, severity)"))!;
+  assert.match(line, /headline is one sentence under fifteen words/);
+  assert.match(line, /detail is the evidence in under three sentences/);
+  const examples = [...line.matchAll(/"- (?:BLOCKER|NOTE|UNVERIFIED)\([^)]*\): ([^"]*)"/g)].map((m) => m[1]);
+  assert.equal(examples.length, 3);
+  for (const example of examples) {
+    const [, headline, detail] = example.match(/^(.+?\.) (.*)$/)!;
+    assert.ok(headline.split(/\s+/).length < 15, `headline too long: ${headline}`);
+    assert.ok(detail.split(/[.!?](?:\s|$)/).filter((x) => x.trim()).length < 3, `detail too long: ${detail}`);
+  }
+});
+
+test("the summarizer is asked for exactly three short bullets naming the area, and nothing around them", () => {
+  const brief = summaryBrief({ missionName: "X", report: "the report", readings: [], file: "/s.md" });
+  assert.match(brief, /Write exactly three markdown bullets, one per line, each starting "- ", and nothing before or after them/);
+  assert.match(brief, /Each bullet is under twenty words/);
+  assert.match(brief, /Name the area each is about in plain words/);
+  assert.match(brief, /Write the three bullets to \/s\.md/);
 });
 
 test("on a multi-repo mission the Wingman is told where the other repos' work is, and that none of it is on a base branch", () => {
