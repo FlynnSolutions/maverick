@@ -1310,7 +1310,7 @@ export const settleReview = (task: Pick<MissionTask, "attempts">, findings: stri
   if (!passing && !blockers.length && !notes.length) blockers.push("the RIO wrote no sorted findings; read as a blocker");
   if (passing && !blockers.length) return { status: "passed", ...(notes.length ? { carried: notes } : {}) };
   if (task.attempts < MAX_ATTEMPTS) return { status: "retry" };
-  if (!blockers.length) return { status: "passed", note: `the RIO said ${said} after ${task.attempts} attempts with no blocker open; merged with ${notes.length} note(s) carried`, carried: notes };
+  if (!blockers.length) return { status: "passed", note: `the RIO said ${said} after ${task.attempts} attempts with no blocker open`, carried: notes };
   return { status: "handed-back", note: `the RIO said ${said} after ${task.attempts} attempts with ${blockers.length} blocker(s) open; this one is yours` };
 };
 

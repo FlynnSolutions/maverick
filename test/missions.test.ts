@@ -228,8 +228,8 @@ test("a pass with notes writes how many it carried to the ledger, never the note
   assert.equal(line, "2026-10-14 10:00 m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified");
   assert.equal(transitions(before, task(notes.slice(0, 2)), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 2 notes carried", "no unverified clause when none is");
   assert.equal(transitions(before, task(["UNVERIFIED(deploy, check): not deployed"]), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 0 notes carried, 1 unverified");
-  const auto = transitions(before, task(["NOTE: a"], { verdict: "mixed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 1 note(s) carried" }), "s")[0];
-  assert.equal(auto, "s auto: m1-t2 In review now: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open; merged with 1 note(s) carried");
+  const auto = transitions(before, task(["NOTE: a"], { verdict: "mixed", note: "the RIO said mixed after 2 attempts with no blocker open" }), "s")[0];
+  assert.equal(auto, "s auto: m1-t2 In review now: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open", "the count is said once, right after the verdict");
   assert.equal(transitions(before, task([], { verdict: "pass" }), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass)", "nothing carried, nothing counted");
   assert.doesNotMatch(applyPlanState(FLOWN, task(notes).milestones, [line]), /\[carried:|note 3/);
 });
@@ -379,7 +379,7 @@ test("the merge-with-notes rule: notes carry, a blocker stops, and retries come 
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: tidy later", "pass with notes"), { status: "passed", carried: ["NOTE: tidy later"] });
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass", "pass"), { status: "passed" });
   assert.deepEqual(settleReview({ attempts: 1 }, notes, "mixed"), { status: "retry" }, "attempts left: back out, whatever the severities");
-  assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, notes, "mixed"), { status: "passed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 2 note(s) carried", carried: ["NOTE: a", "NOTE: b"] });
+  assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, notes, "mixed"), { status: "passed", note: "the RIO said mixed after 2 attempts with no blocker open", carried: ["NOTE: a", "NOTE: b"] });
   assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, blocker, "fail"), { status: "handed-back", note: "the RIO said fail after 2 attempts with 1 blocker(s) open; this one is yours" });
   // In a fail or a mixed, an unsorted list line is a blocker, one sorted line does not let the rest through, and listing nothing is a blocker too.
   assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail\n- NOTE: tidy\n- the real defect\n\nNote: prose", "fail").status, "handed-back");
