@@ -100,14 +100,21 @@ export const verdictOf = (findings: string | undefined): Verdict =>
   (findings?.match(/^verdict:\s*(pass with notes|pass|fail|mixed)/i)?.[1].toLowerCase() as Verdict | undefined) ?? "pending";
 
 /**
- * A list line (`- `, `* `, `+ `, `1. `, bold stripped), so a RIO's own markdown habits do not
- * hide a finding. Top-level only, unless the line names its kind: indented lines are evidence
- * under a finding, but a BLOCKER written under a NOTE is still a blocker.
+ * A list item's line: its indent, its marker (`- `, `* `, `+ `, `1. `, `1) `, with the space a
+ * bold capital may stand in for) and its text. The summary (`src/summary.ts`) reads items with
+ * this too.
+ */
+export const LIST_ITEM = /^(\s*)((?:[-*+]|\d+[.)])(?:\s+|(?=\**[A-Z])))(.*)$/;
+
+/**
+ * A list line (bold stripped), so a RIO's own markdown habits do not hide a finding. Top-level
+ * only, unless the line names its kind: indented lines are evidence under a finding, but a
+ * BLOCKER written under a NOTE is still a blocker.
  */
 const listLine = (line: string): string | undefined => {
-  const m = line.match(/^(\s*)(?:[-*+]|\d+[.)])(?:\s+|(?=\**[A-Z]))(.*)$/);
+  const m = line.match(LIST_ITEM);
   if (!m) return undefined;
-  const text = m[2].replace(/\*\*/g, "").trim();
+  const text = m[3].replace(/\*\*/g, "").trim();
   return m[1] && !/^BLOCKER(?:\s*\([^)]*\))?:/i.test(text) ? undefined : text;
 };
 

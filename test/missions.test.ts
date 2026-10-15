@@ -12,8 +12,9 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
+import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
 import { closeTerminal, openTerminal } from "../src/terminal.ts";
 
@@ -218,6 +219,22 @@ test("the plan on the mission branch is the ledger: parsePlan reads the state an
   assert.match(plan.log[1], /reviewing to passed/);
 });
 
+test("a pass with notes writes how many it carried to the ledger, never the notes", () => {
+  const before = parsePlan(FLOWN, ["root"]);
+  const notes = Array.from({ length: 10 }, (_, i) => `NOTE(src/x, ship): note ${i}; with a semicolon`);
+  const task = (carried: string[], patch: Partial<MissionTask> = {}) => ({ milestones: [{ n: 1, title: "the first", done: "d", tasks: [
+    { ...before.milestones[0].tasks[0] },
+    { ...before.milestones[0].tasks[1], id: "m1-t2", title: "In review now", status: "passed", verdict: "pass with notes", carried, ...patch }] }] }) as unknown as Mission;
+  const [line] = transitions(before, task([...notes, "unverified: the deploy"]), "2026-10-14 10:00");
+  assert.equal(line, "2026-10-14 10:00 m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified");
+  assert.equal(transitions(before, task(notes.slice(0, 2)), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 2 notes carried", "no unverified clause when none is");
+  assert.equal(transitions(before, task(["UNVERIFIED(deploy, check): not deployed"]), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 0 notes carried, 1 unverified");
+  const auto = transitions(before, task(["NOTE: a"], { verdict: "mixed", note: "the RIO said mixed after 2 attempts with no blocker open" }), "s")[0];
+  assert.equal(auto, "s auto: m1-t2 In review now: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open", "the count is said once, right after the verdict");
+  assert.equal(transitions(before, task([], { verdict: "pass" }), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass)", "nothing carried, nothing counted");
+  assert.doesNotMatch(applyPlanState(FLOWN, task(notes).milestones, [line]), /\[carried:|note 3/);
+});
+
 test("a state the ledger cannot have is a problem, not a guess", () => {
   const plan = parsePlan(FLOWN.replace("- status: reviewing", "- status: flown"), ["root"]);
   assert.ok(plan.problems.some((p) => /status "flown"/.test(p)), plan.problems.join("; "));
@@ -363,7 +380,7 @@ test("the merge-with-notes rule: notes carry, a blocker stops, and retries come 
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: tidy later", "pass with notes"), { status: "passed", carried: ["NOTE: tidy later"] });
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass", "pass"), { status: "passed" });
   assert.deepEqual(settleReview({ attempts: 1 }, notes, "mixed"), { status: "retry" }, "attempts left: back out, whatever the severities");
-  assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, notes, "mixed"), { status: "passed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 2 note(s) carried", carried: ["NOTE: a", "NOTE: b"] });
+  assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, notes, "mixed"), { status: "passed", note: "the RIO said mixed after 2 attempts with no blocker open", carried: ["NOTE: a", "NOTE: b"] });
   assert.deepEqual(settleReview({ attempts: MAX_ATTEMPTS }, blocker, "fail"), { status: "handed-back", note: "the RIO said fail after 2 attempts with 1 blocker(s) open; this one is yours" });
   // In a fail or a mixed, an unsorted list line is a blocker, one sorted line does not let the rest through, and listing nothing is a blocker too.
   assert.equal(settleReview({ attempts: MAX_ATTEMPTS }, "verdict: fail\n- NOTE: tidy\n- the real defect\n\nNote: prose", "fail").status, "handed-back");
@@ -573,6 +590,44 @@ test("missionView carries the word, the questions and the feed read from the led
   assert.equal(view.feed.length, 2, "one entry per line of the ledger's log");
   assert.deepEqual(view.feed.map((e) => [e.at, e.taskId, e.who]), [["2026-10-09T08:00", "m1-t1", "Maverick"], ["2026-10-09T09:00", "m1-t1", "RIO"]]);
   assert.match(view.feed[1].text, /reviewing to passed/);
+});
+
+test("missionView carries one move per attempt: a task over two attempts is two moves with their stamps, the first a retry", async () => {
+  const { project, ledger } = viewFixture("moves");
+  writeFileSync(ledger, FLOWN.replace(/## Log\n[\s\S]*$/, `## Log
+
+- 2026-10-09 08:00 m1-t1 Already passed: pending to flying
+- 2026-10-09 08:05 m1-t2 In review now: pending to flying
+- 2026-10-09 08:20 m1-t2 In review now: flying to built
+- 2026-10-09 08:21 m1-t2 In review now: built to reviewing
+- 2026-10-09 08:30 m1-t2 In review now: reviewing to flying
+- 2026-10-09 08:50 m1-t2 In review now: flying to reviewing
+- 2026-10-09 09:00 m1-t1 Already passed: reviewing to passed (RIO: pass)
+- 2026-10-09 09:10 m1-t2 In review now: reviewing to handed-back (RIO: mixed): 2 blocker(s) open
+`), "utf8");
+  const view = await missionView(project, "moves");
+  assert.deepEqual(view.moves, [
+    { taskId: "m1-t1", attempt: 1, out: "2026-10-09T08:00", ended: "2026-10-09T09:00", end: "passed", verdict: "pass" },
+    { taskId: "m1-t2", attempt: 1, out: "2026-10-09T08:05", built: "2026-10-09T08:20", reviewed: "2026-10-09T08:21", ended: "2026-10-09T08:30", end: "retry" },
+    { taskId: "m1-t2", attempt: 2, out: "2026-10-09T08:30", built: "2026-10-09T08:50", reviewed: "2026-10-09T08:50", ended: "2026-10-09T09:10", end: "handed-back", verdict: "mixed", counts: { notes: 0, unverified: 0, blockers: 2 } },
+  ], "plan order, then attempt order; the sweep that saw flying to reviewing stamps the hand-off and the review alike");
+});
+
+test("movesOf: a launch after a hand-back opens a new attempt without calling the last a retry, a pass straight from flying stamps the hand-off, and a person's words are not moves", () => {
+  const mission = { milestones: [{ n: 2, tasks: [{ id: "m2-t1", title: "The worker" }] }] } as unknown as Mission;
+  const at = (n: number) => `2026-10-14T10:0${n}`;
+  const moves = movesOf(feedOf([
+    `${at(0)} m2-t1 The worker: pending to flying`,
+    `${at(1)} m2-t1 The worker: reviewing to handed-back (RIO: fail): the RIO said fail after 1 attempts with 1 blocker(s) open`,
+    `${at(2)} decision: m2-t1 The worker: handed-back to flying`,
+    `${at(3)} m2-t1 The worker: handed-back to flying`,
+    `${at(4)} m2-t1 The worker: flying to passed (RIO: pass with notes) with 10 notes carried, 1 unverified`,
+    `${at(5)} m9-t9 Not in the plan: pending to flying`,
+  ], mission), mission);
+  assert.deepEqual(moves, [
+    { taskId: "m2-t1", attempt: 1, out: at(0), ended: at(1), end: "handed-back", verdict: "fail", counts: { notes: 0, unverified: 0, blockers: 1 } },
+    { taskId: "m2-t1", attempt: 2, out: at(3), built: at(4), ended: at(4), end: "passed", verdict: "pass with notes", counts: { notes: 10, unverified: 1, blockers: 0 } },
+  ]);
 });
 
 test("missionView's word is the word rule's, not the bare status word: a stale escalation on a review mission is done", async () => {
@@ -833,14 +888,38 @@ test("the sweep reads the summary once its session has ended, and the view carri
   agentsSay([{ id: summary!.claudeId!, state: "done" }]);
   await sweepMissions(project);
   const landed = recordOf("landed").summary!;
-  assert.deepEqual(Object.keys(landed).sort(), ["at", "text"]);
+  assert.deepEqual(Object.keys(landed).sort(), ["at", "raw", "text"]);
   assert.equal(landed.text, bullets.trim());
+  assert.equal(landed.raw, bullets.trim());
   assert.ok(!Number.isNaN(Date.parse(landed.at!)));
   const view = await missionView(project, "landed");
   assert.deepEqual(view.summary, landed);
   assert.equal(view.summaryState, "written", "the view says where the summary stands, so the page does not work it out again");
   const again = await summarizeMission(project, "landed");
   assert.ok(again.summary?.started && !again.summary.at, "a landed summary can be asked for again");
+});
+
+test("a summary file with five bullets lands as three, and the record keeps all five as raw", async () => {
+  const { project, file } = summaryFixture("five");
+  const { summary } = await summarizeMission(project, "five");
+  const five = "# Summary\n\n- Fix the sign-in page.\n- Nobody checked the deploy.\n- The worker is safe.\n- The docs are thin.\n- The tests are slow.\n";
+  writeFileSync(file, five, "utf8");
+  agentsSay([{ id: summary!.claudeId!, state: "done" }]);
+  await sweepMissions(project);
+  const landed = recordOf("five").summary!;
+  assert.equal(landed.text, "- Fix the sign-in page.\n- Nobody checked the deploy.\n- The worker is safe.");
+  assert.equal(landed.raw, five.trim());
+});
+
+test("a summary file with nothing to make a bullet of keeps the session's words as its text, never an empty summary", async () => {
+  const { project, file } = summaryFixture("headed");
+  const { summary } = await summarizeMission(project, "headed");
+  writeFileSync(file, "Summary\n=======\n", "utf8");
+  agentsSay([{ id: summary!.claudeId!, state: "done" }]);
+  await sweepMissions(project);
+  const landed = recordOf("headed").summary!;
+  assert.equal(landed.text, "Summary\n=======");
+  assert.equal(landed.raw, landed.text);
 });
 
 test("a summarizer that ends without its file is a failed summary with the reason, and the button is live again", async () => {

@@ -6,8 +6,8 @@
 import { answerControls } from "../answers.js";
 import { stopWalkthrough, walkthroughPanel } from "../walkthrough.js";
 
-/** The task's lamp and word, the map in /mockups/mission.html. `built` is between the two: the Wingman is done and its RIO is on the way. */
-const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
+/** The task's lamp and word, the map in /mockups/mission.html; Progress draws the same lamp on its cards. `built` is between the two: the Wingman is done and its RIO is on the way. */
+export const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
 const WORD = { passed: "done", flying: "working", built: "built", reviewing: "in review", "handed-back": "waiting for you", pending: "waiting" };
 const STEP_LAMP = { done: ["done", "work"], waiting: ["blocked", "work"], working: ["busy", "work"], pending: ["idle", "stale"] };
 /** The states with a session worth opening: a Wingman flying, a RIO reading, or the last of either before it was handed back. */

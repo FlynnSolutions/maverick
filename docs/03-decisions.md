@@ -593,3 +593,59 @@ reads the same note two ways on two days; the RIO knows what it meant, so it wri
 tracker already is the list.
 
 **Not decided here:** how a RIO judges (unchanged from M19), the palette, and the map.
+
+## M22: The ledger says how many, Progress is one card per task, and the page is one column ✅ built
+
+**The ledger says how many, and the record keeps the notes.** A task that passes with notes
+writes `<stamp> <taskId> <title>: reviewing to passed (RIO: <verdict>) with <N> notes carried`,
+then `, <M> unverified` when any carried line is an unverified claim, and never the notes
+themselves. They stay on `MissionTask.carried` and in the findings file, where the report and
+the Result already read them (M21). A decision line keeps the person's full note, because it is
+their words. `feedOf` puts the numbers on the entry as `FeedEntry.counts`, and a hand-back by the
+review rule gives its `blockers` from the `N blocker(s) open` phrase. An older ledger's trailing
+`[carried: ...]` block is still read: it is cut from the entry's text and counted, from the
+record's `task.carried` when it has them, so a mission flown before this reads the same way.
+
+**Progress is one card per task, with its attempts.** `MissionView.moves` is one `Move` per task
+per attempt, read off the feed: the stamps of its launch, hand-off, review and end, how it ended
+(`passed`, `handed-back`, or `retry` when the next launch took over), and the verdict and counts
+of the line that ended it. Progress draws the open questions pinned at the top, then one card per
+task in plan order under its milestone, whose head row carries the lamp, the title and the chips
+of its last move, and whose body is one line per attempt. A person's decisions are their own
+cards, in time order beside the task they concern.
+
+**Automatic moves fold, and verdicts are chips.** Every move nobody decided is folded under one
+`show every move (N)` toggle at the foot of each milestone, which opens the raw feed rows. A
+verdict is a chip, `10 notes`, `1 unverified`, `blocker`, that links `#rd-<taskId>` and lands
+on that task's first triage card in Result, whose `rd-<key>` id the card component keeps.
+
+**Terse by brief and by code.** The RIO brief asks for a headline under fifteen words and a
+detail under three sentences; the summary brief asks for exactly three bullets, each under twenty
+words, and nothing before or after them. The server holds the summary to it whatever the session
+sent: `threeBullets` keeps the first three top-level list items, each cut at its first line, and
+`Mission.summary.text` is that, while `summary.raw` keeps the session's full text.
+
+**One card component.** `web/card.js` draws a task, a question, a finding and a summary bullet
+the same way: a 40 px head row (lamp or kind glyph, title, chips, one optional verb) over a body
+whose headline always shows and whose detail folds under `why`. `update(spec)` patches in place,
+so a fold someone opened stays open. Its styles are `web/card.css`.
+
+**One column, no boxes.** After approval The ask, Plan, Progress and Result are set apart by
+space, not panels; the ask's sentence spans its column (`66ch`) rather than stopping at 34
+characters. Before approval the gate keeps its lifted panel, the one loud thing on the page, and
+`mission.html` no longer links `ship.css`.
+
+**Why:** after the second mission landed, Progress printed the ledger raw: one row per
+transition, six rows for a task's two attempts, and every `passed` line dragging its whole
+`[carried: ...]` blob behind it, so a flight read as a wall, and the same blob filled the plan on
+the branch and the report. Cory's calls on 2026-10-14 were these six and the page's shape, all of
+them; the ask's width and the boxes are his own words.
+
+**Rejected: one row per move.** A row per transition is the ledger, which already exists; a
+person reads a task, so the task is the card and the moves are on demand. **Rejected: trusting
+the brief alone for length.** A session that adds a heading or a fourth bullet would still reach
+the page, so the code cuts what the brief asked for. **Rejected: keeping the notes in the ledger
+and hiding them on the page.** The ledger is read raw on the branch and in the report too, and
+the notes already have a home on the task.
+
+**Not decided here:** the palette, the map, and the inbox, all unchanged.

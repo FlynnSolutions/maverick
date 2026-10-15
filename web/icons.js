@@ -26,6 +26,12 @@ const PATHS = {
   terminal: ["M2.3 3.3h11.4v9.4h-11.4z", "M4.9 6.5 L7 8.3 L4.9 10.1", "M8.4 10.3h3"],
   /** Refresh: an open circle with an arrowhead closing it. */
   refresh: ["M11.6 4.4 A5 5 0 1 0 13 8", "M8.6 4.1 L11.9 4.5 L11.5 1.2"],
+  /** The card's kinds (web/card.js) with no lamp of their own. Decision: a tick, the person's call made. */
+  decision: ["M3.4 8.4 L6.6 11.4 L12.6 4.6"],
+  /** Finding: a diamond, one thing a RIO turned up. */
+  finding: ["M8 2.8 L13.2 8 L8 13.2 L2.8 8 Z"],
+  /** Bullet: a dash, one line of the summary. */
+  bullet: ["M5.2 8h5.6"],
 };
 
 /** An `svg` carrying one icon. `cls` lands on the element; the stroke is set in CSS. */

@@ -3,12 +3,12 @@
 // patches each block in place, so an open report or an armed close survives the stream.
 
 import { render as renderMarkdown } from "../markdown.js";
+import { card, findingId } from "../card.js";
 
 const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${repo} ${sha}`).join(" · ");
 const needsWalking = (view, m) => Boolean(view.walk?.[m.n]?.needed);
 const walkState = (view, m) => view.walk?.[m.n]?.state ?? "none";
 const branchOf = (view) => (view.repos ?? []).map((r) => r.branch).join(", ") || "the mission branch";
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /* ---------- reading `git diff --stat` ---------- */
 /** Its last line: "3 files changed, 120 insertions(+), 4 deletions(-)". Either count is left out when it is zero. */
@@ -99,11 +99,14 @@ const byArea = (readings) => {
   }
   return [...areas];
 };
-const rowId = (key) => `rd-${key.replace(/[^a-z0-9-]/gi, "-")}`;
 
 /* ---------- what I must read: three bullets asked of a read-only session ---------- */
 /** How long a post that came back holds the button before its view lands; a post that failed brings no view. */
 const HOLD_MS = 2000;
+/** The record keeps at most three `- ` lines; a summary with none is the session's raw text, drawn as markdown. */
+const bulletsOf = (text) => (text ?? "").split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2).trim());
+/** A bullet's title is plain text: the emphasis and code marks a session writes are dropped, not shown. */
+const plain = (md) => md.replace(/\*\*(.+?)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1");
 /**
  * Whether a merged-files row draws an area: the file or directory itself, a file inside it, or a
  * folded directory holding it. A plain-name area (`general`, `the sign-in form`) is no path, so
@@ -115,7 +118,7 @@ const draws = (path, area) => {
 };
 
 export const mount = (host, view, ctx) => {
-  const { el, btn, fmtTime, actionUrl, LANDS } = ctx;
+  const { el, btn, fmtTime, plural, actionUrl, LANDS } = ctx;
 
   const count = el("span", { class: "n" });
   const mustAt = el("span", { class: "n" });
@@ -143,7 +146,11 @@ export const mount = (host, view, ctx) => {
 
   const drawMust = (v, state) => {
     const s = v.summary ?? {};
-    if (state === "written") return [renderMarkdown(s.text, { project: ctx.projectId })];
+    if (state === "written") {
+      const bullets = bulletsOf(s.text);
+      if (!bullets.length) return [renderMarkdown(s.text, { project: ctx.projectId })];
+      return bullets.map((b, i) => card({ key: `must-${i}`, kind: "bullet", title: plain(b) }, ctx).node);
+    }
     const [cls, text] = {
       unmerged: ["rs-pending", "Nothing has merged yet. Once a milestone lands, summarize asks a read-only session to read the report and every finding, and write here the three things you must read before you merge."],
       none: ["rs-pending", "Not asked yet. Summarize asks a read-only session to read the report and every finding, and write here the three things you must read before you merge."],
@@ -206,7 +213,7 @@ export const mount = (host, view, ctx) => {
   const fileChip = (r) => {
     const chip = el("a", {
       class: `chip ${r.severity}${r.state ? " marked" : ""}`,
-      href: `#${rowId(r.key)}`,
+      href: `#${findingId(r.key)}`,
       title: `${r.kind}: ${r.headline}`,
       onclick: (e) => { e.preventDefault(); reveal(r.key); },
     }, r.severity);
@@ -237,35 +244,35 @@ export const mount = (host, view, ctx) => {
 
   /*
    * The buckets are rebuilt only when the findings themselves change. A mark is painted onto the
-   * row it belongs to, so marking one never folds a bucket or a `why` the reader had open, and
+   * card it belongs to, so marking one never folds a bucket or a `why` the reader had open, and
    * what was open is remembered across a rebuild too.
    */
   const rows = new Map();
   const opened = new Map();
-  const whys = new Set();
+  let whys = new Set();
 
-  /** A mark is posted and the row waits, disabled, for the view that carries it; a failure is said on the status line and the row goes back to what the view last said. */
+  /** A mark is posted and the card waits, disabled, for the view that carries it; a failure is said on the status line and the card goes back to what the view last said. */
   const mark = async (r, state) => {
     const row = rows.get(r.key);
     row.box.disabled = true;
     row.later.disabled = true;
     await ctx.act(`tasks/${r.taskId}/readings`, { key: r.key, state }, state === "read" ? `read: ${r.headline}` : `on the checklist: ${r.headline}`);
-    /* The controls were quietened here, not by a paint, so the next paint must not skip the row. */
+    /* The controls were quietened here, not by a paint, so the next paint must not skip the card. */
     row.state = null;
     const now = latest.readings?.find((x) => x.key === r.key);
     if (now) paint(now);
   };
 
   /**
-   * Read and later are both final: the route takes no unmark, so a marked row keeps its mark and
-   * its controls go quiet. A row is painted only when its state moved, so a stream tick never
+   * Read and later are both final: the route takes no unmark, so a marked card keeps its mark and
+   * its controls go quiet. A card is painted only when its state moved, so a stream tick never
    * swaps out a `later` button the reader has focused.
    */
   const paint = (r) => {
     const row = rows.get(r.key);
     if (!row || row.state === r.state) return;
     row.state = r.state;
-    row.li.classList.toggle("read", r.state === "read");
+    row.node.classList.toggle("rs-seen", r.state === "read");
     row.box.checked = r.state === "read";
     row.box.disabled = Boolean(r.state);
     row.later.disabled = Boolean(r.state);
@@ -273,31 +280,30 @@ export const mount = (host, view, ctx) => {
     for (const chip of chips.get(r.key) ?? []) chip.classList.toggle("marked", Boolean(r.state));
   };
 
+  /**
+   * A finding is a card: its severity chip and headline on the head row, the detail folded under
+   * `why`, and the `rd-<key>` id the chips that link to it carry. The read box and `later` are
+   * two controls where the card has room for one verb, so they sit in a span of this module's at
+   * the end of the head row, which the card's update never touches.
+   */
   const drawFinding = (r) => {
-    const id = rowId(r.key);
     const box = el("input", { type: "checkbox", "aria-label": `read: ${r.headline}`, onchange: () => mark(r, "read") });
     const later = btn("later", () => mark(r, "later"), "ghost");
     later.setAttribute("aria-label", `later: put "${r.headline}" on the checklist`);
     const slot = el("span", { class: "rs-slot" });
-    const detail = el("p", { class: "rs-detail", id: `${id}-why`, hidden: !whys.has(r.key) },
-      r.detail || "No detail beyond the headline.", " ", el("span", { class: "t" }, `From ${r.taskTitle}, milestone ${r.milestone}.`));
-    const why = btn("why", () => {
-      detail.hidden = !detail.hidden;
-      why.setAttribute("aria-expanded", String(!detail.hidden));
-      if (detail.hidden) whys.delete(r.key);
-      else whys.add(r.key);
-    }, "ghost");
-    why.setAttribute("aria-expanded", String(!detail.hidden));
-    why.setAttribute("aria-controls", detail.id);
-    const li = el("li", { class: "rs-finding", id, tabindex: "-1" },
-      el("span", { class: `chip ${r.severity}`, title: r.kind }, r.severity),
-      el("span", { class: "h", title: r.headline }, r.headline),
-      why,
-      el("label", { class: "rs-rd" }, box, "read"),
-      slot,
-      detail);
-    rows.set(r.key, { li, box, later, slot, state: null });
-    return li;
+    const { node } = card({
+      key: r.key,
+      kind: "finding",
+      title: r.headline,
+      chips: [{ text: r.severity, cls: r.severity }],
+      detail: el("span", {}, r.detail || "No detail beyond the headline.", " ", el("span", { class: "t" }, `From ${r.taskTitle}, milestone ${r.milestone}.`)),
+      open: whys.has(r.key),
+    }, ctx);
+    node.id = findingId(r.key);
+    node.tabIndex = -1;
+    node.querySelector(".card-head").append(el("span", { class: "rs-marks" }, el("label", { class: "rs-rd" }, box, "read"), slot));
+    rows.set(r.key, { node, box, later, slot, state: null });
+    return node;
   };
 
   const drawBucket = (b, list) => {
@@ -306,7 +312,7 @@ export const mount = (host, view, ctx) => {
       el("summary", {}, el("span", { class: "h" }, b.title), el("span", { class: "n" }, String(list.length))),
       ...byArea(list).flatMap(([area, found]) => [
         el("h3", { class: "rs-area" }, area),
-        el("ul", { class: "rs-findings", "aria-label": `${b.title}, ${area}` }, ...found.map(drawFinding)),
+        el("div", { class: "rs-findings", role: "group", "aria-label": `${b.title}, ${area}` }, ...found.map(drawFinding)),
       ]));
     bucket.open = opened.get(b.severity) ?? b === BUCKETS[0];
     bucket.addEventListener("toggle", () => opened.set(b.severity, bucket.open));
@@ -314,18 +320,20 @@ export const mount = (host, view, ctx) => {
   };
 
   const drawRead = (readings) => {
+    /* The fold is the card's; which were open is read off the cards about to go, for the ones that come back. */
+    whys = new Set([...rows].filter(([, row]) => row.node.classList.contains("open")).map(([key]) => key));
     rows.clear();
     return BUCKETS.map((b) => drawBucket(b, readings.filter((r) => r.severity === b.severity)));
   };
 
-  /** A chip on a file row leads here: the bucket unfolds and the row takes focus. */
+  /** A chip on a file row, or one of Progress's through the shell, leads here: the bucket unfolds and the card takes focus. */
   const reveal = (key) => {
     const row = rows.get(key);
     if (!row) return;
-    const bucket = row.li.closest("details");
+    const bucket = row.node.closest("details");
     if (bucket) bucket.open = true;
-    row.li.scrollIntoView({ block: "center" });
-    row.li.focus({ preventScroll: true });
+    row.node.scrollIntoView({ block: "center" });
+    row.node.focus({ preventScroll: true });
   };
 
   /** The walk and the proof for each merged milestone, as the review page showed them. */
@@ -464,5 +472,5 @@ export const mount = (host, view, ctx) => {
     patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status)] : null, () => drawGate(v));
   };
   update(view);
-  return { update };
+  return { update, reveal };
 };

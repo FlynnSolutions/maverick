@@ -38,7 +38,8 @@ import { parseRequirements, preflight, refuses, type Check, type Requirement } f
 import { reportFor } from "./report.ts";
 import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, type FeedEntry } from "./feed.ts";
-import { keyOf, parseFinding, triage, type Finding } from "./findings.ts";
+import { threeBullets } from "./summary.ts";
+import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -229,8 +230,8 @@ export interface Mission {
   trouble?: string;
   /** Why a person paused the mission; the pause's own line, apart from whatever else is open. */
   pausedFor?: string;
-  /** The three bullets Cory must read, asked of a read-only session: running while `started` has neither `at` nor `failed`. */
-  summary?: { started?: string; claudeId?: string; at?: string; text?: string; failed?: string };
+  /** The three bullets Cory must read, asked of a read-only session: running while `started` has neither `at` nor `failed`. `raw` is what the session wrote, before it was held to three. */
+  summary?: { started?: string; claudeId?: string; at?: string; text?: string; raw?: string; failed?: string };
 }
 
 /* ---------- storage ---------- */
@@ -597,20 +598,30 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
 };
 
 /**
+ * What a pass carried, as the ledger counts it: ` with N notes carried`, then `, M unverified`
+ * when any line is an unverified claim. The lines themselves stay on `task.carried` and in the
+ * findings file, where the report and the Result read them; the ledger says only how many.
+ */
+const carriedCounts = (carried: string[]): string => {
+  const { notes, unverified } = countCarried(carried);
+  return ` with ${notes} notes carried${unverified ? `, ${unverified} unverified` : ""}`;
+};
+
+/**
  * The log lines for what changed between the ledger's last state and the mission's. A line
  * says what it is after its stamp: `auto:` for a transition the merge-with-notes rule settled
  * without a person, `held:` for a milestone held for one, `decision:` (written by `recorded`)
  * for what a person did, and nothing for a plain pass or retry. The report reads those words,
- * not the prose after them.
+ * not the prose after them. A pass with notes says how many right after its verdict.
  */
-const transitions = (before: ReturnType<typeof parsePlan>, mission: Mission, stamp: string): string[] => {
+export const transitions = (before: ReturnType<typeof parsePlan>, mission: Mission, stamp: string): string[] => {
   const was = new Map(before.milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
   const heldLogged = new Set(before.log.filter((l) => /^\S+ \S+ held: /.test(l)).map((l) => l.match(/\(since ([^)]+)\)/)?.[1]));
   return [
     ...mission.milestones.flatMap((m) => m.tasks).filter((t) => {
       const prior = was.get(t.id);
       return !prior || prior.status !== t.status || prior.verdict !== t.verdict;
-    }).map((t) => `${stamp} ${t.status === "passed" && t.note?.startsWith("the RIO said") ? "auto: " : ""}${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.note ? `: ${t.note}` : ""}${t.carried?.length ? ` [carried: ${t.carried.join("; ")}]` : ""}`),
+    }).map((t) => `${stamp} ${t.status === "passed" && t.note?.startsWith("the RIO said") ? "auto: " : ""}${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.carried?.length ? carriedCounts(t.carried) : ""}${t.note ? `: ${t.note}` : ""}`),
     ...mission.milestones.filter((m) => m.hold && !heldLogged.has(m.hold.at)).map((m) => `${stamp} held: milestone ${m.n} (since ${m.hold!.at}): ${m.hold!.reason}`),
   ];
 };
@@ -1058,7 +1069,8 @@ const settleSummary = async (mission: Mission, state: Map<string, string>): Prom
   if (!s || !summarizing(mission) || !isOver(state, s.claudeId ?? "", s.started)) return false;
   const file = summaryFile(mission);
   const text = await readFile(file, "utf8").catch(() => null);
-  if (text?.trim()) mission.summary = { at: new Date().toISOString(), text: text.trim() };
+  const raw = text?.trim();
+  if (raw) mission.summary = { at: new Date().toISOString(), text: threeBullets(raw) || raw, raw };
   else s.failed = text === null ? `the session finished without writing ${file}` : `the session wrote an empty ${file}`;
   return true;
 };
@@ -1300,7 +1312,7 @@ export const settleReview = (task: Pick<MissionTask, "attempts">, findings: stri
   if (!passing && !blockers.length && !notes.length) blockers.push("the RIO wrote no sorted findings; read as a blocker");
   if (passing && !blockers.length) return { status: "passed", ...(notes.length ? { carried: notes } : {}) };
   if (task.attempts < MAX_ATTEMPTS) return { status: "retry" };
-  if (!blockers.length) return { status: "passed", note: `the RIO said ${said} after ${task.attempts} attempts with no blocker open; merged with ${notes.length} note(s) carried`, carried: notes };
+  if (!blockers.length) return { status: "passed", note: `the RIO said ${said} after ${task.attempts} attempts with no blocker open`, carried: notes };
   return { status: "handed-back", note: `the RIO said ${said} after ${task.attempts} attempts with ${blockers.length} blocker(s) open; this one is yours` };
 };
 
@@ -1992,8 +2004,15 @@ const remembered = async (key: string, read: () => Promise<string>, keep: boolea
 /** A finding as the Result section draws it: the record, whose it is, and what Cory did with it. */
 export type Reading = Finding & { key: string; taskId: string; taskTitle: string; milestone: number; state?: "read" | "later" };
 
+/**
+ * One attempt at a task as the ledger tells it: the stamps of its launch (`out`), its hand-off
+ * (`built`), its review starting (`reviewed`) and its end, with how it ended. `retry` is an
+ * attempt the next launch took over. The verdict and counts are the passed or handed-back line's.
+ */
+export type Move = { taskId: string; attempt: number; out?: string; built?: string; reviewed?: string; ended?: string; end?: "passed" | "handed-back" | "retry"; verdict?: string; counts?: FeedEntry["counts"] };
+
 /** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
-export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[] };
+export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[]; moves: Move[] };
 
 /**
  * A task's findings as keyed records: every carried line, and for a handed-back task its findings
@@ -2144,11 +2163,45 @@ const asked = async (mission: Mission, only?: (task: MissionTask) => boolean, di
   return { findings, diffstat, questions, word: statusWord(mission, questions) };
 };
 
+/**
+ * Each task's attempts, read off the feed's transitions (`FeedEntry.move`, which a person's words
+ * never carry). Every move to `flying` is a launch and opens the next attempt, ending the one
+ * before as a `retry` unless it already ended. Leaving `flying` is the hand-off, whether the sweep
+ * saw `built` or went straight on to `reviewing`. A pass or hand-back ends the attempt with its
+ * verdict and counts, and a later pass (Cory accepting a handed-back task) replaces that end. A
+ * task the plan does not hold has no attempts. Pure.
+ */
+export const movesOf = (feed: FeedEntry[], mission: Mission): Move[] => {
+  const planned = mission.milestones.flatMap((m) => m.tasks.map((t) => t.id));
+  const inPlan = new Set(planned);
+  const byTask = new Map<string, Move[]>();
+  for (const entry of feed) {
+    const move = entry.move;
+    if (!move || !inPlan.has(move.taskId)) continue;
+    const { taskId, was, now, verdict } = move;
+    const moves = byTask.get(taskId) ?? [];
+    byTask.set(taskId, moves);
+    const last = moves.at(-1);
+    if (now === "flying") {
+      if (last && !last.end) Object.assign(last, { ended: entry.at, end: "retry" });
+      moves.push({ taskId, attempt: moves.length + 1, out: entry.at });
+    } else if (last && (now === "passed" || now === "handed-back")) {
+      if (was === "flying") last.built ??= entry.at;
+      Object.assign(last, { ended: entry.at, end: now }, verdict ? { verdict } : {}, entry.counts ? { counts: entry.counts } : {});
+    } else if (last && !last.end) {
+      if (was === "flying") last.built ??= entry.at;
+      if (now === "reviewing") last.reviewed ??= entry.at;
+    }
+  }
+  return planned.flatMap((id) => byTask.get(id) ?? []);
+};
+
 export const missionView = async (project: Project, id: string): Promise<MissionView> => {
   const mission = await missionOr404(project.id, id);
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
-  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed: feedOf(log, mission), readings: readingsOf(mission, findings) };
+  const feed = feedOf(log, mission);
+  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */

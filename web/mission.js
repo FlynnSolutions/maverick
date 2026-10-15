@@ -17,7 +17,7 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime, plural, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
@@ -30,6 +30,11 @@
  *   openSession(taskId, under)   mounts the task's session (its RIO's while it is reviewing,
  *                                its Wingman's otherwise) as a terminal under `under`
  *   fmtTime(iso)                 a clock time, or "" for none
+ *   plural(n, word)              `1 note`, `2 notes`
+ *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
+ *                                Result without `reveal` on its handle makes it a no-op
+ *
+ * A module's handle may carry more than `update`; `reveal(key)` is the one the shell routes.
  */
 
 import { lamp } from "./lamp.js";
@@ -65,6 +70,7 @@ const setStatus = (msg, isError = false) => {
   s.classList.toggle("error", isError);
 };
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
@@ -193,7 +199,9 @@ const LANDS = {
   push: (base) => `${base} is advanced to it and pushed`,
 };
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime };
+const reveal = (key) => mounted.get("result")?.reveal?.(key);
+
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime, plural, reveal };
 
 /* ---------- the rail: one word, four anchors, and the brakes ---------- */
 const WORD = {
@@ -330,7 +338,8 @@ const renderAsk = () => {
   $("#crumb").replaceChildren(text("Mission "), el("b", {}, mission.name));
   fill($("#ask"),
     el("h2", {}, "The ask"),
-    el("h1", {}, el("span", { class: "name" }, mission.name), mission.brief),
+    el("h1", {}, mission.name),
+    el("p", { class: "mv-ask-brief" }, mission.brief),
     el("p", { class: "mv-ask-meta" }, [
       `opened ${fmtTime(mission.created)}`,
       mission.approved ? `approved ${fmtTime(mission.approved)}` : "not approved yet",
@@ -412,14 +421,14 @@ const gateBlocks = () => {
         doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
         el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")));
   }
-  blocks.push(el("section", { class: "panel mv-gate" }, el("h2", {}, "The gate"), ...gate));
+  blocks.push(el("section", { class: "mv-gate" }, el("h2", {}, "The gate"), ...gate));
 
   if (parsed?.contracts?.length) {
-    blocks.push(el("section", { class: "panel" }, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
+    blocks.push(el("section", {}, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
       el("ul", {}, ...parsed.contracts.map((c) => el("li", {}, el("strong", {}, c.name), ` (${c.owner}): ${c.shape}`)))));
   }
   if (parsed?.milestones?.length) {
-    blocks.push(el("section", { class: "panel" }, el("h2", {}, "The plan"),
+    blocks.push(el("section", {}, el("h2", {}, "The plan"),
       ...parsed.milestones.map((m) => el("div", { class: "mv-milestone" },
         el("h3", {}, el("span", {}, `Milestone ${m.n} — ${m.title}`)),
         el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
@@ -428,7 +437,7 @@ const gateBlocks = () => {
           t.needs?.length || t.touches?.length ? el("p", { class: "muted small" }, [t.needs?.length ? `starts after ${t.needs.join(", ")}` : null, t.touches?.length ? `owns ${t.touches.join(", ")}` : null].filter(Boolean).join(" · ")) : null,
           el("p", {}, t.intent)))))));
   } else if (doc.text) {
-    blocks.push(el("section", { class: "panel" }, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
+    blocks.push(el("section", {}, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
   }
   return blocks;
 };
@@ -436,7 +445,7 @@ const gateBlocks = () => {
 /** The interview is a conversation, so its session lives here rather than in a panel over the page. */
 const interviewPanel = () => {
   const host = el("div", { class: "term" });
-  const panel = el("section", { class: "panel mv-interview" },
+  const panel = el("section", { class: "mv-interview" },
     el("h2", {}, "The Strike Lead", el("span", { class: "spacer" }), btn("start a new interview session", () => act("interview", {}, "a new Strike Lead session is open"), "ghost")),
     el("div", { class: "mv-term-well" }, host));
   const gone = () => host.replaceChildren(el("p", { class: "mv-empty" }, "The Strike Lead's session is not running any more: terminals do not survive a restart of the server. Start a new interview above; it opens with the same brief."));

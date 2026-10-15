@@ -1,0 +1,473 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Progress reads itself: milestone 1 walkthrough</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+    --radius:10px; --maxw:1000px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+      --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+      --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+      --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1a1d21; --muted:#5b636c; --faint:#8a929b;
+    --line:#e4e7eb; --line2:#eef1f4; --accent:#0284a8; --accent-soft:#e6f4f9;
+    --good:#1b8a5a; --good-soft:#e7f5ee; --warn:#b26a00; --warn-soft:#fdf3e2;
+    --setup:#6d4bb6; --setup-soft:#f0ebfa; --done:#9aa2ab;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e7eaee; --muted:#9aa3ad; --faint:#6b747e;
+    --line:#262c34; --line2:#1f242b; --accent:#39b6d8; --accent-soft:#123039;
+    --good:#4cc38a; --good-soft:#10281d; --warn:#e0a44a; --warn-soft:#2c2113;
+    --setup:#b79df0; --setup-soft:#211a33; --done:#5b636c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em;
+    background:var(--line2);padding:.08em .38em;border-radius:5px;border:1px solid var(--line);
+    word-break:break-word;}
+  a{color:var(--accent)}
+  pre{overflow-wrap:anywhere}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 120px}
+  header.mast{max-width:var(--maxw);margin:0 auto;padding:36px 20px 20px}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:30px;line-height:1.15;margin:.28em 0 .1em;letter-spacing:-.01em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:15px;max-width:72ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .progwrap{position:sticky;top:0;z-index:20;background:var(--bg);
+    border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:6px}
+  .progrow{max-width:var(--maxw);margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:14px}
+  .bar{flex:1;height:8px;background:var(--line2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s ease}
+  .pct{font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;white-space:nowrap}
+  .tools{display:flex;gap:8px}
+  button.btn{font:inherit;font-size:12.5px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+  button.btn:hover{color:var(--ink);border-color:var(--accent)}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:var(--radius);padding:16px 18px;margin:18px 0}
+  .callout h3{margin:0 0 8px;font-size:15px}
+  .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px;margin-top:4px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px 16px;margin:18px 0 6px}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:28px}
+  @media(max-width:640px){nav.toc ol{columns:1}}
+  nav.toc li{margin:4px 0;break-inside:avoid}
+  nav.toc a{text-decoration:none;color:var(--ink)}
+  nav.toc a:hover{color:var(--accent)}
+  nav.toc .c{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px}
+  section.pillar{margin:30px 0 0}
+  .phead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding:10px 0 8px;border-bottom:2px solid var(--line);position:sticky;top:44px;background:var(--bg);z-index:5}
+  .phead h2{margin:0;font-size:21px;letter-spacing:-.01em}
+  .phead .pc{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .tc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    margin:12px 0;overflow:hidden}
+  .tc-head{display:flex;gap:11px;align-items:flex-start;padding:13px 40px 13px 15px;cursor:pointer;user-select:none;position:relative}
+  .tc-head:after{content:"\25BE";position:absolute;right:15px;top:13px;color:var(--faint);transition:transform .15s}
+  .tc-head:hover:after{color:var(--accent)}
+  .tc.collapsed .tc-head:after{transform:rotate(-90deg)}
+  .tc-title{font-weight:600;font-size:15px;flex:1}
+  .caseid{display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+    font-weight:700;color:var(--muted);background:var(--line2);border:1px solid var(--line);
+    border-radius:5px;padding:0 6px;margin-right:8px;vertical-align:1px}
+  .tc-actions{display:inline-flex;gap:8px;align-items:center;margin-left:auto;flex:none}
+  .verdict{display:inline-flex;gap:3px}
+  .vbtn{font:inherit;font-size:13px;font-weight:800;width:27px;height:24px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--faint);cursor:pointer;line-height:1;padding:0}
+  .vbtn:hover{border-color:var(--accent);color:var(--ink)}
+  .vbtn.v-pass.on{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+  .vbtn.v-partial.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+  .vbtn.v-fail.on{background:#fdecec;border-color:#e0554c;color:#b3261e}
+  :root[data-theme="dark"] .vbtn.v-fail.on{background:#2c1514;color:#f0918a;border-color:#7a3b36}
+  .vbtn.v-blocked.on{background:var(--line2);border-color:var(--faint);color:var(--ink)}
+  .vbtn.v-defer.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .notebtn{font:inherit;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;white-space:nowrap}
+  .notebtn:hover{border-color:var(--accent);color:var(--accent)}
+  .notebtn.has{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .notebtn.sendbtn.sent{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+  .vchip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--setup);
+    background:var(--setup-soft);border:1px solid var(--setup);border-radius:5px;padding:0 5px;margin-left:7px;vertical-align:1px}
+  .notearea{width:100%;font:inherit;font-size:13px;border:1px solid var(--warn);border-radius:7px;padding:7px 9px;margin:0 0 11px;background:var(--warn-soft);color:var(--ink);resize:vertical;box-sizing:border-box}
+  .tc[data-v="pass"]{border-left:3px solid var(--good)}
+  .tc[data-v="partial"]{border-left:3px solid var(--warn)}
+  .tc[data-v="fail"]{border-left:3px solid #d3453b}
+  .tc[data-v="blocked"]{border-left:3px solid var(--faint)}
+  .tc[data-v="defer"]{border-left:3px solid var(--accent)}
+  #breakdown{display:inline-flex;gap:9px;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  #breakdown .p{color:var(--good)} #breakdown .pa{color:var(--warn)} #breakdown .f{color:#d3453b} #breakdown .bl{color:var(--muted)}
+  #barFill{width:100%;height:100%;background:transparent;display:flex}
+  .bar .seg{height:100%;display:block}
+  .bar .seg-pass{background:var(--good)} .bar .seg-partial{background:var(--warn)}
+  .bar .seg-blocked{background:var(--faint)} .bar .seg-fail{background:#d3453b}
+  .progrow.filters{margin-top:9px;gap:8px;flex-wrap:wrap}
+  .flabel{font-size:12.5px;color:var(--muted)} .flabel b{color:var(--ink);font-weight:600}
+  .fchip{font:inherit;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 13px;cursor:pointer;color:var(--muted)}
+  .fchip:hover{border-color:var(--accent)}
+  .fchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .cpanel{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}
+  .cbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(760px,100%);max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+  .chead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+  .chead .csub{color:var(--muted);font-size:12.5px}
+  #compileText{flex:1;min-height:340px;border:0;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);color:var(--ink);resize:none;outline:none}
+  .tc.done .tc-title{color:var(--done);text-decoration:line-through;text-decoration-thickness:1px}
+  .tc-body{padding:0 15px 14px 43px;font-size:14px}
+  .tc.collapsed .tc-body{display:none}
+  .why{color:var(--muted);margin:0 0 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;margin-right:7px;vertical-align:1px}
+  .tag.setup{background:var(--setup-soft);color:var(--setup)}
+  .tag.ask{background:var(--warn-soft);color:var(--warn)}
+  .setup-line{background:var(--setup-soft);border:1px solid var(--line);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .ask-line{background:var(--warn-soft);border:1px solid var(--warn);border-radius:7px;
+    padding:7px 11px;margin:0 0 10px;font-size:13.5px}
+  .auto-note{background:var(--accent-soft);border:1px solid var(--line);border-radius:7px;
+    padding:6px 11px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+  .auto-note b{color:var(--ink)}
+  .hist{background:var(--line2);border:1px solid var(--line);border-left:3px solid var(--faint);
+    border-radius:7px;padding:7px 11px;margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .hist .hr{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:3px}
+  .hist p{margin:0 0 6px}
+  .hist p:last-child{margin-bottom:0}
+  .notearea::placeholder{color:var(--faint)}
+  .fix-note{background:var(--good-soft);border:1px solid var(--good);border-radius:7px;
+    padding:7px 11px;margin:0 0 11px;font-size:12.5px;color:var(--ink)}
+  .fix-note b{color:var(--good)}
+  .fix-note.pending{background:var(--warn-soft);border-color:var(--warn)}
+  .fix-note.pending b{color:var(--warn)}
+  .lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:10px 0 4px}
+  ol.steps{margin:0 0 4px;padding-left:20px} ol.steps li{margin:4px 0}
+  ul.exp{margin:0;padding-left:0;list-style:none}
+  ul.exp li{margin:5px 0;padding-left:22px;position:relative}
+  ul.exp li:before{content:"\2713";position:absolute;left:2px;color:var(--good);font-weight:800}
+  .exp-wrap{background:var(--good-soft);border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin-top:4px}
+  .guide{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--line2);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 12px;font-size:13px}
+  .guide .who b{color:var(--accent)}
+  .guide .sep{color:var(--muted)}
+  .glink{display:inline-flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);
+    border-radius:6px;padding:3px 10px;color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px}
+  .glink:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .glink:before{content:"\2197";font-size:11px}
+  .pswitch{font-weight:650;text-decoration:none;border-bottom:1px dashed currentColor}
+  .pswitch:hover{opacity:.75}
+  @media(max-width:640px){
+    .progrow{flex-wrap:wrap} .tools{flex-wrap:wrap}
+    .tc-head{flex-wrap:wrap} .tc-actions{flex-wrap:wrap;margin-left:0}
+    .tc-body{padding-left:15px}
+  }
+</style>
+
+
+
+
+
+<header class="mast">
+  <div class="eyebrow">Progress reads itself · milestone 1</div>
+  <h1>The ledger says less and the record keeps more</h1>
+  <p class="sub">A pass with notes now writes <code>with N notes carried, M unverified</code> on its ledger line instead of the notes themselves. <code>feedOf</code> reads that line, the old <code>[carried: ...]</code> block and a hand-back's open blockers into <code>counts</code>. The mission view gains <code>moves</code>, one timeline per task per attempt, and a session's summary is held to three bullets with what it wrote kept as <code>raw</code>. The RIO and summary briefs ask for shorter words at the source. Nothing on the page draws any of this yet; that is milestone 2. So this walk is in a terminal, against the real code and the live record, read only.</p>
+  <div class="meta"><span><b>Branch</b> mission/progress-reads-itself</span><span><b>Tasks</b> the ledger line and the feed entry, terse at the source, moves on the view and bullets on the record</span><span><b>Cases</b> 8</span></div>
+</header>
+<div class="progwrap">
+  <div class="progrow">
+    <span class="pct" id="pctText">0 / 0</span>
+    <span id="breakdown"></span>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="tools">
+      <button class="btn" id="compileBtn" style="font-weight:700;color:var(--accent);border-color:var(--accent)">&#128203; Compile findings</button>
+      <button class="btn" id="themeBtn">Theme</button>
+      <button class="btn" id="expandBtn">Collapse all</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div class="progrow filters">
+    <span class="flabel">Show:</span>
+    <button class="fchip on" data-f="all">All</button>
+    <button class="fchip" data-f="work">Needs work</button>
+    <button class="fchip" data-f="notes">Has notes</button>
+    <button class="fchip" data-f="untested">Untested</button>
+  </div>
+</div>
+<div id="compilePanel" class="cpanel" style="display:none">
+  <div class="cbox">
+    <div class="chead"><b>Findings (markdown)</b><span class="csub">paste this back to iterate</span><span style="flex:1"></span>
+      <button class="btn" id="copyBtn">Copy</button><button class="btn" id="closeBtn">Close</button></div>
+    <textarea id="compileText" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="callout">
+    <h3>Before you start: one terminal in the integration worktree</h3>
+    <p>Every command below runs in <code>/Users/coryflynn/Projects/maverick/.claude/worktrees/progress-reads-itself-integration-root</code>. Nothing here starts a server or writes a file outside <code>/tmp</code>: the probes call the merged code directly, and the live ones only read this mission's record and its plan on the mission branch. Leave the server on 8767 alone; it runs main, and this mission's milestone 2 is flying on it.</p>
+<pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px">cd /Users/coryflynn/Projects/maverick/.claude/worktrees/progress-reads-itself-integration-root</pre>
+  </div>
+  <div class="callout">
+    <h3>Known going in</h3>
+    <p>All three tasks passed with notes. These are open; f2 and l2 are where you will meet the first two.</p>
+    <dl class="kv">
+      <dt>wrong old counts</dt><dd>The m1-t3 RIO found that <code>feedOf</code> tries the new <code>with N notes carried</code> pattern before the old <code>[carried: ...]</code> block, unanchored. A block whose prose quotes that phrase is read by the new pattern: wrong count, block left in the text. The RIO saw it on m1-t1; on today's ledger it also hits m1-t3. Its suggested fix: test the block first, or anchor the pattern to the line's own verdict.</dd>
+      <dt>live ledger</dt><dd>The ledger is written by the server on 8767, which runs main. So this mission's own pass lines still end in <code>[carried: ...]</code>, and will until the server runs this code.</dd>
+      <dt>raw fallback</dt><dd>A summary that is only headings or a code block yields no bullet, so <code>summary.text</code> keeps the session's raw words, with no length limit. Disclosed in 48c8f86.</dd>
+      <dt>accepted hand-back</dt><dd>When you accept a handed-back task, its move ends <code>passed</code> but keeps the RIO's <code>fail</code> verdict and blocker count, and the hand-back time is overwritten by the accept time. No test of its own.</dd>
+      <dt>old block, no record</dt><dd>An old <code>[carried: ...]</code> block is counted from the task's record; only when the record has nothing is it split on <code>; </code>, which over-counts a note whose prose holds <code>; </code>.</dd>
+    </dl>
+  </div>
+  <nav class="toc">
+    <ol>
+      <li><a href="#ledger">The ledger says how many</a> <span class="c" id="toc-ledger"></span></li>
+      <li><a href="#feed">The feed reads both shapes</a> <span class="c" id="toc-feed"></span></li>
+      <li><a href="#view">Moves and bullets</a> <span class="c" id="toc-view"></span></li>
+      <li><a href="#done">The milestone's done check</a> <span class="c" id="toc-done"></span></li>
+    </ol>
+  </nav>
+
+  <section class="pillar" id="ledger" data-key="ledger">
+    <div class="phead"><h2>The ledger says how many</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="l1"><div class="tc-head"><span class="tc-title">A pass with notes writes a count, not the notes</span></div><div class="tc-body">
+      <p class="why">This drives the real <code>transitions()</code>, the function the sweep writes ledger lines with, over three tasks moving to passed: one with 10 notes and 1 unverified claim (the done-when's own numbers), one plain pass, and one the merge-with-notes rule settled after its last attempt.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li><pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:0">node --input-type=module -e '
+import { transitions } from "./src/missions.ts";
+const carried = [...Array.from({ length: 10 }, (_, i) =&gt; `NOTE(area${i}, ship): note ${i + 1}.`), "UNVERIFIED(web, check): The page was not loaded."];
+const t = (id, title) =&gt; ({ id, title, status: "reviewing" });
+const before = { milestones: [{ n: 1, tasks: [t("m1-t1", "Walk"), t("m1-t2", "Plain"), t("m1-t3", "Long")] }], log: [] };
+const mission = { milestones: [{ n: 1, tasks: [
+  { id: "m1-t1", title: "Walk", status: "passed", verdict: "pass with notes", carried },
+  { id: "m1-t2", title: "Plain", status: "passed", verdict: "pass" },
+  { id: "m1-t3", title: "Long", status: "passed", verdict: "mixed", note: "the RIO said mixed after 3 attempts with no blocker open", carried: carried.slice(0, 2) },
+] }] };
+for (const line of transitions(before, mission, "2026-10-14 12:00")) console.log(line);'</pre></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>2026-10-14 12:00 m1-t1 Walk: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified</code>, ending exactly there.</li>
+        <li><code>2026-10-14 12:00 m1-t2 Plain: reviewing to passed (RIO: pass)</code>, with no count at all.</li>
+        <li><code>2026-10-14 12:00 auto: m1-t3 Long: reviewing to passed (RIO: mixed) with 2 notes carried: the RIO said mixed after 3 attempts with no blocker open</code>. The count sits right after the verdict, no <code>, 0 unverified</code>, and the note no longer repeats the count (it used to end <code>merged with 2 note(s) carried</code>).</li>
+        <li>No <code>[carried:</code> in any of the three lines.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="l2"><div class="tc-head"><span class="tc-title">This mission's own plan on the mission branch: your call</span></div><div class="tc-body">
+      <p class="setup-line"><span class="tag setup">decide</span>The done-when says "no <code>[carried:</code> anywhere in the plan on the mission branch". Read literally, that can never hold: the plan's own intro, done-when, task brief and contract name <code>[carried:</code>. The log lines are the real test, and they still carry blocks, because the server writing them runs main (see "live ledger"). Pass means the code (l1) is the gate and the live log clears once this merges and the server restarts. Fail means you want the live log clean before milestone 1 counts. Say which in the note.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li><code>git grep -c '\[carried:' mission/progress-reads-itself -- deliverables/missions/progress-reads-itself.md</code></li><li><code>git show mission/progress-reads-itself:deliverables/missions/progress-reads-itself.md | grep -n '^- 2026.*\[carried:' | cut -c1-90</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The count is <code>7</code> (as of 605c2ce; more if a milestone 2 task passes with notes before this code is live).</li>
+        <li>Three of the seven are log lines: the passes of m1-t2 (21:45), m1-t1 (21:48) and m1-t3 (21:58). The other four are lines 3, 7, 15 and 73, the plan's own prose.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="feed" data-key="feed">
+    <div class="phead"><h2>The feed reads both shapes</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="f1"><div class="tc-head"><span class="tc-title">New line, old block and hand-back each come out with counts</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li><pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:0">node --input-type=module -e '
+import { feedOf } from "./src/feed.ts";
+const log = [
+  "2026-10-14 12:00 m1-t1 Walk: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified",
+  "2026-10-09 09:00 m1-t2 Plain: reviewing to passed (RIO: pass with notes) [carried: NOTE: the lock is held too long; NOTE: a log line is noisy; UNVERIFIED: the page was not loaded]",
+  "2026-10-09 09:10 m1-t3 Long: reviewing to handed-back (RIO: fail): the RIO said fail after 3 attempts with 2 blocker(s) open; this one is yours",
+  "2026-10-09 09:20 decision: m1-t3 accepted by Cory with 4 notes carried",
+];
+const mission = { milestones: [{ n: 1, tasks: [{ id: "m1-t1" }, { id: "m1-t2" }, { id: "m1-t3" }] }] };
+for (const e of feedOf(log, mission)) console.log(e.taskId, JSON.stringify(e.counts ?? null), "|", e.text);'</pre></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>m1-t1: <code>{"notes":10,"unverified":1,"blockers":0}</code>, text unchanged.</li>
+        <li>m1-t2: <code>{"notes":2,"unverified":1,"blockers":0}</code>, and the text stops at <code>(RIO: pass with notes)</code>: the block is gone from what the page would show.</li>
+        <li>m1-t3: <code>{"notes":0,"unverified":0,"blockers":2}</code>, text unchanged.</li>
+        <li>The decision line: <code>null</code>. A person's words are never read for counts, even when they look like one.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="f2"><div class="tc-head"><span class="tc-title">This mission's live ledger counts each pass right</span></div><div class="tc-body">
+      <p class="setup-line"><span class="tag ask">expect a fail</span>The RIO predicted this fails (see "wrong old counts"). Run it and mark what you see. The expected below is what the milestone promises, read from the record.</p>
+      <div class="lbl">Steps</div><ol class="steps"><li><pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:0">node --input-type=module -e '
+import { projectById } from "./src/projects.ts";
+import { missionView } from "./src/missions.ts";
+const v = await missionView(await projectById("maverick"), "progress-reads-itself");
+for (const t of v.milestones[0].tasks) console.log("record", t.id, (t.carried ?? []).length, "carried");
+for (const e of v.feed.filter((e) =&gt; e.counts)) console.log("feed  ", e.taskId, JSON.stringify(e.counts), "block left:", e.text.includes("[carried:"));'</pre></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The record says m1-t1 carried 8, m1-t2 8 and m1-t3 9 (one of them unverified on m1-t1 and on m1-t3).</li>
+        <li>The feed should agree: m1-t2 <code>{"notes":8,"unverified":0,...}</code>, m1-t1 <code>{"notes":7,"unverified":1,...}</code>, m1-t3 <code>{"notes":8,"unverified":1,...}</code>, each with <code>block left: false</code>.</li>
+        <li>If m1-t1 or m1-t3 shows <code>{"notes":1,...}</code> and <code>block left: true</code>, that is the known defect: fail it, and the page in milestone 2 would show those numbers and the whole block.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="view" data-key="view">
+    <div class="phead"><h2>Moves and bullets</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="v1"><div class="tc-head"><span class="tc-title">The view has one move per task per attempt, stamped from the ledger</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li><pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:0">node --input-type=module -e '
+import { projectById } from "./src/projects.ts";
+import { missionView } from "./src/missions.ts";
+const v = await missionView(await projectById("maverick"), "progress-reads-itself");
+const hm = (s) =&gt; s?.slice(11, 16) ?? "-";
+console.log(v.moves.length + " moves  (task  attempt  out  built  reviewed  ended  end  verdict)");
+for (const m of v.moves) console.log([m.taskId, "#" + m.attempt, hm(m.out), hm(m.built), hm(m.reviewed), hm(m.ended), m.end ?? "open", m.verdict ?? "-"].join("  "));'</pre></li><li>Hold it against the plan's log: <code>git show mission/progress-reads-itself:deliverables/missions/progress-reads-itself.md | grep '^- 2026' | cut -c1-110</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>7 moves</code> as of 21:59 (more as milestone 2 flies), in plan order:</li>
+        <li><code>m1-t1 #1 21:35 21:39 21:39 21:43 retry -</code> then <code>m1-t1 #2 21:43 21:46 21:46 21:48 passed pass with notes</code></li>
+        <li><code>m1-t2 #1 21:35 21:38 21:38 21:40 retry -</code> then <code>m1-t2 #2 21:40 21:43 21:43 21:45 passed pass with notes</code></li>
+        <li><code>m1-t3 #1 21:48 21:54 21:54 21:58 passed pass with notes</code></li>
+        <li><code>m2-t1 #1 21:59 - - - open -</code> and <code>m2-t4 #1 21:59 - - - open -</code></li>
+        <li>Every stamp matches a log line. A retry is the attempt the next launch took over; it has no verdict because the retry line carries none. Is this the timeline you want the card in milestone 2 drawn from?</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="s1"><div class="tc-head"><span class="tc-title">A wordy summary is held to three bullets</span></div><div class="tc-body">
+      <p class="why">This is the function <code>settleSummary</code> runs on what the summary session wrote, before it stores <code>text</code> (the bullets) and <code>raw</code> (the session's words).</p>
+      <div class="lbl">Steps</div><ol class="steps"><li><pre style="white-space:pre-wrap;font-size:12px;background:var(--line2);border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:0">node --input-type=module -e '
+import { threeBullets } from "./src/summary.ts";
+const wrote = ["# Summary", "", "Here is what you need to know:", "", "1. Fix the retry loop before merge.", "   It never reads attempts.", "2. Check the staging deploy.", "- Ship the sign-in focus fix as is.", "- A fourth thing.", "", "Thanks!"].join("\n");
+console.log(threeBullets(wrote));
+console.log("---");
+console.log(JSON.stringify(threeBullets("Just one paragraph. With two sentences.")));
+console.log(JSON.stringify(threeBullets("```\nline1\nline2\n```")));'</pre></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>Exactly three lines: <code>- Fix the retry loop before merge.</code>, <code>- Check the staging deploy.</code>, <code>- Ship the sign-in focus fix as is.</code> No heading, no lead-in, no fourth bullet, no <code>Thanks!</code>, and the numbered items come out as <code>- </code> bullets.</li>
+        <li>Prose alone gives its first sentence: <code>"- Just one paragraph."</code></li>
+        <li>A code block alone gives <code>""</code>. That is the case where the record keeps the raw text instead (see "raw fallback"); say in a note if you want the first three lines instead.</li>
+      </ul></div></div></div>
+
+    <div class="tc" data-id="s2"><div class="tc-head"><span class="tc-title">The briefs ask for short words at the source</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li><code>node bin/maverick brief deliverables/missions/progress-reads-itself.md m1-t1 --role rio | grep -o 'evidence in under three sentences.\{0,250\}'</code></li><li><code>node --input-type=module -e 'import { summaryBrief } from "./src/briefs.ts"; console.log(summaryBrief({ missionName: "X", report: "r", readings: [], file: "/tmp/s.md" }).split("\n").find((l) =&gt; l.startsWith("Write exactly")))'</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li>The RIO brief says the detail is <code>the evidence in under three sentences</code>, and its examples are shorter: <code>A failed job retries forever.</code>, <code>Focus is lost after sign-in. Called out of scope.</code>, <code>Staging deploy not checked. No credentials here.</code></li>
+        <li>The summary brief says <code>nothing before or after them</code> and <code>Each bullet is under twenty words</code>.</li>
+        <li>Read both as the model that gets them: would they shorten what it writes without losing the evidence? Note any wording that would trip it.</li>
+      </ul></div></div></div>
+  </section>
+
+  <section class="pillar" id="done" data-key="done">
+    <div class="phead"><h2>The milestone's done check</h2><span class="pc"></span></div>
+
+    <div class="tc" data-id="dc1"><div class="tc-head"><span class="tc-title">The suite and lint, run as written</span></div><div class="tc-body">
+      <div class="lbl">Steps</div><ol class="steps"><li><code>npm test 2&gt;&amp;1 | tail -8</code></li><li><code>npm run lint; echo $?</code></li></ol>
+      <div class="lbl">Expected</div><div class="exp-wrap"><ul class="exp">
+        <li><code>npm test</code>: <code># tests 167</code>, <code># pass 167</code>, <code># fail 0</code> (as of 605c2ce).</li>
+        <li>Lint prints nothing past its header and exits <code>0</code>. (It is a syntax pass only; there is no type-check step.)</li>
+        <li>With l1, f1, v1 and s1 passed, this is every line of the done-when, except the two places you decide: l2 and f2.</li>
+      </ul></div></div></div>
+  </section>
+
+</div>
+<script>
+(function(){
+  var KEY="maverick-progress-reads-itself-m1-walkthrough";
+  var VERDS=[["pass","Pass","✓"],["partial","Partial","~"],["fail","Fail","✗"],["blocked","Blocked","⛔"],["defer","Defer","»"]];
+  var state={};
+  try{var sv=JSON.parse(localStorage.getItem(KEY)||"null"); if(sv&&typeof sv==="object")state=sv;}catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  function get(id){var e=state[id]||{};return{v:e.v||"",n:e.n||""};}
+  function put(id,e){if(!e.v&&!(e.n&&e.n.trim()))delete state[id];else state[id]=e;save();}
+  function setV(id,v){var e=get(id);put(id,{v:(e.v===v?"":v),n:e.n});paint(id);render();}
+  function setN(id,n){var e=get(id);put(id,{v:e.v,n:n});paintNote(id);render();}
+  [].forEach.call(document.querySelectorAll('.tc'),function(tc){
+    var id=tc.dataset.id, head=tc.querySelector('.tc-head'), title=tc.querySelector('.tc-title');
+    if(title){var s=document.createElement('span');s.className='caseid';s.textContent=id;title.insertBefore(s,title.firstChild);}
+    var acts=document.createElement('div'); acts.className='tc-actions';
+    var vc=document.createElement('div'); vc.className='verdict';
+    VERDS.forEach(function(vd){
+      var b=document.createElement('button'); b.type='button'; b.className='vbtn v-'+vd[0]; b.dataset.v=vd[0];
+      b.title=vd[1]; b.textContent=vd[2];
+      b.addEventListener('click',function(e){e.stopPropagation();setV(id,vd[0]);});
+      vc.appendChild(b);
+    });
+    var nb=document.createElement('button'); nb.type='button'; nb.className='notebtn'; nb.textContent='+ note';
+    nb.addEventListener('click',function(e){e.stopPropagation();
+      var na=tc.querySelector('.notearea'); na.style.display=(na.style.display==='none')?'':'none';
+      if(na.style.display!=='none'){tc.classList.remove('collapsed'); na.focus();}});
+    var sb=document.createElement('button'); sb.type='button'; sb.className='notebtn sendbtn'; sb.textContent='→ Claude';
+    sb.title='Send this case’s verdict and note to Claude';
+    sb.addEventListener('click',function(e){e.stopPropagation();
+      var st=get(id); sb.disabled=true;
+      fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({caseId:id,caseVersion:1,verdict:st.v,note:st.n.trim()})})
+      .then(function(r){if(!r.ok)throw new Error(r.status);sb.textContent='✓ sent';sb.classList.add('sent');})
+      .catch(function(){sb.textContent='✗ retry';})
+      .then(function(){sb.disabled=false;setTimeout(function(){sb.textContent='→ Claude';sb.classList.remove('sent');},2000);});});
+    acts.appendChild(vc); acts.appendChild(nb); acts.appendChild(sb); head.appendChild(acts);
+    var na=document.createElement('textarea'); na.className='notearea'; na.rows=2;
+    na.placeholder="Note for "+id+": what is wrong, partial or blocked";
+    na.value=get(id).n; na.style.display=get(id).n.trim()?'':'none';
+    na.addEventListener('click',function(e){e.stopPropagation();});
+    na.addEventListener('input',function(){setN(id,na.value);});
+    var body=tc.querySelector('.tc-body'); body.insertBefore(na,body.firstChild);
+    head.addEventListener('click',function(e){
+      if(e.target.closest('.verdict')||e.target.closest('.notebtn'))return;
+      tc.classList.toggle('collapsed');});
+    paint(id);
+  });
+  function paint(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var v=get(id).v;
+    tc.setAttribute('data-v',v);
+    [].forEach.call(tc.querySelectorAll('.vbtn'),function(b){b.classList.toggle('on',b.dataset.v===v);}); paintNote(id);}
+  function paintNote(id){var tc=document.querySelector('.tc[data-id="'+id+'"]'); var has=!!get(id).n.trim();
+    var nb=tc.querySelector('.notebtn:not(.sendbtn)'); nb.classList.toggle('has',has); nb.textContent=has?'📝 note':'+ note';}
+  var FILTER='all';
+  function match(id){var e=get(id);
+    if(FILTER==='work')return e.v==='partial'||e.v==='fail'||e.v==='blocked';
+    if(FILTER==='notes')return !!e.n.trim();
+    if(FILTER==='untested')return !e.v;
+    return true;}
+  function counts(){var c={total:0,reviewed:0,pass:0,partial:0,fail:0,blocked:0,defer:0,notes:0};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var e=get(tc.dataset.id);c.total++;
+      if(e.v){c.reviewed++;c[e.v]++;} if(e.n.trim())c.notes++;}); return c;}
+  function render(){var c=counts();
+    document.getElementById('pctText').textContent=c.reviewed+' / '+c.total;
+    document.getElementById('breakdown').innerHTML='<span class="p">✓'+c.pass+'</span><span class="pa">~'+c.partial+'</span><span class="f">✗'+c.fail+'</span><span class="bl">⛔'+c.blocked+'</span>';
+    var bar=document.getElementById('barFill'), t=c.total||1; bar.innerHTML='';
+    [['pass',c.pass],['partial',c.partial],['blocked',c.blocked],['fail',c.fail],['defer',c.defer]].forEach(function(x){
+      if(x[1]){var seg=document.createElement('i');seg.className='seg seg-'+x[0];seg.style.width=(x[1]/t*100)+'%';bar.appendChild(seg);}});
+    [].forEach.call(document.querySelectorAll('section.pillar'),function(p){
+      var bs=p.querySelectorAll('.tc'),d=0;[].forEach.call(bs,function(tc){if(get(tc.dataset.id).v)d++;});
+      p.querySelector('.phead .pc').textContent=d+' / '+bs.length;
+      var tt=document.getElementById('toc-'+p.dataset.key); if(tt)tt.textContent='('+d+'/'+bs.length+')';});
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){tc.style.display=match(tc.dataset.id)?'':'none';});}
+  function compile(){var g={fail:[],blocked:[],partial:[],defer:[],passn:[],noverdict:[]};
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){var id=tc.dataset.id,e=get(id);
+      var title=tc.querySelector('.tc-title').textContent.replace(id,'').trim();
+      var row={id:id,title:title,n:e.n.trim()};
+      if(e.v==='pass'){if(row.n)g.passn.push(row);}
+      else if(e.v)g[e.v].push(row);
+      else if(row.n)g.noverdict.push(row);});
+    var c=counts();
+    var md='# Progress reads itself, milestone 1 walkthrough: findings\n\nReviewed '+c.reviewed+'/'+c.total+' · ✓'+c.pass+' pass · ~'+c.partial+' partial · ✗'+c.fail+' fail · ⛔'+c.blocked+' blocked · »'+c.defer+' defer · ✎'+c.notes+' noted\n';
+    function S(h,a){if(!a.length)return'';var s='\n## '+h+' ('+a.length+')\n';a.forEach(function(x){s+='- ['+x.id+'] '+x.title+(x.n?': '+x.n:'')+'\n';});return s;}
+    var out=S('✗ Fail',g.fail)+S('⛔ Blocked',g.blocked)+S('~ Partial',g.partial)+S('» Defer',g.defer)+S('✓ Pass (noted)',g.passn)+S('✎ Noted, no verdict',g.noverdict);
+    return md+(out||'\n_No findings recorded._\n');}
+  var eb=document.getElementById('expandBtn'),collapsed=false;
+  eb.addEventListener('click',function(){collapsed=!collapsed;
+    [].forEach.call(document.querySelectorAll('.tc'),function(el){el.classList.toggle('collapsed',collapsed);});
+    eb.textContent=collapsed?'Expand all':'Collapse all';});
+  // Reset asks in the page: the first press arms it, a second within 4 s clears.
+  var rb=document.getElementById('resetBtn'),armed=0;
+  rb.addEventListener('click',function(){
+    if(!armed){rb.textContent='Press again to clear all';armed=setTimeout(function(){armed=0;rb.textContent='Reset';},4000);return;}
+    clearTimeout(armed);armed=0;rb.textContent='Reset';state={};save();
+    [].forEach.call(document.querySelectorAll('.tc'),function(tc){paint(tc.dataset.id);var na=tc.querySelector('.notearea');na.value='';na.style.display='none';});render();});
+  var root=document.documentElement,tkey="maverick-test-theme",tv=null;
+  try{tv=localStorage.getItem(tkey);}catch(e){} if(tv)root.setAttribute('data-theme',tv);
+  document.getElementById('themeBtn').addEventListener('click',function(){var cur=root.getAttribute('data-theme');
+    var next=cur==='dark'?'light':(cur==='light'?'dark':(matchMedia('(prefers-color-scheme: dark)').matches?'light':'dark'));
+    root.setAttribute('data-theme',next);try{localStorage.setItem(tkey,next);}catch(e){}});
+  [].forEach.call(document.querySelectorAll('.fchip'),function(ch){ch.addEventListener('click',function(){
+    FILTER=ch.dataset.f; [].forEach.call(document.querySelectorAll('.fchip'),function(c){c.classList.toggle('on',c===ch);}); render();});});
+  var panel=document.getElementById('compilePanel'),ta=document.getElementById('compileText'),cpy=document.getElementById('copyBtn');
+  document.getElementById('compileBtn').addEventListener('click',function(){ta.value=compile();panel.style.display='flex';ta.focus();ta.select();});
+  document.getElementById('closeBtn').addEventListener('click',function(){panel.style.display='none';});
+  panel.addEventListener('click',function(e){if(e.target===panel)panel.style.display='none';});
+  cpy.addEventListener('click',function(){ta.select();
+    if(navigator.clipboard){navigator.clipboard.writeText(ta.value).then(function(){cpy.textContent='Copied ✓';setTimeout(function(){cpy.textContent='Copy';},1500);});}});
+  render();
+})();
+</script>
