@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
 import { closeTerminal, openTerminal } from "../src/terminal.ts";
@@ -589,6 +589,45 @@ test("missionView carries the word, the questions and the feed read from the led
   assert.equal(view.feed.length, 2, "one entry per line of the ledger's log");
   assert.deepEqual(view.feed.map((e) => [e.at, e.taskId, e.who]), [["2026-10-09T08:00", "m1-t1", "Maverick"], ["2026-10-09T09:00", "m1-t1", "RIO"]]);
   assert.match(view.feed[1].text, /reviewing to passed/);
+});
+
+test("missionView carries one move per attempt: a task over two attempts is two moves with their stamps, the first a retry", async () => {
+  const { project, ledger } = viewFixture("moves");
+  writeFileSync(ledger, FLOWN.replace(/## Log\n[\s\S]*$/, `## Log
+
+- 2026-10-09 08:00 m1-t1 Already passed: pending to flying
+- 2026-10-09 08:05 m1-t2 In review now: pending to flying
+- 2026-10-09 08:20 m1-t2 In review now: flying to built
+- 2026-10-09 08:21 m1-t2 In review now: built to reviewing
+- 2026-10-09 08:30 m1-t2 In review now: reviewing to flying
+- 2026-10-09 08:50 m1-t2 In review now: flying to reviewing
+- 2026-10-09 09:00 m1-t1 Already passed: reviewing to passed (RIO: pass)
+- 2026-10-09 09:10 m1-t2 In review now: reviewing to handed-back (RIO: mixed): 2 blocker(s) open
+`), "utf8");
+  const view = await missionView(project, "moves");
+  assert.deepEqual(view.moves, [
+    { taskId: "m1-t1", title: "Already passed", milestone: 1, attempt: 1, out: "2026-10-09T08:00", ended: "2026-10-09T09:00", end: "passed", verdict: "pass" },
+    { taskId: "m1-t2", title: "In review now", milestone: 1, attempt: 1, out: "2026-10-09T08:05", built: "2026-10-09T08:20", reviewed: "2026-10-09T08:21", ended: "2026-10-09T08:30", end: "retry" },
+    { taskId: "m1-t2", title: "In review now", milestone: 1, attempt: 2, out: "2026-10-09T08:30", built: "2026-10-09T08:50", reviewed: "2026-10-09T08:50", ended: "2026-10-09T09:10", end: "handed-back", verdict: "mixed", counts: { notes: 0, unverified: 0, blockers: 2 } },
+  ], "plan order, then attempt order; the sweep that saw flying to reviewing stamps the hand-off and the review alike");
+});
+
+test("movesOf: a launch after a hand-back opens a new attempt without calling the last a retry, a pass straight from flying stamps the hand-off, and a person's words are not moves", () => {
+  const mission = { milestones: [{ n: 2, tasks: [{ id: "m2-t1", title: "The worker" }] }] } as unknown as Mission;
+  const at = (n: number) => `2026-10-14T10:0${n}`;
+  const moves = movesOf([
+    { at: at(0), kind: "action", who: "Maverick", text: "m2-t1 The worker: pending to flying" },
+    { at: at(1), kind: "question", who: "RIO", text: "m2-t1 The worker: reviewing to handed-back (RIO: fail)", counts: { notes: 0, unverified: 0, blockers: 1 } },
+    { at: at(2), kind: "response", who: "you", text: "m2-t1 The worker: handed-back to flying" },
+    { at: at(3), kind: "action", who: "Maverick", text: "m2-t1 The worker: handed-back to flying" },
+    { at: at(4), kind: "response", who: "RIO", text: "m2-t1 The worker: flying to passed (RIO: pass with notes) with 10 notes carried, 1 unverified", counts: { notes: 10, unverified: 1, blockers: 0 } },
+    { at: at(5), kind: "response", who: "Maverick", text: "m9-t9 Not in the plan: pending to flying" },
+  ], mission);
+  assert.deepEqual(moves.map((m) => [m.attempt, m.out, m.built, m.ended, m.end, m.verdict, m.counts?.notes]), [
+    [1, at(0), undefined, at(1), "handed-back", "fail", 0],
+    [2, at(3), at(4), at(4), "passed", "pass with notes", 10],
+  ]);
+  assert.deepEqual(moves[1].counts, { notes: 10, unverified: 1, blockers: 0 });
 });
 
 test("missionView's word is the word rule's, not the bare status word: a stale escalation on a review mission is done", async () => {

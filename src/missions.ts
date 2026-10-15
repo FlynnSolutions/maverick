@@ -2002,8 +2002,15 @@ const remembered = async (key: string, read: () => Promise<string>, keep: boolea
 /** A finding as the Result section draws it: the record, whose it is, and what Cory did with it. */
 export type Reading = Finding & { key: string; taskId: string; taskTitle: string; milestone: number; state?: "read" | "later" };
 
+/**
+ * One attempt at a task as the ledger tells it: the stamps of its launch (`out`), its hand-off
+ * (`built`), its review starting (`reviewed`) and its end, with how it ended. `retry` is an
+ * attempt the next launch took over. The verdict and counts are the passed or handed-back line's.
+ */
+export type Move = { taskId: string; title: string; milestone: number; attempt: number; out?: string; built?: string; reviewed?: string; ended?: string; end?: "passed" | "handed-back" | "retry"; verdict?: string; counts?: FeedEntry["counts"] };
+
 /** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
-export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[] };
+export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[]; moves: Move[] };
 
 /**
  * A task's findings as keyed records: every carried line, and for a handed-back task its findings
@@ -2154,11 +2161,47 @@ const asked = async (mission: Mission, only?: (task: MissionTask) => boolean, di
   return { findings, diffstat, questions, word: statusWord(mission, questions) };
 };
 
+/** A task's transition in a feed entry's text, as `transitions` writes it: `<id> <title>: <was> to <now>[ (RIO: <verdict>)]`. */
+const MOVED = /^(m\d+-t\d+) .+?: (new|pending|flying|built|reviewing|passed|handed-back) to (pending|flying|built|reviewing|passed|handed-back)(?: \(RIO: ([^)]+)\))?/;
+
+/**
+ * Each task's attempts, read off the feed's transitions. Every move to `flying` is a launch and
+ * opens the next attempt, ending the one before as a `retry` unless it already ended. Leaving
+ * `flying` is the hand-off, whether the sweep saw `built` or went straight on to `reviewing`. A
+ * pass or hand-back ends the attempt with its verdict and counts, and a later pass (Cory accepting
+ * a handed-back task) replaces that end. A person's words are never read as a move. Pure.
+ */
+export const movesOf = (feed: FeedEntry[], mission: Mission): Move[] => {
+  const tasks = mission.milestones.flatMap((m) => m.tasks.map((t) => ({ task: t, milestone: m.n })));
+  const byTask = new Map<string, Move[]>();
+  for (const entry of feed) {
+    const moved = entry.who === "you" ? null : entry.text.match(MOVED);
+    const planned = moved && tasks.find((t) => t.task.id === moved[1]);
+    if (!moved || !planned) continue;
+    const [, taskId, was, now, verdict] = moved;
+    const moves = byTask.get(taskId) ?? [];
+    byTask.set(taskId, moves);
+    const last = moves.at(-1);
+    if (now === "flying") {
+      if (last && !last.end) Object.assign(last, { ended: entry.at, end: "retry" });
+      moves.push({ taskId, title: planned.task.title, milestone: planned.milestone, attempt: moves.length + 1, out: entry.at });
+    } else if (last && (now === "passed" || now === "handed-back")) {
+      if (was === "flying") last.built ??= entry.at;
+      Object.assign(last, { ended: entry.at, end: now }, verdict ? { verdict } : {}, entry.counts ? { counts: entry.counts } : {});
+    } else if (last && !last.end) {
+      if (was === "flying") last.built ??= entry.at;
+      if (now === "reviewing") last.reviewed ??= entry.at;
+    }
+  }
+  return tasks.flatMap((t) => byTask.get(t.task.id) ?? []);
+};
+
 export const missionView = async (project: Project, id: string): Promise<MissionView> => {
   const mission = await missionOr404(project.id, id);
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
-  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed: feedOf(log, mission), readings: readingsOf(mission, findings) };
+  const feed = feedOf(log, mission);
+  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
