@@ -56,8 +56,9 @@ _done when: with the server running, the mission page for `mission-page-and-inbo
 
 - [~] **One column, no boxes**
   - touches: web/mission.css, web/mission.js, web/mission.html
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 7de47c4
   After approval the page's sections are set apart by space, not panels: no `.panel` or background on The ask, Plan, Progress or Result, 48 px between sections, a 15 px section heading. The ask's sentence spans its column (`max-width: 66ch` on the paragraph, none on the heading). Before approval the gate keeps its lifted panel (the one loud thing), and the contracts and the plan-as-written lose theirs. Drop `ship.css` from `mission.html` once nothing on the page uses it, moving the two or three rules the gate still needs into `mission.css`. Render at 1440 and 390 before you stop.
 
 ## Milestone 3 — The decision and the docs
@@ -104,3 +105,4 @@ _done when: `docs/03-decisions.md` carries M22; the data model names `Move` and 
 - 2026-10-14 21:59 m2-t1 The card: pending to flying
 - 2026-10-14 21:59 m2-t4 One column, no boxes: pending to flying
 - 2026-10-14 22:07 m2-t1 The card: flying to reviewing
+- 2026-10-14 22:08 m2-t4 One column, no boxes: flying to reviewing
