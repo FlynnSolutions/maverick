@@ -8,8 +8,9 @@ _done when: `npm test` passes; a task passing with notes writes a ledger line en
 
 - [~] **The ledger line and the feed entry**
   - touches: src/missions.ts, src/feed.ts, test/feed.test.ts, test/missions.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 07677d1
   In `src/missions.ts` `transitions()` (the line builder near `[carried:`), a task that passes with carried notes writes `... (RIO: pass with notes) with N notes carried, M unverified` (omit `, M unverified` when zero) and never the notes themselves; the notes stay on `task.carried` and in the findings file, which the report and the Result already read. A decision line keeps the person's full note (it is their words). In `src/feed.ts`, `FeedEntry` gains `counts?: { notes: number; unverified: number; blockers: number }`: filled from the new line shape, and, for old ledgers, from a trailing `[carried: ...]` block, which is then stripped from `text` (count `unverified:` prefixes and `UNVERIFIED(` leads as unverified). A handed-back line gets `blockers` from the `N blocker(s) open` phrase when present. Tests pin the new line, the old block stripped into counts, and a line with neither.
 
 - [~] **Terse at the source**
@@ -82,3 +83,4 @@ _done when: `docs/03-decisions.md` carries M22; the data model names `Move` and 
 - 2026-10-14 21:35 m1-t1 The ledger line and the feed entry: pending to flying
 - 2026-10-14 21:35 m1-t2 Terse at the source: pending to flying
 - 2026-10-14 21:38 m1-t2 Terse at the source: flying to reviewing
+- 2026-10-14 21:39 m1-t1 The ledger line and the feed entry: flying to reviewing
