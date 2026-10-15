@@ -59,9 +59,9 @@
 .mv-content > section > h2 { font: 600 15px var(--display); letter-spacing: 0.04em; color: var(--ink-faint); margin: 0 0 10px; display: flex; gap: 10px; align-items: baseline; }
 .mv-content > section > h2 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; }
 
-/* The ask: the mission's name and the sentence it was opened with. */
-.mv-ask h1 { margin: 0 0 6px; font: 500 22px/1.35 var(--sans); letter-spacing: -0.01em; color: var(--ink); max-width: 34ch; text-wrap: balance; }
-.mv-ask h1 .name { font-family: var(--display); font-weight: 600; color: var(--ink-soft); margin-right: 10px; }
+/* The ask: the mission's name, and the sentence it was opened with spanning the column. */
+.mv-ask h1 { margin: 0 0 6px; font: 600 22px/1.35 var(--display); letter-spacing: 0.01em; color: var(--ink); }
+.mv-ask .mv-ask-brief { margin: 0 0 8px; font-size: 15px; line-height: 1.55; color: var(--ink); max-width: 66ch; }
 .mv-ask .mv-ask-meta { margin: 0; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
 
 /* Before the blessing the Plan section is the gate and what it is approving, stacked with space

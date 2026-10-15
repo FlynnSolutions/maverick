@@ -330,7 +330,8 @@ const renderAsk = () => {
   $("#crumb").replaceChildren(text("Mission "), el("b", {}, mission.name));
   fill($("#ask"),
     el("h2", {}, "The ask"),
-    el("h1", {}, el("span", { class: "name" }, mission.name), mission.brief),
+    el("h1", {}, mission.name),
+    el("p", { class: "mv-ask-brief" }, mission.brief),
     el("p", { class: "mv-ask-meta" }, [
       `opened ${fmtTime(mission.created)}`,
       mission.approved ? `approved ${fmtTime(mission.approved)}` : "not approved yet",
