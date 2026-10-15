@@ -65,11 +65,18 @@ test("who: you for a decision, the RIO for a verdict, the Wingman for a hand-off
 
 test("the stamp and the mark come off the text, and the stamp becomes the time", () => {
   assert.deepEqual(one("2026-10-09 09:00 auto: m1-t2 The worker: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open"), {
-    at: "2026-10-09T09:00", kind: "response", who: "RIO", text: "m1-t2 The worker: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open", milestone: 1, taskId: "m1-t2", counts: { notes: 1, unverified: 0, blockers: 0 },
+    at: "2026-10-09T09:00", kind: "response", who: "RIO", text: "m1-t2 The worker: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open", milestone: 1, taskId: "m1-t2", move: { taskId: "m1-t2", was: "reviewing", now: "passed", verdict: "mixed" }, counts: { notes: 1, unverified: 0, blockers: 0 },
   });
   assert.deepEqual(one("2026-10-09 09:55 held: milestone 2 (since x): could not land: svc"), { at: "2026-10-09T09:55", kind: "question", who: "Maverick", text: "milestone 2 (since x): could not land: svc", milestone: 2 });
   assert.deepEqual(one("2026-10-09 10:00 decision: resumed by Cory"), { at: "2026-10-09T10:00", kind: "response", who: "you", text: "resumed by Cory" });
   assert.equal(one("2026-10-09T10:00:00.000Z m1-t1 Parse the plan document: reviewing to passed (RIO: pass)").at, "2026-10-09T10:00:00.000Z", "an ISO stamp is kept as it is");
+});
+
+test("the move: a transition's task, states and verdict, and none on a person's words however they read", () => {
+  assert.deepEqual(one("2026-10-09 08:00 m1-t1 Already passed: pending to flying").move, { taskId: "m1-t1", was: "pending", now: "flying" });
+  assert.deepEqual(one("2026-10-09 10:30 m2-t1 The dashboard: built to handed-back (RIO: fail): this one is yours").move, { taskId: "m2-t1", was: "built", now: "handed-back", verdict: "fail" });
+  assert.equal("move" in one("2026-10-09 09:30 decision: m2-t1 The worker: handed-back to flying"), false);
+  assert.equal("move" in one("2026-10-09 09:55 held: milestone 2 (since x): could not land: svc"), false);
 });
 
 test("the milestone and the task: named, else the record's, else the id's", () => {

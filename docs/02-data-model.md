@@ -78,10 +78,10 @@ anywhere bumps the minor, fixes alone bump the patch.
 | Type | Defined in | Shape |
 |---|---|---|
 | `Question` | `src/questions.ts` | `id`, `kind` (`handed-back`, `collision`, `landing`, `proof`, `plan`, `paused`, `gate`), `title`, `body`, `at`, `taskId?`, `milestone?`, `answers[]` |
-| `FeedEntry` | `src/feed.ts` | `at`, `kind` (`thought`, `action`, `question`, `response`, `error`), `who` (`you`, `Maverick`, `Wingman`, `RIO`, `Strike Lead`), `text`, `milestone?`, `taskId?`, `counts?` (`notes`, `unverified`, `blockers`) |
+| `FeedEntry` | `src/feed.ts` | `at`, `kind` (`thought`, `action`, `question`, `response`, `error`), `who` (`you`, `Maverick`, `Wingman`, `RIO`, `Strike Lead`), `text`, `milestone?`, `taskId?`, `move?` (`taskId`, `was`, `now`, `verdict?`: the transition the line records), `counts?` (`notes`, `unverified`, `blockers`) |
 | `StatusWord` | `src/questions.ts` | `working`, `waiting for you`, `error`, `done` |
 | `Finding` | `src/findings.ts` | `kind` (`BLOCKER`, `NOTE`, `UNVERIFIED`), `area`, `severity` (`fix`, `ship`, `check`), `headline`, `detail`, `raw` |
-| `Move` | `src/missions.ts` | `taskId`, `title`, `milestone`, `attempt`, the stamps `out?`, `built?`, `reviewed?`, `ended?`, `end?` (`passed`, `handed-back`, `retry`), `verdict?`, `counts?` (a `FeedEntry`'s) |
+| `Move` | `src/missions.ts` | `taskId`, `attempt`, the stamps `out?`, `built?`, `reviewed?`, `ended?`, `end?` (`passed`, `handed-back`, `retry`), `verdict?`, `counts?` (a `FeedEntry`'s) |
 | `Reading` | `src/missions.ts` | a `Finding` plus `key`, `taskId`, `taskTitle`, `milestone` and `state?` (`read`, `later`) |
 | `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`, `readings`, `moves`: the JSON of `GET /api/missions/:id` and of each stream event |
 | `WorkspaceMission` | `src/missions.ts` | the `Mission` record plus `word`, `questions` and `diffstat` (one `+N −M` line over its merged tasks), as `GET /api/workspace?project=` lists it |

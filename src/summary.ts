@@ -3,19 +3,15 @@
  * brief asks for exactly three; this is the server holding it to that, so a session that adds a
  * heading, a fourth bullet or a paragraph under each still reads as three lines on the page.
  */
+import { LIST_ITEM } from "./audits.ts";
+import { firstSentence } from "./findings.ts";
 
-/** A list item's marker, bulleted or numbered, and the first line of its text. */
-const ITEM = /^((?:[-*+]|\d{1,9}[.)])[ \t]+)(\S.*)$/;
 /** A thematic break: three or more of one of `-`, `*` or `_`, spaces allowed between them. */
 const BREAK = /^([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 /** A setext underline, which turns the paragraph above it into a heading. */
 const UNDERLINE = /^(?:=+|-+)[ \t]*$/;
 /** The opening or closing line of a fenced code block. */
 const FENCE = /^(?:`{3,}|~{3,})/;
-/** The end of a sentence: a full stop, question or exclamation mark before a space or the end. */
-const STOP = /[.!?](?=\s|$)/g;
-/** Abbreviations whose full stop does not end the sentence. */
-const ABBREVIATION = /(?:^|\s)(?:e\.g|i\.e|vs|cf)\.$/i;
 
 /**
  * The first three top-level list items of a markdown text, each cut at its first line, as `- `
@@ -46,8 +42,9 @@ export const threeBullets = (text: string): string => {
     // A top-level line starts within three spaces of the margin, or a single tab in.
     const topLevel = indent <= 3 || /^\t\S/.test(line);
     if (topLevel && BREAK.test(rest)) { itemCol = -1; proseEnded = prose.length > 0; continue; }
-    const item = topLevel ? rest.match(ITEM) : null;
-    if (item) { items.push(item[2].trim()); itemCol = indent + item[1].length; proseEnded = prose.length > 0; continue; }
+    // `rest` has no indent, so the item's text column is the line's indent plus its marker.
+    const item = topLevel ? rest.match(LIST_ITEM) : null;
+    if (item?.[3].trim()) { items.push(item[3].trim()); itemCol = indent + item[2].length; proseEnded = prose.length > 0; continue; }
     // A line straight after an item, with no blank between, is its lazy continuation.
     if (itemCol >= 0 && !wasBlank) continue;
     itemCol = -1;
@@ -68,13 +65,4 @@ const indentOf = (line: string): number => {
     else break;
   }
   return col;
-};
-
-/** The first sentence of a paragraph, past any abbreviation's full stop; the whole of it if none ends. */
-const firstSentence = (text: string): string => {
-  for (const stop of text.matchAll(STOP)) {
-    const upTo = text.slice(0, stop.index + 1);
-    if (!ABBREVIATION.test(upTo)) return upTo;
-  }
-  return text;
 };

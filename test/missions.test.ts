@@ -14,6 +14,7 @@ import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
 import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
+import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
 import { closeTerminal, openTerminal } from "../src/terminal.ts";
 
@@ -606,28 +607,27 @@ test("missionView carries one move per attempt: a task over two attempts is two 
 `), "utf8");
   const view = await missionView(project, "moves");
   assert.deepEqual(view.moves, [
-    { taskId: "m1-t1", title: "Already passed", milestone: 1, attempt: 1, out: "2026-10-09T08:00", ended: "2026-10-09T09:00", end: "passed", verdict: "pass" },
-    { taskId: "m1-t2", title: "In review now", milestone: 1, attempt: 1, out: "2026-10-09T08:05", built: "2026-10-09T08:20", reviewed: "2026-10-09T08:21", ended: "2026-10-09T08:30", end: "retry" },
-    { taskId: "m1-t2", title: "In review now", milestone: 1, attempt: 2, out: "2026-10-09T08:30", built: "2026-10-09T08:50", reviewed: "2026-10-09T08:50", ended: "2026-10-09T09:10", end: "handed-back", verdict: "mixed", counts: { notes: 0, unverified: 0, blockers: 2 } },
+    { taskId: "m1-t1", attempt: 1, out: "2026-10-09T08:00", ended: "2026-10-09T09:00", end: "passed", verdict: "pass" },
+    { taskId: "m1-t2", attempt: 1, out: "2026-10-09T08:05", built: "2026-10-09T08:20", reviewed: "2026-10-09T08:21", ended: "2026-10-09T08:30", end: "retry" },
+    { taskId: "m1-t2", attempt: 2, out: "2026-10-09T08:30", built: "2026-10-09T08:50", reviewed: "2026-10-09T08:50", ended: "2026-10-09T09:10", end: "handed-back", verdict: "mixed", counts: { notes: 0, unverified: 0, blockers: 2 } },
   ], "plan order, then attempt order; the sweep that saw flying to reviewing stamps the hand-off and the review alike");
 });
 
 test("movesOf: a launch after a hand-back opens a new attempt without calling the last a retry, a pass straight from flying stamps the hand-off, and a person's words are not moves", () => {
   const mission = { milestones: [{ n: 2, tasks: [{ id: "m2-t1", title: "The worker" }] }] } as unknown as Mission;
   const at = (n: number) => `2026-10-14T10:0${n}`;
-  const moves = movesOf([
-    { at: at(0), kind: "action", who: "Maverick", text: "m2-t1 The worker: pending to flying" },
-    { at: at(1), kind: "question", who: "RIO", text: "m2-t1 The worker: reviewing to handed-back (RIO: fail)", counts: { notes: 0, unverified: 0, blockers: 1 } },
-    { at: at(2), kind: "response", who: "you", text: "m2-t1 The worker: handed-back to flying" },
-    { at: at(3), kind: "action", who: "Maverick", text: "m2-t1 The worker: handed-back to flying" },
-    { at: at(4), kind: "response", who: "RIO", text: "m2-t1 The worker: flying to passed (RIO: pass with notes) with 10 notes carried, 1 unverified", counts: { notes: 10, unverified: 1, blockers: 0 } },
-    { at: at(5), kind: "response", who: "Maverick", text: "m9-t9 Not in the plan: pending to flying" },
-  ], mission);
-  assert.deepEqual(moves.map((m) => [m.attempt, m.out, m.built, m.ended, m.end, m.verdict, m.counts?.notes]), [
-    [1, at(0), undefined, at(1), "handed-back", "fail", 0],
-    [2, at(3), at(4), at(4), "passed", "pass with notes", 10],
+  const moves = movesOf(feedOf([
+    `${at(0)} m2-t1 The worker: pending to flying`,
+    `${at(1)} m2-t1 The worker: reviewing to handed-back (RIO: fail): the RIO said fail after 1 attempts with 1 blocker(s) open`,
+    `${at(2)} decision: m2-t1 The worker: handed-back to flying`,
+    `${at(3)} m2-t1 The worker: handed-back to flying`,
+    `${at(4)} m2-t1 The worker: flying to passed (RIO: pass with notes) with 10 notes carried, 1 unverified`,
+    `${at(5)} m9-t9 Not in the plan: pending to flying`,
+  ], mission), mission);
+  assert.deepEqual(moves, [
+    { taskId: "m2-t1", attempt: 1, out: at(0), ended: at(1), end: "handed-back", verdict: "fail", counts: { notes: 0, unverified: 0, blockers: 1 } },
+    { taskId: "m2-t1", attempt: 2, out: at(3), built: at(4), ended: at(4), end: "passed", verdict: "pass with notes", counts: { notes: 10, unverified: 1, blockers: 0 } },
   ]);
-  assert.deepEqual(moves[1].counts, { notes: 10, unverified: 1, blockers: 0 });
 });
 
 test("missionView's word is the word rule's, not the bare status word: a stale escalation on a review mission is done", async () => {

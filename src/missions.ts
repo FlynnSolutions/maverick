@@ -39,7 +39,7 @@ import { reportFor } from "./report.ts";
 import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
-import { keyOf, parseFinding, triage, type Finding } from "./findings.ts";
+import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
 export const MAX_ATTEMPTS = 2;
@@ -603,8 +603,8 @@ export const applyPlanState = (text: string, milestones: Milestone[], entries: s
  * findings file, where the report and the Result read them; the ledger says only how many.
  */
 const carriedCounts = (carried: string[]): string => {
-  const unverified = carried.filter((c) => parseFinding(c).kind === "UNVERIFIED").length;
-  return ` with ${carried.length - unverified} notes carried${unverified ? `, ${unverified} unverified` : ""}`;
+  const { notes, unverified } = countCarried(carried);
+  return ` with ${notes} notes carried${unverified ? `, ${unverified} unverified` : ""}`;
 };
 
 /**
@@ -1069,7 +1069,6 @@ const settleSummary = async (mission: Mission, state: Map<string, string>): Prom
   if (!s || !summarizing(mission) || !isOver(state, s.claudeId ?? "", s.started)) return false;
   const file = summaryFile(mission);
   const text = await readFile(file, "utf8").catch(() => null);
-  // Held to three bullets here whatever the session sent; a text with no bullet to take (only a heading or a code block) keeps its own words rather than none.
   const raw = text?.trim();
   if (raw) mission.summary = { at: new Date().toISOString(), text: threeBullets(raw) || raw, raw };
   else s.failed = text === null ? `the session finished without writing ${file}` : `the session wrote an empty ${file}`;
@@ -2010,7 +2009,7 @@ export type Reading = Finding & { key: string; taskId: string; taskTitle: string
  * (`built`), its review starting (`reviewed`) and its end, with how it ended. `retry` is an
  * attempt the next launch took over. The verdict and counts are the passed or handed-back line's.
  */
-export type Move = { taskId: string; title: string; milestone: number; attempt: number; out?: string; built?: string; reviewed?: string; ended?: string; end?: "passed" | "handed-back" | "retry"; verdict?: string; counts?: FeedEntry["counts"] };
+export type Move = { taskId: string; attempt: number; out?: string; built?: string; reviewed?: string; ended?: string; end?: "passed" | "handed-back" | "retry"; verdict?: string; counts?: FeedEntry["counts"] };
 
 /** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
 export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[]; moves: Move[] };
@@ -2164,30 +2163,28 @@ const asked = async (mission: Mission, only?: (task: MissionTask) => boolean, di
   return { findings, diffstat, questions, word: statusWord(mission, questions) };
 };
 
-/** A task's transition in a feed entry's text, as `transitions` writes it: `<id> <title>: <was> to <now>[ (RIO: <verdict>)]`. */
-const MOVED = /^(m\d+-t\d+) .+?: (new|pending|flying|built|reviewing|passed|handed-back) to (pending|flying|built|reviewing|passed|handed-back)(?: \(RIO: ([^)]+)\))?/;
-
 /**
- * Each task's attempts, read off the feed's transitions. Every move to `flying` is a launch and
- * opens the next attempt, ending the one before as a `retry` unless it already ended. Leaving
- * `flying` is the hand-off, whether the sweep saw `built` or went straight on to `reviewing`. A
- * pass or hand-back ends the attempt with its verdict and counts, and a later pass (Cory accepting
- * a handed-back task) replaces that end. A person's words are never read as a move. Pure.
+ * Each task's attempts, read off the feed's transitions (`FeedEntry.move`, which a person's words
+ * never carry). Every move to `flying` is a launch and opens the next attempt, ending the one
+ * before as a `retry` unless it already ended. Leaving `flying` is the hand-off, whether the sweep
+ * saw `built` or went straight on to `reviewing`. A pass or hand-back ends the attempt with its
+ * verdict and counts, and a later pass (Cory accepting a handed-back task) replaces that end. A
+ * task the plan does not hold has no attempts. Pure.
  */
 export const movesOf = (feed: FeedEntry[], mission: Mission): Move[] => {
-  const tasks = mission.milestones.flatMap((m) => m.tasks.map((t) => ({ task: t, milestone: m.n })));
+  const planned = mission.milestones.flatMap((m) => m.tasks.map((t) => t.id));
+  const inPlan = new Set(planned);
   const byTask = new Map<string, Move[]>();
   for (const entry of feed) {
-    const moved = entry.who === "you" ? null : entry.text.match(MOVED);
-    const planned = moved && tasks.find((t) => t.task.id === moved[1]);
-    if (!moved || !planned) continue;
-    const [, taskId, was, now, verdict] = moved;
+    const move = entry.move;
+    if (!move || !inPlan.has(move.taskId)) continue;
+    const { taskId, was, now, verdict } = move;
     const moves = byTask.get(taskId) ?? [];
     byTask.set(taskId, moves);
     const last = moves.at(-1);
     if (now === "flying") {
       if (last && !last.end) Object.assign(last, { ended: entry.at, end: "retry" });
-      moves.push({ taskId, title: planned.task.title, milestone: planned.milestone, attempt: moves.length + 1, out: entry.at });
+      moves.push({ taskId, attempt: moves.length + 1, out: entry.at });
     } else if (last && (now === "passed" || now === "handed-back")) {
       if (was === "flying") last.built ??= entry.at;
       Object.assign(last, { ended: entry.at, end: now }, verdict ? { verdict } : {}, entry.counts ? { counts: entry.counts } : {});
@@ -2196,7 +2193,7 @@ export const movesOf = (feed: FeedEntry[], mission: Mission): Move[] => {
       if (now === "reviewing") last.reviewed ??= entry.at;
     }
   }
-  return tasks.flatMap((t) => byTask.get(t.task.id) ?? []);
+  return planned.flatMap((id) => byTask.get(id) ?? []);
 };
 
 export const missionView = async (project: Project, id: string): Promise<MissionView> => {

@@ -21,17 +21,22 @@ export const areaName = (area: string): string => area.trim().replace(/\/+$/, ""
 /** A line that names its kind: the word, then its parenthetical or its colon. `findingsOf` sorts by this too. */
 export const LEADS_WITH_KIND = /^(BLOCKER|NOTE|UNVERIFIED)\s*[(:]/i;
 
-/** A `. ` that ends a sentence: not the one inside `e.g. `, `i.e. `, `etc. ` or `vs. `. */
-const STOP = /(?<!\b(?:e\.g|i\.e|etc|vs))\. /i;
+/** The end of a sentence: a full stop, question or exclamation mark before whitespace or the end, not the full stop of `e.g.`, `i.e.`, `etc.`, `vs.` or `cf.`. */
+const STOP = /(?<!\b(?:e\.g|i\.e|etc|vs|cf))[.!?](?=\s|$)/i;
+
+/** The first sentence of a text, or the whole of it when none ends. The summary (`src/summary.ts`) reads prose with this too. */
+export const firstSentence = (text: string): string => {
+  const stop = text.search(STOP);
+  return stop >= 0 ? text.slice(0, stop + 1) : text;
+};
 
 /**
- * The first sentence and the rest. A first sentence (or, with no `. `, a whole line) shorter
- * than 120 characters is the headline; a longer one is cut at the last space before 120, and
- * what follows is the detail.
+ * The first sentence and the rest. A first sentence (or, with none, a whole line) shorter than
+ * 120 characters is the headline; a longer one is cut at the last space before 120, and what
+ * follows is the detail.
  */
 const split = (text: string): { headline: string; detail: string } => {
-  const stop = text.search(STOP);
-  const end = stop >= 0 ? stop + 1 : text.length;
+  const end = firstSentence(text).length;
   if (end < HEADLINE_MAX) return { headline: text.slice(0, end), detail: text.slice(end).trim() };
   const space = text.lastIndexOf(" ", HEADLINE_MAX);
   const cut = space > 0 ? space : HEADLINE_MAX;
@@ -62,6 +67,12 @@ export const parseFinding = (line: string): Finding => {
     area = areaName(known ? m[1].slice(0, Math.max(comma, 0)) : m[1]) || "general";
   }
   return { kind, area, severity, ...split(m ? m[2].trim() : raw), raw };
+};
+
+/** How many of a task's carried lines are notes and how many unverified claims, by the kind each names. */
+export const countCarried = (lines: string[]): { notes: number; unverified: number } => {
+  const unverified = lines.filter((l) => parseFinding(l).kind === "UNVERIFIED").length;
+  return { notes: lines.length - unverified, unverified };
 };
 
 /** A finding's name across views: the task it came from and the first 8 hex of the sha1 of its line. */

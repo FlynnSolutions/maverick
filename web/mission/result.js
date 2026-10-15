@@ -3,13 +3,12 @@
 // patches each block in place, so an open report or an armed close survives the stream.
 
 import { render as renderMarkdown } from "../markdown.js";
-import { card } from "../card.js";
+import { card, findingId } from "../card.js";
 
 const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${repo} ${sha}`).join(" · ");
 const needsWalking = (view, m) => Boolean(view.walk?.[m.n]?.needed);
 const walkState = (view, m) => view.walk?.[m.n]?.state ?? "none";
 const branchOf = (view) => (view.repos ?? []).map((r) => r.branch).join(", ") || "the mission branch";
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /* ---------- reading `git diff --stat` ---------- */
 /** Its last line: "3 files changed, 120 insertions(+), 4 deletions(-)". Either count is left out when it is zero. */
@@ -100,8 +99,6 @@ const byArea = (readings) => {
   }
   return [...areas];
 };
-const rowId = (key) => `rd-${key.replace(/[^a-z0-9-]/gi, "-")}`;
-const SEVERITIES = new Set(BUCKETS.map((b) => b.severity));
 
 /* ---------- what I must read: three bullets asked of a read-only session ---------- */
 /** How long a post that came back holds the button before its view lands; a post that failed brings no view. */
@@ -110,11 +107,6 @@ const HOLD_MS = 2000;
 const bulletsOf = (text) => (text ?? "").split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2).trim());
 /** A bullet's title is plain text: the emphasis and code marks a session writes are dropped, not shown. */
 const plain = (md) => md.replace(/\*\*(.+?)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1");
-/** The bucket a bullet names when it leads with it: `fix`, `check` or `ship`, in any case, before any punctuation. */
-const bucketOf = (bullet) => {
-  const word = plain(bullet).match(/^([a-z]+)\b/i)?.[1].toLowerCase();
-  return SEVERITIES.has(word) ? word : null;
-};
 /**
  * Whether a merged-files row draws an area: the file or directory itself, a file inside it, or a
  * folded directory holding it. A plain-name area (`general`, `the sign-in form`) is no path, so
@@ -126,7 +118,7 @@ const draws = (path, area) => {
 };
 
 export const mount = (host, view, ctx) => {
-  const { el, btn, fmtTime, actionUrl, LANDS } = ctx;
+  const { el, btn, fmtTime, plural, actionUrl, LANDS } = ctx;
 
   const count = el("span", { class: "n" });
   const mustAt = el("span", { class: "n" });
@@ -157,10 +149,7 @@ export const mount = (host, view, ctx) => {
     if (state === "written") {
       const bullets = bulletsOf(s.text);
       if (!bullets.length) return [renderMarkdown(s.text, { project: ctx.projectId })];
-      return bullets.map((b, i) => {
-        const bucket = bucketOf(b);
-        return card({ key: `must-${i}`, kind: "bullet", title: plain(b), chips: bucket ? [{ text: bucket, cls: bucket }] : [] }, ctx).node;
-      });
+      return bullets.map((b, i) => card({ key: `must-${i}`, kind: "bullet", title: plain(b) }, ctx).node);
     }
     const [cls, text] = {
       unmerged: ["rs-pending", "Nothing has merged yet. Once a milestone lands, summarize asks a read-only session to read the report and every finding, and write here the three things you must read before you merge."],
@@ -224,7 +213,7 @@ export const mount = (host, view, ctx) => {
   const fileChip = (r) => {
     const chip = el("a", {
       class: `chip ${r.severity}${r.state ? " marked" : ""}`,
-      href: `#${rowId(r.key)}`,
+      href: `#${findingId(r.key)}`,
       title: `${r.kind}: ${r.headline}`,
       onclick: (e) => { e.preventDefault(); reveal(r.key); },
     }, r.severity);
@@ -260,7 +249,7 @@ export const mount = (host, view, ctx) => {
    */
   const rows = new Map();
   const opened = new Map();
-  const whys = new Set();
+  let whys = new Set();
 
   /** A mark is posted and the card waits, disabled, for the view that carries it; a failure is said on the status line and the card goes back to what the view last said. */
   const mark = async (r, state) => {
@@ -293,9 +282,9 @@ export const mount = (host, view, ctx) => {
 
   /**
    * A finding is a card: its severity chip and headline on the head row, the detail folded under
-   * `why`, and the card's own `rd-<key>` id for the chips that link to it. The read box and `later`
-   * are two controls where the card has room for one verb, so they sit in a span of this module's
-   * at the end of the head row, which the card's update never touches.
+   * `why`, and the `rd-<key>` id the chips that link to it carry. The read box and `later` are
+   * two controls where the card has room for one verb, so they sit in a span of this module's at
+   * the end of the head row, which the card's update never touches.
    */
   const drawFinding = (r) => {
     const box = el("input", { type: "checkbox", "aria-label": `read: ${r.headline}`, onchange: () => mark(r, "read") });
@@ -310,13 +299,9 @@ export const mount = (host, view, ctx) => {
       detail: el("span", {}, r.detail || "No detail beyond the headline.", " ", el("span", { class: "t" }, `From ${r.taskTitle}, milestone ${r.milestone}.`)),
       open: whys.has(r.key),
     }, ctx);
+    node.id = findingId(r.key);
     node.tabIndex = -1;
     node.querySelector(".card-head").append(el("span", { class: "rs-marks" }, el("label", { class: "rs-rd" }, box, "read"), slot));
-    /* The fold is the card's; which ones were open is read off it after a click, for the next rebuild. */
-    node.querySelector(".card-toggle").addEventListener("click", () => {
-      if (node.classList.contains("open")) whys.add(r.key);
-      else whys.delete(r.key);
-    });
     rows.set(r.key, { node, box, later, slot, state: null });
     return node;
   };
@@ -335,11 +320,13 @@ export const mount = (host, view, ctx) => {
   };
 
   const drawRead = (readings) => {
+    /* The fold is the card's; which were open is read off the cards about to go, for the ones that come back. */
+    whys = new Set([...rows].filter(([, row]) => row.node.classList.contains("open")).map(([key]) => key));
     rows.clear();
     return BUCKETS.map((b) => drawBucket(b, readings.filter((r) => r.severity === b.severity)));
   };
 
-  /** A chip on a file row leads here: the bucket unfolds and the card takes focus. */
+  /** A chip on a file row, or one of Progress's through the shell, leads here: the bucket unfolds and the card takes focus. */
   const reveal = (key) => {
     const row = rows.get(key);
     if (!row) return;
@@ -485,5 +472,5 @@ export const mount = (host, view, ctx) => {
     patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status)] : null, () => drawGate(v));
   };
   update(view);
-  return { update };
+  return { update, reveal };
 };

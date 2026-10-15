@@ -1,24 +1,18 @@
 /* The card (web/card.js): one surface for a task, a question, a finding and a summary bullet.
    A 40px head row at the line density (13.5px/500), chips on the right, a body that folds.
-   The root carries `.card` and `.mv-card`: the board's `.card` in style.css is a draggable
-   kanban tile, so every rule here is on both classes and outranks it rather than inheriting it. */
+   The root is `.mv-card` and nothing else: the board's `.card` in style.css is a draggable
+   kanban tile, and sharing its name meant outranking every rule it has. */
 
-.card.mv-card {
+.mv-card {
   display: block;
-  margin: 0;
   padding: 0 14px;
   background: var(--steel);
   border-radius: var(--radius-m);
   box-shadow: 0 0 0 1px var(--seam-soft);
-  cursor: auto;
-  animation: none;
-  transition: none;
 }
-.card.mv-card:hover { box-shadow: 0 0 0 1px var(--seam-soft); }
-.card.mv-card + .card.mv-card { margin-top: 16px; }
-.card.mv-card[id] { scroll-margin-top: 90px; }
+.mv-card[id] { scroll-margin-top: 90px; }
 
-/* The head: mark, title, chips, verb, on one x down every card. */
+/* The head: mark, title, chips, on one x down every card. */
 .card-head { display: flex; align-items: center; gap: 12px; min-height: 40px; }
 .card-toggle {
   display: flex; flex: 1 1 auto; align-items: center; gap: 10px; min-width: 0; height: auto; min-height: 40px;
@@ -33,29 +27,30 @@ button.card-toggle:focus-visible { outline: 2px solid var(--accent); outline-off
 .card-mark svg.lamp { width: 14px; height: 14px; }
 .card-glyph { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .card-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A bullet's title is what to read, so it wraps rather than cutting off. */
+.card-bullet .card-title { white-space: normal; }
 .card-why { display: inline-flex; flex: none; align-items: center; gap: 4px; font: 400 12px var(--sans); color: var(--ink-faint); }
-.card-why::after { content: ""; width: 5px; height: 5px; margin-top: -3px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
-.card.mv-card.open .card-why::after { margin-top: 3px; transform: rotate(-135deg); }
 button.card-toggle:hover .card-why { color: var(--ink-soft); }
 
+/* The chevron on anything that folds: the card's `why`, and a `<details>` summary. It points
+   down closed and up open, for the card's `.open` and a details' `[open]` alike. */
+.chev { display: inline-block; width: 5px; height: 5px; margin-top: -3px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.mv-card.open .chev, details[open] > summary .chev { margin-top: 3px; transform: rotate(-135deg); }
+
 .card-chips { display: flex; flex: none; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-.card-chips:empty, .card-act:empty { display: none; }
-.card .card-chips .chip { font-size: 11px; letter-spacing: 0.06em; background: var(--panel); color: var(--ink-soft); }
-.card .card-chips a.chip { text-decoration: none; }
-.card .card-chips a.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card-chips:empty { display: none; }
+.mv-card .chip { font-size: 11px; letter-spacing: 0.06em; background: var(--panel); color: var(--ink-soft); }
+.mv-card a.chip { text-decoration: none; }
+.mv-card a.chip:hover { background: var(--panel); }
+.mv-card a.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* The three severities, outlined in what each asks of you: fix in threat, check in info, ship in
-   caution. Scoped, because `.chip.ship` elsewhere is a release on the calendar. */
-.card .chip.fix, .card .chip.check, .card .chip.ship { background: none; box-shadow: inset 0 0 0 1px currentColor; }
-.card .chip.fix { color: var(--threat); }
-.card .chip.check { color: var(--info); }
-.card .chip.ship { color: var(--caution); }
-.card .card-chips a.chip:hover { background: var(--panel); }
-
-/* The verb: 28px tall, its hit area extended to the full 40px row the way the rack's verbs are. */
-.card-act { flex: none; }
-.card-act button { position: relative; height: 28px; padding: 0 10px; font-size: 12px; }
-.card-act button::after { content: ""; position: absolute; inset: -6px -4px; }
+/* The three severities, wherever the mission page draws one: outlined in what each asks of you,
+   fix in threat, check in info, ship in caution. Scoped to the page, because `.chip.ship`
+   elsewhere is a release on the calendar. */
+.mv-page .chip.fix, .mv-page .chip.check, .mv-page .chip.ship { background: none; box-shadow: inset 0 0 0 1px currentColor; }
+.mv-page .chip.fix { color: var(--threat); }
+.mv-page .chip.check { color: var(--info); }
+.mv-page .chip.ship { color: var(--caution); }
 
 /* The body: the headline under the title's column, the detail under it once opened. 8px between rows. */
 .card-body { display: grid; gap: 8px; padding: 0 0 12px 26px; }
@@ -68,8 +63,5 @@ button.card-toggle:hover .card-why { color: var(--ink-soft); }
   .card-toggle { flex-basis: 100%; padding: 10px 0; }
   .card-title { white-space: normal; }
   .card-chips { justify-content: flex-start; padding-left: 26px; }
-  .card-act { margin-left: auto; }
-  .card-act button { height: 44px; }
-  .card-act button::after { inset: 0; }
   .card-body { padding-left: 0; }
 }

@@ -17,7 +17,7 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime, plural, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
@@ -30,6 +30,11 @@
  *   openSession(taskId, under)   mounts the task's session (its RIO's while it is reviewing,
  *                                its Wingman's otherwise) as a terminal under `under`
  *   fmtTime(iso)                 a clock time, or "" for none
+ *   plural(n, word)              `1 note`, `2 notes`
+ *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
+ *                                Result without `reveal` on its handle makes it a no-op
+ *
+ * A module's handle may carry more than `update`; `reveal(key)` is the one the shell routes.
  */
 
 import { lamp } from "./lamp.js";
@@ -65,6 +70,7 @@ const setStatus = (msg, isError = false) => {
   s.classList.toggle("error", isError);
 };
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
@@ -193,7 +199,9 @@ const LANDS = {
   push: (base) => `${base} is advanced to it and pushed`,
 };
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime };
+const reveal = (key) => mounted.get("result")?.reveal?.(key);
+
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime, plural, reveal };
 
 /* ---------- the rail: one word, four anchors, and the brakes ---------- */
 const WORD = {

@@ -6,10 +6,8 @@
 // raw rows only append, so a half-typed note or an opened fold survives a sweep.
 
 import { answerControls } from "../answers.js";
-import { card } from "../card.js";
-
-/** The task's lamp, as the plan draws it. */
-const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
+import { card, findingId } from "../card.js";
+import { LAMP } from "./plan.js";
 
 /** Lamp by kind, as the mockup draws them, for the raw rows. */
 const lampFor = (ctx, entry) =>
@@ -23,12 +21,9 @@ const VERDICT_CLS = { fail: "fix", mixed: "check", "pass with notes": "ship" };
 
 /** A question's anchor: what a page hash names. */
 const anchorOf = (q) => `q-${q.id}`;
-/** A triage row's id, cut as result.js and card.js cut it. */
-const rowId = (key) => `rd-${String(key).replace(/[^a-z0-9-]/gi, "-")}`;
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export const mount = (host, view, ctx) => {
-  const { el, text, fmtTime } = ctx;
+  const { el, text, fmtTime, plural } = ctx;
   let current = view;
   let shown = 0;
   let lastGroup;
@@ -53,46 +48,44 @@ export const mount = (host, view, ctx) => {
     return el("b", {}, m ? `milestone ${g}, ${m.title}` : `milestone ${g}`);
   };
 
-  /** A block is made when first needed and placed in plan order, the gate first. */
+  /**
+   * A block is made when first needed. The milestones are settled in plan order before any entry
+   * is read, so a new block goes at the end; only the gate, which an entry can name at any time,
+   * goes first.
+   */
   const groupFor = (g) => {
     if (groups.has(g)) return groups.get(g);
     const cards = el("div", { class: "prog-cards" });
     const feed = el("ol", { class: "prog-feed", role: "log", "aria-label": g === "gate" ? "Every move at the gate" : `Every move in milestone ${g}` });
     const label = el("span", {});
-    const moves = el("details", { class: "prog-moves", hidden: true }, el("summary", {}, label), feed);
+    const moves = el("details", { class: "prog-moves", hidden: true }, el("summary", {}, el("span", { class: "chev" }), label), feed);
     const node = el("div", { class: "prog-group" }, el("h3", { class: "prog-group-head" }, groupLabel(g)), cards, moves);
     const group = { g, node, cards, feed, moves, label, n: 0 };
     groups.set(g, group);
-    const order = (x) => (x === "gate" ? -Infinity : x);
-    const after = [...groups.values()].filter((o) => o !== group && order(o.g) > order(g)).sort((a, b) => order(a.g) - order(b.g))[0];
-    board.insertBefore(node, after?.node ?? null);
+    board.insertBefore(node, g === "gate" ? board.firstChild : null);
     return group;
   };
 
   /* ---------- the task cards ---------- */
-  /** Where a chip for this task lands in Result: its first triage row of that severity, else its first row. */
-  const targetOf = (taskId, cls) => {
-    const readings = (current.readings ?? []).filter((r) => r.taskId === taskId);
+  /** Where a chip of one severity lands in Result, given the task's readings: its first card of that severity, else its first card; nothing with none. */
+  const targetOf = (readings, cls) => {
     const r = readings.find((x) => x.severity === cls) ?? readings[0];
-    return r ? rowId(r.key) : null;
+    return r ? `#${findingId(r.key)}` : undefined;
   };
-  const linked = (taskId) => (current.readings ?? []).some((r) => r.taskId === taskId);
 
-  /** The chips of a task's last move: how many attempts, then what its last verdict carried. */
-  const chipsOf = (taskId, moves) => {
-    const last = moves.at(-1);
-    const href = linked(taskId) ? `#rd-${taskId}` : undefined;
-    const c = last?.counts;
+  /** The chips of a task's last move: how many attempts, then what its last verdict carried, each linked to where it is read. */
+  const chipsOf = (moves, readings) => {
+    const c = moves.at(-1)?.counts;
     return [
       moves.length > 1 ? { text: `${moves.length} attempts` } : null,
-      c?.notes ? { text: plural(c.notes, "note"), cls: "ship", href } : null,
-      c?.unverified ? { text: `${c.unverified} unverified`, cls: "check", href } : null,
-      c?.blockers ? { text: c.blockers === 1 ? "blocker" : `${c.blockers} blockers`, cls: "fix", href } : null,
+      c?.notes ? { text: plural(c.notes, "note"), cls: "ship", href: targetOf(readings, "ship") } : null,
+      c?.unverified ? { text: `${c.unverified} unverified`, cls: "check", href: targetOf(readings, "check") } : null,
+      c?.blockers ? { text: plural(c.blockers, "blocker"), cls: "fix", href: targetOf(readings, "fix") } : null,
     ].filter(Boolean);
   };
 
   /** One attempt as a line: `attempt 1 · out 09:42 · built 09:45 · reviewed 09:48 · pass with notes`. */
-  const attemptLine = (taskId, m) => {
+  const attemptLine = (m, href) => {
     const parts = [`attempt ${m.attempt}`];
     if (m.out) parts.push(`out ${fmtTime(m.out)}`);
     if (m.built) parts.push(`built ${fmtTime(m.built)}`);
@@ -102,21 +95,21 @@ export const mount = (host, view, ctx) => {
     else if (m.end === "passed" && !m.verdict) parts.push(`passed ${fmtTime(m.ended)}`);
     const li = el("li", { class: "prog-attempt" }, `${parts.join(" · ")}${m.verdict ? " · " : ""}`);
     if (m.verdict) {
-      const cls = VERDICT_CLS[m.verdict] ?? "";
-      const label = `${m.verdict}, read the triage rows for ${taskId}`;
-      li.append(linked(taskId)
-        ? el("a", { class: `chip ${cls}`.trim(), href: `#rd-${taskId}`, "aria-label": label }, m.verdict)
-        : el("span", { class: `chip ${cls}`.trim() }, m.verdict));
+      const cls = `chip ${VERDICT_CLS[m.verdict] ?? ""}`.trim();
+      li.append(href
+        ? el("a", { class: cls, href, "aria-label": `${m.verdict}, read the findings for ${m.taskId}` }, m.verdict)
+        : el("span", { class: cls }, m.verdict));
     }
     return li;
   };
 
   /** A line is redrawn only when it would read differently; a focused verdict chip keeps its focus. */
-  const patchAttempt = (t, m) => {
-    const key = JSON.stringify([m, linked(m.taskId)]);
+  const patchAttempt = (t, m, readings) => {
+    const href = m.verdict ? targetOf(readings, VERDICT_CLS[m.verdict]) : undefined;
+    const key = JSON.stringify([m, href]);
     const was = t.attempts.get(m.attempt);
     if (was?.key === key) return;
-    const li = attemptLine(m.taskId, m);
+    const li = attemptLine(m, href);
     const focused = was?.li.contains(document.activeElement);
     if (was) was.li.replaceWith(li);
     else t.timeline.append(li);
@@ -124,33 +117,34 @@ export const mount = (host, view, ctx) => {
     if (focused) li.querySelector("a")?.focus({ preventScroll: true });
   };
 
-  const settleTask = (task, milestone, moves) => {
+  /** The card's spec is handed over whole each time; the card touches only what changed in it. */
+  const settleTask = (task, milestone, moves, readings) => {
     let t = tasks.get(task.id);
     if (!t) {
-      const timeline = el("ol", { class: "prog-timeline", "aria-label": `Attempts at ${task.title}` });
-      t = { timeline, attempts: new Map(), shown: "" };
-      t.spec = { key: task.id, kind: "task", title: task.title };
-      t.handle = card(t.spec, ctx);
-      t.handle.node.classList.add("prog-task");
-      t.handle.node.dataset.task = task.id;
-      groupFor(milestone).cards.append(t.handle.node);
+      t = { timeline: el("ol", { class: "prog-timeline", "aria-label": `Attempts at ${task.title}` }), attempts: new Map() };
       tasks.set(task.id, t);
     }
-    for (const m of moves) patchAttempt(t, m);
-    const spec = { key: task.id, kind: "task", lamp: LAMP[task.status] ?? LAMP.pending, title: task.title, chips: chipsOf(task.id, moves), headline: moves.length ? t.timeline : undefined };
-    const shape = JSON.stringify({ ...spec, headline: Boolean(spec.headline) });
-    if (shape === t.shown) return;
-    t.shown = shape;
-    const focused = t.timeline.contains(document.activeElement) ? document.activeElement : null;
-    t.handle.update(spec);
-    focused?.focus({ preventScroll: true });
+    for (const m of moves) patchAttempt(t, m, readings);
+    const spec = { key: task.id, kind: "task", lamp: LAMP[task.status] ?? LAMP.pending, title: task.title, chips: chipsOf(moves, readings), headline: moves.length ? t.timeline : undefined };
+    if (t.handle) return t.handle.update(spec);
+    t.handle = card(spec, ctx);
+    t.handle.node.classList.add("prog-task");
+    t.handle.node.dataset.task = task.id;
+    groupFor(milestone).cards.append(t.handle.node);
   };
 
+  /** Each task's moves and readings are picked out once a tick, not once per card. */
+  const byTask = (list) => {
+    const map = new Map();
+    for (const x of list) map.set(x.taskId, [...(map.get(x.taskId) ?? []), x]);
+    return map;
+  };
   const settleTasks = () => {
-    const moves = current.moves ?? [];
+    const moves = byTask(current.moves ?? []);
+    const readings = byTask(current.readings ?? []);
     for (const m of current.milestones) {
       groupFor(m.n);
-      for (const task of m.tasks) settleTask(task, m.n, moves.filter((x) => x.taskId === task.id));
+      for (const task of m.tasks) settleTask(task, m.n, moves.get(task.id) ?? [], readings.get(task.id) ?? []);
     }
   };
 
@@ -215,11 +209,7 @@ export const mount = (host, view, ctx) => {
     if (!on) {
       const body = el("p", { class: "prog-ask" });
       const answers = controls(q, "");
-      const headline = el("div", {}, body, answers);
-      const handle = card({ key: anchorOf(q), kind: "question", lamp: ["blocked", "work"], title: q.title, headline }, ctx);
-      handle.node.id = anchorOf(q);
-      handle.node.classList.add("prog-q");
-      on = { handle, body, answers, headline, offered: offeredOf(q), shown: "" };
+      on = { body, answers, headline: el("div", {}, body, answers), offered: offeredOf(q) };
       asked.set(q.id, on);
     } else if (on.offered !== offeredOf(q)) {
       const kept = on.answers.querySelector(".mv-note")?.value ?? "";
@@ -229,12 +219,12 @@ export const mount = (host, view, ctx) => {
       on.offered = offeredOf(q);
     }
     on.body.textContent = q.body ?? "";
-    const shape = JSON.stringify([q.title, q.at]);
-    if (shape !== on.shown) {
-      on.shown = shape;
-      const focused = on.headline.contains(document.activeElement) ? document.activeElement : null;
-      on.handle.update({ key: anchorOf(q), kind: "question", lamp: ["blocked", "work"], title: q.title, chips: q.at ? [{ text: fmtTime(q.at) }] : [], headline: on.headline });
-      focused?.focus({ preventScroll: true });
+    const spec = { key: anchorOf(q), kind: "question", lamp: ["blocked", "work"], title: q.title, chips: q.at ? [{ text: fmtTime(q.at) }] : [], headline: on.headline };
+    if (on.handle) on.handle.update(spec);
+    else {
+      on.handle = card(spec, ctx);
+      on.handle.node.id = anchorOf(q);
+      on.handle.node.classList.add("prog-q");
     }
     if (pins.children[i] !== on.handle.node) pins.insertBefore(on.handle.node, pins.children[i] ?? null);
   };
@@ -266,21 +256,18 @@ export const mount = (host, view, ctx) => {
   };
 
   /**
-   * A chip names its task (`#rd-<taskId>`); the row it lands on is that task's first triage row of
-   * the chip's severity in Result, whose bucket is opened if it is folded. The page's hash is left alone.
+   * A chip links to a finding's card in Result (`#rd-<key>`), which may be folded in its bucket,
+   * so Result is asked to reveal it through the shell. The page's hash is left alone. Without
+   * Result to ask, the link is left to the browser.
    */
   host.addEventListener("click", (e) => {
     const chip = e.target.closest?.('a.chip[href^="#rd-"]');
-    if (!chip || !host.contains(chip)) return;
+    if (!chip || !host.contains(chip) || !ctx.reveal) return;
+    const id = chip.getAttribute("href").slice(1);
+    const key = (current.readings ?? []).find((r) => findingId(r.key) === id)?.key;
+    if (!key) return;
     e.preventDefault();
-    const taskId = chip.getAttribute("href").slice(4);
-    const cls = ["fix", "check", "ship"].find((c) => chip.classList.contains(c));
-    const id = targetOf(taskId, cls);
-    const row = (id && document.getElementById(id)) ?? document.getElementById("result");
-    if (!row) return;
-    for (let d = row.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
-    row.scrollIntoView({ block: "center" });
-    row.focus({ preventScroll: true });
+    ctx.reveal(key);
   });
 
   const tick = () => {
