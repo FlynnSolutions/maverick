@@ -78,11 +78,12 @@ anywhere bumps the minor, fixes alone bump the patch.
 | Type | Defined in | Shape |
 |---|---|---|
 | `Question` | `src/questions.ts` | `id`, `kind` (`handed-back`, `collision`, `landing`, `proof`, `plan`, `paused`, `gate`), `title`, `body`, `at`, `taskId?`, `milestone?`, `answers[]` |
-| `FeedEntry` | `src/feed.ts` | `at`, `kind` (`thought`, `action`, `question`, `response`, `error`), `who` (`you`, `Maverick`, `Wingman`, `RIO`, `Strike Lead`), `text`, `milestone?`, `taskId?` |
+| `FeedEntry` | `src/feed.ts` | `at`, `kind` (`thought`, `action`, `question`, `response`, `error`), `who` (`you`, `Maverick`, `Wingman`, `RIO`, `Strike Lead`), `text`, `milestone?`, `taskId?`, `counts?` (`notes`, `unverified`, `blockers`) |
 | `StatusWord` | `src/questions.ts` | `working`, `waiting for you`, `error`, `done` |
 | `Finding` | `src/findings.ts` | `kind` (`BLOCKER`, `NOTE`, `UNVERIFIED`), `area`, `severity` (`fix`, `ship`, `check`), `headline`, `detail`, `raw` |
+| `Move` | `src/missions.ts` | `taskId`, `title`, `milestone`, `attempt`, the stamps `out?`, `built?`, `reviewed?`, `ended?`, `end?` (`passed`, `handed-back`, `retry`), `verdict?`, `counts?` (a `FeedEntry`'s) |
 | `Reading` | `src/missions.ts` | a `Finding` plus `key`, `taskId`, `taskTitle`, `milestone` and `state?` (`read`, `later`) |
-| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`, `readings`: the JSON of `GET /api/missions/:id` and of each stream event |
+| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`, `readings`, `moves`: the JSON of `GET /api/missions/:id` and of each stream event |
 | `WorkspaceMission` | `src/missions.ts` | the `Mission` record plus `word`, `questions` and `diffstat` (one `+N −M` line over its merged tasks), as `GET /api/workspace?project=` lists it |
 
 A question's `id` is stable while the thing it asks about is open: `task:<task id>`,
@@ -93,6 +94,18 @@ answer is primary. Questions come out oldest first, and an ended mission asks no
 
 A feed entry is one line of the ledger's `## Log`, in the ledger's order. A line `src/feed.ts`
 cannot read is still an entry, a `thought` carrying the raw line, never dropped.
+
+`counts` is what a task's line says it carried or left open, absent when it says neither (M22).
+A pass with notes reads it from `with N notes carried[, M unverified]`; an older ledger's
+trailing `[carried: ...]` block is cut from `text` and counted, from the task's `carried` when
+the record has them; a hand-back by the review rule gives `blockers` from `N blocker(s) open`. A
+decision is a person's words and is never counted or cut.
+
+`moves` is one `Move` per task per attempt, in plan order then attempt order, read off the feed
+(`movesOf`). Each launch opens an attempt and ends an unfinished one before it as `retry`;
+leaving `flying` stamps `built`, the move to `reviewing` stamps `reviewed`, and a pass or a
+hand-back ends it with its verdict and counts. A later pass, Cory accepting a handed-back task,
+replaces that end. A person's words are never read as a move.
 
 `word` is `wordFor(mission, questions)`: `waiting for you` exactly when a question is open;
 otherwise `statusWord`'s answer, read as `done` in review or closed and `working` elsewhere when
@@ -113,10 +126,12 @@ What is stored is a person's marks and the summary:
 
 - `MissionTask.readings` is `Record<key, "read" | "later">`, set by the readings route. A mark is
   final. `later` has also put one line under the backlog heading of the project's first tracker.
-- `Mission.summary` is `{ started?, claudeId?, at?, text?, failed? }`. `started` and `claudeId`
-  are the claim on the read-only session asked for it; once that session is over, the sweep
-  reads `<record dir>/<id>-summary.md` (beside the record) and replaces the claim with `at` and
-  `text`, its three bullets, or sets `failed` to why there is none.
+- `Mission.summary` is `{ started?, claudeId?, at?, text?, raw?, failed? }`. `started` and
+  `claudeId` are the claim on the read-only session asked for it; once that session is over, the
+  sweep reads `<record dir>/<id>-summary.md` (beside the record) and replaces the claim with `at`,
+  `text` and `raw`, or sets `failed` to why there is none. `raw` is the session's full text and
+  `text` is `threeBullets(raw)` (`src/summary.ts`), at most three `- ` lines whatever the session
+  wrote, or `raw` itself when `threeBullets` finds nothing to keep (M22).
 
 ## Known limits
 
