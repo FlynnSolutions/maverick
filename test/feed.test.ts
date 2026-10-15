@@ -64,8 +64,8 @@ test("who: you for a decision, the RIO for a verdict, the Wingman for a hand-off
 });
 
 test("the stamp and the mark come off the text, and the stamp becomes the time", () => {
-  assert.deepEqual(one("2026-10-09 09:00 auto: m1-t2 The worker: reviewing to passed (RIO: mixed): the RIO said mixed after 2 attempts with no blocker open; merged with 1 note(s) carried [carried: a stray log line]"), {
-    at: "2026-10-09T09:00", kind: "response", who: "RIO", text: "m1-t2 The worker: reviewing to passed (RIO: mixed): the RIO said mixed after 2 attempts with no blocker open; merged with 1 note(s) carried [carried: a stray log line]", milestone: 1, taskId: "m1-t2",
+  assert.deepEqual(one("2026-10-09 09:00 auto: m1-t2 The worker: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open"), {
+    at: "2026-10-09T09:00", kind: "response", who: "RIO", text: "m1-t2 The worker: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open", milestone: 1, taskId: "m1-t2", counts: { notes: 1, unverified: 0, blockers: 0 },
   });
   assert.deepEqual(one("2026-10-09 09:55 held: milestone 2 (since x): could not land: svc"), { at: "2026-10-09T09:55", kind: "question", who: "Maverick", text: "milestone 2 (since x): could not land: svc", milestone: 2 });
   assert.deepEqual(one("2026-10-09 10:00 decision: resumed by Cory"), { at: "2026-10-09T10:00", kind: "response", who: "you", text: "resumed by Cory" });
@@ -89,4 +89,38 @@ test("a line the parser cannot read is kept, raw, as a thought; the order is the
   assert.deepEqual(feed[2], { at: "", kind: "thought", who: "Maverick", text: "" });
   assert.deepEqual(feed.map((e) => e.at), ["2026-10-09T08:00", "", "", "2026-10-09T09:00"]);
   assert.deepEqual(feedOf([], mission), []);
+});
+
+test("counts: a pass says how many notes it carried, an old ledger's block is read into them and cut, a hand-back says its blockers", () => {
+  const counted = one("2026-10-14 10:00 m1-t1 Parse the plan document: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified");
+  assert.deepEqual(counted.counts, { notes: 10, unverified: 1, blockers: 0 });
+  assert.equal(counted.text, "m1-t1 Parse the plan document: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified", "the new line is kept as written");
+  assert.deepEqual(one("2026-10-14 10:00 m1-t1 Parse the plan document: reviewing to passed (RIO: pass with notes) with 2 notes carried").counts, { notes: 2, unverified: 0, blockers: 0 }, "no unverified clause is none unverified");
+
+  const old = one("2026-10-09 09:00 auto: m1-t2 The worker: reviewing to passed (RIO: mixed): the RIO said mixed after 2 attempts with no blocker open; merged with 4 note(s) carried [carried: NOTE(web/signin, ship): focus is lost; unverified: the migration was not run; UNVERIFIED(deploy, check): not deployed; a stray log line]");
+  assert.deepEqual(old.counts, { notes: 2, unverified: 2, blockers: 0 }, "an `unverified:` prefix and an `UNVERIFIED(` lead both count as unverified");
+  assert.equal(old.text, "m1-t2 The worker: reviewing to passed (RIO: mixed): the RIO said mixed after 2 attempts with no blocker open; merged with 4 note(s) carried", "the notes themselves are off the text");
+  assert.equal(old.kind, "response");
+
+  assert.deepEqual(one("2026-10-09 10:30 m2-t1 The dashboard: built to handed-back (RIO: fail): the RIO said fail after 2 attempts with 3 blocker(s) open; this one is yours").counts, { notes: 0, unverified: 0, blockers: 3 });
+
+  for (const line of [
+    "2026-10-09 10:00 m1-t1 Parse the plan document: reviewing to passed (RIO: pass)",
+    "2026-10-09 10:31 m1-t2 The worker: pending to handed-back: could not launch: no such branch",
+    "2026-10-09 08:00 m1-t1 Already passed: pending to flying",
+  ]) assert.equal("counts" in one(line), false, `a line that says neither has no counts: ${line}`);
+
+  const said = one("2026-10-09 09:30 decision: m2-t1 accepted by Cory over the RIO: the 2 blocker(s) open are fine [carried: my words, kept]");
+  assert.equal(said.text, "m2-t1 accepted by Cory over the RIO: the 2 blocker(s) open are fine [carried: my words, kept]", "a decision is his words, kept whole");
+  assert.equal("counts" in said, false);
+});
+
+test("counts: an old block's notes hold `; ` themselves, so the record's carried list is counted, and the split only without one", () => {
+  const carried = ["the poll runs twice; the second is a no-op. Harmless.", "UNVERIFIED(deploy, check): not deployed; nobody ran it", "focus is lost on close; tab order is fine"];
+  const recorded = { ...mission, milestones: [{ ...mission.milestones[0], tasks: [{ ...mission.milestones[0].tasks[0], carried }] }] } as unknown as Mission;
+  const line = `2026-10-09 09:00 m1-t1 Parse the plan document: reviewing to passed (RIO: pass with notes) [carried: ${carried.join("; ")}]`;
+  const [entry] = feedOf([line], recorded);
+  assert.deepEqual(entry.counts, { notes: 2, unverified: 1, blockers: 0 }, "three lines carried, not the six pieces a split on `; ` makes");
+  assert.equal(entry.text, "m1-t1 Parse the plan document: reviewing to passed (RIO: pass with notes)", "the block is still cut");
+  assert.deepEqual(one(line).counts, { notes: 5, unverified: 1, blockers: 0 }, "no record for the task: the split is all there is");
 });
