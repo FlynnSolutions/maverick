@@ -5,6 +5,7 @@
  * carrying the raw line, never dropped, so the page shows what the file says even when the
  * file says something new.
  */
+import { parseFinding } from "./findings.ts";
 import type { Mission } from "./missions.ts";
 
 export interface FeedEntry {
@@ -14,6 +15,8 @@ export interface FeedEntry {
   text: string;
   milestone?: number;
   taskId?: string;
+  /** What a pass carried or a hand-back left open, counted from the line; absent when it says neither. */
+  counts?: { notes: number; unverified: number; blockers: number };
 }
 
 /** `2026-10-09 09:00` as `syncPlan` stamps it, or a full ISO time; either way `at` comes out as ISO, local when the stamp carries no zone. */
@@ -25,6 +28,12 @@ const TRANSITION = /^(m\d+-t\d+) .+?: (new|pending|flying|built|reviewing|passed
 const VERDICT = /\(RIO: (pass with notes|pass|fail|mixed)\)/;
 const TASK = /\b(m(\d+)-t\d+)\b/;
 const MILESTONE = /\bmilestone (\d+)\b/;
+/** A pass with notes, as `transitions` writes it now: `(RIO: <verdict>) with N notes carried[, M unverified]`. */
+const CARRIED = /\) with (\d+) notes carried(?:, (\d+) unverified)?/;
+/** A pass with notes in an older ledger: the notes themselves, `; `-joined in a block at the end. */
+const CARRIED_BLOCK = / \[carried: (.*)\]$/;
+/** A hand-back by the review rule says how many blockers it left open. */
+const BLOCKERS = /\b(\d+) blocker\(s\) open\b/;
 
 const kindOf = (mark: string | undefined, text: string): FeedEntry["kind"] => {
   if (mark === "decision") return "response";
@@ -61,6 +70,26 @@ const milestoneOf = (text: string, taskId: string | undefined, mission: Mission)
   return mission.milestones.find((m) => m.tasks.some((t) => t.id === taskId))?.n ?? Number(taskId.match(TASK)![2]);
 };
 
+/**
+ * The counts a task's line carries, and its text with an older ledger's `[carried: ...]` block
+ * taken off, so the page shows how many rather than the notes. A decision is a person's words
+ * and is never read for counts or cut.
+ */
+const countsOf = (mark: string | undefined, text: string): { text: string; counts?: FeedEntry["counts"] } => {
+  if (mark === "decision") return { text };
+  const counted = text.match(CARRIED);
+  if (counted) return { text, counts: { notes: Number(counted[1]), unverified: Number(counted[2] ?? 0), blockers: 0 } };
+  const block = text.match(CARRIED_BLOCK);
+  if (block) {
+    const lines = block[1].split("; ");
+    const unverified = lines.filter((l) => parseFinding(l).kind === "UNVERIFIED").length;
+    return { text: text.slice(0, block.index), counts: { notes: lines.length - unverified, unverified, blockers: 0 } };
+  }
+  const open = text.match(TRANSITION)?.[3] === "handed-back" ? text.match(BLOCKERS) : null;
+  if (open) return { text, counts: { notes: 0, unverified: 0, blockers: Number(open[1]) } };
+  return { text };
+};
+
 /** The ledger's lines as feed entries, in the ledger's order. Pure. */
 export const feedOf = (log: string[], mission: Mission): FeedEntry[] => log.map((line) => {
   const stamped = line.match(STAMPED);
@@ -68,8 +97,8 @@ export const feedOf = (log: string[], mission: Mission): FeedEntry[] => log.map(
   const [, day, time, rest] = stamped;
   const marked = rest.match(MARKED);
   const mark = marked?.[1];
-  const text = marked ? marked[2] : rest;
+  const { text, counts } = countsOf(mark, marked ? marked[2] : rest);
   const taskId = text.match(TASK)?.[1];
   const milestone = milestoneOf(text, taskId, mission);
-  return { at: `${day}T${time}`, kind: kindOf(mark, text), who: whoOf(mark, text), text, ...(milestone !== undefined ? { milestone } : {}), ...(taskId ? { taskId } : {}) };
+  return { at: `${day}T${time}`, kind: kindOf(mark, text), who: whoOf(mark, text), text, ...(milestone !== undefined ? { milestone } : {}), ...(taskId ? { taskId } : {}), ...(counts ? { counts } : {}) };
 });
