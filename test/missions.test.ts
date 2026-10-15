@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
 import { closeTerminal, openTerminal } from "../src/terminal.ts";
@@ -216,6 +216,22 @@ test("the plan on the mission branch is the ledger: parsePlan reads the state an
   assert.equal(reviewing.intent, "Build the second thing.");
   assert.equal(plan.log.length, 2);
   assert.match(plan.log[1], /reviewing to passed/);
+});
+
+test("a pass with notes writes how many it carried to the ledger, never the notes", () => {
+  const before = parsePlan(FLOWN, ["root"]);
+  const notes = Array.from({ length: 10 }, (_, i) => `NOTE(src/x, ship): note ${i}; with a semicolon`);
+  const task = (carried: string[], patch: Partial<MissionTask> = {}) => ({ milestones: [{ n: 1, title: "the first", done: "d", tasks: [
+    { ...before.milestones[0].tasks[0] },
+    { ...before.milestones[0].tasks[1], id: "m1-t2", title: "In review now", status: "passed", verdict: "pass with notes", carried, ...patch }] }] }) as unknown as Mission;
+  const [line] = transitions(before, task([...notes, "unverified: the deploy"]), "2026-10-14 10:00");
+  assert.equal(line, "2026-10-14 10:00 m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified");
+  assert.equal(transitions(before, task(notes.slice(0, 2)), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 2 notes carried", "no unverified clause when none is");
+  assert.equal(transitions(before, task(["UNVERIFIED(deploy, check): not deployed"]), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass with notes) with 0 notes carried, 1 unverified");
+  const auto = transitions(before, task(["NOTE: a"], { verdict: "mixed", note: "the RIO said mixed after 2 attempts with no blocker open; merged with 1 note(s) carried" }), "s")[0];
+  assert.equal(auto, "s auto: m1-t2 In review now: reviewing to passed (RIO: mixed) with 1 notes carried: the RIO said mixed after 2 attempts with no blocker open; merged with 1 note(s) carried");
+  assert.equal(transitions(before, task([], { verdict: "pass" }), "s")[0], "s m1-t2 In review now: reviewing to passed (RIO: pass)", "nothing carried, nothing counted");
+  assert.doesNotMatch(applyPlanState(FLOWN, task(notes).milestones, [line]), /\[carried:|note 3/);
 });
 
 test("a state the ledger cannot have is a problem, not a guess", () => {
