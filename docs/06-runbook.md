@@ -146,6 +146,24 @@ whether it was also typed into the Strike Lead's terminal, which happens only wh
 is open. An empty reply is a 400; a reply with neither a ledger nor an open terminal to land in
 is an error, not an ok.
 
+## Read the ledger
+
+The plan on the mission branch ends in a `## Log`, one bullet per move, only ever appended to
+(M18). A task that passes with notes says how many, never what (M22):
+
+```
+- 2026-10-14 09:48 m1-t1 The ledger line and the feed entry: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified
+```
+
+`, <M> unverified` is left off when there are none, and a plain pass ends at its verdict. The
+notes themselves are on the task's `carried` in the record and in its RIO's findings file; the
+report and the Result read them there. A decision line keeps the person's whole note.
+A hand-back by the review rule ends `with <N> blocker(s) open; this one is yours`.
+
+A ledger written before this still reads: a pass line ending in a `[carried: <note>; <note>]`
+block shows on the page as the same counts, with the block cut off. Nothing rewrites the old
+file, so the block is still there when you open it.
+
 ## Read the result
 
 The Result section is the mission's findings in three buckets (M21): Fix before merge,
@@ -172,8 +190,10 @@ curl -s -X POST "http://localhost:8766/api/missions/<id>/summarize?project=<proj
 It answers the mission with `summary.started` set, and spawns one session as the `rioAgent`
 with the RIO's tool list (no Edit or Write), briefed with the report and the readings. That
 session writes three bullets to `<record dir>/<id>-summary.md`, beside the record in `console-sessions/missions/<project>/`;
-the sweep reads it once the session is over and the record carries `summary: { at, text }`, or
-`summary.failed` with why. It is refused while nothing has merged and while a summary is already
+the sweep reads it once the session is over and the record carries `summary: { at, text, raw }`,
+or `summary.failed` with why. The summary is three bullets by rule (M22): the brief asks for
+exactly three, each under twenty words, and `text` keeps only the first three list items of what
+the session wrote, each cut at its first line, whatever it sent; `raw` is the whole of it. It is refused while nothing has merged and while a summary is already
 running. A summary asked again replaces the last one.
 
 **The notification** comes from the app, not the server: `app/main.mjs` polls
