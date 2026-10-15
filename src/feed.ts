@@ -73,15 +73,19 @@ const milestoneOf = (text: string, taskId: string | undefined, mission: Mission)
 /**
  * The counts a task's line carries, and its text with an older ledger's `[carried: ...]` block
  * taken off, so the page shows how many rather than the notes. A decision is a person's words
- * and is never read for counts or cut.
+ * and is never read for counts or cut. An old block's notes are prose that holds `; ` itself, so
+ * the block is counted from the record's `task.carried` (final once the task passed), and split
+ * on `; ` only when the record has nothing for the task.
  */
-const countsOf = (mark: string | undefined, text: string): { text: string; counts?: FeedEntry["counts"] } => {
+const countsOf = (mark: string | undefined, text: string, mission: Mission): { text: string; counts?: FeedEntry["counts"] } => {
   if (mark === "decision") return { text };
   const counted = text.match(CARRIED);
   if (counted) return { text, counts: { notes: Number(counted[1]), unverified: Number(counted[2] ?? 0), blockers: 0 } };
   const block = text.match(CARRIED_BLOCK);
   if (block) {
-    const lines = block[1].split("; ");
+    const taskId = text.match(TASK)?.[1];
+    const recorded = mission.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId)?.carried;
+    const lines = recorded?.length ? recorded : block[1].split("; ");
     const unverified = lines.filter((l) => parseFinding(l).kind === "UNVERIFIED").length;
     return { text: text.slice(0, block.index), counts: { notes: lines.length - unverified, unverified, blockers: 0 } };
   }
@@ -97,7 +101,7 @@ export const feedOf = (log: string[], mission: Mission): FeedEntry[] => log.map(
   const [, day, time, rest] = stamped;
   const marked = rest.match(MARKED);
   const mark = marked?.[1];
-  const { text, counts } = countsOf(mark, marked ? marked[2] : rest);
+  const { text, counts } = countsOf(mark, marked ? marked[2] : rest, mission);
   const taskId = text.match(TASK)?.[1];
   const milestone = milestoneOf(text, taskId, mission);
   return { at: `${day}T${time}`, kind: kindOf(mark, text), who: whoOf(mark, text), text, ...(milestone !== undefined ? { milestone } : {}), ...(taskId ? { taskId } : {}), ...(counts ? { counts } : {}) };
