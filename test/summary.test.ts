@@ -46,3 +46,27 @@ test("an empty text is an empty string", () => {
   assert.equal(threeBullets(""), "");
   assert.equal(threeBullets("  \n\n"), "");
 });
+
+test("a list indented up to three spaces or one tab is still top level, and its nested items are not", () => {
+  assert.equal(threeBullets(" - One.\n - Two.\n - Three."), "- One.\n- Two.\n- Three.");
+  assert.equal(threeBullets("   1. One.\n   2. Two.\n   3. Three."), "- One.\n- Two.\n- Three.");
+  assert.equal(threeBullets("\t- One.\n\t- Two.\n\t- Three."), "- One.\n- Two.\n- Three.");
+  assert.equal(threeBullets(" - One.\n   - nested under one\n - Two."), "- One.\n- Two.");
+});
+
+test("breaks, code fences and headings are not bullets", () => {
+  assert.equal(threeBullets("---"), "");
+  assert.equal(threeBullets("* * *"), "");
+  assert.equal(threeBullets("```\n- not a bullet\n```\n- A real one."), "- A real one.");
+  assert.equal(threeBullets("Summary\n===\n\n- One.\n\nAll fine."), "- One.\n- All fine.");
+  assert.equal(threeBullets("Summary\n---\n- One."), "- One.");
+});
+
+test("a lead-in that ends in a colon is not topped up as a bullet", () => {
+  assert.equal(threeBullets("Here are the three things:\n- a\n- b"), "- a\n- b");
+});
+
+test("a sentence runs past an abbreviation, and lone carriage returns still split lines", () => {
+  assert.equal(threeBullets("The worker e.g. retries forever. Then stops."), "- The worker e.g. retries forever.");
+  assert.equal(threeBullets("- One.\r- Two.\r- Three."), "- One.\n- Two.\n- Three.");
+});
