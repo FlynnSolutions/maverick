@@ -38,6 +38,7 @@ import { parseRequirements, preflight, refuses, type Check, type Requirement } f
 import { reportFor } from "./report.ts";
 import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, type FeedEntry } from "./feed.ts";
+import { threeBullets } from "./summary.ts";
 import { keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
@@ -229,8 +230,8 @@ export interface Mission {
   trouble?: string;
   /** Why a person paused the mission; the pause's own line, apart from whatever else is open. */
   pausedFor?: string;
-  /** The three bullets Cory must read, asked of a read-only session: running while `started` has neither `at` nor `failed`. */
-  summary?: { started?: string; claudeId?: string; at?: string; text?: string; failed?: string };
+  /** The three bullets Cory must read, asked of a read-only session: running while `started` has neither `at` nor `failed`. `raw` is what the session wrote, before it was held to three. */
+  summary?: { started?: string; claudeId?: string; at?: string; text?: string; raw?: string; failed?: string };
 }
 
 /* ---------- storage ---------- */
@@ -1068,7 +1069,9 @@ const settleSummary = async (mission: Mission, state: Map<string, string>): Prom
   if (!s || !summarizing(mission) || !isOver(state, s.claudeId ?? "", s.started)) return false;
   const file = summaryFile(mission);
   const text = await readFile(file, "utf8").catch(() => null);
-  if (text?.trim()) mission.summary = { at: new Date().toISOString(), text: text.trim() };
+  // Held to three bullets here whatever the session sent; a text with no bullet to take (only a heading or a code block) keeps its own words rather than none.
+  const raw = text?.trim();
+  if (raw) mission.summary = { at: new Date().toISOString(), text: threeBullets(raw) || raw, raw };
   else s.failed = text === null ? `the session finished without writing ${file}` : `the session wrote an empty ${file}`;
   return true;
 };

@@ -888,14 +888,38 @@ test("the sweep reads the summary once its session has ended, and the view carri
   agentsSay([{ id: summary!.claudeId!, state: "done" }]);
   await sweepMissions(project);
   const landed = recordOf("landed").summary!;
-  assert.deepEqual(Object.keys(landed).sort(), ["at", "text"]);
+  assert.deepEqual(Object.keys(landed).sort(), ["at", "raw", "text"]);
   assert.equal(landed.text, bullets.trim());
+  assert.equal(landed.raw, bullets.trim());
   assert.ok(!Number.isNaN(Date.parse(landed.at!)));
   const view = await missionView(project, "landed");
   assert.deepEqual(view.summary, landed);
   assert.equal(view.summaryState, "written", "the view says where the summary stands, so the page does not work it out again");
   const again = await summarizeMission(project, "landed");
   assert.ok(again.summary?.started && !again.summary.at, "a landed summary can be asked for again");
+});
+
+test("a summary file with five bullets lands as three, and the record keeps all five as raw", async () => {
+  const { project, file } = summaryFixture("five");
+  const { summary } = await summarizeMission(project, "five");
+  const five = "# Summary\n\n- Fix the sign-in page.\n- Nobody checked the deploy.\n- The worker is safe.\n- The docs are thin.\n- The tests are slow.\n";
+  writeFileSync(file, five, "utf8");
+  agentsSay([{ id: summary!.claudeId!, state: "done" }]);
+  await sweepMissions(project);
+  const landed = recordOf("five").summary!;
+  assert.equal(landed.text, "- Fix the sign-in page.\n- Nobody checked the deploy.\n- The worker is safe.");
+  assert.equal(landed.raw, five.trim());
+});
+
+test("a summary file with nothing to make a bullet of keeps the session's words as its text, never an empty summary", async () => {
+  const { project, file } = summaryFixture("headed");
+  const { summary } = await summarizeMission(project, "headed");
+  writeFileSync(file, "Summary\n=======\n", "utf8");
+  agentsSay([{ id: summary!.claudeId!, state: "done" }]);
+  await sweepMissions(project);
+  const landed = recordOf("headed").summary!;
+  assert.equal(landed.text, "Summary\n=======");
+  assert.equal(landed.raw, landed.text);
 });
 
 test("a summarizer that ends without its file is a failed summary with the reason, and the button is live again", async () => {
