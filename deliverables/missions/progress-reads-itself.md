@@ -15,9 +15,8 @@ _done when: `npm test` passes; a task passing with notes writes a ledger line en
 
 - [~] **Terse at the source**
   - touches: src/briefs.ts, src/summary.ts, test/briefs.test.ts, test/summary.test.ts
-  - status: reviewing
-  - attempt: 1
-  - commit: a1fb05c
+  - status: flying
+  - attempt: 2
   `src/briefs.ts`: the RIO brief's finding-format line gains the length rule, headline under fifteen words and detail under three sentences, with the example trimmed to match; `summaryBrief` asks for exactly three bullets, each under twenty words, naming the area in plain words, and nothing before or after them. `src/summary.ts`, pure: `threeBullets(text: string): string` keeps the first three top-level list items of a markdown text (bullets or numbered), each cut at its first line, and returns them as three `- ` lines; a text with fewer than three list items is returned as its list items plus the first sentence of any prose as a bullet, never more than three. `test/summary.test.ts` pins the cut, a numbered list, prose only, and an empty text (empty string back). `test/briefs.test.ts` pins both rules.
 
 - [ ] **Moves on the view, bullets on the record**
@@ -84,3 +83,4 @@ _done when: `docs/03-decisions.md` carries M22; the data model names `Move` and 
 - 2026-10-14 21:35 m1-t2 Terse at the source: pending to flying
 - 2026-10-14 21:38 m1-t2 Terse at the source: flying to reviewing
 - 2026-10-14 21:39 m1-t1 The ledger line and the feed entry: flying to reviewing
+- 2026-10-14 21:40 m1-t2 Terse at the source: reviewing to flying
