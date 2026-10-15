@@ -423,6 +423,16 @@ format: checklist
 
 ## 📋 Backlog
 
+- [ ] `[ENG]` `[M]` **High-quality animation and toasts, in the design skill and in every UI mission**
+  - created: 2026-10-15
+  - source: Cory, after the three UI missions of 2026-10-14
+  - kind: feature
+  Three missions shipped lamps and folds but no authored motion and no toast: status still lands in a
+  bar line. The gap is upstream in flynn-kit's ui-design and ui-audit skills, which ask for neither, so
+  no Wingman builds them and no RIO checks for them. Add motion (loading, working, arrival, transitions
+  that answer an action, reduced-motion) and toasts to `craft.md` and the audit floor there, then a
+  Maverick mission that gives the workspace and the mission page both.
+
 - [ ] `[ENG]` `[M]` **Checkbox flips from the board** — tick an item in the UI, write `- [x]` back.
   - created: 2026-09-14
 - [ ] `[ENG]` `[M]` **Ship-time `release: next+1` → `next` rewrite**, today a manual edit.
