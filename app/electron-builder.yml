@@ -12,6 +12,9 @@ files:
   - server.ts
   - src/**
   - web/**
+  # The design mockups ride in the repo through a symlink out of web/, and codesign refuses a
+  # symlink that leaves the bundle ("invalid destination for symbolic link"), which failed v0.2.0's build.
+  - "!web/mockups"
   - bin/**
   - app/main.mjs
 asar: false
