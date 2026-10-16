@@ -2,17 +2,21 @@
  * The Electron shell: one window onto the same server a browser tab talks to. `server.ts` is
  * imported here as the main process and `web/` is served from it unchanged. If something
  * already answers on the port (a `node server.ts` left running in a terminal), the window
- * opens on that and starts nothing of its own.
+ * opens on that and starts nothing of its own. With `--source <checkout>` the server is that
+ * checkout's, not the packed copy; the page reads which off the server's `/api/about`.
  */
-import { app, BrowserWindow, Notification, shell } from "electron";
+import { app, BrowserWindow, dialog, Menu, Notification, shell } from "electron";
 import { execFile } from "node:child_process";
 import { request } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "../src/config.ts";
 import { newQuestions } from "../src/notify.ts";
+import { serverUrl, sourceDir, withoutSource } from "./source.mjs";
 
 const run = promisify(execFile);
+const source = sourceDir(process.argv, process.env);
 
 /** A GUI app launched from Finder gets a bare PATH; `claude`, `gh` and `git` live on the login shell's. */
 const loginPath = async () => {
@@ -39,7 +43,7 @@ const answers = (port) =>
 const startServer = async () => {
   const path = await loginPath();
   if (path) process.env.PATH = path;
-  await import("../server.ts");
+  await import(serverUrl(source, fileURLToPath(new URL("../server.ts", import.meta.url))));
   const started = Date.now();
   while (!(await answers(config.port))) {
     if (Date.now() - started > 10_000) throw new Error(`nothing answered on port ${config.port} ten seconds after starting the server`);
@@ -121,7 +125,45 @@ const pollQuestions = (win, origin) => {
   poll();
 };
 
+/** The same app again on another source, or none: server.ts is imported in-process, so swapping it is a relaunch. */
+const relaunch = (dir) => {
+  app.relaunch({ args: [...withoutSource(process.argv.slice(1)), ...(dir ? ["--source", dir] : [])] });
+  app.exit(0);
+};
+
+/**
+ * The app menu: the stock Edit, View and Window, and one item of Maverick's own, pick a checkout
+ * and relaunch on it, so a person working on Maverick gets their code in the app's window
+ * without a terminal. The flag is the same one the terminal would pass.
+ */
+const menu = () => Menu.setApplicationMenu(Menu.buildFromTemplate([
+  {
+    label: app.name,
+    submenu: [
+      { role: "about" },
+      { type: "separator" },
+      {
+        label: "Open with a source checkout...",
+        click: async () => {
+          const { canceled, filePaths } = await dialog.showOpenDialog({ title: "A Maverick checkout", properties: ["openDirectory"], message: "Pick the folder that holds server.ts. The app relaunches on it." });
+          if (!canceled && filePaths[0]) relaunch(filePaths[0]);
+        },
+      },
+      ...(source ? [{ label: "Reopen on the app's own server", click: () => relaunch() }] : []),
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { type: "separator" },
+      { role: "quit" },
+    ],
+  },
+  { role: "editMenu" },
+  { role: "viewMenu" },
+  { role: "windowMenu" },
+]));
+
 app.whenReady().then(async () => {
+  menu();
   if (!(await answers(config.port))) await startServer();
   const origin = `http://127.0.0.1:${config.port}/`;
   pollQuestions(openWindow(origin), origin);

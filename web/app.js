@@ -5,6 +5,7 @@ import { jetSvg } from "./jet.js";
 import { readableOn } from "./theme.js";
 import { strike, loading, missile, flares, flyby } from "./afterburner.js";
 import { mountCommandCenter } from "./command.js";
+import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
 import * as claudeUsage from "./providers/claude.js";
@@ -1776,6 +1777,7 @@ const applyTheme = (theme) => {
 /* ---------- boot ---------- */
 
 const boot = async () => {
+  void mountDevBadge();
   if (!projectId) {
     // The page is where you start: no project in the URL reopens the last one, unless the
     // picker was asked for by name.
