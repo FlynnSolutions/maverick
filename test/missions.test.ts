@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, markReading, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -514,6 +514,27 @@ test("a need in a held milestone is not a base to build on", () => {
   const samePath = { ...t("m1-t3", "pending"), touches: ["src/a/b.ts"] };
   const apart = { ...t("m1-t4", "pending"), deploys: ["data"], touches: ["src/z.ts"] };
   assert.deepEqual(startable({ status: "flying", milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", tasks: [flyer, sameStack, samePath, apart] }] }).map((s) => s.task.id), ["m1-t4"], "the two that would clash with the flyer wait their turn");
+});
+
+test("a session a mission is done with is ended while its process is up: finished ones while flying, any seated one once the mission has stopped flying", async () => {
+  const t = (id: string, claudeId: string, review?: string) => ({ id, title: id, intent: "i", repo: "root", status: "passed" as const, attempts: 1, claudeId, ...(review ? { review: { claudeId: review, file: "f", started: "s" } } : {}) });
+  const milestones = [
+    { n: 1, title: "a", done: "d", merged: "m", tasks: [t("m1-t1", "w1", "r1"), t("m1-t2", "w2")], walkthrough: { claudeId: "b1", started: "s" } },
+    { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "w3", "r3")], resolve: { claudeId: "x1", repo: "root", branch: "b", started: "s", paths: [] } },
+  ];
+  const flying = { status: "flying", milestones, summary: { claudeId: "s1", started: "s" } } as unknown as Mission;
+  // The listing: a pid means the process is up; a finished session without one has already gone.
+  const agents = new Map([
+    ["w1", { state: "done", pid: 11 }], ["r1", { state: "done" }], ["w2", { state: "exited", pid: 12 }], ["b1", { state: "done", pid: 13 }],
+    ["w3", { state: "running", pid: 14 }], ["r3", { state: "blocked", pid: 15 }], ["x1", { state: "stopped", pid: 16 }], ["s1", { state: "done", pid: 17 }],
+  ]);
+  const stopped: string[] = [];
+  const stop = async (id: string) => { stopped.push(id); };
+  assert.deepEqual(await endFinished(flying, agents, stop), ["w1", "w2", "b1", "x1", "s1"], "finished with a process up, in the record's order; the one already gone, the Wingman still working and the RIO on a prompt are left alone");
+  assert.deepEqual(await endFinished({ ...flying, status: "review" } as Mission, agents, stop), ["w1", "w2", "w3", "r3", "b1", "x1", "s1"], "a mission that has stopped flying is done with every seated session, whatever its state; tasks first, then the builders, then the summary");
+  const gone = new Map([...agents].map(([id, a]) => [id, { state: a.state }]));
+  assert.deepEqual(await endFinished(flying, gone, stop), [], "once the listing drops the pid there is nothing to stop: the listing is the memory");
+  assert.deepEqual(await endFinished({ ...flying, summary: { claudeId: "s9", started: "s" } } as Mission, agents, stop), ["w1", "w2", "b1", "x1"], "an id the listing does not know is not stopped");
 });
 
 test("settle is the one derivation of a mission's status: paused is the person's word, review is all merged and unheld, blocked is a person needed", () => {

@@ -23,7 +23,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, toplevelOf, underPath } from "./git.ts";
+import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, stopAgent, toplevelOf, underPath, type BackgroundAgent } from "./git.ts";
 import { findingsOf, slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -1017,6 +1017,7 @@ const commissionWalkthrough = async (project: Project, mission: Mission, m: Mile
   const repo = walkRepo(mission, m);
   if (!repo) return;
   const started = new Date().toISOString();
+  if (m.walkthrough?.claudeId) await stopAgent(m.walkthrough.claudeId);
   try {
     await claimed(mission,
       () => { m.walkthrough = { claudeId: "", started }; },
@@ -1328,6 +1329,8 @@ const forget = (task: MissionTask): void => {
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
   const previous = task.claudeId;
   const cfg = await missionConfigFor(project.path);
+  // The record is about to forget both, and the verdict is read: nothing reads either again.
+  for (const id of [previous, task.review?.claudeId]) if (id) await stopAgent(id);
   await claimed(mission,
     () => {
       task.sessionId = undefined;
@@ -1591,14 +1594,49 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
   await startReady(project, mission);
 };
 
+/**
+ * The sessions a mission's record currently seats: its Wingmen, their RIOs, a reconciling Strike
+ * Lead, the walkthrough builders and the summarizer. The record forgets an id when a task is
+ * handed back or a builder is asked again, so those moments stop what they forget themselves.
+ */
+const seatedIn = (mission: Mission): string[] => [
+  ...mission.milestones.flatMap((m) => m.tasks.flatMap((t) => [t.claudeId, t.review?.claudeId])),
+  ...mission.milestones.flatMap((m) => [m.walkthrough?.claudeId, m.resolve?.claudeId]),
+  mission.summary?.claudeId,
+].filter((id): id is string => Boolean(id));
+
+/** Stops at a time; a first pass can have a dozen due, and dozens of `claude` starting at once is its own problem. */
+const STOPS_AT_ONCE = 8;
+
+/**
+ * End every session the mission is done with and that still holds a process: the listing carries
+ * a `pid` exactly while the process is up, finished or not, and nothing once it is stopped, so
+ * the listing is the memory and a restart replays nothing. A session is done with when its turn
+ * has finished, or whatever its state when the mission has stopped flying: a RIO sitting on a
+ * prompt after its task was accepted over it is a leak like any other. A Wingman's branch and a
+ * RIO's findings are read before this runs in the pass, so nothing is cut off while it is still
+ * writing. Returns the ids stopped. Three missions once left eighteen idle sessions behind.
+ */
+export const endFinished = async (mission: Mission, agents: Map<string, Pick<BackgroundAgent, "state" | "pid">>, stop: (claudeId: string) => Promise<void> = stopAgent): Promise<string[]> => {
+  const doneWith = (a: Pick<BackgroundAgent, "state" | "pid">): boolean => Boolean(a.pid) && (!SWEPT.has(mission.status) || FINISHED.test(a.state ?? ""));
+  const due = seatedIn(mission).filter((id) => { const a = agents.get(id); return Boolean(a && doneWith(a)); });
+  for (let i = 0; i < due.length; i += STOPS_AT_ONCE) await Promise.all(due.slice(i, i + STOPS_AT_ONCE).map(stop));
+  return due;
+};
+
 const sweepOnce = async (project: Project): Promise<void> => {
-  // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough or a summary being written.
-  const missions = (await listMissions(project.id)).filter((m) => SWEPT.has(m.status) || m.milestones.some(building) || summarizing(m));
+  // A mission that has stopped flying (at the review gate, or blocked) may still have a walkthrough
+  // or a summary being written, and one in review may still hold sessions that finished and were
+  // never ended.
+  const missions = (await listMissions(project.id)).filter((m) => SWEPT.has(m.status) || m.status === "review" || m.milestones.some(building) || summarizing(m));
   if (!missions.length) return;
   const cfg = await missionConfigFor(project.path);
   const agents = new Map((await agentsFor(project.path)).map((a) => [a.id, a]));
   const state = new Map([...agents].map(([id, a]) => [id, a.state ?? ""]));
   for (const mission of missions) {
+    // First, before a settle or a hand-back forgets an id: the listing is cached twenty seconds,
+    // so a pass that stopped anything drops the cache or the next one would tell the same ids again.
+    if ((await endFinished(mission, agents)).length) agentCache.delete(project.path);
     const settledWalks = await settleWalkthroughs(project, mission, state);
     const settledSummary = await settleSummary(mission, state);
     if (!SWEPT.has(mission.status)) {
@@ -2090,6 +2128,7 @@ export const summarizeMission = async (project: Project, id: string): Promise<Mi
   const mission = await changeMission(project.id, id, (mission) => {
     if (!mission.milestones.some((m) => m.merged)) throw new Error(`${mission.name} has merged nothing yet, so there is nothing to summarize`);
     if (summarizing(mission)) throw new Error(`${mission.name} is already being summarized, since ${mission.summary!.started}`);
+    if (mission.summary?.claudeId) void stopAgent(mission.summary.claudeId);
     mission.summary = { started };
     return mission;
   });
