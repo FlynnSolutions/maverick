@@ -127,7 +127,7 @@ export interface BackgroundAgent {
   name?: string;
   state?: string;
   startedAt?: number;
-  /** Present while the session's process is up, finished or not; gone once it is stopped or has exited. */
+  /** Present while the process is up, whatever the state word says; gone once the process is down. */
   pid?: number;
 }
 

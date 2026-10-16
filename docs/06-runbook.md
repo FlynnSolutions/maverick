@@ -125,9 +125,10 @@ questions are strips in Needs you, answered there with the same buttons the miss
 
 A Wingman, a RIO, a walkthrough builder or the summarizer is a background Claude Code session,
 and a finished one keeps its process up, idle, until it is told to stop. The sweep ends every
-session a mission is done with on its next pass: one whose turn has finished while the mission
-flies, and any it still seats once the mission has stopped flying; a task handed back ends its
-Wingman and its RIO as it forgets them. `claude agents --json --all` carries a `pid` exactly
+session a mission is done with on its next pass: one whose turn has finished while the sweep
+still flies the mission (flying, blocked or paused), and past the review gate any Wingman or
+RIO it still seats, whatever it is doing; a walkthrough builder or the summarizer, which run at
+the gate, only once finished. A task handed back ends its Wingman and its RIO as it forgets them. `claude agents --json --all` carries a `pid` exactly
 while a session's process is up, and that is what the sweep reads.
 
 The mission page reads one stream. To watch it by hand:

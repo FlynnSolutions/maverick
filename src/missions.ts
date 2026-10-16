@@ -1594,32 +1594,39 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
   await startReady(project, mission);
 };
 
+const ids = (list: Array<string | undefined>): string[] => list.filter((id): id is string => Boolean(id));
+
 /**
- * The sessions a mission's record currently seats: its Wingmen, their RIOs, a reconciling Strike
- * Lead, the walkthrough builders and the summarizer. The record forgets an id when a task is
- * handed back or a builder is asked again, so those moments stop what they forget themselves.
+ * The sessions a mission's record currently seats. The flight's: its Wingmen, their RIOs and a
+ * reconciling Strike Lead, which a mission past the review gate is done with whatever they are
+ * doing. The builders': the walkthrough builders and the summarizer, which run exactly while the
+ * mission sits at the gate, so only a finished one is done with. The record forgets an id when a
+ * task is handed back or a builder is asked again, so those moments stop what they forget.
  */
-const seatedIn = (mission: Mission): string[] => [
-  ...mission.milestones.flatMap((m) => m.tasks.flatMap((t) => [t.claudeId, t.review?.claudeId])),
-  ...mission.milestones.flatMap((m) => [m.walkthrough?.claudeId, m.resolve?.claudeId]),
-  mission.summary?.claudeId,
-].filter((id): id is string => Boolean(id));
+const seatedIn = (mission: Mission): { flight: string[]; builders: string[] } => ({
+  flight: ids(mission.milestones.flatMap((m) => [...m.tasks.flatMap((t) => [t.claudeId, t.review?.claudeId]), m.resolve?.claudeId])),
+  builders: ids([...mission.milestones.map((m) => m.walkthrough?.claudeId), mission.summary?.claudeId]),
+});
 
 /** Stops at a time; a first pass can have a dozen due, and dozens of `claude` starting at once is its own problem. */
 const STOPS_AT_ONCE = 8;
 
 /**
  * End every session the mission is done with and that still holds a process: the listing carries
- * a `pid` exactly while the process is up, finished or not, and nothing once it is stopped, so
- * the listing is the memory and a restart replays nothing. A session is done with when its turn
- * has finished, or whatever its state when the mission has stopped flying: a RIO sitting on a
- * prompt after its task was accepted over it is a leak like any other. A Wingman's branch and a
- * RIO's findings are read before this runs in the pass, so nothing is cut off while it is still
- * writing. Returns the ids stopped. Three missions once left eighteen idle sessions behind.
+ * a `pid` exactly while the process is up, whatever the state word says, and nothing once it is
+ * down, so the listing is the memory and a restart replays nothing. While the sweep still flies
+ * the mission (flying, blocked or paused) a session is done with once its turn has finished;
+ * past the review gate the flight's sessions are done with whatever they are doing, since a RIO
+ * sitting on a prompt after its task was accepted over it is a leak like any other, while a
+ * builder is still only done with once finished, because that is when builders run. A pass reads
+ * a Wingman's branch and a RIO's findings off finished sessions, so a stop here cuts nothing off.
+ * Returns the ids stopped. Three missions once left eighteen idle sessions behind.
  */
 export const endFinished = async (mission: Mission, agents: Map<string, Pick<BackgroundAgent, "state" | "pid">>, stop: (claudeId: string) => Promise<void> = stopAgent): Promise<string[]> => {
-  const doneWith = (a: Pick<BackgroundAgent, "state" | "pid">): boolean => Boolean(a.pid) && (!SWEPT.has(mission.status) || FINISHED.test(a.state ?? ""));
-  const due = seatedIn(mission).filter((id) => { const a = agents.get(id); return Boolean(a && doneWith(a)); });
+  const up = (id: string): Pick<BackgroundAgent, "state" | "pid"> | undefined => { const a = agents.get(id); return a?.pid ? a : undefined; };
+  const finished = (id: string): boolean => FINISHED.test(up(id)?.state ?? "");
+  const { flight, builders } = seatedIn(mission);
+  const due = [...flight.filter((id) => (SWEPT.has(mission.status) ? finished(id) : Boolean(up(id)))), ...builders.filter(finished)];
   for (let i = 0; i < due.length; i += STOPS_AT_ONCE) await Promise.all(due.slice(i, i + STOPS_AT_ONCE).map(stop));
   return due;
 };
@@ -2125,13 +2132,16 @@ export const markReading = async (project: Project, id: string, taskId: string, 
 export const summarizeMission = async (project: Project, id: string): Promise<Mission> => {
   const cfg = await missionConfigFor(project.path);
   const started = new Date().toISOString();
+  let previous: string | undefined;
   const mission = await changeMission(project.id, id, (mission) => {
     if (!mission.milestones.some((m) => m.merged)) throw new Error(`${mission.name} has merged nothing yet, so there is nothing to summarize`);
     if (summarizing(mission)) throw new Error(`${mission.name} is already being summarized, since ${mission.summary!.started}`);
-    if (mission.summary?.claudeId) void stopAgent(mission.summary.claudeId);
+    previous = mission.summary?.claudeId;
     mission.summary = { started };
     return mission;
   });
+  // The last summarizer, if one is still up, is forgotten by the claim above; nothing reads it again.
+  if (previous) await stopAgent(previous);
   const file = summaryFile(mission);
   let claudeId: string;
   try {

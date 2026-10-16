@@ -530,11 +530,13 @@ test("a session a mission is done with is ended while its process is up: finishe
   ]);
   const stopped: string[] = [];
   const stop = async (id: string) => { stopped.push(id); };
-  assert.deepEqual(await endFinished(flying, agents, stop), ["w1", "w2", "b1", "x1", "s1"], "finished with a process up, in the record's order; the one already gone, the Wingman still working and the RIO on a prompt are left alone");
-  assert.deepEqual(await endFinished({ ...flying, status: "review" } as Mission, agents, stop), ["w1", "w2", "w3", "r3", "b1", "x1", "s1"], "a mission that has stopped flying is done with every seated session, whatever its state; tasks first, then the builders, then the summary");
+  assert.deepEqual(await endFinished(flying, agents, stop), ["w1", "w2", "x1", "b1", "s1"], "finished with a process up, the flight's first; the one already gone, the Wingman still working and the RIO on a prompt are left alone");
+  assert.deepEqual(await endFinished({ ...flying, status: "review" } as Mission, agents, stop), ["w1", "w2", "w3", "r3", "x1", "b1", "s1"], "past the gate the flight's sessions are done with whatever they are doing; the flight first, then the builders");
+  const building = new Map([...agents, ["b1", { state: "running", pid: 13 }], ["s1", { state: "running", pid: 17 }]]);
+  assert.deepEqual(await endFinished({ ...flying, status: "review" } as Mission, building, stop), ["w1", "w2", "w3", "r3", "x1"], "a builder or the summarizer still running at the gate is what the gate is for, and is left alone");
   const gone = new Map([...agents].map(([id, a]) => [id, { state: a.state }]));
   assert.deepEqual(await endFinished(flying, gone, stop), [], "once the listing drops the pid there is nothing to stop: the listing is the memory");
-  assert.deepEqual(await endFinished({ ...flying, summary: { claudeId: "s9", started: "s" } } as Mission, agents, stop), ["w1", "w2", "b1", "x1"], "an id the listing does not know is not stopped");
+  assert.deepEqual(await endFinished({ ...flying, summary: { claudeId: "s9", started: "s" } } as Mission, agents, stop), ["w1", "w2", "x1", "b1"], "an id the listing does not know is not stopped");
 });
 
 test("settle is the one derivation of a mission's status: paused is the person's word, review is all merged and unheld, blocked is a person needed", () => {
