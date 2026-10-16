@@ -14,7 +14,7 @@ import { dirname, extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
-import { backgroundAgents, claudeArgs, commitFile, spawnBackgroundAgent } from "./src/git.ts";
+import { backgroundAgents, claudeArgs, commitFile, spawnBackgroundAgent, stopAgent } from "./src/git.ts";
 import { liveCache, liveSignals, readRegistrySessions } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
 import { assignParent, auditView, createParent, recordDecision, runAudit, sweep } from "./src/audits.ts";
@@ -689,10 +689,10 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (method === "POST" && action === "approve") return sendJson(res, 200, await approveMission(project, id));
     if (method === "POST" && action === "interview") return sendJson(res, 200, await reopenInterview(project, id));
     if (method === "POST" && action === "close") return sendJson(res, 200, await closeMission(project, id));
-    // The brake. `claude stop` refuses on stdout with exit 0, so a refusal is not an exception.
+    // The brake.
     if (method === "POST" && action === "abandon") {
       return sendJson(res, 200, await abandonMission(project, id, async (claudeId) => {
-        await run("claude", ["stop", claudeId]).catch(() => undefined);
+        await stopAgent(claudeId);
         liveCache.clear();
       }));
     }

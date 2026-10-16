@@ -127,6 +127,8 @@ export interface BackgroundAgent {
   name?: string;
   state?: string;
   startedAt?: number;
+  /** Present while the process is up, whatever the state word says; gone once the process is down. */
+  pid?: number;
 }
 
 /** Claude Code's own background sessions started under `cwd` (`claude --bg`), via its JSON listing. */
@@ -137,6 +139,11 @@ export const backgroundAgents = async (cwd: string): Promise<BackgroundAgent[]> 
   const { stdout } = await run("claude", ["agents", "--json", "--all", "--cwd", cwd]);
   const all = JSON.parse(stdout) as Array<BackgroundAgent & { kind: string }>;
   return all.filter((a) => a.kind === "background");
+};
+
+/** End a background session. `claude stop` refuses on stdout with exit 0, so a refusal is not an exception. */
+export const stopAgent = async (claudeId: string): Promise<void> => {
+  await run("claude", ["stop", claudeId]).catch(() => undefined);
 };
 
 /* ---------- branches and worktrees, for a mission's flight ---------- */
