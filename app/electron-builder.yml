@@ -16,7 +16,7 @@ files:
   # symlink that leaves the bundle ("invalid destination for symbolic link"), which failed v0.2.0's build.
   - "!web/mockups"
   - bin/**
-  - app/main.mjs
+  - app/*.mjs
 asar: false
 mac:
   category: public.app-category.developer-tools

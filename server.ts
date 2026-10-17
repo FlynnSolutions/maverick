@@ -14,6 +14,7 @@ import { dirname, extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "./src/config.ts";
+import { aboutOf } from "./src/about.ts";
 import { backgroundAgents, claudeArgs, commitFile, spawnBackgroundAgent, stopAgent } from "./src/git.ts";
 import { liveCache, liveSignals, readRegistrySessions } from "./src/live.ts";
 import { addProject, chooseFolder, projectById, readProjects, removeProject, type Project } from "./src/projects.ts";
@@ -40,7 +41,9 @@ import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInp
 import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
 const run = promisify(execFile);
-const webRoot = join(fileURLToPath(new URL(".", import.meta.url)), "web");
+const serverRoot = dirname(fileURLToPath(import.meta.url));
+const webRoot = join(serverRoot, "web");
+const about = aboutOf(serverRoot);
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -419,6 +422,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     return;
   }
   if (method === "GET" && path === "/api/usage") return sendJson(res, 200, await usage(url.searchParams.has("refresh")));
+  if (method === "GET" && path === "/api/about") return sendJson(res, 200, about);
   // Claude's own view of the plan's windows, from the endpoint behind the CLI's /usage command.
   if (method === "GET" && path === "/api/usage/live") return sendJson(res, 200, await liveUsage(url.searchParams.has("refresh")));
   // Plan limits are not stored anywhere by Claude Code; the widget keeps what Cory enters.

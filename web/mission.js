@@ -39,6 +39,7 @@
 
 import { lamp } from "./lamp.js";
 import { readableOn, recall } from "./theme.js";
+import { mountDevBadge } from "./dev-badge.js";
 import { render as renderMarkdown } from "./markdown.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -594,6 +595,7 @@ const poll = () => {
 document.addEventListener("visibilitychange", () => { if (pollTimer && !document.hidden) load().catch(() => {}); });
 
 const boot = async () => {
+  void mountDevBadge();
   if (!projectId || !missionId) {
     setStatus("open this page from the board's rail: ?project=<id>&mission=<id>", true);
     return;

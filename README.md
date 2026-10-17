@@ -39,6 +39,25 @@ Node 22.18 or newer. The app and the browser tab are the same server; if `node s
 
 What is not here yet is listed at the [end of this page](#not-built-yet) and, in full, in [`docs/04-status.md`](docs/04-status.md).
 
+## Developing Maverick
+
+The app is a window onto a server, and the server is plain Node running `server.ts`, so working
+on Maverick is working on files the app can run straight from a checkout:
+
+```bash
+git clone https://github.com/FlynnSolutions/maverick && cd maverick
+node server.ts                                   # the server, on 8766
+open -a Maverick --args --source "$PWD"          # the app, on your checkout's code
+```
+
+Either way in, the bar wears a `development` badge naming the checkout, so you can never mistake
+it for the app's own copy. `--source` is also the app menu's "Open with a source checkout..."
+and the `MAVERICK_SOURCE` environment variable. A browser reload picks up `web/` changes, since
+nothing is built; a change to `server.ts` or `src/` wants the server restarted. If a server is
+already on the port when the app opens, the app shows it and starts none of its own, badge and
+all. `npm test` and `npm run lint` are the whole gate, and `/simplify` runs before every pull
+request; `RULEBOOK.md` has the rules this repo is held to.
+
 ## Where things are
 
 - `server.ts` is the whole HTTP surface and the Electron main process. Static files from `web/`, every `/api/*` route, nothing that assumes a browser tab.

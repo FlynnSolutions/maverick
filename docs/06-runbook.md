@@ -28,7 +28,10 @@ npm run build             # app/dist/Maverick-<version>-arm64.dmg and .zip
 
 The app imports `server.ts` as its main process, so everything below about ports, env and data
 applies to it unchanged. If a `node server.ts` is already listening on the port, the app opens a
-window onto it and starts nothing. A release is cut by pushing a `v*` tag: the Release workflow
+window onto it and starts nothing. `--source <checkout>` (also `MAVERICK_SOURCE`, and the app
+menu's "Open with a source checkout...") runs that checkout's `server.ts` instead of the packed
+copy; whenever the window shows a server that is not packed, the bar wears a `development` badge
+naming it, read off `GET /api/about` (`source`, `packed`). A release is cut by pushing a `v*` tag: the Release workflow
 builds the macOS app (arm64, unsigned) and attaches it to the GitHub Release. Run by hand from
 the Actions tab it uploads the build as an artifact without cutting a release.
 
