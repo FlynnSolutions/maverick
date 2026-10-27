@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
+import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
 import { MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
@@ -921,7 +922,8 @@ printf '%s\\0' "$@" > "${fakeClaude}/args"
 echo "backgrounded · 5eed1"
 `, "utf8");
 chmodSync(join(fakeClaude, "claude"), 0o755);
-const agentsSay = (list: Array<{ id: string; state: string }>) => writeFileSync(join(fakeClaude, "agents.json"), JSON.stringify(list.map((a) => ({ ...a, kind: "background" }))), "utf8");
+/** As `claude agents --json` lists them: a pid while the process is up, none once it has finished, unless a test says otherwise. */
+const agentsSay = (list: Array<{ id: string; state: string; pid?: number | null }>) => writeFileSync(join(fakeClaude, "agents.json"), JSON.stringify(list.map(({ pid, ...a }) => ({ ...a, kind: "background", ...(pid === null || FINISHED.test(a.state) ? {} : { pid: pid ?? 4242 }) }))), "utf8");
 const spawnedWith = () => readFileSync(join(fakeClaude, "args"), "utf8").split("\0").slice(0, -1);
 const realPath = process.env.PATH;
 process.env.PATH = `${fakeClaude}:${realPath}`;
@@ -1088,4 +1090,27 @@ test("the sweep leaves a fresh claim alone while its spawn may still be in fligh
   agentsSay([]);
   await sweepMissions(project);
   assert.equal(recordOf("inflight").milestones[0].tasks[0].status, "flying");
+});
+
+/** A milestone with one task under review by `rio`, its review started at `started`. */
+const underReview = (rio: string, started = "2026-10-27T19:52:00Z") => [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-27T19:00:00Z", tasks: [
+  { id: "m1-t1", title: "The worker", intent: "Build the worker.", repo: "root", status: "reviewing", attempts: 1, claudeId: "w-1", ended: "2026-10-27T19:40:00Z", review: { claudeId: rio, file: "/tmp/none-review.md", started } }] }];
+
+test("a reviewer whose process died mid-turn is ended and handed back, not read as busy for good", async () => {
+  const { project } = summaryFixture("dead-rio", { status: "flying", milestones: underReview("rio-dead") } as never);
+  // Listed as blocked, as a lost connection leaves it, with no process behind it.
+  agentsSay([{ id: "rio-dead", state: "blocked", pid: null }]);
+  await sweepMissions(project);
+  const task = recordOf("dead-rio").milestones[0].tasks[0];
+  assert.equal(task.status, "handed-back");
+  assert.equal(task.note, "the RIO finished without writing a verdict");
+});
+
+test("a live reviewer waiting on a prompt is not ended, and the mission says it is waiting on you", async () => {
+  const { project } = summaryFixture("asking-rio", { status: "flying", milestones: underReview("rio-asking") } as never);
+  agentsSay([{ id: "rio-asking", state: "blocked" }]);
+  await sweepMissions(project);
+  const after = recordOf("asking-rio");
+  assert.equal(after.milestones[0].tasks[0].status, "reviewing");
+  assert.match(after.trouble ?? "", /the RIO on The worker is waiting on you in its own session/);
 });

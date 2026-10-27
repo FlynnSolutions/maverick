@@ -717,3 +717,25 @@ page said `waiting`.
 **Rejected: Maverick writing its updates into `chat`.** A second copy of the ledger that can drift
 from it. **Known limit:** ledger stamps are to the minute, so a Maverick line can sort a few
 seconds early among messages sent in the same minute.
+
+## M25: An agent whose process died is ended, whatever its last word was ✅ built
+
+**The listing's pid is the test of life, read once where the listing is read.** `claude agents
+--json` carries a `pid` exactly while the process is up. A session that dies mid-turn (a lost
+connection) stays listed under its last state word, `blocked` or `working`, for good, with no pid.
+`listedAgents` now says such a session `down`, and `down` is one of the `FINISHED` words, so the
+mission sweep, the ship sweep and the audits read it as ended without each learning the rule. A
+Wingman that ended is read for its commits; a RIO that ended without a verdict is handed back,
+which is a question with its answers; a ship step is collected; the racks say `down`.
+
+**And a RIO waiting on a prompt says so.** The sweep already said when a Wingman was waiting on
+you in its own session; a RIO in the same state now says so too.
+
+**Why:** 2026-10-27, Concept Build. m2-t2's RIO lost its connection after its tests passed and
+sat listed as `blocked` for two hours while the page said `in review` and nothing asked anyone
+anything, because "blocked" is not "finished". The ship sweep had the same hole.
+
+**Rejected: a grace period for a listed session with no pid.** It would only matter if a session
+could be listed before its process had a pid. The one observation (a Wingman relaunched the same
+evening was listed with its pid moments after the spawn returned) says it is not, so this rests on
+that; if it turns out otherwise, a launch would be handed back at once, loudly, not left silent.

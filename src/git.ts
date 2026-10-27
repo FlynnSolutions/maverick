@@ -133,12 +133,20 @@ export interface BackgroundAgent {
 
 /** Claude Code's own background sessions started under `cwd` (`claude --bg`), via its JSON listing. */
 /** A background session's terminal states, as `claude agents` reports them. */
-export const FINISHED = /^(done|exited|stopped)$/;
+export const FINISHED = /^(done|exited|stopped|down)$/;
+
+/**
+ * The background sessions in a listing, each said as it is. The listing carries a `pid` exactly
+ * while the process is up; a session that died mid-turn (a lost connection) stays listed under
+ * its last word, `blocked` or `working`, for good. Such a session is said `down`, which is a
+ * finished word, so the mission sweep, the ship sweep and the audits all read it as ended.
+ */
+export const listedAgents = (all: Array<BackgroundAgent & { kind: string }>): BackgroundAgent[] =>
+  all.filter((a) => a.kind === "background").map((a) => (a.pid || FINISHED.test(a.state ?? "") ? a : { ...a, state: "down" }));
 
 export const backgroundAgents = async (cwd: string): Promise<BackgroundAgent[]> => {
   const { stdout } = await run("claude", ["agents", "--json", "--all", "--cwd", cwd]);
-  const all = JSON.parse(stdout) as Array<BackgroundAgent & { kind: string }>;
-  return all.filter((a) => a.kind === "background");
+  return listedAgents(JSON.parse(stdout));
 };
 
 /** End a background session. `claude stop` refuses on stdout with exit 0, so a refusal is not an exception. */
