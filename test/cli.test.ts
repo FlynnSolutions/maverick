@@ -4,7 +4,8 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -24,7 +25,10 @@ await writeFile(plan, [
   "- [ ] **Write**", "  Write the thing.", "",
   "## Log", "", "- 2026-10-09 10:00 m1-t1 Parse: reviewing to passed (RIO: pass)", "",
 ].join("\n"), "utf8");
-const run = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+// The same goes for Claude Code's trust: the fixture repo is trusted in a state file of the test's own.
+const claudeHome = mkdtempSync(join(tmpdir(), "mv-cli-claude-"));
+await writeFile(join(claudeHome, ".claude.json"), JSON.stringify({ projects: { [dir]: { hasTrustDialogAccepted: true } } }), "utf8");
+const run = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: { ...process.env, CLAUDE_CONFIG_DIR: claudeHome } });
 
 test("plan-check prints where every task stands and exits 0 on a flyable plan", () => {
   const { status, stdout } = run("plan-check", plan);

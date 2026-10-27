@@ -1009,7 +1009,8 @@ export const needsWalking = (m: Milestone): boolean =>
 const walkRepo = (mission: Mission, m: Milestone): MissionRepo | undefined => mission.repos.find((r) => m.mergeShas?.[r.label]) ?? mission.repos[0];
 
 /** A builder still out: it was sent and has neither left a document nor been found to have failed. */
-const building = (m: Milestone): boolean => Boolean(m.walkthrough?.claudeId && !m.walkthrough.doc && !m.walkthrough.failed);
+// A claim whose id is still empty counts: the sweep judges it on time alone, so a spawn that died does not hold the milestone.
+const building = (m: Milestone): boolean => m.walkthrough?.claudeId !== undefined && !m.walkthrough.doc && !m.walkthrough.failed;
 
 /** Sent the moment a milestone has merged, into the integration worktree of the repo it landed in. */
 const commissionWalkthrough = async (project: Project, mission: Mission, m: Milestone): Promise<void> => {
@@ -1018,16 +1019,12 @@ const commissionWalkthrough = async (project: Project, mission: Mission, m: Mile
   if (!repo) return;
   const started = new Date().toISOString();
   if (m.walkthrough?.claudeId) await stopAgent(m.walkthrough.claudeId);
-  try {
-    await claimed(mission,
-      () => { m.walkthrough = { claudeId: "", started }; },
-      () => spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m))),
-      (on, claudeId) => { const x = on.milestones.find((y) => y.n === m.n); if (x?.walkthrough) x.walkthrough.claudeId = claudeId; });
-    agentCache.delete(project.path);
-  } catch (err) {
-    if (err instanceof StaleMissionError) throw err;
-    m.walkthrough = { started, failed: `could not start the walkthrough builder: ${(err as Error).message}` };
-  }
+  const on = (x: Mission) => x.milestones.find((y) => y.n === m.n);
+  if (await claimed(mission,
+    () => { m.walkthrough = { claudeId: "", started }; },
+    () => spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m))),
+    (x, claudeId) => { const w = on(x)?.walkthrough; if (w) w.claudeId = claudeId; },
+    (x, err) => { const y = on(x); if (y) y.walkthrough = { started, failed: `could not start the walkthrough builder: ${err.message}` }; })) agentCache.delete(project.path);
 };
 
 /** A builder that has finished either left a document on the branch or it did not. Returns whether anything changed. */
@@ -1170,25 +1167,52 @@ const holdFor = (m: Milestone, kind: HoldKind, reason: string): void => { m.hold
  * before any agent is spawned that nobody owns. What the spawn needs is already on the record
  * when it starts; the id is patched in after.
  */
-export const claimed = async <T>(mission: Mission, claim: () => void, spawn: () => Promise<T>, record: (on: Mission, result: T) => void): Promise<void> => {
+export const claimed = async <T>(mission: Mission, claim: () => void, spawn: () => Promise<T>, record: (on: Mission, result: T) => void, failed: (on: Mission, err: Error) => void): Promise<boolean> => {
   claim();
   await writeMission(mission);
-  const result = await spawn();
+  let result: T;
+  try {
+    result = await spawn();
+  } catch (err) {
+    // The claim is on disk and nothing is behind it. Undo it the same way an id is recorded,
+    // onto whichever record is true, or the task reads as flying for good.
+    failed(mission, err as Error);
+    await writeOnto(mission, (on) => failed(on, err as Error));
+    return false;
+  }
   record(mission, result);
+  // The agent is running: an agent the record does not name is one nobody can stop or review,
+  // and that is the one thing a refused write must not leave.
+  await writeOnto(mission, (on) => record(on, result));
+  return true;
+};
+
+/**
+ * Write what the agent listing made true. If the record moved under it, the change goes onto
+ * the fresh record, which is the one that is true, and the pass ends.
+ */
+const writeOnto = async (mission: Mission, apply: (on: Mission) => void): Promise<void> => {
   try {
     await writeMission(mission);
   } catch (err) {
     if (!(err instanceof StaleMissionError)) throw err;
-    // The agent is running and the record moved under it. The id goes onto the fresh record,
-    // which is the one that is true, and the pass ends: an agent the record does not name is
-    // one nobody can stop or review, and that is the one thing a refused write must not leave.
     const fresh = await readMission(mission.project, mission.id);
     if (fresh) {
-      record(fresh, result);
+      apply(fresh);
       await writeMission(fresh);
     }
     throw err;
   }
+};
+
+/** A Wingman that never started: back to the person with the reason, and the attempt not spent. */
+const launchFailed = (taskId: string) => (on: Mission, err: Error): void => {
+  const t = taskOn(on, taskId);
+  if (!t) return;
+  t.status = "handed-back";
+  t.claudeId = undefined;
+  t.attempts = Math.max(0, t.attempts - 1);
+  t.note = `could not launch: ${err.message}`;
 };
 
 /** The task with this id on whichever record is at hand. */
@@ -1202,16 +1226,17 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     await ensureWorktree(repo.path, task.worktree, task.branch, repo.branch);
     // The fork point is the branch just made, not the mission tip a moment later.
     task.base = await revParse(repo.path, task.branch);
-    await claimed(mission,
+    const out = await claimed(mission,
       () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
       () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg.shared)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
-      (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; });
+      (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
+      launchFailed(task.id));
+    if (!out) return;
     agentCache.delete(project.path);
     await recordWingman(mission, task);
   } catch (err) {
     if (err instanceof StaleMissionError) throw err;
-    task.status = "handed-back";
-    task.note = `could not launch: ${(err as Error).message}`;
+    launchFailed(task.id)(mission, err as Error);
     await writeMission(mission);
   }
 };
@@ -1326,12 +1351,12 @@ const forget = (task: MissionTask): void => {
 };
 
 /** Put a task back out with the RIO's findings, in the worktree it already has. */
-const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
+const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<boolean> => {
   const previous = task.claudeId;
   const cfg = await missionConfigFor(project.path);
   // The record is about to forget both, and the verdict is read: nothing reads either again.
   for (const id of [previous, task.review?.claudeId]) if (id) await stopAgent(id);
-  await claimed(mission,
+  const out = await claimed(mission,
     () => {
       task.sessionId = undefined;
       task.claudeId = undefined;
@@ -1345,9 +1370,12 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
       forget(task);
     },
     () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
-    (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; });
+    (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
+    launchFailed(task.id));
+  if (!out) return false;
   if (previous) await patchSession(config.sessionsDir, `bg-${previous}`, { status: "handed-off", ended: new Date().toISOString(), handoff: findings.split("\n")[0] });
   await recordWingman(mission, task);
+  return true;
 };
 
 /** An agent absent from the listing is only believed gone once it has had time to appear in it. */
@@ -1421,7 +1449,14 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
         task.sessionId = sessionId;
         seated = true;
       }
-      // A claim whose id has not landed yet (the spawn is in flight) is not an agent to judge.
+      // A claim whose id has not landed yet (the spawn is in flight) is not an agent to judge. One
+      // whose id never lands (the server died mid-spawn, or the write that said it failed was
+      // refused) is judged on time alone, as `settleSummary` judges one: nothing is behind it.
+      const claim = task.status === "flying" ? { who: "Wingman", id: task.claudeId, since: task.started } : task.status === "reviewing" ? { who: "RIO", id: task.review?.claudeId, since: task.review?.started } : undefined;
+      if (claim && !claim.id && isOver(state, "", claim.since)) {
+        task.status = "handed-back";
+        task.note = `its ${claim.who} never started: the launch failed or was cut off before an agent was recorded`;
+      }
       if (task.status === "flying" && task.claudeId && state.get(task.claudeId) === "blocked") waiting.push(`${task.title} is waiting on you in its own session`);
       if (task.status === "flying" && task.claudeId && isOver(state, task.claudeId, task.started)) {
         const repo = missionRepo(mission, task);
@@ -1455,7 +1490,7 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
       }
     }
     // A Strike Lead sent in to reconcile a collision: look at the branch when it is done, not at what it said about itself.
-    if (m.resolve?.claudeId && isOver(state, m.resolve.claudeId, m.resolve.started)) {
+    if (m.resolve && isOver(state, m.resolve.claudeId, m.resolve.started)) {
       const repo = mission.repos.find((r) => r.label === m.resolve!.repo);
       const landed = repo ? await commitsAhead(repo.path, m.resolve.branch, repo.branch).catch(() => []) : [];
       if (landed.length) {
@@ -1503,17 +1538,13 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
       const reviews = (task.reviews ?? 0) + 1;
       const file = reviewFile(mission, { ...task, reviews });
       const previous = reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: reviews - 1 }), "utf8").catch(() => undefined) : undefined;
-      try {
-        await claimed(mission,
-          () => { task.reviews = reviews; task.status = "reviewing"; task.review = { claudeId: "", file, started: new Date().toISOString() }; },
-          () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), file, previous), cfg.rioAgent, RIO_TOOLS),
-          (on, claudeId) => { const t = taskOn(on, task.id); if (t?.review) t.review.claudeId = claudeId; });
+      if (await claimed(mission,
+        () => { task.reviews = reviews; task.status = "reviewing"; task.review = { claudeId: "", file, started: new Date().toISOString() }; },
+        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), file, previous), cfg.rioAgent, RIO_TOOLS),
+        (on, claudeId) => { const t = taskOn(on, task.id); if (t?.review) t.review.claudeId = claudeId; },
+        (on, err) => { const t = taskOn(on, task.id); if (t) { t.status = "handed-back"; t.note = `could not start the RIO: ${err.message}`; } })) {
         agentCache.delete(project.path);
         await patchSession(config.sessionsDir, `bg-${task.claudeId}`, { audit: task.review });
-      } catch (err) {
-        if (err instanceof StaleMissionError) throw err;
-        task.status = "handed-back";
-        task.note = `could not start the RIO: ${(err as Error).message}`;
       }
     }
     if (m.resolve || !mergeable(mission, m)) continue;
@@ -1545,17 +1576,17 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
         holdFor(m, "collision", `milestone ${m.n} still will not merge into ${repo.label} after the Strike Lead tried: ${m.conflicts.join(", ") || "unknown conflict"}`);
         break;
       }
-      try {
-        await claimed(mission,
-          () => { m.resolveTried = true; m.resolve = { claudeId: "", repo: repo.label, branch: task.branch!, started: new Date().toISOString(), paths: m.conflicts! }; },
-          () => spawnBackgroundAgent(repo.integration, `Strike Lead · resolve m${m.n}`, resolvePrompt(project, mission, m, repo, task.branch!, paths)),
-          (on, claudeId) => { const x = on.milestones.find((y) => y.n === m.n); if (x?.resolve) x.resolve.claudeId = claudeId; });
-        agentCache.delete(project.path);
-      } catch (err) {
-        if (err instanceof StaleMissionError) throw err;
-        m.resolve = undefined;
-        holdFor(m, "collision", `milestone ${m.n} will not merge into ${repo.label} and the Strike Lead could not be sent in: ${(err as Error).message}`);
-      }
+      const on = (x: Mission) => x.milestones.find((y) => y.n === m.n);
+      if (await claimed(mission,
+        () => { m.resolveTried = true; m.resolve = { claudeId: "", repo: repo.label, branch: task.branch!, started: new Date().toISOString(), paths: m.conflicts! }; },
+        () => spawnBackgroundAgent(repo.integration, `Strike Lead · resolve m${m.n}`, resolvePrompt(project, mission, m, repo, task.branch!, paths)),
+        (x, claudeId) => { const r = on(x)?.resolve; if (r) r.claudeId = claudeId; },
+        (x, err) => {
+          const y = on(x);
+          if (!y) return;
+          y.resolve = undefined;
+          holdFor(y, "collision", `milestone ${m.n} will not merge into ${repo.label} and the Strike Lead could not be sent in: ${err.message}`);
+        })) agentCache.delete(project.path);
       break;
     }
     if (!collided) m.merged = new Date().toISOString();
@@ -1788,13 +1819,15 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
     if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
     if (mission.status === "paused") throw new Error(`${mission.name} is paused; resume it first, and the retry goes out then`);
     if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
+    if (task.status === "passed") throw new Error(`${task.title} already passed; there is nothing to send back out`);
     task.attempts = MAX_ATTEMPTS - 1;
     return mission;
   });
   const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId))!;
   const task = taskOn(mission, taskId)!;
   const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
-  await handBack(project, mission, m, task, findings);
+  // Recorded as handed back already; the person who pressed the button is told why here.
+  if (!(await handBack(project, mission, m, task, findings))) throw new Error(`${task.title} ${task.note}`);
   settle(mission);
   await writeMission(mission);
   return recorded(project, mission, [`${taskId} sent back out by Cory`]);

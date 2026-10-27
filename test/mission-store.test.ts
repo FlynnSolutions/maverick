@@ -244,3 +244,45 @@ test("a spawned agent's id is never lost: a write the record refuses puts the id
   assert.equal(fresh.milestones[0].tasks[0].status, "flying", "the claim written before the spawn stands");
   assert.equal(fresh.trouble, "a person was here", "and the person's write was not undone");
 });
+
+test("a spawn that fails while the record moves undoes its claim on the fresh record, so nothing reads as flying with no agent", async () => {
+  const m = await seed("claimfail");
+  m.milestones[0].tasks[0].status = "pending";
+  await writeFile(file("claimfail"), JSON.stringify(m), "utf8");
+  const mission = (await readMission("p", "claimfail"))!;
+  await assert.rejects(() => claimed(mission,
+    () => { const t = mission.milestones[0].tasks[0]; t.status = "flying"; t.claudeId = undefined; },
+    async () => {
+      const theirs = (await readMission("p", "claimfail"))!;
+      theirs.trouble = "a person was here";
+      await __writeMissionForTest(theirs);
+      throw new Error("Workspace not trusted");
+    },
+    () => assert.fail("nothing to record"),
+    (on, err) => { const t = on.milestones[0].tasks[0]; t.status = "handed-back"; t.note = err.message; }), StaleMissionError);
+  const fresh = (await readMission("p", "claimfail"))!;
+  assert.equal(fresh.milestones[0].tasks[0].status, "handed-back", "the claim did not survive the failed spawn");
+  assert.equal(fresh.milestones[0].tasks[0].note, "Workspace not trusted");
+  assert.equal(fresh.trouble, "a person was here");
+});
+
+test("a retry whose Wingman cannot launch says why and hands the task back without spending the attempt", async () => {
+  const m = await seed("nolaunch");
+  Object.assign(m.milestones[0].tasks[0], { status: "handed-back", claudeId: undefined, note: "could not launch: before" });
+  (m as { repos: unknown[] }).repos = [{ label: "root", path: "/tmp", base: "main", branch: "mission/nolaunch", integration: "/tmp/none", land: "merge" }];
+  await writeFile(file("nolaunch"), JSON.stringify(m), "utf8");
+  // The worktree does not exist, so `claude --bg` cannot start there: no agent is ever launched.
+  await assert.rejects(() => retryTask(project, "nolaunch", "m1-t1"), /could not launch: claude --bg did not start in \/tmp\/none/);
+  const after = (await readMission("p", "nolaunch"))!.milestones[0].tasks[0];
+  assert.equal(after.status, "handed-back");
+  assert.equal(after.claudeId, undefined);
+  assert.equal(after.attempts, 1, "the retry's attempt was not spent on a launch that never happened");
+  assert.match(after.note ?? "", /^could not launch: /);
+});
+
+test("a task that already passed is not sent back out", async () => {
+  const m = await seed("passed");
+  m.milestones[0].tasks[0].status = "passed";
+  await writeFile(file("passed"), JSON.stringify(m), "utf8");
+  await assert.rejects(() => retryTask(project, "passed", "m1-t1"), /already passed/);
+});

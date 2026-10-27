@@ -1,12 +1,17 @@
 /** The gate-1 preflight: what a machine can check before a person approves and leaves. */
 import assert from "node:assert/strict";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { hoursOf, parseRequirements, preflight, versionMeets } from "../src/preflight.ts";
-import { parsePlan } from "../src/missions.ts";
 import { tempRepo } from "./fixtures.ts";
+
+// config.ts reads this once when the module graph loads, so it is set before the imports below.
+const claudeHome = mkdtempSync(join(tmpdir(), "mv-claude-"));
+process.env.CLAUDE_CONFIG_DIR = claudeHome;
+const { hoursOf, parseRequirements, preflight, untrusted, versionMeets } = await import("../src/preflight.ts");
+const { parsePlan } = await import("../src/missions.ts");
 
 test("a preflight line names its kind, what, and a note", () => {
   const { requirements, problems } = parseRequirements(["duration: 8h", "**tool**: `docker`", "**tool:** gh", "credential: aws dev, the dev stack, and staging", "human: check the inbox, then click the link", "something else"]);
@@ -60,4 +65,16 @@ test("the plan's Preflight section is read, and the checks say ok, fail or yours
   assert.match(by[`node pin in ${dir.split("/").pop()}`].detail, /wants 99, the shell has v\d+/);
   assert.equal(by["host"].status, "ok");
   assert.ok(checks.some((c) => c.name === "disk"));
+});
+
+test("a repo Claude Code has not trusted fails loud, and a trusted parent does not count for it", async () => {
+  const state = JSON.stringify({ projects: { "/w": { hasTrustDialogAccepted: true }, "/w/front": { hasTrustDialogAccepted: false } } });
+  assert.deepEqual(untrusted(state, ["/w", "/w/contracts", "/w/front"]), ["/w/contracts", "/w/front"]);
+  assert.equal(untrusted("", ["/w"]), null, "an unreadable state file is not a verdict");
+  const { dir } = tempRepo("mv-trust");
+  const trustOf = async () => (await preflight({ projectPath: dir, repoPaths: [dir], requirements: [], rioAgent: "rio", landsRemotely: false })).filter((c) => c.kind === "trust" || c.name === "workspace trust");
+  await writeFile(join(claudeHome, ".claude.json"), JSON.stringify({ projects: {} }), "utf8");
+  assert.deepEqual((await trustOf()).map((c) => [c.status, c.refuses]), [["fail", false]], "loud, but read from a file Claude Code owns, so it does not refuse");
+  await writeFile(join(claudeHome, ".claude.json"), JSON.stringify({ projects: { [dir]: { hasTrustDialogAccepted: true } } }), "utf8");
+  assert.deepEqual((await trustOf()).map((c) => c.status), ["ok"]);
 });
