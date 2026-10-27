@@ -23,7 +23,7 @@ PRs; the ship wizard driving the project's own `SHIP_WORKFLOW.md` phase by phase
 resumable state; embedded terminals; audit parents; per-project theming from `maverick.json`.
 
 **Missions, added 2026-09-16.** Opened from the Missions rack at the top of the workspace. A
-Strike Lead interviews in an embedded terminal and writes a plan;
+Strike Lead interviews in a chat (a terminal until M23) and writes a plan;
 nothing spawns until Cory approves it; approval writes the plan into the tracker as items and
 dispatches one Wingman per task in its own worktree; a RIO judges each
 finished Wingman and a fail hands the task back twice before it becomes Cory's; a passing

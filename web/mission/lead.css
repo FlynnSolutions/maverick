@@ -1,0 +1,71 @@
+/* The Strike Lead's chat (web/mission/lead.js): the thread, a round of questions as cards whose
+   answers are buttons, the button that fires the mission, and the composer. Every class is
+   `lead-`. A round waiting on you is the loud thing on the page, so it wears the caution ring. */
+
+.lead { display: grid; gap: 14px; }
+
+.lead-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.lead-msg { display: grid; gap: 6px; max-width: 100%; }
+.lead-who { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--ink); display: flex; gap: 8px; align-items: baseline; }
+.lead-at { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.lead-text { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink-soft); overflow-wrap: anywhere; }
+.lead-text > :first-child { margin-top: 0; }
+.lead-text > :last-child { margin-bottom: 0; }
+
+/* Yours sit to the right on the lifted surface; the Strike Lead's are the page; Maverick's are a quiet note. */
+.lead-msg.you { justify-self: end; max-width: min(560px, 88%); padding: 10px 12px; background: var(--panel-lifted); border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam); }
+.lead-msg.you .lead-who { justify-content: flex-end; }
+.lead-msg.you .lead-text { white-space: pre-wrap; color: var(--ink); }
+.lead-msg.sys .lead-who { color: var(--ink-faint); }
+.lead-msg.sys .lead-text { font-size: 13px; }
+.lead-msg.error .lead-who { color: var(--threat); }
+.lead-msg.error .lead-text { color: var(--ink); }
+
+/* A round: one card per question, the question first and largest, the answers as buttons under it. */
+.lead-round { display: grid; gap: 12px; margin-top: 4px; }
+.lead-qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.lead-q { display: grid; gap: 10px; padding: 12px 14px; background: var(--caution-dim); border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--caution); }
+.lead-ask { margin: 0; display: flex; gap: 10px; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.lead-n { flex: none; font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--ink-faint); padding-top: 2px; font-variant-numeric: tabular-nums; }
+.lead-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.lead-opt { min-height: 32px; padding: 6px 12px; font: 500 13px var(--sans); text-align: left; background: var(--panel); color: var(--ink); border: 0; border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam-strong); cursor: pointer; }
+.lead-opt:hover { box-shadow: 0 0 0 1px var(--ink-faint); }
+.lead-opt[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 1px var(--accent); }
+.lead-q .mv-note { height: 32px; }
+.lead-compose textarea::placeholder { color: var(--ink-faint); }
+.lead-hint { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
+.lead-why > summary { display: inline-flex; align-items: center; min-height: 28px; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
+.lead-why > p { margin: 4px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
+.lead-round-foot { display: flex; }
+.lead-round-foot button, .lead-compose button { min-height: 32px; padding: 0 16px; font: 500 13px var(--sans); }
+
+/* An answered round, folded. */
+.lead-asked > summary { cursor: pointer; font-size: 12.5px; color: var(--ink-faint); }
+.lead-asked > ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; color: var(--ink-soft); }
+
+.lead-thinking { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
+.lead-thinking[hidden] { display: none; }
+
+/* The one button that sends the mission out: the largest thing in the thread when it is there. */
+.lead-fire { display: grid; gap: 6px; justify-items: start; }
+.lead-fire:empty { display: none; }
+.lead-fire-btn { min-height: 40px; padding: 0 22px; font: 600 15px var(--sans); }
+
+.lead-compose { display: flex; gap: 8px; align-items: flex-end; }
+.lead-compose textarea { flex: 1; min-width: 0; min-height: 40px; max-height: 40vh; padding: 9px 10px; resize: vertical; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font: 13.5px/1.45 var(--sans); }
+.lead-heard { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
+.lead-heard:empty { display: none; }
+.lead-heard.error { color: var(--threat); }
+
+.lead-foot { display: flex; }
+.lead-raw { font-size: 12.5px; }
+.lead-raw[hidden] { display: none; }
+.lead .mv-session[hidden] { display: none; }
+
+.lead :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 600px) {
+  .lead-opt, .lead-q .mv-note, .lead-round-foot button, .lead-compose button, .lead-why > summary { min-height: 44px; }
+  .lead-opts { display: grid; }
+  .lead-msg.you { max-width: 100%; }
+}

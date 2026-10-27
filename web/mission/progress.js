@@ -275,27 +275,6 @@ export const mount = (host, view, ctx) => {
     live.textContent = `swept ${s} s ago · the next entry lands here`;
   };
 
-  const say = el("input", { type: "text", placeholder: "say something to the Strike Lead", "aria-label": "Reply to the Strike Lead" });
-  const send = el("button", { type: "submit" }, "send");
-  const heard = el("span", { class: "prog-heard", role: "status" });
-  const reply = el("form", { class: "prog-reply", onsubmit: async (e) => {
-    e.preventDefault();
-    const said = say.value.trim();
-    if (!said) return say.focus();
-    send.disabled = true;
-    heard.classList.remove("error");
-    try {
-      const res = await ctx.post(ctx.actionUrl("say"), { text: said });
-      say.value = "";
-      heard.textContent = res.sent ? "the Strike Lead has it" : "kept in the ledger; no Strike Lead session is open";
-    } catch (err) {
-      heard.textContent = err.message;
-      heard.classList.add("error");
-    } finally {
-      send.disabled = false;
-    }
-  } }, say, send, heard);
-
   /** Task cards first, so a decision about a task finds its card on the first paint. */
   const update = (next) => {
     current = next;
@@ -310,7 +289,8 @@ export const mount = (host, view, ctx) => {
     toHash();
   };
 
-  host.append(el("h2", { class: "prog-head" }, "Progress", count), pins, board, live, reply);
+  // The same thread the interview was held in, moved here by node, so "why is this one waiting?" gets an answer.
+  host.append(el("h2", { class: "prog-head" }, "Progress", count), pins, board, live, ctx.thread.node);
   // A hidden tab has no one reading the clock; it catches up on the next tick that is seen.
   setInterval(() => { if (!document.hidden) tick(); }, 1000);
   window.addEventListener("hashchange", () => { scrolledTo = ""; toHash(); });

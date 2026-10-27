@@ -59,14 +59,13 @@
 .mv-ask .mv-ask-brief { margin: 0 0 8px; font-size: 15px; line-height: 1.55; color: var(--ink); max-width: 66ch; }
 .mv-ask .mv-ask-meta { margin: 0; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
 
-/* Before the blessing the Plan section is the gate and what it is approving, stacked with space
-   between them. Only the gate is a panel; the rest are headed blocks on the page. */
-.mv-gate-host, .mv-interview-host { display: flex; flex-direction: column; gap: 32px; }
-.mv-interview-host { margin-top: 32px; }
-/* The eyebrow heading on a headed block: the gate's, the interview's, and the walkthrough's (web/walkthrough.js,
+/* Before the blessing the Plan section is the chat (web/mission/lead.js), then the gate and what it
+   is approving, stacked with space between them. Only the gate is a panel; the rest are headed blocks. */
+.mv-gate-host { display: flex; flex-direction: column; gap: 32px; margin-top: 32px; }
+/* The eyebrow heading on a headed block: the gate's, the Strike Lead's and the walkthrough's (web/walkthrough.js,
    shared with the ship page and drawn here without its panel) under a merged milestone. */
-.mv-gate-host > section > h2, .mv-interview-host > section > h2, .walkthrough-panel h2 { font-family: var(--display); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.mv-interview > h2 .spacer, .walkthrough-panel h2 .spacer { flex: 1; }
+.mv-gate-host > section > h2, .lead-head, .walkthrough-panel h2 { font-family: var(--display); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.walkthrough-panel h2 .spacer { flex: 1; }
 
 /* A session opened from a module's row: the shell's well, under whatever the module passed. */
 .mv-session { margin-top: 8px; background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
@@ -115,12 +114,6 @@
 .mv-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .mv-confirm .why { flex-basis: 100%; margin: 0; }
 
-/* The interview is a conversation, so it gets a real terminal inside the mission's own view. */
-/* The terminal's dark is a well inside the panel, never the panel itself: a control that
-   inherits the page's ink must not land on a hard-coded dark surface in light mode. */
-.mv-interview .mv-term-well { background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
-.mv-interview .term { height: 46vh; min-height: 320px; }
-
 .mv-milestone { margin-bottom: 18px; }
 .mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
 .mv-milestone > .done { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 10px; }
@@ -131,7 +124,6 @@
 .mv-plan-task { padding: 10px 12px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); margin-bottom: 8px; }
 .mv-plan-task h4 { font-family: var(--display); font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
 .mv-plan-task p { margin: 0; font-size: 13px; color: var(--ink-soft); white-space: pre-wrap; max-width: 78ch; }
-.mv-interview .mv-empty { padding: 14px; }
 
 /* Which repo a task lands in. A multi-repo project plans across several, and the order they
    land in is the whole point of the milestones, so the repo reads on the task and not once. */

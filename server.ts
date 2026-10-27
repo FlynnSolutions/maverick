@@ -22,7 +22,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, missionPath, missionQuestions, missionReport, missionView, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, reopenInterview, resumeMission, retryTask, sayToStrikeLead, startMission, summarizeMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
+import { abandonMission, acceptTask, answerLead, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, missionPath, missionQuestions, missionReport, missionView, openLeadTerminal, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, resumeMission, retryTask, sayToStrikeLead, startMission, summarizeMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
@@ -634,12 +634,11 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const project = await requireProject(url);
     if (method === "GET") {
       await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
-      return sendJson(res, 200, await listMissions(project.id));
+      return sendJson(res, 200, (await listMissions(project.id)).map(({ chat: _chat, lead: _lead, ...m }) => m));
     }
     if (method === "POST") {
       const body = await readJson<{ name: string; brief: string; tracker?: number }>(req);
-      const { mission, terminal } = await startMission(project, body.name, body.brief, body.tracker ?? 0);
-      return sendJson(res, 200, { mission, terminal });
+      return sendJson(res, 200, await startMission(project, body.name, body.brief, body.tracker ?? 0));
     }
   }
   const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|report|say|stream|summarize))?$/);
@@ -680,9 +679,10 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return;
     }
     if (method === "POST" && action === "say") {
-      const text = (await readJson<{ text?: string }>(req)).text ?? "";
-      if (!text.trim()) return sendJson(res, 400, { error: "say something; an empty reply is not sent" });
-      return sendJson(res, 200, await sayToStrikeLead(project, id, text));
+      const body = await readJson<{ text?: string; answers?: Record<string, { options?: string[]; other?: string }> }>(req);
+      if (body.answers) return sendJson(res, 200, await answerLead(project, id, body.answers));
+      if (!body.text?.trim()) return sendJson(res, 400, { error: "say something; an empty reply is not sent" });
+      return sendJson(res, 200, await sayToStrikeLead(project, id, body.text));
     }
     if (method === "GET" && action === "report") {
       // Built before any header goes out, so a failure is a 500 with its reason, not an empty 200.
@@ -691,7 +691,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return res.end(report);
     }
     if (method === "POST" && action === "approve") return sendJson(res, 200, await approveMission(project, id));
-    if (method === "POST" && action === "interview") return sendJson(res, 200, await reopenInterview(project, id));
+    if (method === "POST" && action === "interview") return sendJson(res, 200, await openLeadTerminal(project, id));
     if (method === "POST" && action === "close") return sendJson(res, 200, await closeMission(project, id));
     // The brake.
     if (method === "POST" && action === "abandon") {
