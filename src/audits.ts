@@ -9,7 +9,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.ts";
 import { LEADS_WITH_KIND } from "./findings.ts";
-import { backgroundAgents, spawnBackgroundAgent } from "./git.ts";
+import { FINISHED, backgroundAgents, spawnBackgroundAgent } from "./git.ts";
 import type { Project } from "./projects.ts";
 import { readSessions, type SessionRecord } from "./sessions.ts";
 
@@ -168,7 +168,7 @@ export const sweep = async (project: Project): Promise<string[]> => {
   for (const r of records as Array<SessionRecord & { audit?: AuditInfo }>) {
     if (!r.parent || !parents.has(r.parent) || r.audit || !r.claudeId) continue;
     const agent = agents.find((a) => a.id === r.claudeId);
-    if (!agent || !/^(done|exited|stopped|blocked)$/.test(agent.state ?? "")) continue;
+    if (!agent || (agent.state !== "blocked" && !FINISHED.test(agent.state ?? ""))) continue;
     try {
       await runAudit(project, r.id);
       started.push(r.id);

@@ -1546,7 +1546,9 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
         task.status = "handed-back";
         task.note = `its ${claim.who} never started: the launch failed or was cut off before an agent was recorded`;
       }
-      if (task.status === "flying" && task.claudeId && state.get(task.claudeId) === "blocked") waiting.push(`${task.title} is waiting on you in its own session`);
+      const asking = (id?: string): boolean => Boolean(id) && state.get(id!) === "blocked";
+      if (task.status === "flying" && asking(task.claudeId)) waiting.push(`${task.title} is waiting on you in its own session`);
+      if (task.status === "reviewing" && asking(task.review?.claudeId)) waiting.push(`the RIO on ${task.title} is waiting on you in its own session`);
       if (task.status === "flying" && task.claudeId && isOver(state, task.claudeId, task.started)) {
         const repo = missionRepo(mission, task);
         task.status = "built";

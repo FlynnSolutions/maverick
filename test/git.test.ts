@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { changedFiles, excludeLocally } from "../src/git.ts";
+import { FINISHED, changedFiles, excludeLocally, listedAgents } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
 
 test("excludeLocally ignores paths in the repo without a commit, once, and a worktree shares it", async () => {
@@ -33,4 +33,15 @@ test("changedFiles against the commit a task was cut from ignores what the missi
   await writeFile(join(dir, "plan.md"), "p", "utf8"); git("add", "-A"); git("commit", "-q", "-m", "ledger");
   assert.deepEqual(await changedFiles(dir, base, "mission/x-m1-t1"), ["src.ts"]);
   assert.deepEqual(await changedFiles(dir, "mission/x", "mission/x-m1-t1"), ["plan.md", "src.ts"], "which is why the diff is against the cut, not the tip");
+});
+
+test("a listed session with no process is said down, a finished word, whatever its last word was", () => {
+  const listed = listedAgents([
+    { id: "live", sessionId: "s1", cwd: "/p", kind: "background", state: "blocked", pid: 41 },
+    { id: "dead", sessionId: "s2", cwd: "/p", kind: "background", state: "blocked" },
+    { id: "done", sessionId: "s3", cwd: "/p", kind: "background", state: "done" },
+    { id: "chat", sessionId: "s4", cwd: "/p", kind: "interactive", state: "idle" },
+  ]);
+  assert.deepEqual(listed.map((a) => [a.id, a.state]), [["live", "blocked"], ["dead", "down"], ["done", "done"]]);
+  assert.ok(FINISHED.test("down"), "so the mission sweep, the ship sweep and the audits all read it as ended");
 });

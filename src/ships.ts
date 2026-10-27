@@ -10,7 +10,7 @@
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { config } from "./config.ts";
-import { backgroundAgents, spawnBackgroundAgent } from "./git.ts";
+import { FINISHED, backgroundAgents, spawnBackgroundAgent } from "./git.ts";
 import type { Project } from "./projects.ts";
 import { readSessions, type SessionRecord } from "./sessions.ts";
 import { runAudit } from "./audits.ts";
@@ -205,8 +205,7 @@ export const sweepShips = async (project: Project): Promise<void> => {
     for (const step of ship.steps) {
       if (step.status !== "running" || !step.claudeId) continue;
       const agent = agents.find((a) => a.id === step.claudeId);
-      const state = agent?.state ?? "gone";
-      if (!/^(done|exited|stopped|gone)$/.test(state)) continue;
+      if (agent && !FINISHED.test(agent.state ?? "")) continue;
       const rp = reportPath(project.id, ship.version, step.id);
       try {
         step.report = await readFile(rp, "utf8");
