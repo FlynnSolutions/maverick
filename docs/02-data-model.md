@@ -83,8 +83,8 @@ anywhere bumps the minor, fixes alone bump the patch.
 | `Finding` | `src/findings.ts` | `kind` (`BLOCKER`, `NOTE`, `UNVERIFIED`), `area`, `severity` (`fix`, `ship`, `check`), `headline`, `detail`, `raw` |
 | `Move` | `src/missions.ts` | `taskId`, `attempt`, the stamps `out?`, `built?`, `reviewed?`, `ended?`, `end?` (`passed`, `handed-back`, `retry`), `verdict?`, `counts?` (a `FeedEntry`'s) |
 | `Reading` | `src/missions.ts` | a `Finding` plus `key`, `taskId`, `taskTitle`, `milestone` and `state?` (`read`, `later`) |
-| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`, `readings`, `moves`: the JSON of `GET /api/missions/:id` and of each stream event |
-| `WorkspaceMission` | `src/missions.ts` | the `Mission` record plus `word`, `questions` and `diffstat` (one `+N −M` line over its merged tasks), as `GET /api/workspace?project=` lists it |
+| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`, `readings`, `moves`, `leadBusy`, `waiting` (`waitingOn`: why each task and milestone that has not started is waiting), `proved` (the milestones `done()` calls done) and `updates` (`updatesOf`: Maverick's lines in the Strike Lead's chat, read off the feed): the JSON of `GET /api/missions/:id` and of each stream event |
+| `WorkspaceMission` | `src/missions.ts` | the `Mission` record without its `chat` and `lead`, plus `word`, `questions` and `diffstat` (one `+N −M` line over its merged tasks), as `GET /api/workspace?project=` lists it |
 
 A question's `id` is stable while the thing it asks about is open: `task:<task id>`,
 `hold:<milestone>`, `escalation`, `paused`, `gate`. Each answer is

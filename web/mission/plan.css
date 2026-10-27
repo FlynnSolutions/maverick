@@ -32,6 +32,9 @@
 .step .tasks .i { grid-column: 2; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); max-width: 56ch; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .step .tasks .w { grid-column: 3; grid-row: 1 / span 2; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; text-align: right; }
 .step .tasks .w b { font-weight: 500; color: var(--ink-soft); }
+/* Why a task or a milestone has not started: the reason, not just the word, so nobody works it out from the ledger. */
+.step .tasks .why { grid-column: 2; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); }
+.step .body > .why { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-soft); }
 .step .tasks .w b.needs { color: var(--caution); }
 .step .tasks .w b.ok { color: var(--hud); }
 .step .tasks .w a { color: var(--accent-hot); text-decoration: none; }

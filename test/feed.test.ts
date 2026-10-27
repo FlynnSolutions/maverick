@@ -1,7 +1,7 @@
 /** The feed: the ledger's lines, in the shapes `transitions` and `recorded` write them, read back as typed entries. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { feedOf } from "../src/feed.ts";
+import { feedOf, updatesOf, type FeedEntry } from "../src/feed.ts";
 import type { Mission } from "../src/missions.ts";
 
 const mission = {
@@ -130,4 +130,27 @@ test("counts: an old block's notes hold `; ` themselves, so the record's carried
   assert.deepEqual(entry.counts, { notes: 2, unverified: 1, blockers: 0 }, "three lines carried, not the six pieces a split on `; ` makes");
   assert.equal(entry.text, "m1-t1 Parse the plan document: reviewing to passed (RIO: pass with notes)", "the block is still cut");
   assert.deepEqual(one(line).counts, { notes: 5, unverified: 1, blockers: 0 }, "no record for the task: the split is all there is");
+});
+
+test("Maverick's lines in the chat are the moves worth a text, said plainly, and never a person's own decision", () => {
+  const at = "2026-10-27T12:29";
+  const mv = (taskId: string, was: string, now: string, verdict?: string): FeedEntry => ({ at, kind: now === "passed" ? "response" : now === "handed-back" ? "question" : "action", who: "Maverick", text: "raw", taskId, move: { taskId, was, now, ...(verdict ? { verdict } : {}) } });
+  const mission = { milestones: [{ n: 1, title: "a", done: "d", tasks: [{ id: "m1-t1", title: "The worker", intent: "i", repo: "root", status: "passed" as const, attempts: 1 }] }] };
+  const feed: FeedEntry[] = [
+    mv("m1-t1", "pending", "flying"),
+    mv("m1-t1", "flying", "reviewing"),
+    mv("m1-t1", "reviewing", "passed", "pass with notes"),
+    mv("m1-t1", "reviewing", "handed-back"),
+    mv("m1-t1", "handed-back", "flying"),
+    { at, kind: "response", who: "Maverick", text: "milestone 1 (a) is on the mission branch", milestone: 1 },
+    { at, kind: "response", who: "you", text: "Cory to the Strike Lead: why?" },
+    { at, kind: "thought", who: "Maverick", text: "something the ledger did not type" },
+  ];
+  assert.deepEqual(updatesOf(feed, mission).map((u) => u.text), [
+    "out: m1-t1 The worker",
+    "passed (pass with notes): m1-t1 The worker",
+    "came back and needs you: m1-t1 The worker",
+    "sent back out: m1-t1 The worker",
+    "milestone 1 (a) is on the mission branch",
+  ]);
 });

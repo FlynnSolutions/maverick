@@ -9,13 +9,14 @@ import { stopWalkthrough, walkthroughPanel } from "../walkthrough.js";
 /** The task's lamp and word, the map in /mockups/mission.html; Progress draws the same lamp on its cards. `built` is between the two: the Wingman is done and its RIO is on the way. */
 export const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
 const WORD = { passed: "done", flying: "working", built: "built", reviewing: "in review", "handed-back": "waiting for you", pending: "waiting" };
-const STEP_LAMP = { done: ["done", "work"], waiting: ["blocked", "work"], working: ["busy", "work"], pending: ["idle", "stale"] };
+const STEP_LAMP = { done: ["done", "work"], waiting: ["blocked", "work"], proving: ["busy", "action"], working: ["busy", "work"], pending: ["idle", "stale"] };
 /** The states with a session worth opening: a Wingman flying, a RIO reading, or the last of either before it was handed back. */
 const LIVE = new Set(["flying", "reviewing", "handed-back"]);
 
-const stepState = (m) =>
-  m.merged ? "done"
-    : m.hold || m.tasks.some((t) => t.status === "handed-back") ? "waiting"
+/** A hold reads before a merge: a merged milestone held on its proof or its landing is waiting, and one the server has not called done is being proved. */
+const stepState = (m, view) =>
+  m.hold || m.tasks.some((t) => t.status === "handed-back") ? "waiting"
+    : m.merged ? (view.proved?.includes(m.n) ? "done" : "proving")
       : m.dispatched || m.tasks.some((t) => t.status !== "pending") ? "working"
         : "pending";
 /** A milestone started early has no dispatch stamp; its first task's start stands in. */
@@ -29,15 +30,10 @@ export const mount = (host, view, ctx) => {
 
   const stepWord = (m, s) =>
     s === "done" ? `done ${fmtTime(m.merged)}`
+      : s === "proving" ? `merged ${fmtTime(m.merged)}, being proved`
       : s === "waiting" ? "waiting for you"
         : s === "working" ? (since(m) ? `working since ${fmtTime(since(m))}` : "working")
           : "not started";
-  const titleOf = (id) => current.milestones.flatMap((m) => m.tasks).find((t) => t.id === id)?.title ?? id;
-  const waitsOn = (task) => {
-    if (task.status !== "pending") return [];
-    const passed = new Set(current.milestones.flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
-    return (task.needs ?? []).filter((id) => !passed.has(id));
-  };
   const swapLamp = (holder, [status, band]) => {
     const key = `${status} ${band}`;
     if (holder.dataset.lamp === key) return;
@@ -56,12 +52,13 @@ export const mount = (host, view, ctx) => {
       title: el("span", { class: "t" }),
       intent: el("span", { class: "i" }),
       word: el("span", { class: "w" }),
+      why: el("span", { class: "why" }),
       answers: el("div", { class: "plan-q" }),
       session: el("div", { class: "plan-session" }),
       wordKey: "",
       question: "",
     };
-    r.li = el("li", { "data-task": task.id }, r.lamp, r.title, r.intent, r.word, r.answers, r.session);
+    r.li = el("li", { "data-task": task.id }, r.lamp, r.title, r.intent, r.word, r.why, r.answers, r.session);
     rows.set(task.id, r);
     return r;
   };
@@ -74,16 +71,20 @@ export const mount = (host, view, ctx) => {
     r.intent.textContent = task.intent ?? "";
     r.intent.title = task.intent ?? "";
     r.intent.hidden = !task.intent;
-    const waits = waitsOn(task);
+    // Why it has not started, worked out by the server by the rules it starts tasks by.
+    const why = current.waiting?.tasks?.[task.id] ?? "";
+    r.why.textContent = why;
+    r.why.hidden = !why;
+    // Only with an agent behind it: a task that never started has no screen, and a link to one is the dead end it was.
+    const agent = task.claudeId || task.review?.claudeId;
     // The word is rebuilt only when it would read differently, the way the lamp is swapped.
-    const wordKey = JSON.stringify([task.status, task.attempts, waits]);
+    const wordKey = JSON.stringify([task.status, task.attempts, Boolean(agent)]);
     if (wordKey !== r.wordKey) {
       r.wordKey = wordKey;
       r.word.replaceChildren(
         el("b", { class: task.status === "handed-back" ? "needs" : task.status === "passed" ? "ok" : "" }, WORD[task.status] ?? task.status),
         task.attempts ? ` · attempt ${task.attempts}` : "",
-        ...(waits.length ? [el("br"), `after ${waits.map(titleOf).join(", ")}`] : []),
-        ...(LIVE.has(task.status) ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, "open the session")] : []));
+        ...(LIVE.has(task.status) && agent ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, "open the session")] : []));
     }
     // The answers are rebuilt only when the question itself changes, so a half-written note survives the next event.
     const question = task.status === "handed-back" ? (current.questions ?? []).find((q) => q.taskId === task.id) : null;
@@ -188,6 +189,7 @@ export const mount = (host, view, ctx) => {
       title: text(""),
       word: el("span", { class: "w" }),
       gives: el("p", { class: "gives" }),
+      why: el("p", { class: "why" }),
       tasks: el("ul", { class: "tasks" }),
       walk: el("div", { class: "plan-walk", hidden: true }),
       walkKey: "",
@@ -196,7 +198,7 @@ export const mount = (host, view, ctx) => {
     };
     s.details = el("details", { class: "step" },
       el("summary", {}, s.lamp, el("h3", {}, s.n, s.title), s.word),
-      el("div", { class: "body" }, s.gives, s.tasks, s.walk));
+      el("div", { class: "body" }, s.gives, s.why, s.tasks, s.walk));
     s.details.addEventListener("toggle", () => patchWalk(s));
     s.li = el("li", { "data-milestone": String(m.n) }, s.details);
     steps.set(m.n, s);
@@ -205,7 +207,7 @@ export const mount = (host, view, ctx) => {
   const patchStep = (m) => {
     const s = steps.get(m.n) ?? makeStep(m);
     s.m = m;
-    const state = stepState(m);
+    const state = stepState(m, current);
     // Open unless done, decided when the step first shows and again when it becomes done; a step you opened or closed yourself stays as you left it.
     if (state !== s.state && (s.state === "" || state === "done")) s.details.open = state !== "done";
     s.state = state;
@@ -216,6 +218,9 @@ export const mount = (host, view, ctx) => {
     s.word.textContent = stepWord(m, state);
     s.gives.textContent = m.done ? `Done when ${m.done}` : "";
     s.gives.hidden = !m.done;
+    const why = current.waiting?.milestones?.[m.n] ?? "";
+    s.why.textContent = why ? `Not sent yet: ${why}.` : "";
+    s.why.hidden = !why;
     const ids = m.tasks.map((t) => t.id);
     for (const [id, r] of rows) if (r.li.parentElement === s.tasks && !ids.includes(id)) { r.li.remove(); rows.delete(id); }
     m.tasks.forEach((t, i) => {

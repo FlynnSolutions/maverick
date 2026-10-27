@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -389,6 +389,47 @@ test("the merge-with-notes rule: notes carry, a blocker stops, and retries come 
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass\n- BLOCKER: it does not build", "pass"), { status: "retry" }, "a pass with a blocker in it is a mixed");
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass\n- the deletion is keyed on the wrong id", "pass"), { status: "passed", carried: ["the deletion is keyed on the wrong id"] }, "on a pass an unsorted line rides as a note rather than vanishing");
   assert.deepEqual(settleReview({ attempts: 1 }, "verdict: pass with notes\n- NOTE: a\n- UNVERIFIED: the deploy", "pass with notes"), { status: "passed", carried: ["NOTE: a", "UNVERIFIED: the deploy"] }, "a carried line keeps its kind, so the report and the page read it as the verdict did");
+});
+
+test("every task and milestone that has not started says why, by the rules that start them", () => {
+  const t = (id: string, status: MissionTask["status"], extra: Partial<MissionTask> = {}) => ({ id, title: `T${id}`, intent: "i", repo: "root", status, attempts: 0, ...extra });
+  const mission = { status: "flying" as const, milestones: [
+    { n: 1, title: "a", done: "d", dispatched: "x", tasks: [t("m1-t1", "flying", { touches: ["src/api/"] }), t("m1-t2", "pending", { needs: ["m1-t1"] }), t("m1-t3", "pending", { touches: ["src/api/routes.ts"] })] },
+    { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending"), t("m2-t2", "pending", { needs: ["m1-t1", "m1-t2", "m1-t3"] })] },
+  ] };
+  const why = waitingOn(mission);
+  assert.equal(why.tasks["m1-t2"], "waits for m1-t1 Tm1-t1 (flying)", "a need still in the air, by name");
+  assert.equal(why.tasks["m1-t3"], "waits for m1-t1 Tm1-t1 to finish: both own src/api/routes.ts", "a task in the air owns the same paths");
+  assert.equal(why.tasks["m2-t1"], "starts with milestone 2, once milestone 1 has merged");
+  assert.equal(why.tasks["m2-t2"], "waits for 3 tasks: m1-t1 (flying), m1-t2 (pending), m1-t3 (pending)", "past two, by id");
+  assert.equal(why.milestones[2], "sent once milestone 1 has merged; a task in it starts sooner, as soon as what it needs has passed");
+  assert.equal(why.tasks["m1-t1"], undefined, "a task in the air is not waiting");
+  // A need that passed in a held milestone is not a base to build on, and the page says so.
+  const held = { status: "blocked" as const, milestones: [
+    { n: 1, title: "a", done: "d", dispatched: "x", merged: "y", hold: { kind: "landing" as const, reason: "r", at: "z" }, tasks: [t("m1-t1", "passed")] },
+    { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending", { needs: ["m1-t1"] })] },
+  ] };
+  assert.equal(waitingOn(held).tasks["m2-t1"], "waits for m1-t1 (its milestone is held)");
+  assert.equal(waitingOn({ ...mission, status: "paused" }).tasks["m1-t2"], "the mission is paused");
+  // Every task startable says it starts on the next sweep, and nothing it calls waiting is startable.
+  const free = { status: "flying" as const, milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", tasks: [t("m1-t1", "pending")] }] };
+  assert.equal(waitingOn(free).tasks["m1-t1"], "starts on the next sweep");
+  assert.deepEqual(startable(mission).map((s) => s.task.id), [], "and none of the waiting ones would start");
+  // Two that could each go alone but own the same path: the page says one goes and why the other waits, as one sweep starts them.
+  const pair = { status: "flying" as const, milestones: [{ n: 1, title: "a", done: "d", dispatched: "x", tasks: [t("m1-t1", "pending", { touches: ["src/a.ts"] }), t("m1-t2", "pending", { touches: ["src/a.ts"] })] }] };
+  assert.deepEqual(waitingOn(pair).tasks, { "m1-t1": "starts on the next sweep", "m1-t2": "waits for m1-t1 Tm1-t1 to finish: both own src/a.ts" });
+  assert.deepEqual(startable(pair).map((s) => s.task.id), ["m1-t1"]);
+});
+
+test("a merged milestone is a line in the ledger once, and the feed reads it as an outcome", () => {
+  const before = parsePlan(FLOWN);
+  const merged = new Date(2026, 9, 27, 12, 0);
+  const mission = { ...before, milestones: before.milestones.map((m) => ({ ...m, merged: m.n === 1 ? merged.toISOString() : undefined })) } as unknown as Mission;
+  const lines = transitions(before, mission, "2026-10-27 15:30").filter((l) => l.includes("merged:"));
+  assert.deepEqual(lines, [`2026-10-27 12:00 merged: milestone 1 (${mission.milestones[0].title}) is on the mission branch`], "stamped when it merged, not when the line was written");
+  assert.deepEqual(transitions({ ...before, log: lines }, mission, "s").filter((l) => l.includes("merged:")), [], "once");
+  assert.equal(feedOf(lines, mission)[0].kind, "response");
+  assert.equal(feedOf(lines, mission)[0].text, `milestone 1 (${mission.milestones[0].title}) is on the mission branch`, "reads as a sentence once the mark is off");
 });
 
 test("a task starts when what it needs has passed, wherever that is, and a task with no needs starts with its milestone", () => {
