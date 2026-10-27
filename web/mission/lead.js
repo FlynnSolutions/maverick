@@ -114,17 +114,33 @@ export const leadThread = (ctx) => {
   /** The last entry is the only one whose round is still open, and only while nothing has been said after it. */
   const isOpen = (chat, i) => i === chat.length - 1 && chat[i].who === "Strike Lead" && Boolean(chat[i].questions?.length);
 
-  /** New entries are appended; a round that has just been answered folds; nothing else on the page is touched. */
-  const shown = [];
-  const paintLog = (chat) => {
-    chat.forEach((entry, i) => {
-      const open = isOpen(chat, i);
-      if (shown[i]?.open === open) return;
-      const node = bubble(entry, open);
-      if (shown[i]) shown[i].node.replaceWith(node);
-      else log.append(node);
-      shown[i] = { node, open };
-    });
+  /** Maverick's own line about the flight: a task out, passed or back, a milestone merged. One quiet line each. */
+  const note = (u) => el("li", { class: `lead-note ${u.kind}` }, el("span", { class: "lead-at" }, fmtTime(u.at)), el("span", {}, u.text));
+
+  /**
+   * The conversation and the flight's updates in one thread, in time order. Each item keeps its
+   * node: a new one is placed where its time puts it, a round that has just been answered folds,
+   * and nothing else on the page is rebuilt, so a half-picked round survives every event.
+   */
+  const placed = new Map();
+  const paintLog = (chat, updates) => {
+    const items = [
+      ...chat.map((entry, i) => ({ key: `c${i}`, at: Date.parse(entry.at), entry, open: isOpen(chat, i) })),
+      ...updates.map((update, i) => ({ key: `u${i}`, at: Date.parse(update.at), update })),
+    ].sort((a, b) => a.at - b.at);
+    let prev = null;
+    for (const item of items) {
+      let held = placed.get(item.key);
+      if (!held || (item.entry && held.open !== item.open)) {
+        const node = item.entry ? bubble(item.entry, item.open) : note(item.update);
+        held?.node.replaceWith(node);
+        held = { node, open: item.open };
+        placed.set(item.key, held);
+      }
+      const want = prev ? prev.nextSibling : log.firstChild;
+      if (held.node !== want) log.insertBefore(held.node, want);
+      prev = held.node;
+    }
   };
 
   /** The one button that sends the mission out, under the message that said the plan is ready. */
@@ -150,8 +166,7 @@ export const leadThread = (ctx) => {
 
   const update = (next) => {
     view = next;
-    const chat = next.chat ?? [];
-    paintLog(chat);
+    paintLog(next.chat ?? [], next.updates ?? []);
     thinking.hidden = !next.leadBusy;
     raw.hidden = !next.lead || next.leadBusy;
     paintFire();

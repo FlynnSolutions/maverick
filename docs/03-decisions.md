@@ -685,3 +685,35 @@ resumes the same session for anyone who would rather type to it there.
 
 **Not decided here:** Maverick posting its own updates into the thread, and saying on the plan
 why a milestone or task is waiting (PR 3 of the same audit).
+
+## M24: Every task that has not started says why, and the chat carries the flight ✅ built
+
+**Why it waits, by the rule that starts it.** One function, `gates`, decides for every pending
+task either that it goes or what holds it: a need not yet passed, a need whose milestone is held
+or still being proved, its milestone not sent, a task in the air that owns the same paths
+(`clashOn`, which names them), or a pause. `startable` keeps the ones that go; `waitingOn` says
+the rest in words (needs by name, or by id past two), and the milestones say when they will be
+sent, by `undoneBefore`, which the dispatch and `mergeable` now share. So what the plan says and
+what starts cannot drift: a first version written beside `startable` already had, calling two
+tasks on the same path both "starts on the next sweep" when one sweep starts only one. The plan
+draws the reason under the task, and the Strike Lead's snapshot carries the same words.
+
+**The chat carries the flight.** `updatesOf` reads the moves worth a text off the feed (a task
+out or sent back out, passed, back for you; a milestone on the mission branch, a hold, a failure)
+and the thread draws them in time order among the messages. Nothing is stored twice: the ledger
+is the record and the chat reads it. A merge is now a ledger line of its own (`merged: milestone
+N (title) is on the mission branch`, once, stamped when it merged), because it used to leave none.
+
+**Smaller:** a merged milestone held on its proof or its landing reads `waiting for you`, not
+`done`; one whose proof is still running reads `being proved`, from the view's `proved` list
+rather than the page working out `done()` again. `open the session` shows only when
+there is an agent to open.
+
+**Why:** Cory, 2026-10-27, with four milestones planned and one task running: "it says only one
+of them has started... I have no idea what is going on... I asked twice what's going on, why is
+this one thing running?" Every task was waiting on that one, directly or through another, and the
+page said `waiting`.
+
+**Rejected: Maverick writing its updates into `chat`.** A second copy of the ledger that can drift
+from it. **Known limit:** ledger stamps are to the minute, so a Maverick line can sort a few
+seconds early among messages sent in the same minute.

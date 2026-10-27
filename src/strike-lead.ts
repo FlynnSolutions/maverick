@@ -109,14 +109,14 @@ export const parseTurn = (stdout: string): { ok: true; message: string; question
  * The mission's state as the Strike Lead reads it with each message in flight: every milestone
  * and task, what each is waiting on, the open questions, and the last of the ledger.
  */
-export const snapshot = (mission: Mission, questions: Array<{ title: string }>, log: string[]): string => {
+export const snapshot = (mission: Mission, questions: Array<{ title: string }>, log: string[], waiting: { tasks: Record<string, string>; milestones: Record<number, string> }): string => {
   const lines = [`Mission status: ${mission.status}${mission.trouble ? ` (${mission.trouble})` : ""}.`];
   for (const m of mission.milestones) {
-    const state = m.merged ? "merged" : m.hold ? `held: ${m.hold.kind}, ${m.hold.reason}` : m.dispatched ? "in the air" : "not started";
+    const state = m.hold ? `held: ${m.hold.kind}, ${m.hold.reason}` : m.merged ? "merged" : m.dispatched ? "in the air" : `not sent yet, ${waiting.milestones[m.n] ?? "waiting"}`;
     lines.push(`Milestone ${m.n}, ${m.title}: ${state}.`);
     for (const t of m.tasks) {
       const agent = t.status === "reviewing" ? t.review?.claudeId : t.claudeId;
-      lines.push(`  - ${t.id} ${t.title}: ${t.status}, attempt ${t.attempts}${agent ? `, agent ${agent}` : ""}${t.needs?.length ? `, needs ${t.needs.join(", ")}` : ""}${t.worktree ? `, worktree ${t.worktree}` : ""}${t.note ? `. ${t.note}` : ""}`);
+      lines.push(`  - ${t.id} ${t.title}: ${t.status}, attempt ${t.attempts}${agent ? `, agent ${agent}` : ""}${t.needs?.length ? `, needs ${t.needs.join(", ")}` : ""}${t.worktree ? `, worktree ${t.worktree}` : ""}${waiting.tasks[t.id] ? `, ${waiting.tasks[t.id]}` : ""}${t.note ? `. ${t.note}` : ""}`);
     }
   }
   lines.push(questions.length ? `Waiting on Cory: ${questions.map((q) => q.title).join("; ")}.` : "Nothing is waiting on Cory.");

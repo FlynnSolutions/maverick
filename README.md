@@ -312,9 +312,11 @@ Anything the mission needs from you is a **question**: a task handed back, a mil
 plan at the gate, a pause. It is pinned at the top of Progress with its answers as buttons,
 repeated as a strip in the Workspace's **Needs you** group, and, in the app, shown as a macOS
 notification that opens the mission when you click it. You answer it where you see it; there is
-no prompt dialog. The chat with the Strike Lead carries on at the bottom of Progress: ask it why
-something is waiting and it answers from a snapshot of the mission, and what you say is also
-written to the ledger as a decision. **open its session in a terminal** resumes the same session
+no prompt dialog. The chat with the Strike Lead carries on at the bottom of Progress, with
+Maverick's own lines in it as the flight moves (a task out, passed or back for you, a milestone on
+the mission branch): ask it why something is waiting and it answers from a snapshot of the
+mission, and what you say is also written to the ledger as a decision. The plan says the same
+thing on its own: every task and milestone that has not started says what it is waiting for. **open its session in a terminal** resumes the same session
 if you would rather type to it there.
 
 The Workspace is the inbox, and the app opens on it, on the project you had open last: **Needs

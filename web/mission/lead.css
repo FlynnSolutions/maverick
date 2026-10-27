@@ -21,6 +21,12 @@
 .lead-msg.error .lead-who { color: var(--threat); }
 .lead-msg.error .lead-text { color: var(--ink); }
 
+/* Maverick's line about the flight: quiet, one line, the time first; a task back for you or a failure is not quiet. */
+.lead-note { display: flex; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.45; color: var(--ink-soft); }
+.lead-note.question { color: var(--caution); }
+.lead-note.error { color: var(--threat); }
+.lead-note.response { color: var(--ink); }
+
 /* A round: one card per question, the question first and largest, the answers as buttons under it. */
 .lead-round { display: grid; gap: 12px; margin-top: 4px; }
 .lead-qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }

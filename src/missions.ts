@@ -39,7 +39,7 @@ import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type Bri
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
 import { over, questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
-import { feedOf, type FeedEntry } from "./feed.ts";
+import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
@@ -620,15 +620,22 @@ const carriedCounts = (carried: string[]): string => {
  * for what a person did, and nothing for a plain pass or retry. The report reads those words,
  * not the prose after them. A pass with notes says how many right after its verdict.
  */
+/** A ledger stamp: local date and time to the minute, as every line of the log carries. */
+const stampOf = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
 export const transitions = (before: ReturnType<typeof parsePlan>, mission: Mission, stamp: string): string[] => {
   const was = new Map(before.milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
   const heldLogged = new Set(before.log.filter((l) => /^\S+ \S+ held: /.test(l)).map((l) => l.match(/\(since ([^)]+)\)/)?.[1]));
+  // Once per milestone, stamped when it merged rather than when the line was written: a merge is
+  // the moment a person most wants to hear about, and it used to leave no line.
+  const mergedLogged = new Set(before.log.map((l) => l.match(/^\S+ \S+ merged: milestone (\d+)\b/)?.[1]).filter(Boolean).map(Number));
   return [
     ...mission.milestones.flatMap((m) => m.tasks).filter((t) => {
       const prior = was.get(t.id);
       return !prior || prior.status !== t.status || prior.verdict !== t.verdict;
     }).map((t) => `${stamp} ${t.status === "passed" && t.note?.startsWith("the RIO said") ? "auto: " : ""}${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.carried?.length ? carriedCounts(t.carried) : ""}${t.note ? `: ${t.note}` : ""}`),
     ...mission.milestones.filter((m) => m.hold && !heldLogged.has(m.hold.at)).map((m) => `${stamp} held: milestone ${m.n} (since ${m.hold!.at}): ${m.hold!.reason}`),
+    ...mission.milestones.filter((m) => m.merged && !mergedLogged.has(m.n)).map((m) => `${stampOf(new Date(m.merged!))} merged: milestone ${m.n} (${m.title}) is on the mission branch`),
   ];
 };
 
@@ -662,8 +669,7 @@ const syncPlan = async (project: Project, mission: Mission, decisions: string[] 
     const existing = await readFile(ledger, "utf8").catch(() => null);
     const current = existing ?? await readFile(source, "utf8");
     const before = parsePlan(current);
-    const d = new Date();
-    const stamp = `${today()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    const stamp = stampOf(new Date());
     const entries = [...transitions(before, mission, stamp), ...decisions.map((x) => `${stamp} decision: ${x}`)];
     if (!entries.length && existing !== null) return undefined;
     await ledgerRepoFor(mission, ledger);
@@ -1108,38 +1114,108 @@ const recordWingman = async (mission: Mission, task: MissionTask): Promise<void>
 };
 
 /** Whether two tasks could collide in the air: a stack both deploy, or a path both own. */
-const clash = (a: MissionTask, b: MissionTask): boolean => {
+/** What two tasks would both own in the air: the stacks they both deploy and the paths they both touch. Empty when they can fly together. */
+const clashOn = (a: MissionTask, b: MissionTask): string[] => {
   const fold = (s: string): string => s.toLowerCase().replace(/\/+$/, "");
-  return (a.deploys ?? []).some((d) => (b.deploys ?? []).some((e) => fold(d) === fold(e)))
-    || (a.touches ?? []).some((x) => (b.touches ?? []).some((y) => pathsOverlap(fold(x), fold(y))));
+  return [
+    ...(a.deploys ?? []).filter((d) => (b.deploys ?? []).some((e) => fold(d) === fold(e))).map((d) => `the ${d} stack`),
+    ...(a.touches ?? []).filter((x) => (b.touches ?? []).some((y) => pathsOverlap(fold(x), fold(y)))),
+  ];
+};
+
+/** The statuses of a task with an agent in the air: what a task about to start must not clash with. */
+const AIRBORNE = new Set<TaskStatus>(["flying", "built", "reviewing"]);
+
+/** A passed task is a base to build on unless its milestone is held, or merged and not yet proved. */
+const isBase = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean => !m.hold && (!m.merged || done(mission, m));
+
+/** The first milestone before this one that is not done: what a milestone is sent, and merged, after. */
+const undoneBefore = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): Milestone | undefined =>
+  mission.milestones.find((x) => x.n < m.n && !done(mission, x));
+
+/** Whether a pending task may start, and if not, what holds it, in the terms `waitingOn` says it in. */
+type Gate =
+  | { go: true }
+  | { paused: true }
+  | { needs: Array<{ id: string; title?: string; why: string }> }
+  | { milestone: Milestone; after?: Milestone }
+  | { clash: MissionTask; on: string[] };
+
+/**
+ * The one rule for starting a task, as a verdict per pending task. A task with no `needs` starts
+ * with its milestone. A task with `needs` starts when every task it names has passed, wherever
+ * that task is: a sibling in the same milestone, or a task in an earlier milestone that has not
+ * merged yet. So the plan's dependencies, not its milestone boundaries, decide when work can
+ * begin, and one straggler no longer idles everything behind it. The milestone still merges as
+ * one, once all its tasks pass. A need in a held milestone (a landing that failed, a collision
+ * nobody reconciled) is not a base to build on, and a task that would deploy a stack or own a
+ * path a task in the air has waits its turn: one deployer per stack in the air, whatever the
+ * milestones say. A task let through here is in the air for every task after it, so two of one
+ * pass cannot clash either. `startable` keeps the ones that go and `waitingOn` says why the rest
+ * wait, so what the page says and what starts cannot drift apart.
+ */
+const gates = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">): Array<{ milestone: Milestone; task: MissionTask; gate: Gate }> => {
+  const home = new Map(mission.milestones.flatMap((m) => m.tasks.map((t) => [t.id, { task: t, m }] as const)));
+  const airborne = mission.milestones.flatMap((m) => m.tasks).filter((t) => AIRBORNE.has(t.status));
+  const out: Array<{ milestone: Milestone; task: MissionTask; gate: Gate }> = [];
+  for (const milestone of mission.milestones) for (const task of milestone.tasks) {
+    if (task.status !== "pending") continue;
+    const gate = ((): Gate => {
+      if (mission.status === "paused") return { paused: true };
+      if (task.needs?.length) {
+        const needs = task.needs.flatMap((id) => {
+          const at = home.get(id);
+          if (!at) return [{ id, why: "not in the plan" }];
+          if (at.task.status !== "passed") return [{ id, title: at.task.title, why: at.task.status === "handed-back" ? "waiting for you" : at.task.status }];
+          if (!isBase(mission, at.m)) return [{ id, why: at.m.hold ? "its milestone is held" : "its milestone is still being proved" }];
+          return [];
+        });
+        if (needs.length) return { needs };
+      } else if (!milestone.dispatched) {
+        return { milestone, after: undoneBefore(mission, milestone) };
+      }
+      for (const other of airborne) {
+        const on = clashOn(task, other);
+        if (on.length) return { clash: other, on };
+      }
+      return { go: true };
+    })();
+    if ("go" in gate) airborne.push(task);
+    out.push({ milestone, task, gate });
+  }
+  return out;
+};
+
+/** Which pending tasks may start now, by `gates`. */
+export const startable = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">): Array<{ milestone: Milestone; task: MissionTask }> =>
+  gates(mission).filter(({ gate }) => "go" in gate).map(({ milestone, task }) => ({ milestone, task }));
+
+/** One verdict in words. Two needs are read by name; past that the ids say which, and the plan rows carry the names. */
+const reason = (gate: Exclude<Gate, { go: true }>): string => {
+  if ("paused" in gate) return "the mission is paused";
+  if ("needs" in gate) {
+    const { needs } = gate;
+    return `waits for ${needs.length > 2 ? `${needs.length} tasks: ${needs.map((u) => `${u.id} (${u.why})`).join(", ")}` : needs.map((u) => `${u.id}${u.title ? ` ${u.title}` : ""} (${u.why})`).join("; ")}`;
+  }
+  if ("milestone" in gate) return `starts with milestone ${gate.milestone.n}${gate.after ? `, once milestone ${gate.after.n} has merged` : ""}`;
+  return `waits for ${gate.clash.id} ${gate.clash.title} to finish: both own ${gate.on.join(", ")}`;
 };
 
 /**
- * Which pending tasks may start now. A task with no `needs` starts with its milestone. A task
- * with `needs` starts when every task it names has passed, wherever that task is: a sibling in
- * the same milestone, or a task in an earlier milestone that has not merged yet. So the plan's
- * dependencies, not its milestone boundaries, decide when work can begin, and one straggler no
- * longer idles everything behind it. The milestone still merges as one, once all its tasks pass.
- * A need in a held milestone (a landing that failed, a collision nobody reconciled) is not a
- * base to build on, and a task that would deploy a stack or own a path a task in the air has
- * waits its turn: one deployer per stack in the air, whatever the milestones say.
+ * Why each task and milestone that has not started is waiting, in words, read off `gates` and
+ * the dispatch's own order, so "why is only one thing running?" is read off the plan rather than
+ * worked out from the ledger. A task `startable` would let through says it starts on the next sweep.
  */
-export const startable = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">): Array<{ milestone: Milestone; task: MissionTask }> => {
-  if (mission.status === "paused") return [];
-  const all = mission.milestones.flatMap((m) => m.tasks);
-  // A passed task is a base to build on unless its milestone is held, or merged and not yet proved.
-  const passed = new Set(mission.milestones.filter((m) => !m.hold && (!m.merged || done(mission, m))).flatMap((m) => m.tasks).filter((t) => t.status === "passed").map((t) => t.id));
-  const airborne = all.filter((t) => ["flying", "built", "reviewing"].includes(t.status));
-  const out: Array<{ milestone: Milestone; task: MissionTask }> = [];
-  for (const milestone of mission.milestones) for (const task of milestone.tasks) {
-    if (task.status !== "pending") continue;
-    if (!(task.needs?.length ? task.needs.every((id) => passed.has(id)) : Boolean(milestone.dispatched))) continue;
-    // Against what is in the air and what this call is about to put there, so two of its own cannot clash either.
-    if (airborne.some((other) => clash(task, other))) continue;
-    out.push({ milestone, task });
-    airborne.push(task);
+export const waitingOn = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">): { tasks: Record<string, string>; milestones: Record<number, string> } => {
+  const tasks = Object.fromEntries(gates(mission).map(({ task, gate }) => [task.id, "go" in gate ? "starts on the next sweep" : reason(gate)]));
+  const milestones: Record<number, string> = {};
+  for (const m of mission.milestones) {
+    if (m.dispatched || m.merged) continue;
+    const after = undoneBefore(mission, m);
+    const early = m.tasks.some((t) => t.needs?.length) ? "; a task in it starts sooner, as soon as what it needs has passed" : "";
+    milestones[m.n] = mission.status === "paused" ? "the mission is paused" : after ? `sent once milestone ${after.n} has merged${early}` : "sent on the next sweep";
   }
-  return out;
+  return { tasks, milestones };
 };
 
 /** The one definition of "a person is needed": a task handed back, or a milestone held. Used by the sweep, resume, release and landAgain alike, through `settle`. */
@@ -1301,7 +1377,7 @@ export const done = (mission: Pick<Mission, "proofRequired">, m: Milestone): boo
 
 /** Milestones merge in order, and only once sent: a later one whose tasks all passed early still waits for the ones before it to be done. */
 export const mergeable = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): boolean =>
-  Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && !m.hold && mission.milestones.every((x) => x.n >= m.n || done(mission, x));
+  Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && !m.hold && !undoneBefore(mission, m);
 
 /** Mark a milestone sent and start every task of it that can start; the rest wait on their `needs`. */
 const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
@@ -1633,7 +1709,7 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
     }
     if (!m.walkthrough) await commissionWalkthrough(project, mission, m);
   }
-  const next = mission.milestones.find((x) => !x.dispatched && !x.merged && mission.milestones.every((y) => y.n >= x.n || done(mission, y)));
+  const next = mission.milestones.find((x) => !x.dispatched && !x.merged && !undoneBefore(mission, x));
   if (next) await dispatch(project, mission, next);
   await startReady(project, mission);
 };
@@ -1941,7 +2017,7 @@ const leadPrompt = async (project: Project, mission: Mission, first: boolean, he
   if (heard.length) parts.push(heard.map((e) => `${e.who === "you" ? "Cory" : e.who}: ${e.text}`).join("\n\n"));
   if (mission.approved) {
     const view = await missionView(project, mission.id);
-    parts.push(`Maverick's snapshot of the mission now:\n${snapshot(view, view.questions, view.feed.slice(-12).map((f) => `${f.at} ${f.who}: ${f.text}`))}`);
+    parts.push(`Maverick's snapshot of the mission now:\n${snapshot(view, view.questions, view.feed.slice(-12).map((f) => `${f.at} ${f.who}: ${f.text}`), view.waiting)}`);
   }
   return parts.join("\n\n");
 };
@@ -2392,7 +2468,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const feed = feedOf(log, mission);
-  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission) };
+  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => done(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */

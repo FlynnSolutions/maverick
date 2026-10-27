@@ -28,7 +28,7 @@ export interface FeedEntry {
 /** `2026-10-09 09:00` as `syncPlan` stamps it, or a full ISO time; either way `at` comes out as ISO, local when the stamp carries no zone. */
 const STAMPED = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?) (.*)$/;
 /** The word right after the stamp says what the line is (see `transitions` and `recorded` in `src/missions.ts`). */
-const MARKED = /^(decision|auto|held): (.*)$/;
+const MARKED = /^(decision|auto|held|merged): (.*)$/;
 /** A task's transition, as `transitions` writes it: `<id> <title>: <was> to <now>[ (RIO: <verdict>)][: <note>]`. */
 const TRANSITION = /^(m\d+-t\d+) .+?: (new|pending|flying|built|reviewing|passed|handed-back) to (pending|flying|built|reviewing|passed|handed-back)(?: \(RIO: ([^)]+)\))?/;
 const TASK = /\b(m(\d+)-t\d+)\b/;
@@ -43,6 +43,7 @@ const BLOCKERS = /\b(\d+) blocker\(s\) open\b/;
 const kindOf = (mark: string | undefined, move: FeedEntry["move"]): FeedEntry["kind"] => {
   if (mark === "decision") return "response";
   if (mark === "held") return "question";
+  if (mark === "merged") return "response";
   if (move) {
     const { now, verdict } = move;
     if (now === "handed-back") return "question";
@@ -114,3 +115,24 @@ export const feedOf = (log: string[], mission: Mission): FeedEntry[] => log.map(
     ...(milestone !== undefined ? { milestone } : {}), ...(task ? { taskId: task[1] } : {}), ...(move ? { move } : {}), ...(counts ? { counts } : {}),
   };
 });
+
+/**
+ * What Maverick says in the Strike Lead's chat while the mission flies: the moves a person would
+ * want a text about, read off the ledger rather than stored twice. A task going out, sent back
+ * out, passing or coming back; a milestone on the mission branch, a hold, a failure. A RIO being
+ * sent in and every other step stay in Progress, and a person's own decisions are already their messages.
+ */
+const SAID: Record<string, (name: string, move: NonNullable<FeedEntry["move"]>) => string> = {
+  flying: (name, move) => `${move.was === "pending" ? "out" : "sent back out"}: ${name}`,
+  passed: (name, move) => `passed${move.verdict ? ` (${move.verdict})` : ""}: ${name}`,
+  "handed-back": (name) => `came back and needs you: ${name}`,
+};
+export const updatesOf = (feed: FeedEntry[], mission: Pick<Mission, "milestones">): Array<{ at: string; text: string; kind: FeedEntry["kind"] }> => {
+  const title = new Map(mission.milestones.flatMap((m) => m.tasks.map((t) => [t.id, t.title])));
+  return feed.flatMap((e) => {
+    if (!e.at || e.who === "you") return [];
+    if (!e.move) return ["response", "question", "error"].includes(e.kind) ? [{ at: e.at, text: e.text, kind: e.kind }] : [];
+    const say = SAID[e.move.now];
+    return say ? [{ at: e.at, text: say(`${e.move.taskId} ${title.get(e.move.taskId) ?? ""}`.trim(), e.move), kind: e.kind }] : [];
+  });
+};
