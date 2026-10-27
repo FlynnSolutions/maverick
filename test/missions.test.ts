@@ -978,3 +978,30 @@ test("a summarizer that cannot be spawned says why on the record and leaves the 
   }
   assert.ok((await summarizeMission(project, "unspawned")).summary?.claudeId);
 });
+
+test("the sweep hands back a Wingman claim whose agent never landed, rather than calling it flying for good", async () => {
+  const { project } = summaryFixture("orphan", {
+    status: "flying",
+    milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-14T07:30:00Z", tasks: [
+      { id: "m1-t1", title: "The worker", intent: "Build the worker.", repo: "root", status: "flying", attempts: 1, started: "2026-10-14T07:30:00Z", worktree: "/tmp/none", branch: "mission/orphan-m1-t1" },
+      { id: "m1-t2", title: "The review", intent: "Review it.", repo: "root", status: "reviewing", attempts: 1, ended: "2026-10-14T07:40:00Z", review: { claudeId: "", file: "f", started: "2026-10-14T07:41:00Z" } }] }] as never,
+  });
+  agentsSay([]);
+  await sweepMissions(project);
+  const [wingman, rio] = recordOf("orphan").milestones[0].tasks;
+  assert.equal(wingman.status, "handed-back");
+  assert.match(wingman.note ?? "", /its Wingman never started/);
+  assert.equal(rio.status, "handed-back");
+  assert.match(rio.note ?? "", /its RIO never started/);
+});
+
+test("the sweep leaves a fresh claim alone while its spawn may still be in flight", async () => {
+  const { project } = summaryFixture("inflight", {
+    status: "flying",
+    milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-14T07:30:00Z", tasks: [
+      { id: "m1-t1", title: "The worker", intent: "Build the worker.", repo: "root", status: "flying", attempts: 1, started: new Date().toISOString(), worktree: "/tmp/none", branch: "mission/inflight-m1-t1" }] }] as never,
+  });
+  agentsSay([]);
+  await sweepMissions(project);
+  assert.equal(recordOf("inflight").milestones[0].tasks[0].status, "flying");
+});

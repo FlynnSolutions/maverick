@@ -7,7 +7,7 @@ import { test } from "node:test";
 import type { Milestone, Mission, MissionTask } from "../src/missions.ts";
 import { questionsOf, statusWord, type Question } from "../src/questions.ts";
 
-const t = (id: string, status: MissionTask["status"], extra: Partial<MissionTask> = {}): MissionTask => ({ id, title: `title ${id}`, intent: "i", repo: "root", status, attempts: 2, ...extra });
+const t = (id: string, status: MissionTask["status"], extra: Partial<MissionTask> = {}): MissionTask => ({ id, title: `title ${id}`, intent: "i", repo: "root", status, attempts: 2, claudeId: "w", ...extra });
 const ms = (n: number, tasks: MissionTask[], extra: Partial<Milestone> = {}): Milestone => ({ n, title: `m${n}`, done: "d", tasks, ...extra });
 const base = (extra: Partial<Mission> = {}): Mission =>
   ({ id: "x", project: "p", name: "X", brief: "the brief", created: "2026-10-01T00:00:00.000Z", plan: "p.md", trackerIndex: 0, land: "merge", repos: [], status: "flying", milestones: [], ...extra }) as unknown as Mission;
@@ -128,4 +128,14 @@ test("statusWord follows the questions: done, waiting for you, error and working
   assert.equal(statusWord(base({ status: "blocked", trouble: "the proof failed after milestone 2 merged: running tests | (killed by SIGKILL)" })), "error");
   // A proof that failed on its own holds the milestone, which is a question, not an error: release it or fix it.
   assert.equal(statusWord(base({ status: "blocked", trouble: "the proof failed after milestone 2 merged: 1 failing", milestones: [ms(2, [], { merged: "m", hold: { kind: "proof", reason: "1 failing", at: "a" } })] })), "waiting for you");
+});
+
+test("a task that never launched says so and offers only to send it out again: there is no work to accept", () => {
+  const task = t("m1-t1", "handed-back", { attempts: 0, claudeId: undefined, note: "could not launch: claude --bg did not start in /w: Workspace not trusted.", started: "2026-10-02T00:00:00.000Z" });
+  const [q] = questionsOf(base({ milestones: [ms(1, [task])] }));
+  assert.equal(q.title, "title m1-t1 never started");
+  assert.match(q.body, /Workspace not trusted/);
+  assert.deepEqual(q.answers.map((a) => a.path), ["tasks/m1-t1/retry"]);
+  assert.equal(primaries(q).length, 1);
+  assert.deepEqual(questionsOf(base({ status: "paused", milestones: [ms(1, [task])] })).find((x) => x.kind === "handed-back")!.answers, [], "paused: resume first");
 });

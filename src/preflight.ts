@@ -10,16 +10,34 @@ import { access, readFile } from "node:fs/promises";
 import { homedir, platform, arch } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { config } from "./config.ts";
 
 const run = promisify(execFile);
 
 export type RequirementKind = "tool" | "runtime" | "credential" | "secret" | "human" | "duration";
 export interface Requirement { kind: RequirementKind; value: string; note: string }
-export type CheckKind = "host" | "tool" | "agent" | "runtime" | "credential" | "secret" | "human" | "disk";
+export type CheckKind = "host" | "tool" | "agent" | "trust" | "runtime" | "credential" | "secret" | "human" | "disk";
 export interface Check { kind: CheckKind; name: string; status: "ok" | "warn" | "fail" | "human"; detail: string; refuses?: boolean }
 
-/** What a failing check means for approval is its kind, in one place: a tool, a runtime or an agent the mission cannot run without refuses; the rest is the person's to settle by approving. */
+/**
+ * What a failing check means for approval is its kind, in one place: a tool, a runtime or an agent the mission cannot run without refuses; the rest is the person's to settle by approving. Trust fails loud but does not refuse: it is read from a file Claude Code owns, and a launch it refuses says so on the task.
+ */
 const REFUSING: ReadonlySet<CheckKind> = new Set(["tool", "runtime", "agent"]);
+
+/**
+ * The folders in `paths` Claude Code has not trusted, read from its state file's text. It
+ * refuses `claude --bg` in one of those, and judges a worktree by the repo it came from, not by
+ * the folder it sits in: a trusted parent of the repo is not enough. Null when the text is not
+ * the state file, so a check that cannot read it says so rather than guessing.
+ */
+export const untrusted = (stateText: string, paths: string[]): string[] | null => {
+  try {
+    const projects = (JSON.parse(stateText) as { projects?: Record<string, { hasTrustDialogAccepted?: boolean }> }).projects ?? {};
+    return paths.filter((p) => projects[p]?.hasTrustDialogAccepted !== true);
+  } catch {
+    return null;
+  }
+};
 export const refuses = (c: Pick<Check, "kind" | "status">): boolean => c.status === "fail" && REFUSING.has(c.kind);
 
 /** `- tool: docker`, `- credential: aws dev, the dev stack`, `- human: the sign-up email inbox`. Bold around the kind is tolerated; anything else is a problem. */
@@ -143,6 +161,14 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
   for (const agent of [input.rioAgent, ...(input.wingmanAgent ? [input.wingmanAgent] : [])]) {
     const ok = await agentResolves(agent, input.projectPath);
     push({ kind: "agent", name: `agent ${agent}`, status: ok ? "ok" : "fail", detail: ok ? "installed" : `no ${agent}.md in ~/.claude/agents or the project's .claude/agents; the session would run without its standing orders (the README says how to install it)` });
+  }
+  // Every agent runs in the project or in a worktree of one of its repos, so those are the folders that must be trusted.
+  const folders = [...new Set([input.projectPath, ...input.repoPaths])];
+  const refused = untrusted(await readFile(config.claudeStateFile, "utf8").catch(() => ""), folders);
+  if (refused === null) push({ kind: "host", name: "workspace trust", status: "warn", detail: `could not read ${config.claudeStateFile}; if a repo is not trusted, every agent launched in it is refused` });
+  else for (const folder of folders) {
+    const no = refused.includes(folder);
+    push({ kind: "trust", name: `trust ${folder.split("/").pop()}`, status: no ? "fail" : "ok", detail: no ? `Claude Code has not trusted ${folder}, so it refuses every agent launched there; run \`claude\` in it once and accept the prompt` : "trusted" });
   }
   for (const repo of input.repoPaths) {
     // `.nvmrc` first, then `engines.node`; a repo that pins nothing says nothing.

@@ -58,20 +58,18 @@ type Answer = Question["answers"][number];
 
 const handedBack = (mission: Mission & { findings?: Record<string, string> }, task: MissionTask): Question => {
   const why = blockerOf(mission.findings?.[task.id]) ?? task.note ?? "no reason recorded";
+  const retry: Answer = { label: "send it out again", method: "POST", path: `tasks/${task.id}/retry`, primary: true };
+  const accept: Answer = { label: "accept it over the RIO", method: "POST", path: `tasks/${task.id}/accept`, body: ["note"] };
+  const base = { id: `task:${task.id}`, kind: "handed-back" as const, taskId: task.id };
+  // No Wingman id: its agent never started, so there is no work to accept, only a launch to fix.
+  if (!task.claudeId) return { ...base, title: `${task.title} never started`, body: why, at: task.started ?? mission.created, answers: mission.status === "paused" ? [] : [retry] };
   return {
-    id: `task:${task.id}`,
-    kind: "handed-back",
+    ...base,
     title: `${task.title} came back`,
     body: `${task.title}, attempt ${task.attempts}, the RIO said ${task.verdict ?? "nothing"}: ${why}`,
     at: task.review?.started ?? task.ended ?? mission.created,
-    taskId: task.id,
     // The server refuses `retry` while paused and says resume first; accept it takes in any state.
-    answers: mission.status === "paused"
-      ? [{ label: "accept it over the RIO", method: "POST", path: `tasks/${task.id}/accept`, body: ["note"], primary: true }]
-      : [
-          { label: "send it out again", method: "POST", path: `tasks/${task.id}/retry`, primary: true },
-          { label: "accept it over the RIO", method: "POST", path: `tasks/${task.id}/accept`, body: ["note"] },
-        ],
+    answers: mission.status === "paused" ? [{ ...accept, primary: true }] : [retry, accept],
   };
 };
 
