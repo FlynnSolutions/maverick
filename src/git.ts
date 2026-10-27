@@ -234,21 +234,29 @@ export const diffStat = async (repoPath: string, from: string, to: string): Prom
  * terminals. Every launch goes through here, which is what makes the reply format a fact about
  * every session rather than a thing each prompt builder has to remember.
  */
-export const claudeArgs = (o: { prompt: string; bg?: boolean; agent?: string; name?: string; tools?: string }): string[] => [
+export const claudeArgs = (o: { prompt?: string; bg?: boolean; schema?: object; sessionId?: string; resume?: string; agent?: string; name?: string; tools?: string }): string[] => [
+  // A turn held to a schema prints one JSON result and answers in the schema, so it does not take the six sections.
+  ...(o.schema ? ["-p", "--output-format", "json", "--json-schema", JSON.stringify(o.schema), "--permission-mode", "auto"] : []),
   ...(o.bg ? ["--bg", "--permission-mode", "auto"] : []),
+  ...(o.sessionId ? ["--session-id", o.sessionId] : []),
+  ...(o.resume ? ["--resume", o.resume] : []),
   ...(o.agent ? ["--agent", o.agent] : []),
   ...(o.name ? ["--name", o.name.slice(0, 60)] : []),
   ...(o.tools ? ["--tools", o.tools] : []),
-  ...REPLY_FORMAT_ARGS,
-  o.prompt,
+  ...(o.schema ? [] : REPLY_FORMAT_ARGS),
+  ...(o.prompt ? [o.prompt] : []),
 ];
+
+/**
+ * Why `claude` refused, in its own words: the last line it wrote to stderr. The error's message
+ * is the whole command line, prompt and all, which buried an untrusted workspace under a brief.
+ */
+export const claudeFailure = (err: Error & { stderr?: string }): string => err.stderr?.trim().split("\n").pop() || err.message.split("\n")[0];
 
 /** Start a background Claude session and return the id it prints. `tools` fences it the way the CAG is fenced. */
 export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string, tools?: string, env: Record<string, string> = {}): Promise<string> => {
-  // A refusal says why on its last stderr line; the error's own message is the whole command
-  // line, prompt and all, which buries it (an untrusted workspace read as a mission stuck flying).
   const { stdout } = await run("claude", claudeArgs({ prompt, bg: true, agent, name, tools }), { cwd, env: { ...process.env, ...env } }).catch((err: Error & { stderr?: string }) => {
-    throw new Error(`claude --bg did not start in ${cwd}: ${err.stderr?.trim().split("\n").pop() || err.message.split("\n")[0]}`);
+    throw new Error(`claude --bg did not start in ${cwd}: ${claudeFailure(err)}`);
   });
   const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
   if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);

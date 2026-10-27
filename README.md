@@ -13,7 +13,7 @@ Maverick is one screen over the projects on your machine, one project at a time.
 - **The picker.** Import a directory and Maverick finds the tracker files it recognises (`deliverables/CHECKLIST.md`, `CHECKLIST.md`, `PUNCHLIST.md`, `TODO.md`, `NEXT_STEPS.md`). That file is the source of truth from then on.
 - **The board.** The checklist's sections become lanes: Backlog, Roadmap, In progress, Done. Drag a card and the move is written back as one line move and committed in the tracker's own repo, so every other open session sees it. Releases are computed from the changelog and the merged pull requests, and a card can be planned into the next one.
 - **Sessions.** The workspace shows every Claude Code session on the machine, grouped by what needs you. Open one full screen to read it as a conversation and type into it, spawn a background session on a card, or open a terminal inside the console.
-- **Missions.** A Strike Lead interviews you in a terminal and writes a plan of milestones. You approve it once; then one Wingman per task builds in its own worktree, a RIO that did not write the code reviews each one, and a milestone that passes merges into a mission branch that you walk through before it lands. It never merges into `main`. Its page has four fixed places (The ask, Plan, Progress, Result) and one word for where it stands, and anything it needs from you is a question you answer where you see it. Its result is triage, not a wall of notes: every RIO finding says what it is about and what it asks of you, sorted into fix before merge, unverified and fine to ship, each marked read or later (later puts it on your checklist), with a `summarize` button that asks a read-only session for the three things you must read.
+- **Missions.** A Strike Lead interviews you in a chat, in rounds of questions you answer with a click, and writes a plan of milestones. You fire it once; then one Wingman per task builds in its own worktree, a RIO that did not write the code reviews each one, and a milestone that passes merges into a mission branch that you walk through before it lands. It never merges into `main`. Its page has four fixed places (The ask, Plan, Progress, Result) and one word for where it stands, and anything it needs from you is a question you answer where you see it. Its result is triage, not a wall of notes: every RIO finding says what it is about and what it asks of you, sorted into fix before merge, unverified and fine to ship, each marked read or later (later puts it on your checklist), with a `summarize` button that asks a read-only session for the three things you must read.
 - **The ship.** A ship wizard runs the project's own ship workflow phase by phase, each phase a session you can watch, with the walkthrough and the architecture doc built on the way.
 - **The calendar.** Due dates, releases, and ship days on a cadence you set, with a banner on the morning of.
 
@@ -268,10 +268,14 @@ that follows it. A move relocates that whole block and touches nothing else.
 A **mission** is one bounded piece of work run end to end, and you are in it exactly twice.
 
 Open one from the Workspace (**open a mission**, under its four groups), which is where a
-mission belongs: it is a bundle of sessions. A **Strike Lead** starts in an embedded terminal and *interviews*
-you: it reads the repo, probes what done means and what is out of scope, and refuses to plan off
-your first line. When you agree, it writes a plan to `deliverables/missions/<id>.md` as
-milestones, each with one testable "done when" line and its tasks.
+mission belongs: it is a bundle of sessions. A **Strike Lead** *interviews* you in a chat on the
+mission page: it reads the repo, probes what done means and what is out of scope, and refuses to
+plan off your first line. Each round of its questions is a set of cards, the question first, its
+answers as buttons, a box for your own words and the reasoning folded under **more context**;
+you answer the round and it asks the next. When you agree, it writes a plan to
+`deliverables/missions/<id>.md` as milestones, each with one testable "done when" line and its
+tasks, and a **Fire mission** button appears under its message. A plan it calls ready that
+cannot be flown goes back to it to fix before you see the button.
 
 That plan is the first gate. Maverick shows it with what it will cost (how many tasks, how many
 background sessions, and Factory's published numbers for a mission of this kind), and nothing
@@ -308,8 +312,10 @@ Anything the mission needs from you is a **question**: a task handed back, a mil
 plan at the gate, a pause. It is pinned at the top of Progress with its answers as buttons,
 repeated as a strip in the Workspace's **Needs you** group, and, in the app, shown as a macOS
 notification that opens the mission when you click it. You answer it where you see it; there is
-no prompt dialog. At the bottom of Progress a reply box says one line to the Strike Lead; it is
-written to the ledger, and typed into the Strike Lead's terminal if that is still open.
+no prompt dialog. The chat with the Strike Lead carries on at the bottom of Progress: ask it why
+something is waiting and it answers from a snapshot of the mission, and what you say is also
+written to the ledger as a decision. **open its session in a terminal** resumes the same session
+if you would rather type to it there.
 
 The Workspace is the inbox, and the app opens on it, on the project you had open last: **Needs
 you**, **Working**, **Ready to review**, **Done**, always in that order, with each mission's

@@ -649,3 +649,39 @@ and hiding them on the page.** The ledger is read raw on the branch and in the r
 the notes already have a home on the task.
 
 **Not decided here:** the palette, the map, and the inbox, all unchanged.
+
+## M23: The Strike Lead is a chat, from the interview to the flight ✅ built
+
+**One session, resumed per turn.** The Strike Lead is one headless Claude session per mission
+(`mission.lead.sessionId`). Each turn is `claude -p --resume` with `--json-schema`, so every reply
+comes back as `{ message, questions, planReady }` and the page never has to find the question in
+prose. The conversation is `mission.chat` on the record; a turn runs after the request returns,
+answers everything said since its last reply, and is picked up again by the next page read if a
+restart cut it off. A turn that fails is said in the chat by Maverick, never retried in a loop.
+
+**Questions are cards; answers are buttons.** A round is two to five questions, each one sentence
+with two to four options (recommendation first), a box for your own words, and the reasoning
+folded under `more context`. The round is sent as one numbered message (`answersText`).
+
+**The plan ends in a button.** When the Strike Lead says the plan is written, Maverick parses it
+first: a plan that cannot fly goes back to the Strike Lead with the reasons, twice at most, and
+only a plan that can shows **Fire mission** under its message. The gate below keeps the cost,
+the preflight and its own approve, which is how a plan written by hand is still flown.
+
+**The same chat answers in flight.** After approval every message carries Maverick's snapshot of
+the mission (every task, what it needs, its agent, the open questions, the last of the ledger) and
+the flight's rules (a milestone starts when the one before it merges), and the Strike Lead may
+read anything but change nothing; it names the control that does. The message still goes into
+the ledger as a decision.
+
+**Why:** Cory, 2026-10-27, mid-interview: "I'm trying to start the mission, but it's saying you
+can't start it from here. I need to approve it in Maverick. Well I'm in Maverick." And after
+approval the reply box wrote to the ledger and nothing answered: "I'm not passing notes."
+
+**Rejected: parsing questions out of the terminal.** A terminal's screen is not a contract; a
+schema is. **Rejected: one session per turn.** The interview's value is that it remembers what
+it read and what he said. **Kept: the terminal, behind a link.** `open its session in a terminal`
+resumes the same session for anyone who would rather type to it there.
+
+**Not decided here:** Maverick posting its own updates into the thread, and saying on the plan
+why a milestone or task is waiting (PR 3 of the same audit).

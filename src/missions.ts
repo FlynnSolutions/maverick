@@ -18,12 +18,13 @@
  * RIO said, which gates opened — at `~/.claude/console-sessions/missions/<project>/<id>.json`,
  * the same named exception `ships/` already uses.
  */
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, stopAgent, toplevelOf, underPath, type BackgroundAgent } from "./git.ts";
+import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, claudeFailure, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, stopAgent, toplevelOf, underPath, type BackgroundAgent } from "./git.ts";
 import { findingsOf, slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -31,12 +32,13 @@ import { patchSession, writeSession, type SessionRecord } from "./sessions.ts";
 import { readRegistrySessions } from "./live.ts";
 import { parentChain } from "./processes.ts";
 import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
-import { listTerminals, openTerminal, writeInput, type TerminalInfo } from "./terminal.ts";
+import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
+import { CHAT_RULES, LEAD_SCHEMA, answersText, flightRules, parseTurn, snapshot, unheard, type ChatEntry } from "./strike-lead.ts";
 import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
 import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
+import { over, questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
@@ -198,8 +200,12 @@ export interface Mission {
   finished?: string;
   /** The plan document, relative to the project. Written by the Strike Lead, frozen at approval. */
   plan: string;
-  /** The interview is a conversation, so it runs in an embedded terminal, not a background agent. */
+  /** Where an interview ran in an embedded terminal, before the Strike Lead was a chat. Kept so older records still read. */
   interview?: { terminalId: string; started: string };
+  /** The Strike Lead's own Claude session, resumed for every turn of the chat. */
+  lead?: { sessionId: string; started: string };
+  /** The conversation with the Strike Lead, oldest first: the interview, then the flight. */
+  chat?: ChatEntry[];
   formation?: string;
   /** Every repo the plan touches. Work never leaves these branches without a person. */
   repos: MissionRepo[];
@@ -774,7 +780,7 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
   "",
   mission.from ? `This mission came out of the breakdown of ${join(project.path, mission.from)}, as the item "${mission.brief}". Read that document first; it holds the reasoning.` : `Cory opened this mission with one line: "${mission.brief}"`,
   "",
-  "That line is not a specification and you must not treat it as one. Interview him first, in the terminal, one or two questions at a time. Read the repo before you ask, so every question is informed rather than generic: its docs, its rulebook, the code the work would touch, and what already exists that this should build on rather than replace. Probe until you can answer, in his words:",
+  "That line is not a specification and you must not treat it as one. Interview him first, in rounds of questions. Read the repo before you ask, so every question is informed rather than generic: its docs, its rulebook, the code the work would touch, and what already exists that this should build on rather than replace. Probe until you can answer, in his words:",
   ...INTERVIEW_PROBES,
   "",
   "This interview is where most of the value is. Do not shorten it into a formality, and do not present a plan until he has answered.",
@@ -802,18 +808,19 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
   "",
   "You may read anything and run anything read-only. You may not edit product code, create branches or worktrees, spawn any agent, or touch the trackers: the plan document is the only file you write. Maverick writes the plan into the tracker and dispatches the Wingmen itself, and only after Cory has approved it in the console.",
   "",
-  `When the plan is written, tell Cory it is ready and that he approves it on the mission page in Maverick. Then stop.`,
+  CHAT_RULES,
 ].join("\n");
 
-/** Open a mission: the record, and the Strike Lead in an embedded terminal, because an interview is a conversation. */
-export const startMission = async (project: Project, name: string, brief: string, trackerIndex = 0, from?: string): Promise<{ mission: Mission; terminal: TerminalInfo }> => {
+/** Open a mission: the record, and the Strike Lead's first turn, which reads the repo and asks its first round. */
+export const startMission = async (project: Project, name: string, brief: string, trackerIndex = 0, from?: string): Promise<{ mission: Mission }> => {
   if (!name.trim()) throw new Error("a mission needs a name");
   if (!brief.trim()) throw new Error("a mission needs the line you would have opened a session with");
   const id = slug(name);
   if (!id) throw new Error(`"${name}" does not reduce to a usable id`);
   if (await readMission(project.id, id)) throw new Error(`${project.name} already has a mission "${id}"`);
   const cfg = await missionConfigFor(project.path);
-  const choices = await repoChoices(project, cfg);
+  // Refused here rather than on the first turn: a project with no repository cannot hold a mission.
+  await repoChoices(project, cfg);
   const plan = join("deliverables", "missions", `${id}.md`);
   const mission: Mission = {
     id,
@@ -831,20 +838,21 @@ export const startMission = async (project: Project, name: string, brief: string
   };
   if (!project.trackers[trackerIndex]) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
   await mkdir(join(project.path, "deliverables", "missions"), { recursive: true });
-  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", ...claudeArgs({ prompt: interviewPrompt(project, mission, join(project.path, plan), choices, cfg.land) })], project.path, 120, 36);
-  mission.interview = { terminalId: terminal.id, started: new Date().toISOString() };
   await writeMission(mission);
-  return { mission, terminal };
+  hearLead(project, mission.id);
+  return { mission };
 };
 
-/** Start the interview again after a server restart took the terminal with it. */
-export const reopenInterview = async (project: Project, id: string): Promise<TerminalInfo> => {
+/**
+ * The Strike Lead's session in a terminal of its own, for typing to it freely. The same session
+ * the chat resumes: what is said here the next turn of the chat already knows.
+ */
+export const openLeadTerminal = async (project: Project, id: string): Promise<TerminalInfo> => {
   const mission = await missionOr404(project.id, id);
-  if (mission.approved) throw new Error(`${mission.name} is already approved; the interview is over`);
-  const cfg = await missionConfigFor(project.path);
-  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", ...claudeArgs({ prompt: interviewPrompt(project, mission, join(project.path, mission.plan), await repoChoices(project, cfg), cfg.land) })], project.path, 120, 36);
-  mission.interview = { terminalId: terminal.id, started: new Date().toISOString() };
-  await writeMission(mission);
+  if (!mission.lead) throw new Error(`${mission.name}'s Strike Lead has not started yet; say something to it first`);
+  if (leadBusy(mission)) throw new Error("the Strike Lead is busy, in the chat or in a terminal already; open its session once it is free");
+  const terminal = openTerminal(`Strike Lead · ${mission.name}`, ["claude", ...claudeArgs({ resume: mission.lead.sessionId })], project.path, 120, 36);
+  leadTerminals.set(leadKey(mission), terminal.id);
   return terminal;
 };
 
@@ -1412,6 +1420,11 @@ export const sweepMissions = async (project: Project): Promise<void> => {
   } finally {
     sweeping.delete(project.id);
   }
+  // The one place work resumes: an interview whose first turn a restart cut off, or a message to the
+  // Strike Lead that a restart or a terminal holding its session left unanswered, is answered on the next pass.
+  for (const m of await listMissions(project.id)) {
+    if (!over(m) && !leadBusy(m) && ((!m.lead && !m.approved) || unheard(m.chat ?? []).length)) hearLead(project, m.id);
+  }
 };
 
 /** A milestone with a task in the air is watched whether or not it has been sent: a task may start early on its needs, and a Wingman nobody watches never gets its RIO. */
@@ -1715,8 +1728,13 @@ const memberIds = (mission: Mission): string[] =>
  * that pty, the way the workspace already matches a session to its dock terminal.
  */
 const seatTheLead = async (mission: Mission): Promise<void> => {
-  if (!mission.formation || !mission.interview) return;
+  if (!mission.formation || !(mission.lead || mission.interview)) return;
   if ((await listFormations(mission.project)).find((f) => f.id === mission.formation)?.lead) return;
+  // A Strike Lead that is a chat has its session id on the record already.
+  if (mission.lead) {
+    await updateFormation(mission.formation, { lead: mission.lead.sessionId }).catch(() => undefined);
+    return;
+  }
   const pty = listTerminals().find((t) => t.id === mission.interview!.terminalId);
   if (!pty?.pid || pty.exitCode !== null) return;
   const sessions = await readRegistrySessions();
@@ -1848,39 +1866,130 @@ export const pauseMission = async (project: Project, id: string, note: string): 
   return recorded(project, mission, [`paused by Cory: ${note.trim()}`]);
 };
 
-/** How long the Strike Lead's terminal is given to take the reply in before Enter follows it. */
-const SUBMIT_BEAT_MS = 180;
+/** One entry onto the end of the chat, on whichever record is current. */
+const addChat = (project: Project, id: string, entry: Omit<ChatEntry, "at">) =>
+  changeMission(project.id, id, (m) => { m.chat = [...(m.chat ?? []), { at: new Date().toISOString(), ...entry }]; });
 
 /**
- * Cory's reply to the Strike Lead. Once the mission is approved it goes into the ledger as a
- * decision, like every other thing a person does; before that there is no ledger to write, and
- * the open interview terminal is the only place it can go. It is typed into the Strike Lead's
- * terminal whenever that terminal is still open.
- *
- * The reply is one line: a ledger decision is one bullet, so a newline in it would start a line
- * of plan of its own. Enter is its own write a beat after the text, as the composer does: sent
- * with the text it lands inside a bracketed paste, or reads as a newline, and nothing submits.
- * When the ledger refuses the line and no terminal is open the reply landed nowhere, which is a
- * failure, not an ok.
+ * Cory's message to the Strike Lead: it goes into the chat and the Strike Lead answers it in
+ * the next turn. Once the mission is approved it also goes into the ledger as a decision, like
+ * every other thing a person does, on one line: a ledger decision is one bullet, so a newline in
+ * it would start a line of plan of its own. The ledger is the record of what was decided and the
+ * chat is the conversation; a ledger that refuses the line is trouble on the mission, and the
+ * chat still has it.
  */
-export const sayToStrikeLead = async (project: Project, id: string, text: string): Promise<{ ok: true; sent: boolean }> => {
-  const said = text.trim().replace(/\s+/g, " ");
+export const sayToStrikeLead = async (project: Project, id: string, text: string): Promise<{ ok: true }> => {
+  const said = text.trim();
   if (!said) throw new Error("say something; an empty reply is not sent");
   const fresh = await missionOr404(project.id, id);
-  const terminalId = fresh.interview?.terminalId;
-  const open = Boolean(terminalId && listTerminals().find((t) => t.id === terminalId && t.exitCode === null));
-  if (!fresh.approved && !open) throw new Error(`${fresh.name} has no ledger before approval and no open Strike Lead terminal; there is nowhere to say it`);
-  if (fresh.approved) {
-    const why = await syncPlan(project, fresh, [`Cory to the Strike Lead: ${said}`]);
-    if (why && !open) throw new Error(`the reply was not sent: ${why}, and no Strike Lead terminal is open`);
-    if (why) await noteTrouble(project, id, why);
+  if (over(fresh)) throw new Error(`${fresh.name} is ${fresh.status}; its Strike Lead is stood down`);
+  if (fresh.approved) await recorded(project, fresh, [`Cory to the Strike Lead: ${said.replace(/\s+/g, " ")}`]);
+  await addChat(project, id, { who: "you", text: said });
+  hearLead(project, id);
+  return { ok: true };
+};
+
+/** A round of the Strike Lead's questions answered with clicks: said to it as one message, numbered as it asked. */
+export const answerLead = async (project: Project, id: string, picked: Record<string, { options?: string[]; other?: string }>): Promise<{ ok: true }> => {
+  const last = (await missionOr404(project.id, id)).chat?.at(-1);
+  if (last?.who !== "Strike Lead" || !last.questions?.length) throw new Error("there is no round of questions waiting for answers; it may have been answered already");
+  return sayToStrikeLead(project, id, answersText(last.questions, picked));
+};
+
+/* ---------- the Strike Lead's turns ---------- */
+
+/** Missions whose Strike Lead is mid-turn in this process, and the terminals its session is open in. */
+const leading = new Set<string>();
+const leadTerminals = new Map<string, string>();
+const leadKey = (m: Pick<Mission, "project" | "id">): string => `${m.project}/${m.id}`;
+
+/**
+ * Busy answering in the chat, or open in a terminal: one session has one writer at a time. A
+ * message sent meanwhile waits in the chat, and the sweep has it answered once the session is free.
+ */
+export const leadBusy = (m: Pick<Mission, "project" | "id">): boolean => {
+  const key = leadKey(m);
+  const terminal = leadTerminals.get(key);
+  if (terminal && !listTerminals().some((t) => t.id === terminal && t.exitCode === null)) leadTerminals.delete(key);
+  return leading.has(key) || leadTerminals.has(key);
+};
+
+/** A turn reads the repo before it answers; a long one is still well inside this. */
+const LEAD_TURN_MS = 20 * 60_000;
+/** Times a plan the Strike Lead calls ready, but that cannot fly, goes back to it before the person has to read why. */
+const LEAD_FIXES = 2;
+
+/** One turn of the Strike Lead's session: the prompt in, its structured reply out, or why there is none. */
+const leadTurn = (project: Project, session: { sessionId?: string; resume?: string }, prompt: string): Promise<ReturnType<typeof parseTurn>> =>
+  new Promise((done) => {
+    execFile("claude", claudeArgs({ schema: LEAD_SCHEMA, ...session, prompt }), { cwd: project.path, timeout: LEAD_TURN_MS, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const parsed = parseTurn(stdout);
+      done(parsed.ok || !err ? parsed : { ok: false, why: claudeFailure(Object.assign(err, { stderr })) });
+    });
+  });
+
+/** What the Strike Lead reads this turn: its brief on the first, the unheard messages, and in flight the mission's state. */
+const leadPrompt = async (project: Project, mission: Mission, first: boolean, heard: ChatEntry[]): Promise<string> => {
+  const parts: string[] = [];
+  if (first) {
+    const cfg = await missionConfigFor(project.path);
+    // A mission approved before the Strike Lead was a chat has no session yet; its first turn is in flight.
+    parts.push(mission.approved
+      ? `You are the Strike Lead for the mission "${mission.name}" in the project at ${project.path}. Cory opened it with: "${mission.brief}"\n\n${flightRules(join(project.path, mission.plan), ledgerPath(project, mission) ?? undefined)}`
+      : interviewPrompt(project, mission, join(project.path, mission.plan), await repoChoices(project, cfg), cfg.land));
   }
-  if (open) {
-    await writeInput(terminalId!, Buffer.from(said));
-    await new Promise((r) => setTimeout(r, SUBMIT_BEAT_MS));
-    await writeInput(terminalId!, Buffer.from("\r"));
+  if (heard.length) parts.push(heard.map((e) => `${e.who === "you" ? "Cory" : e.who}: ${e.text}`).join("\n\n"));
+  if (mission.approved) {
+    const view = await missionView(project, mission.id);
+    parts.push(`Maverick's snapshot of the mission now:\n${snapshot(view, view.questions, view.feed.slice(-12).map((f) => `${f.at} ${f.who}: ${f.text}`))}`);
   }
-  return { ok: true, sent: open };
+  return parts.join("\n\n");
+};
+
+/**
+ * Have the Strike Lead answer whatever it has not heard, one turn at a time, until nothing is
+ * left: a message sent while it answers is answered next. Never throws and never awaited by a
+ * request: a turn takes minutes, and the page follows it on the stream. A turn that fails says
+ * why in the chat, as Maverick, and the messages it carried count as heard, so a broken session
+ * is not retried in a loop. The session is recorded only once its first turn has answered, so a
+ * first turn a restart cut off is a first turn again, brief and all.
+ */
+export const hearLead = (project: Project, id: string): void => {
+  const key = leadKey({ project: project.id, id });
+  if (leading.has(key)) return;
+  leading.add(key);
+  void (async () => {
+    for (;;) {
+      const mission = await missionOr404(project.id, id);
+      const chat = mission.chat ?? [];
+      const heard = unheard(chat);
+      const first = !mission.lead;
+      if (over(mission) || leadTerminals.has(key) || (!first && !heard.length)) return;
+      const sessionId = mission.lead?.sessionId ?? randomUUID();
+      const turn = await leadTurn(project, first ? { sessionId } : { resume: sessionId }, await leadPrompt(project, mission, first, heard));
+      // Read before the reply lands, so a plan the Strike Lead says is ready is checked as it is now.
+      const plan = turn.ok && turn.planReady && !mission.approved ? await previewPlan(project, id) : undefined;
+      const problems = plan?.found ? plan.parsed?.problems ?? [] : plan ? [`there is no plan at ${mission.plan}`] : [];
+      // Counted on the record since Cory last spoke, so the cap holds across restarts and repeat calls.
+      const sentBack = chat.slice(chat.findLastIndex((e) => e.who === "you") + 1).filter((e) => e.sentBack).length;
+      await changeMission(project.id, id, (m) => {
+        const at = new Date().toISOString();
+        if (turn.ok && !m.lead) m.lead = { sessionId, started: at };
+        m.chat = [...(m.chat ?? []), turn.ok
+          ? { at, who: "Strike Lead", text: turn.message, ...(turn.questions.length ? { questions: turn.questions } : {}), ...(turn.planReady && !problems.length ? { planReady: true } : {}) }
+          : { at, who: "Maverick", text: `The Strike Lead did not answer: ${turn.why}`, error: true }];
+        // A plan it calls ready that cannot fly goes straight back to it, so the person reads a plan that can.
+        if (problems.length && sentBack < LEAD_FIXES) m.chat.push({ at, who: "Maverick", sentBack: true, text: `The plan cannot be flown as written. Fix these in ${m.plan}, then say it is ready again:\n${problems.map((p) => `- ${p}`).join("\n")}` });
+      });
+      // A first turn that failed has no session to resume; stopping here leaves it a first turn for the next call.
+      if (!turn.ok && first) return;
+    }
+  })()
+    .catch((err: Error) => {
+      console.error(`strike lead for ${key}:`, err.message);
+      return addChat(project, id, { who: "Maverick", text: `The Strike Lead's turn broke: ${err.message}`, error: true }).catch(() => undefined);
+    })
+    .finally(() => leading.delete(key));
 };
 
 /**
@@ -2283,7 +2392,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const feed = feedOf(log, mission);
-  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission) };
+  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
@@ -2344,7 +2453,9 @@ const askedAbout = (mission: Mission): ((task: MissionTask) => boolean) => {
 export const workspaceMissions = async (project: Project): Promise<WorkspaceMission[]> =>
   Promise.all((await listMissions(project.id)).map(async (mission) => {
     const { diffstat, questions, word } = await asked(mission, askedAbout(mission));
-    return { ...mission, word, questions, diffstat: mergedStat(mission, diffstat) };
+    // A row draws none of the chat, and the workspace polls; the conversation stays on the mission page.
+    const { chat: _chat, lead: _lead, ...row } = mission;
+    return { ...row, word, questions, diffstat: mergedStat(mission, diffstat) };
   }));
 
 /** What a mission asks, and nothing else: no sweep, no git, findings only for what is handed back. The notification poll reads this. */

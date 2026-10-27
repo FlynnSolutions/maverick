@@ -144,18 +144,25 @@ It sends `data: <MissionView>` on connect and again within about a second of the
 or its ledger changing, and `: ping` every 15 s. If the page loses it twice in a row it says so
 on the status line and polls every 8 s until the stream answers again.
 
-The reply box at the bottom of Progress is the `say` route:
+The Strike Lead's chat (in Plan before approval, at the bottom of Progress after) is the `say` route:
 
 ```bash
 curl -s -X POST "http://localhost:8766/api/missions/<id>/say?project=<project>" \
   -H 'content-type: application/json' -d '{"text":"hold milestone 2, the API is wrong"}'
 ```
 
-It answers `{ "ok": true, "sent": <bool> }`. The reply is folded to one line. Once the mission is
-approved it is appended to the ledger as `decision: Cory to the Strike Lead: <text>`; `sent` says
-whether it was also typed into the Strike Lead's terminal, which happens only while that terminal
-is open. An empty reply is a 400; a reply with neither a ledger nor an open terminal to land in
-is an error, not an ok.
+It answers `{ "ok": true, "sent": true }` at once; the Strike Lead's reply lands in the record's
+`chat` a turn later (seconds to minutes; `leadBusy` on the view is true meanwhile). A round of
+questions is answered with `{"answers": {"<question id>": {"options": ["..."], "other": "..."}}}`
+instead of `text`. Once the mission is approved the text is also appended to the ledger, folded
+to one line, as `decision: Cory to the Strike Lead: <text>`; a ledger that refuses it is trouble
+on the mission, and the chat still has it. An empty reply is a 400. A turn that fails is a
+`Maverick` entry in the chat saying why, and is not retried on its own.
+
+Each turn is `claude -p --output-format json --json-schema <LEAD_SCHEMA>` in the project, the
+first with `--session-id`, every later one with `--resume` on the same id (`mission.lead`). To
+watch one by hand: `claude --resume <mission.lead.sessionId>`, which is what **open its session
+in a terminal** (`POST /api/missions/<id>/interview`) opens.
 
 ## Read the ledger
 

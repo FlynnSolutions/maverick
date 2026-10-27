@@ -1,4 +1,4 @@
-/* Progress: the questions, one card per task in its milestone, the raw moves folded, the reply.
+/* Progress: the questions, one card per task in its milestone, the raw moves folded, the Strike Lead.
    Every class is `prog-` so nothing here can reach another module's rows. The card itself is
    web/card.js's, styled by card.css. */
 
@@ -38,16 +38,7 @@
 .prog-live { display: flex; align-items: center; gap: 8px; padding: 18px 0 0; font-family: var(--mono); font-size: 11.5px; color: var(--hud); font-variant-numeric: tabular-nums; }
 .prog-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--hud); animation: flick 1.6s steps(1, end) infinite; }
 
-/* The reply to the Strike Lead: a line and a verb, and what became of it. */
-.prog-reply { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
-.prog-reply input { flex: 1; min-width: 220px; height: 32px; padding: 0 10px; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font-size: 13px; }
-.prog-reply input::placeholder { color: var(--ink-faint); }
-.prog-reply button { height: 32px; padding: 0 14px; font: 500 13px var(--sans); }
-.prog-heard { flex-basis: 100%; font-size: 12.5px; color: var(--ink-soft); }
-.prog-heard:empty { display: none; }
-.prog-heard.error { color: var(--threat); }
-
-.prog-board :focus-visible, .prog-pins :focus-visible, .prog-reply :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prog-board :focus-visible, .prog-pins :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .prog-board button.card-toggle:focus-visible, .prog-pins button.card-toggle:focus-visible { outline-offset: -2px; }
 
 @media (max-width: 600px) {

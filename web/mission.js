@@ -17,7 +17,7 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime, plural, reveal }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, fmtTime, plural, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
@@ -29,6 +29,9 @@
  *   projectId, missionId
  *   openSession(taskId, under)   mounts the task's session (its RIO's while it is reviewing,
  *                                its Wingman's otherwise) as a terminal under `under`
+ *   mountTerminal(host, id)      one of the server's terminals, live, inside `host`
+ *   thread                       the Strike Lead's chat (web/mission/lead.js), owned and updated
+ *                                by the shell; a module only places `thread.node`
  *   fmtTime(iso)                 a clock time, or "" for none
  *   plural(n, word)              `1 note`, `2 notes`
  *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
@@ -41,6 +44,7 @@ import { lamp } from "./lamp.js";
 import { readableOn, recall } from "./theme.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { render as renderMarkdown } from "./markdown.js";
+import { leadThread } from "./mission/lead.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -94,7 +98,7 @@ const applyTheme = (theme) => {
   if (theme.font !== "Chakra Petch") document.head.append(el("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
 };
 
-/* ---------- the interview's terminal, mounted inside the mission's own view ---------- */
+/* ---------- terminals inside the mission's own view: a session's screen, the Strike Lead's raw session ---------- */
 let attached = [];
 const detachTerminal = () => {
   for (const a of attached) {
@@ -202,7 +206,9 @@ const LANDS = {
 
 const reveal = (key) => mounted.get("result")?.reveal?.(key);
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, fmtTime, plural, reveal };
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, fmtTime, plural, reveal };
+// One thread for the mission's whole life: in Plan before approval, placed in Progress after, never rebuilt.
+ctx.thread = leadThread(ctx);
 
 /* ---------- the rail: one word, four anchors, and the brakes ---------- */
 const WORD = {
@@ -403,9 +409,9 @@ const gateBlocks = () => {
   const blocks = [];
   const gate = [];
   if (!doc.found) {
-    gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the session below; it will not plan off your first line.`));
+    gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the chat above; it will not plan off your first line.`));
   } else if (parsed?.problems?.length) {
-    gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. Tell the Strike Lead in the session below; these are the reasons a Wingman would be sent out under-briefed:"),
+    gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. The Strike Lead is sent these to fix; tell it in the chat above if it stalls. They are the reasons a Wingman would be sent out under-briefed:"),
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
   } else {
     gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
@@ -443,48 +449,23 @@ const gateBlocks = () => {
   return blocks;
 };
 
-/** The interview is a conversation, so its session lives here rather than in a panel over the page. */
-const interviewPanel = () => {
-  const host = el("div", { class: "term" });
-  const panel = el("section", { class: "mv-interview" },
-    el("h2", {}, "The Strike Lead", el("span", { class: "spacer" }), btn("start a new interview session", () => act("interview", {}, "a new Strike Lead session is open"), "ghost")),
-    el("div", { class: "mv-term-well" }, host));
-  const gone = () => host.replaceChildren(el("p", { class: "mv-empty" }, "The Strike Lead's session is not running any more: terminals do not survive a restart of the server. Start a new interview above; it opens with the same brief."));
-  if (mission.interview?.terminalId) {
-    api("/api/terminals").then((open) => {
-      const live = open.find((x) => x.id === mission.interview.terminalId && x.exitCode === null);
-      if (live) requestAnimationFrame(() => mountTerminal(host, live.id));
-      else gone();
-    }).catch(gone);
-  } else {
-    host.replaceChildren(el("p", { class: "mv-empty" }, "No Strike Lead session is attached. Start one above."));
-  }
-  return panel;
-};
-
 /**
- * The gate repaints when what it shows changes; the interview below it only when its session
- * does, because a repaint would dispose the terminal being typed into.
+ * Before approval the Plan section is the conversation and the gate: the chat with the Strike
+ * Lead first, because that is where the work is, then what the plan it wrote would do. The gate
+ * repaints when what it shows changes; the chat patches itself, so a half-answered round survives.
  */
 let gateKey = "";
-let interviewKey = "";
 const renderGate = () => {
   const plan = $("#plan");
   if (!plan.querySelector(".mv-gate-host")) {
-    fill(plan, el("h2", {}, "Plan"), el("div", { class: "mv-gate-host" }), el("div", { class: "mv-interview-host" }));
-    fill($("#progress"), el("h2", {}, "Progress"), el("p", { class: "mv-empty" }, "Nothing has flown yet. What the mission does shows here once you approve the plan."));
+    fill(plan, el("h2", {}, "Plan"), ctx.thread.node, el("div", { class: "mv-gate-host" }));
+    fill($("#progress"), el("h2", {}, "Progress"), el("p", { class: "mv-empty" }, "Nothing has flown yet. What the mission does shows here once you fire it."));
     fill($("#result"), el("h2", {}, "Result"), el("p", { class: "mv-empty" }, "not yet"));
   }
   const nextGate = JSON.stringify([mission.planDoc, mission.plan, mission.name]);
   if (nextGate !== gateKey) {
     gateKey = nextGate;
     fill(plan.querySelector(".mv-gate-host"), ...gateBlocks());
-  }
-  const nextInterview = mission.interview?.terminalId ?? "";
-  if (nextInterview !== interviewKey || !plan.querySelector(".mv-interview")) {
-    interviewKey = nextInterview;
-    detachTerminal();
-    fill(plan.querySelector(".mv-interview-host"), interviewPanel());
   }
 };
 
@@ -508,7 +489,7 @@ const mountModule = async (name) => {
   }
 };
 const mountModules = () => {
-  // The gate's interview session is done with once the plan is approved.
+  // A terminal opened at the gate (the Strike Lead's raw session) is let go as the page changes shape.
   detachTerminal();
   modulesUp = Promise.all(MODULES.map(mountModule));
   return modulesUp;
@@ -531,6 +512,7 @@ const paint = () => {
   renderCounts();
   renderControls();
   renderAsk();
+  ctx.thread.update(mission);
   if (!mission.approved) return renderGate();
   if (!modulesUp) return mountModules();
   updateModules();
