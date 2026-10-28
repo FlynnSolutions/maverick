@@ -16,7 +16,7 @@ import { test } from "node:test";
 const dir = mkdtempSync(join(tmpdir(), "mv-store-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "p"), { recursive: true });
-const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, claimed, closeMission, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
+const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, claimed, closeMission, landAgain, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
 const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
@@ -285,4 +285,24 @@ test("a task that already passed is not sent back out", async () => {
   m.milestones[0].tasks[0].status = "passed";
   await writeFile(file("passed"), JSON.stringify(m), "utf8");
   await assert.rejects(() => retryTask(project, "passed", "m1-t1"), /already passed/);
+});
+
+test("a landing held because a repo cannot push recovers once the project sets that repo to merge, without pushing anything", async () => {
+  const proj = mkdtempSync(join(tmpdir(), "mv-land-"));
+  await writeFile(join(proj, "maverick.json"), JSON.stringify({ missions: { land: "pr", repos: { root: { land: "merge" } } } }), "utf8");
+  const m = await seed("relanded");
+  Object.assign(m, { status: "blocked", trouble: "could not land: root: fatal: 'origin' does not appear to be a git repository" });
+  Object.assign(m.milestones[0], { merged: "2026-10-28T01:26:00Z", hold: { kind: "landing", reason: "could not land", at: "2026-10-28T01:26:00Z" } });
+  m.milestones[0].tasks[0].status = "passed";
+  (m as { repos: unknown[] }).repos = [
+    // No such path: a push here would fail loudly, so a recovery proves nothing was pushed.
+    { label: "root", path: "/nonexistent-root", base: "main", branch: "feature/x", integration: "/nonexistent-root/i", land: "pr" },
+    { label: "backend", path: "/nonexistent-backend", base: "develop", branch: "feature/x", integration: "/nonexistent-backend/i", land: "pr", landed: "https://example.test/pull/308" },
+  ];
+  await writeFile(file("relanded"), JSON.stringify(m), "utf8");
+  const { mission, failed } = await landAgain({ id: "p", name: "P", path: proj, trackers: [] } as never, "relanded");
+  assert.deepEqual(failed, []);
+  assert.equal(mission.repos.find((r) => r.label === "root")!.land, "merge", "the record follows the project for a repo not landed yet");
+  assert.equal(mission.repos.find((r) => r.label === "backend")!.land, "pr", "a repo that landed keeps the way it did");
+  assert.equal(mission.milestones[0].hold, undefined, "the landing hold is off");
 });

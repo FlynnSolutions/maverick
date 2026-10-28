@@ -256,15 +256,20 @@ export const claudeArgs = (o: { prompt?: string; bg?: boolean; schema?: object; 
 ];
 
 /**
- * Why `claude` refused, in its own words: the last line it wrote to stderr. The error's message
- * is the whole command line, prompt and all, which buried an untrusted workspace under a brief.
+ * Why a command failed, in its own words: the line of its stderr that says so, a `fatal:` or
+ * `error:` line first, else the last. The error's message is the whole command line, a prompt and
+ * all for `claude`, which buried an untrusted workspace under a brief and a missing remote under
+ * a push.
  */
-export const claudeFailure = (err: Error & { stderr?: string }): string => err.stderr?.trim().split("\n").pop() || err.message.split("\n")[0];
+export const whyFailed = (err: Error & { stderr?: string }): string => {
+  const lines = (err.stderr ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  return lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines.at(-1) ?? err.message.split("\n")[0];
+};
 
 /** Start a background Claude session and return the id it prints. `tools` fences it the way the CAG is fenced. */
 export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string, tools?: string, env: Record<string, string> = {}): Promise<string> => {
   const { stdout } = await run("claude", claudeArgs({ prompt, bg: true, agent, name, tools }), { cwd, env: { ...process.env, ...env } }).catch((err: Error & { stderr?: string }) => {
-    throw new Error(`claude --bg did not start in ${cwd}: ${claudeFailure(err)}`);
+    throw new Error(`claude --bg did not start in ${cwd}: ${whyFailed(err)}`);
   });
   const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
   if (!id) throw new Error(`could not read the background session id from:\n${stdout}`);
@@ -287,7 +292,7 @@ export const openPullRequest = async (repoPath: string, head: string, base: stri
     // An existing PR for this head is the answer, not a failure: report the one that is open.
     const existing = await run("gh", ["pr", "list", "--head", head, "--json", "url", "--jq", ".[0].url"], { cwd: repoPath }).catch(() => ({ stdout: "" }));
     if (existing.stdout.trim()) return { stdout: existing.stdout };
-    throw new Error(`gh pr create failed in ${repoPath}: ${(err.stderr ?? "").trim() || "no output"}`);
+    throw Object.assign(new Error(`gh pr create failed in ${repoPath}`), { stderr: err.stderr });
   });
   return stdout.trim().split("\n").filter(Boolean).pop() ?? "";
 };

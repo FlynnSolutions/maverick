@@ -739,3 +739,26 @@ anything, because "blocked" is not "finished". The ship sweep had the same hole.
 could be listed before its process had a pid. The one observation (a Wingman relaunched the same
 evening was listed with its pid moments after the spawn returned) says it is not, so this rests on
 that; if it turns out otherwise, a launch would be handed back at once, loudly, not left silent.
+
+## M26: Landing says why it failed, checks for a remote first, and follows the project ✅ built
+
+**A failed landing says git's reason.** `whyFailed` reads the line of a command's stderr that
+says why (a `fatal:` or `error:` line first, else the last) for a landing as for a launch, so a
+held milestone reads `fatal: 'origin' does not appear to be a git repository`, not the push
+command that failed.
+
+**Preflight checks that a repo landing remotely has somewhere to go.** A repo set to land by a
+pull request or a push with no git remote refuses approval, with the fix in the line: add a
+remote, or set its land to merge in `maverick.json`. It used to fail at the very end, after every
+milestone had flown.
+
+**`try landing again` follows the project's landing for a repo not landed yet**, and writes each
+change to the ledger (`root now lands by merge, not pr, as the project's maverick.json says`). A
+landing fixed in the project's own config is fixed for the mission in flight, by a person asking.
+The sweep does not follow: an edit to `maverick.json` mid-flight would otherwise start pushing a
+base nobody approved. A repo that has landed keeps the way it did.
+
+**Why:** 2026-10-28, Concept Build. Every task passed and every milestone merged, then the
+landing held on `root`: a local-only umbrella repo with no remote, set to land as a pull request
+by the project's default. The hold said only `Command failed: git -C ... push`, preflight had not
+asked, and changing `maverick.json` would not have reached the mission already flying.

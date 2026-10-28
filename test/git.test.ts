@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { FINISHED, changedFiles, excludeLocally, listedAgents } from "../src/git.ts";
+import { FINISHED, changedFiles, excludeLocally, listedAgents, whyFailed } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
 
 test("excludeLocally ignores paths in the repo without a commit, once, and a worktree shares it", async () => {
@@ -44,4 +44,13 @@ test("a listed session with no process is said down, a finished word, whatever i
   ]);
   assert.deepEqual(listed.map((a) => [a.id, a.state]), [["live", "blocked"], ["dead", "down"], ["done", "done"]]);
   assert.ok(FINISHED.test("down"), "so the mission sweep, the ship sweep and the audits all read it as ended");
+});
+
+test("a failed command says why in its own words, not by repeating the command line", () => {
+  const push = Object.assign(new Error("Command failed: git -C /r push --set-upstream origin feature/x\nfatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository."), {
+    stderr: "fatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n",
+  });
+  assert.equal(whyFailed(push), "fatal: 'origin' does not appear to be a git repository", "the first fatal line, not the advice after it");
+  assert.equal(whyFailed(Object.assign(new Error("Command failed: claude --bg ..."), { stderr: "Workspace not trusted. Run `claude` in /w once and accept the trust prompt, then retry.\n" })), "Workspace not trusted. Run `claude` in /w once and accept the trust prompt, then retry.");
+  assert.equal(whyFailed(new Error("spawn claude ENOENT\n  at ...")), "spawn claude ENOENT", "no stderr: the message's first line");
 });
