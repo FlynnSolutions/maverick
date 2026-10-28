@@ -64,6 +64,9 @@ export interface MissionConfig {
   repos: Record<string, RepoConfig>;
 }
 
+/** How one repo lands: its own setting in `maverick.json`, else the project's. */
+export const landFor = (cfg: MissionConfig, label: string): Landing => cfg.repos[label]?.land ?? cfg.land;
+
 export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   rioAgent: "rio",
   worktrees: join(".claude", "worktrees"),

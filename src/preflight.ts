@@ -11,18 +11,19 @@ import { homedir, platform, arch } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { config } from "./config.ts";
+import { whyFailed } from "./git.ts";
 
 const run = promisify(execFile);
 
 export type RequirementKind = "tool" | "runtime" | "credential" | "secret" | "human" | "duration";
 export interface Requirement { kind: RequirementKind; value: string; note: string }
-export type CheckKind = "host" | "tool" | "agent" | "trust" | "runtime" | "credential" | "secret" | "human" | "disk";
+export type CheckKind = "host" | "tool" | "agent" | "trust" | "landing" | "runtime" | "credential" | "secret" | "human" | "disk";
 export interface Check { kind: CheckKind; name: string; status: "ok" | "warn" | "fail" | "human"; detail: string; refuses?: boolean }
 
 /**
- * What a failing check means for approval is its kind, in one place: a tool, a runtime or an agent the mission cannot run without refuses; the rest is the person's to settle by approving. Trust fails loud but does not refuse: it is read from a file Claude Code owns, and a launch it refuses says so on the task.
+ * What a failing check means for approval is its kind, in one place: a tool, a runtime or an agent the mission cannot run without refuses, and so does a repo that cannot land the way it is set to; the rest is the person's to settle by approving. Trust fails loud but does not refuse: it is read from a file Claude Code owns, and a launch it refuses says so on the task.
  */
-const REFUSING: ReadonlySet<CheckKind> = new Set(["tool", "runtime", "agent"]);
+const REFUSING: ReadonlySet<CheckKind> = new Set(["tool", "runtime", "agent", "landing"]);
 
 /**
  * The folders in `paths` Claude Code has not trusted, read from its state file's text. It
@@ -144,8 +145,8 @@ export interface PreflightInput {
   requirements: Requirement[];
   wingmanAgent?: string;
   rioAgent: string;
-  /** Whether any repo lands by pushing or a pull request, which needs `gh` or a remote. */
-  landsRemotely: boolean;
+  /** The repos that land by pushing or a pull request: each needs a git remote, and the mission needs `gh`. */
+  remote: Array<{ label: string; path: string }>;
 }
 
 export const preflight = async (input: PreflightInput): Promise<Check[]> => {
@@ -154,7 +155,7 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
   const hours = duration ? hoursOf(duration.value) : undefined;
   const push = (c: Omit<Check, "refuses">): void => { checks.push({ ...c, refuses: refuses(c) }); };
   push({ kind: "host", name: "host", status: "ok", detail: `${platform()} ${arch()}${platform() === "darwin" ? ", BSD tools: no timeout, sed -i needs '', no date -d" : ""}; node ${process.version}` });
-  for (const tool of ["claude", "git", "python3", ...(input.landsRemotely ? ["gh"] : [])]) {
+  for (const tool of ["claude", "git", "python3", ...(input.remote.length ? ["gh"] : [])]) {
     const path = await has(tool);
     push({ kind: "tool", name: tool, status: path ? "ok" : "fail", detail: path ?? `not on PATH; every ${tool === "python3" ? "embedded terminal" : "agent"} needs it` });
   }
@@ -169,6 +170,14 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
   else for (const folder of folders) {
     const no = refused.includes(folder);
     push({ kind: "trust", name: `trust ${folder.split("/").pop()}`, status: no ? "fail" : "ok", detail: no ? `Claude Code has not trusted ${folder}, so it refuses every agent launched there; run \`claude\` in it once and accept the prompt` : "trusted" });
+  }
+  // A repo set to land remotely with nowhere to push fails at the very end, after every milestone has flown.
+  for (const repo of input.remote) {
+    const remotes = await run("git", ["-C", repo.path, "remote"]).then(({ stdout }) => stdout.trim(), (err: Error) => err);
+    push({ kind: "landing", name: `remote for ${repo.label}`, status: remotes && !(remotes instanceof Error) ? "ok" : "fail",
+      detail: remotes instanceof Error ? `could not read ${repo.path}'s remotes: ${whyFailed(remotes)}`
+        : remotes ? remotes.split("\n").join(", ")
+          : `${repo.label} is set to land by a pull request or a push, but ${repo.path} has no git remote; add one, or set its land to merge in maverick.json` });
   }
   for (const repo of input.repoPaths) {
     // `.nvmrc` first, then `engines.node`; a repo that pins nothing says nothing.

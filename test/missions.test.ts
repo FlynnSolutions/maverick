@@ -1114,3 +1114,11 @@ test("a live reviewer waiting on a prompt is not ended, and the mission says it 
   assert.equal(after.milestones[0].tasks[0].status, "reviewing");
   assert.match(after.trouble ?? "", /the RIO on The worker is waiting on you in its own session/);
 });
+
+test("the sweep does not follow an edit to how a repo lands: only try landing again does, so a config edit never starts a push on its own", async () => {
+  const { project, root } = summaryFixture("frozen-land", { status: "flying", milestones: underReview("rio-frozen", new Date().toISOString()) } as never);
+  writeFileSync(join(root, "maverick.json"), JSON.stringify({ missions: { land: "merge", repos: { root: { land: "push" } } } }), "utf8");
+  agentsSay([{ id: "rio-frozen", state: "working" }]);
+  await sweepMissions(project);
+  assert.equal(recordOf("frozen-land").repos[0].land, "merge", "what was approved stands");
+});

@@ -23,8 +23,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
-import { missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, claudeFailure, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, stopAgent, toplevelOf, underPath, type BackgroundAgent } from "./git.ts";
+import { landFor, missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
+import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, stopAgent, toplevelOf, underPath, whyFailed, type BackgroundAgent } from "./git.ts";
 import { findingsOf, slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -548,7 +548,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
 export const preflightFor = (project: Project, cfg: MissionConfig, choices: Array<{ label: string; path: string; land: Landing }>, parsed: ReturnType<typeof parsePlan>): Promise<Check[]> => {
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
   const mine = choices.filter((r) => named.has(r.label));
-  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, landsRemotely: mine.some((r) => r.land !== "merge") });
+  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, remote: mine.filter((r) => r.land !== "merge").map(({ label, path }) => ({ label, path })) });
 };
 
 /* ---------- the plan as the ledger ---------- */
@@ -737,7 +737,7 @@ export const repoChoices = async (project: Project, cfg: MissionConfig): Promise
     // What the project says, else whatever that repo is actually on: a multi-repo project
     // rarely shares one base (a contract package on main, the services on develop).
     base: cfg.repos[r.label]?.base ?? (await currentBranch(r.path)),
-    land: cfg.repos[r.label]?.land ?? cfg.land,
+    land: landFor(cfg, r.label),
   })));
 };
 
@@ -1881,12 +1881,28 @@ export const tidyWorktrees = async (project: Project, id: string): Promise<strin
  * person's job to reconcile, and until now that left the mission blocked with no way back in.
  * Once the rebase is done, this picks it up from where it stopped.
  */
+/**
+ * How each repo not landed yet lands, as the project says now, with a line for every one that
+ * changed. Only `landAgain` calls it: following the config on every sweep would let an edit to
+ * `maverick.json` start pushing a base nobody approved, so it waits for a person to ask.
+ */
+const followLanding = (mission: Mission, cfg: MissionConfig): string[] =>
+  mission.repos.filter((r) => !r.landed && r.land !== landFor(cfg, r.label)).map((r) => {
+    const was = r.land;
+    r.land = landFor(cfg, r.label);
+    return `${r.label} now lands by ${r.land}, not ${was}, as the project's maverick.json says`;
+  });
+
 export const landAgain = async (project: Project, id: string): Promise<{ mission: Mission; landed: string[]; failed: string[] }> => {
   let landed: string[] = [];
   let failed: string[] = [];
+  let changed: string[] = [];
+  const cfg = await missionConfigFor(project.path);
   const mission = await changeMission(project.id, id, async (mission) => {
     if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; there is nothing left to land`);
     if (mission.status === "paused") throw new Error(`${mission.name} is paused; landing pushes, so resume it first`);
+    // A landing that failed is often fixed in the project's own config (a repo with no remote set to merge); try it as the project now says.
+    changed = followLanding(mission, cfg);
     ({ landed, failed } = await landTheWork(mission));
     if (failed.length) {
       mission.trouble = `still could not land: ${failed.join(" · ")}`;
@@ -1902,6 +1918,7 @@ export const landAgain = async (project: Project, id: string): Promise<{ mission
     }
     return mission;
   });
+  if (changed.length) await recorded(project, mission, changed);
   return { mission, landed, failed };
 };
 
@@ -2002,7 +2019,7 @@ const leadTurn = (project: Project, session: { sessionId?: string; resume?: stri
   new Promise((done) => {
     execFile("claude", claudeArgs({ schema: LEAD_SCHEMA, ...session, prompt }), { cwd: project.path, timeout: LEAD_TURN_MS, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
       const parsed = parseTurn(stdout);
-      done(parsed.ok || !err ? parsed : { ok: false, why: claudeFailure(Object.assign(err, { stderr })) });
+      done(parsed.ok || !err ? parsed : { ok: false, why: whyFailed(Object.assign(err, { stderr })) });
     });
   });
 
@@ -2160,7 +2177,7 @@ const landTheWork = async (mission: Mission): Promise<{ landed: string[]; failed
     opened.push(repo.landed);
    } catch (err) {
      // One repo's remote is not the others' problem: land what can land and name what could not.
-     failed.push(`${repo.label}: ${(err as Error).message.split("\n")[0]}`);
+     failed.push(`${repo.label}: ${whyFailed(err as Error)}`);
    }
   }
   return { landed: opened, failed };

@@ -50,7 +50,7 @@ test("the plan's Preflight section is read, and the checks say ok, fail or yours
   const plan = parsePlan("# Mission: p\n\nP.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  Build it.\n\n## Preflight\n\n- duration: 8h\n- tool: git\n- tool: no-such-tool-xyz, the plan shells out to it\n- human: the sign-up inbox\n", ["root"]);
   assert.equal(plan.problems.length, 0, plan.problems.join("; "));
   assert.equal(plan.requirements.length, 4);
-  const checks = await preflight({ projectPath: dir, repoPaths: [dir], requirements: [...plan.requirements, { kind: "runtime", value: "node >=99", note: "" }, { kind: "credential", value: "okta", note: "" }], rioAgent: "no-such-agent-xyz", landsRemotely: false });
+  const checks = await preflight({ projectPath: dir, repoPaths: [dir], requirements: [...plan.requirements, { kind: "runtime", value: "node >=99", note: "" }, { kind: "credential", value: "okta", note: "" }], rioAgent: "no-such-agent-xyz", remote: [] });
   const by = Object.fromEntries(checks.map((c) => [c.name, c]));
   assert.equal(by["git"].status, "ok");
   assert.deepEqual([by["no-such-tool-xyz"].status, by["no-such-tool-xyz"].refuses], ["fail", true], "a declared tool refuses approval when missing");
@@ -72,9 +72,21 @@ test("a repo Claude Code has not trusted fails loud, and a trusted parent does n
   assert.deepEqual(untrusted(state, ["/w", "/w/contracts", "/w/front"]), ["/w/contracts", "/w/front"]);
   assert.equal(untrusted("", ["/w"]), null, "an unreadable state file is not a verdict");
   const { dir } = tempRepo("mv-trust");
-  const trustOf = async () => (await preflight({ projectPath: dir, repoPaths: [dir], requirements: [], rioAgent: "rio", landsRemotely: false })).filter((c) => c.kind === "trust" || c.name === "workspace trust");
+  const trustOf = async () => (await preflight({ projectPath: dir, repoPaths: [dir], requirements: [], rioAgent: "rio", remote: [] })).filter((c) => c.kind === "trust" || c.name === "workspace trust");
   await writeFile(join(claudeHome, ".claude.json"), JSON.stringify({ projects: {} }), "utf8");
   assert.deepEqual((await trustOf()).map((c) => [c.status, c.refuses]), [["fail", false]], "loud, but read from a file Claude Code owns, so it does not refuse");
   await writeFile(join(claudeHome, ".claude.json"), JSON.stringify({ projects: { [dir]: { hasTrustDialogAccepted: true } } }), "utf8");
   assert.deepEqual((await trustOf()).map((c) => c.status), ["ok"]);
+});
+
+test("a repo set to land remotely with no git remote refuses approval, with the fix in the line", async () => {
+  const { dir, git } = tempRepo("mv-remote");
+  const landing = async () => (await preflight({ projectPath: dir, repoPaths: [dir], requirements: [], rioAgent: "rio", remote: [{ label: "root", path: dir }] })).find((c) => c.kind === "landing")!;
+  const none = await landing();
+  assert.deepEqual([none.status, none.refuses], ["fail", true]);
+  assert.match(none.detail, /has no git remote; add one, or set its land to merge in maverick\.json/);
+  git("remote", "add", "origin", "https://example.test/r.git");
+  const some = await landing();
+  assert.deepEqual([some.status, some.detail], ["ok", "origin"]);
+  assert.equal((await preflight({ projectPath: dir, repoPaths: [dir], requirements: [], rioAgent: "rio", remote: [] })).some((c) => c.kind === "landing"), false, "a repo that merges needs no remote");
 });
