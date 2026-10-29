@@ -423,6 +423,17 @@ format: checklist
 
 ## 📋 Backlog
 
+- [ ] `[ENG]` `[S]` **A milestone with no screen should not need a walkthrough**
+  - created: 2026-10-28
+  - source: Cory, Realtime concept-build mission, 2026-10-28 ("there are generated walkthroughs for the contract and backends so its tough")
+  - kind: feature
+  `needsWalking` (`src/missions.ts:1019`) asks for a walkthrough on every milestone with commits, so a
+  contracts-only or backend-only milestone gets a walkthrough document with nothing to click, and Cory
+  has to waive each one by hand. Decide "has a surface to walk" from the milestone's tasks (their repo
+  and `touches` paths, or a plan field such as `walk: none`), skip the builder for the rest, and show
+  the milestone as not needing a walk with the reason, so the result gate still says why. The frontend
+  milestone that exercises the backend stays the one walked.
+
 - [ ] `[ENG]` `[M]` **High-quality animation and toasts, in the design skill and in every UI mission**
   - created: 2026-10-15
   - source: Cory, after the three UI missions of 2026-10-14

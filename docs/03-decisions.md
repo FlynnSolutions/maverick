@@ -762,3 +762,25 @@ base nobody approved. A repo that has landed keeps the way it did.
 landing held on `root`: a local-only umbrella repo with no remote, set to land as a pull request
 by the project's default. The hold said only `Command failed: git -C ... push`, preflight had not
 asked, and changing `maverick.json` would not have reached the mission already flying.
+
+## M27: Every link out of Maverick lands in one browser tab ✅ built
+
+**Outside links leave the app, from every window and frame.** The app's link rules were set on
+its first window only. A walkthrough opened with `open in its own tab` became a Maverick window
+with no rules, so each dev link in it opened as another Maverick window, where the dev app has
+none of the browser's sign-in and failed to load. The rules now go on every web contents the app
+makes (`web-contents-created`), and a link followed inside a frame (`will-frame-navigate`) is
+caught as well: anything not on Maverick's own origin goes to the browser.
+
+**One tab, replaced on every click.** On macOS a web link goes to `config.browser`, Google Chrome unless `MAVERICK_BROWSER` names
+another Chromium browser, through AppleScript, into the tab this app opened last, found again
+by its id; once it is closed, the next link opens a new window. So a walkthrough is stepped
+through with the tab left open in a window of its own. The URL is an argument to the script, never
+part of it. If the browser cannot be driven (not installed, or Automation not allowed), the link
+goes to the default browser and the reason is logged. A `mailto:` and a non-mac host use the
+system's own handler.
+
+**Why:** Cory, 2026-10-29, walking Concept Build's walkthrough: the dev links "opening in the
+Maverick application... it's failing to load"; "open those links in a Chrome browser... uses the
+same tab, same exact window... so I can just leave that open on another window, click it, and
+quickly step through each of these walkthrough steps."

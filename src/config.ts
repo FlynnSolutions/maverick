@@ -27,6 +27,8 @@ export const config = {
   shipScheduleFile: join(consoleHome, "ship-schedule.json"),
   /** Our per-session records (role, loop, parent, handoff). */
   sessionsDir: process.env.SESSION_CONSOLE_SESSIONS ?? join(home, ".claude", "console-sessions"),
+  /** The Chromium browser the app sends links out to, into one reused tab (see app/browser.mjs). */
+  browser: process.env.MAVERICK_BROWSER || "Google Chrome",
   /** Claude Code's own state, which holds the folders it trusts. Read-only; the CLI owns it. */
   claudeStateFile: join(process.env.CLAUDE_CONFIG_DIR ?? home, ".claude.json"),
   /** Claude Code's own live-session registry. Read-only; the CLI owns it. */
