@@ -10,7 +10,7 @@
     "build": "electron-builder --mac --arm64"
   },
   "devDependencies": {
-    "electron": "44.9.0",
+    "electron": "45.0.0",
     "electron-builder": "26.15.3"
   }
 }
