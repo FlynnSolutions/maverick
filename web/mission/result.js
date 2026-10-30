@@ -412,7 +412,7 @@ export const mount = (host, view, ctx) => {
     };
     if (closed) tidyDisarm();
     return [
-      el("h2", {}, "Your second and last gate", el("span", { class: "n" }, v.status)),
+      el("h2", { id: "close" }, "Your second and last gate", el("span", { class: "n" }, v.status)),
       el("div", { class: "rs-meta" },
         el("span", {}, `${passed.length} of ${tasks.length} tasks passed`),
         ...repos.map((r) => el("span", { title: `lands against ${r.base}` }, `${r.label} · ${r.branch}`)),
@@ -427,7 +427,7 @@ export const mount = (host, view, ctx) => {
               : "Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks each passed item in the tracker and hands the branches on; Maverick does not merge a mission to a base, the ship does.")
           : `Every milestone merged. ${unwalked.length} of them still to walk: a milestone is done when you have been through its walkthrough, not when its RIO said pass. Nothing lands before that.`),
       unwalked.length && !closed ? el("div", { class: "rs-acts" },
-        ...unwalked.map((m) => el("a", { href: "#plan" }, `walk milestone ${m.n}`)),
+        ...unwalked.map((m) => el("a", { href: `#milestone-${m.n}` }, `walk milestone ${m.n}`)),
         el("span", { class: "rs-quiet" }, "each walkthrough is under its milestone in the plan")) : null,
       repos.length ? el("ul", { class: "rs-lands", "aria-label": "Where each repo lands" },
         ...repos.map((r) => el("li", { class: r.land }, el("span", { class: "r" }, r.label), el("span", {}, LANDS[r.land]?.(r.base) ?? r.land)))) : null,
@@ -470,7 +470,21 @@ export const mount = (host, view, ctx) => {
     patch(walks, closing ? v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired]) : [], () => (closing ? drawWalks(v) : []));
     walks.hidden = !closing;
     patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status)] : null, () => drawGate(v));
+    toClose();
   };
+
+  /** The review question's "close" names `#close`: the gate comes into view with its close button focused, and still asks twice. */
+  let scrolledTo = "";
+  const toClose = () => {
+    const target = location.hash === "#close" ? document.getElementById("close") : null;
+    if (!target || scrolledTo === location.hash) return;
+    scrolledTo = location.hash;
+    requestAnimationFrame(() => {
+      target.scrollIntoView({ block: "start" });
+      gate.querySelector(".rs-acts button.primary")?.focus({ preventScroll: true });
+    });
+  };
+  window.addEventListener("hashchange", () => { scrolledTo = ""; toClose(); });
   update(view);
   return { update, reveal };
 };

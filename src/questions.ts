@@ -5,11 +5,11 @@
  */
 import { findingsOf } from "./audits.ts";
 import { parseFinding } from "./findings.ts";
-import type { Mission, MissionTask } from "./missions.ts";
+import type { Milestone, Mission, MissionTask, WalkthroughState } from "./missions.ts";
 
 export interface Question {
   id: string;
-  kind: "handed-back" | "collision" | "landing" | "proof" | "plan" | "paused" | "gate";
+  kind: "handed-back" | "collision" | "landing" | "proof" | "plan" | "paused" | "gate" | "review";
   title: string;
   body: string;
   at: string;
@@ -19,9 +19,11 @@ export interface Question {
    * `path` is relative to `/api/missions/<id>/`; `body` names the keys the page must supply. Only
    * what the server takes in the mission's state is listed, primary first, so a page renders them
    * as given. Empty while the mission is paused and the only move is resume, which the paused
-   * question offers once.
+   * question offers once. An answer with `go` posts nothing: it opens the place on the mission page
+   * where the person acts (`milestone-<n>` for a milestone's walkthrough, `close` for the close),
+   * because walking is done there and closing asks twice there.
    */
-  answers: Array<{ label: string; method: "POST"; path: string; body?: string[]; primary?: boolean }>;
+  answers: Array<{ label: string; primary?: boolean } & ({ method: "POST"; path: string; body?: string[] } | { go: string })>;
 }
 
 export type StatusWord = "working" | "waiting for you" | "error" | "done";
@@ -44,8 +46,68 @@ export const over = (mission: Pick<Mission, "status">): boolean => mission.statu
 export const statusWord = (mission: Mission, questions: Question[] = questionsOf(mission)): StatusWord => {
   if (mission.trouble && BROKEN.some((re) => re.test(mission.trouble!))) return "error";
   if (over(mission)) return "done";
-  if (questions.length) return "waiting for you";
-  return mission.status === "review" ? "done" : "working";
+  return questions.length ? "waiting for you" : "working";
+};
+
+export const walkthroughState = (m: Milestone): WalkthroughState => {
+  const w = m.walkthrough;
+  if (!w) return "none";
+  if (w.waived) return "waived";
+  if (w.failed) return "failed";
+  if (!w.doc) return "building";
+  return w.progress && w.progress.total > 0 && w.progress.answered >= w.progress.total ? "walked" : "walking";
+};
+
+/** A milestone that changed nothing has nothing to walk; every other one is walked or waived before the mission lands. */
+export const needsWalking = (m: Milestone): boolean =>
+  m.tasks.some((t) => t.commits?.length) && !["walked", "waived"].includes(walkthroughState(m));
+
+/** How far a walkthrough still to walk has got, in the question's words: answered of total, and what came back failed or blocked. */
+const walkLeft = (m: Milestone): string => {
+  const state = walkthroughState(m);
+  if (state === "failed") return `no walkthrough to walk: ${m.walkthrough?.failed}`;
+  if (state === "none") return "no walkthrough yet";
+  if (state === "building") return "its walkthrough is still being written";
+  const p = m.walkthrough?.progress;
+  if (!p?.total) return "not opened yet";
+  const said = Object.values(p.verdicts);
+  const n = (v: string) => said.filter((x) => x === v).length;
+  return [`${p.answered} of ${p.total} answered`, n("fail") && `${n("fail")} failed`, n("blocked") && `${n("blocked")} blocked`].filter(Boolean).join(", ");
+};
+
+/**
+ * A change asked of the Strike Lead once the work was done has nowhere to go: a mission takes no
+ * new work at review, and the Strike Lead's seat is read-only. Said in the review question so it
+ * is not lost in the chat.
+ */
+const strandedNote = (mission: Mission): string => {
+  const { finished } = mission;
+  const stranded = finished === undefined ? [] : (mission.chat ?? []).filter((c) => c.who === "you" && c.at > finished);
+  if (!stranded.length) return "";
+  const last = stranded.at(-1)!.text.split("\n")[0];
+  const quoted = last.length > 80 ? `${last.slice(0, 80)}…` : last;
+  const times = stranded.length === 1 ? "for a change" : `${stranded.length} times`;
+  return ` You asked the Strike Lead ${times} after the work was done (last: "${quoted}"). A mission at review takes no new work, so that is not in it: put it on the checklist or fly it as its own mission.`;
+};
+
+/**
+ * A mission at the review gate asks for what is left of it: each walkthrough still to walk, how
+ * far through it is, then the close. Read from whatever walkthroughs the milestones carry, so it
+ * holds however many there are.
+ */
+const reviewQuestion = (mission: Mission): Question => {
+  const left = mission.milestones.filter(needsWalking);
+  const walks: Answer[] = left.map((m, i) => ({ label: `walk milestone ${m.n}`, go: `milestone-${m.n}`, ...(i === 0 && { primary: true }) }));
+  return {
+    id: "review",
+    kind: "review",
+    title: left.length ? `ready to review: walk ${left.length === 1 ? `milestone ${left[0].n}` : `${left.length} milestones`}, then close` : "ready to close",
+    body: (left.length
+      ? `${left.map((m) => `milestone ${m.n}, ${m.title}: ${walkLeft(m)}`).join(". ")}. Then close the mission.`
+      : "Every milestone is walked or waived. Closing ticks the tracker and lands the work.") + strandedNote(mission),
+    at: mission.finished ?? mission.created,
+    answers: left.length ? walks : [{ label: "close", go: "close", primary: true }],
+  };
 };
 
 /** The first blocker's headline: the one sentence, not the line with its kind and evidence. */
@@ -135,5 +197,6 @@ export const questionsOf = (mission: Mission & { findings?: Record<string, strin
     at: mission.created,
     answers: [{ label: "approve", method: "POST", path: "approve", primary: true }],
   });
+  if (mission.status === "review") out.push(reviewQuestion(mission));
   return out.sort((a, b) => a.at.localeCompare(b.at));
 };

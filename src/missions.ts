@@ -38,7 +38,7 @@ import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead,
 import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { over, questionsOf, statusWord, type Question, type StatusWord } from "./questions.ts";
+import { needsWalking, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
@@ -1005,19 +1005,6 @@ const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, rep
 ].join("\n");
 
 const walkthroughFile = (mission: Mission, m: Milestone): string => join("deliverables", "testing", `${mission.id}-m${m.n}-walkthrough.html`);
-
-export const walkthroughState = (m: Milestone): WalkthroughState => {
-  const w = m.walkthrough;
-  if (!w) return "none";
-  if (w.waived) return "waived";
-  if (w.failed) return "failed";
-  if (!w.doc) return "building";
-  return w.progress && w.progress.total > 0 && w.progress.answered >= w.progress.total ? "walked" : "walking";
-};
-
-/** A milestone that changed nothing has nothing to walk; every other one is walked or waived before the mission lands. */
-export const needsWalking = (m: Milestone): boolean =>
-  m.tasks.some((t) => t.commits?.length) && !["walked", "waived"].includes(walkthroughState(m));
 
 /** The repo a milestone's walkthrough is built in: the one it landed in, which for one repo is the only one. */
 const walkRepo = (mission: Mission, m: Milestone): MissionRepo | undefined => mission.repos.find((r) => m.mergeShas?.[r.label]) ?? mission.repos[0];

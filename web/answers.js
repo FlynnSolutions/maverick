@@ -2,23 +2,31 @@
 // the empty-note check and the posting state. The server emits each question's answers already
 // filtered and ordered (primary first, only what it will accept in the mission's state), so this
 // renders them as given and never re-sorts or drops one. The inbox, the plan and the feed differ
-// only in what `submit` does with the answer.
+// only in what `submit` does with the answer, and the inbox in where an answer that opens a place goes.
+
+/** The mission page's own place for an answer with `go`; the hash is told again when it already names it, so the place reopens. */
+const goHere = (go) => {
+  if (location.hash === `#${go}`) window.dispatchEvent(new HashChangeEvent("hashchange"));
+  else location.hash = go;
+};
 
 /**
- * answerControls(question, { el, btn, submit }) → { node, hint, buttons, note }
+ * answerControls(question, { el, btn, submit, open }) → { node, hint, buttons, note }
  *   submit(answer, body)  awaited with the buttons disabled; `body` is the note under each key
  *                         the answer names, so a caller posts it as it is or wraps it
+ *   open(go)              an answer with `go` posts nothing and goes there; on the mission page by default
  *   node                  the row: the buttons, then the note and the hint on a line of their own
  *   hint                  the status span, which the caller may fill
  *   buttons, note         the parts, for a page that lays the row out on its own grid (the inbox)
  */
-export const answerControls = (question, { el, btn, submit }) => {
+export const answerControls = (question, { el, btn, submit, open = goHere }) => {
   const answers = question.answers;
   const wanted = answers.some((a) => a.body?.length);
   const note = wanted ? el("input", { type: "text", class: "mv-note", placeholder: "why, in a line; kept in the ledger", "aria-label": `Note for: ${question.title}` }) : null;
   // A question with nothing the server would take is what a paused mission leaves on every question but the pause.
   const hint = el("span", { class: "mv-hint", role: "status" }, answers.length ? "" : "resume the mission first");
   const buttons = answers.map((a) => btn(a.label, async () => {
+    if (a.go) return open(a.go);
     const said = note?.value.trim() ?? "";
     if (a.body?.length && !said) {
       hint.textContent = `${a.label} needs a line of why first`;

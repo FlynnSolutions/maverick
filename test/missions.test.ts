@@ -695,12 +695,12 @@ test("movesOf: a launch after a hand-back opens a new attempt without calling th
   ]);
 });
 
-test("missionView's word is the word rule's, not the bare status word: a stale escalation on a review mission is done", async () => {
+test("missionView's word is the word rule's, not the bare status word: a stale escalation on a review mission asks nothing, the review question waits", async () => {
   const { project } = viewFixture("reviewed", { status: "review", escalation: "the plan needs a look", milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-09T07:30:00Z", merged: "2026-10-09T10:00:00Z", tasks: [
     { id: "m1-t1", title: "Already passed", intent: "Build the first thing.", repo: "root", status: "passed", attempts: 1, verdict: "pass" }] }] as never });
   const view = await missionView(project, "reviewed");
-  assert.deepEqual(view.questions, []);
-  assert.equal(view.word, "done");
+  assert.deepEqual(view.questions.map((q) => [q.kind, q.title]), [["review", "ready to close"]]);
+  assert.equal(view.word, "waiting for you");
 });
 
 test("missionView's feed is empty before approval and when the ledger cannot be read, and never throws", async () => {

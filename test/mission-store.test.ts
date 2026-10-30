@@ -16,7 +16,8 @@ import { test } from "node:test";
 const dir = mkdtempSync(join(tmpdir(), "mv-store-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "p"), { recursive: true });
-const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, claimed, closeMission, landAgain, needsWalking, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask, walkthroughState } = await import("../src/missions.ts");
+const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, claimed, closeMission, landAgain, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask } = await import("../src/missions.ts");
+const { needsWalking, walkthroughState } = await import("../src/questions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
 const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;

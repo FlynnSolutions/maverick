@@ -108,8 +108,10 @@ hand-back ends it with its verdict and counts. A later pass, Cory accepting a ha
 replaces that end. A person's words are never read as a move.
 
 `word` is `wordFor(mission, questions)`: `waiting for you` exactly when a question is open;
-otherwise `statusWord`'s answer, read as `done` in review or closed and `working` elsewhere when
-it would have said `waiting for you` with nothing to answer (Cory's call on m1-t1). `error` is
+otherwise `statusWord`'s answer, read as `done` once closed or abandoned and `working` elsewhere
+when it would have said `waiting for you` with nothing to answer (Cory's call on m1-t1). A
+mission in review always has one question open, the review question: each walkthrough still to
+walk and how far through it is, then the close, so review reads `waiting for you`. `error` is
 for what no answer settles: a report or ledger that could not be written, a proof runner killed
 by a signal.
 
