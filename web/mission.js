@@ -264,8 +264,9 @@ const WORD = {
 const toGate = () => {
   const verb = location.hash === "#gate" ? document.querySelector("#gate .mv-confirm button") : null;
   if (!verb) return;
+  // The verb, not the gate's top, comes into view: the gate is taller than a phone's screen.
   requestAnimationFrame(() => {
-    document.getElementById("gate").scrollIntoView({ block: "start" });
+    verb.scrollIntoView({ block: "center" });
     verb.focus({ preventScroll: true });
   });
 };
@@ -688,6 +689,8 @@ const boot = async () => {
   if (["ask", "plan", "progress", "result"].includes(target)) document.getElementById(target).scrollIntoView();
   toGate();
   window.addEventListener("hashchange", toGate);
+  // A second press on the lamp names the hash already there, which fires nothing; it should land again.
+  $("#word").addEventListener("click", () => { if ($("#word").getAttribute("href") === location.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); });
   listen();
 };
 boot().catch((err) => setStatus(err.message, true));
