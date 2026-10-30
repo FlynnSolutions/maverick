@@ -424,6 +424,12 @@ const reposBand = (repos) => {
       : null);
 };
 
+/** A check that failed, said beside the button it should stop you pressing, as the chat's Fire mission says it. */
+const failingNote = (checks) => {
+  const failing = checks?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
+  return failing.length ? el("p", { class: "mv-warn" }, `${plural(failing.length, "check")} failed below (${failing.map((c) => c.name).join(", ")}); read ${failing.length === 1 ? "it" : "them"} before you approve.`) : null;
+};
+
 /** A check's detail with its `backticked` commands set as code, the way the markdown renders them. */
 const inlineCode = (text) => text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? el("code", {}, part) : part));
 
@@ -468,15 +474,17 @@ const gateBlocks = () => {
       parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
         el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
       costBand(doc.cost),
+      // The verb sits under what it costs; where each repo lands, the host checks and the notes follow as the fine print.
+      el("div", { class: "gate-actions" },
+        doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
+        el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")),
+      failingNote(doc.preflight),
       reposBand(doc.repos ?? []),
       preflightBand(doc.preflight),
       doc.wingmanAgent
         ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, which carries its standing orders: own one task, do not widen it, never push or merge, never grade its own work.`)
         : el("p", { class: "mv-warn" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
-      el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
-      el("div", { class: "gate-actions" },
-        doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
-        el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")));
+      el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."));
   }
   blocks.push(el("section", { class: "mv-gate" }, el("h2", {}, "The gate"), ...gate));
 
