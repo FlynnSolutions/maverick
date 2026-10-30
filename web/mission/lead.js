@@ -182,6 +182,8 @@ export const leadThread = (ctx) => {
     view = next;
     paintLog(next.chat ?? [], next.updates ?? []);
     toRound();
+    // While a round waits, its "send answers" is the one primary; the free-text send steps back.
+    send.classList.toggle("primary", !log.querySelector("#round"));
     thinking.hidden = !next.leadBusy;
     raw.hidden = !next.lead || next.leadBusy;
     paintFire();
