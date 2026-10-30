@@ -115,7 +115,7 @@ html { scroll-padding-top: 70px; }
 .mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; }
 .mv-preflight li { margin: 3px 0; display: grid; grid-template-columns: 42px auto minmax(0, 1fr); gap: 0 8px; align-items: baseline; }
 .mv-preflight li strong { white-space: nowrap; }
-.mv-preflight .pf-detail { max-width: 56ch; }
+.mv-preflight .pf-detail { max-width: 48ch; }
 .mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-faint); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
