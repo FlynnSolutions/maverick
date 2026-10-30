@@ -262,7 +262,11 @@ export const mount = (host, view, ctx) => {
     if (!s || id === scrolledTo) return;
     scrolledTo = id;
     s.details.open = true;
-    requestAnimationFrame(() => s.li.scrollIntoView({ block: "start" }));
+    requestAnimationFrame(() => {
+      s.li.scrollIntoView({ block: "start" });
+      // A keyboard answer would otherwise leave the focus on a button that is now far above.
+      s.details.querySelector("summary").focus({ preventScroll: true });
+    });
   };
   window.addEventListener("hashchange", () => { scrolledTo = ""; toHash(); });
   update(view);
