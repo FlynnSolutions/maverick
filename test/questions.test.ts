@@ -104,16 +104,18 @@ test("questions come oldest first, every one has at most one primary answer, fir
 test("a mission at review asks for each walkthrough still to walk, how far through it is, then the close", () => {
   const walked = (total: number, verdicts: string[]) => ({ doc: "d.html", progress: { total, answered: verdicts.length, verdicts: Object.fromEntries(verdicts.map((v, i) => [`c${i}`, v])), updatedAt: "a" } });
   const built = t("a", "passed", { commits: ["c"] });
+  const at = (h: number) => `2026-10-04T0${h}:00:00.000Z`;
   const mission = base({ status: "review", finished: "2026-10-05T00:00:00.000Z", milestones: [
-    ms(1, [built], { merged: "m", walkthrough: { ...walked(5, []), waived: { note: "n", at: "a" } } }),
-    ms(2, [t("b", "passed")], { merged: "m" }),
-    ms(3, [built], { merged: "m", walkthrough: walked(14, ["fail"]) }),
-    ms(4, [built], { merged: "m", walkthrough: walked(5, []) }),
-    ms(5, [built], { merged: "m", walkthrough: { claudeId: "c" } }),
+    ms(1, [built], { merged: at(1), walkthrough: { ...walked(5, []), waived: { note: "n", at: "a" } } }),
+    ms(2, [t("b", "passed")], { merged: at(2) }),
+    ms(3, [built], { merged: at(3), walkthrough: walked(14, ["fail"]) }),
+    ms(4, [built], { merged: at(4), walkthrough: walked(5, []) }),
+    ms(5, [built], { merged: at(5), walkthrough: { claudeId: "c" } }),
   ] });
   const [q] = questionsOf(mission);
-  assert.equal(q.kind, "review");
-  assert.equal(q.at, "2026-10-05T00:00:00.000Z");
+  assert.equal(q.kind, "walk");
+  assert.equal(q.id, "walk:5", "named for the latest milestone in it, so a newly merged one asks again");
+  assert.equal(q.at, at(3), "as old as the oldest walk it asks for");
   assert.equal(q.title, "ready to review: walk 3 milestones, then close");
   assert.equal(q.body, "milestone 3, m3: 1 of 14 answered, 1 failed. milestone 4, m4: 0 of 5 answered. milestone 5, m5: its walkthrough is still being written. Then close the mission.");
   assert.deepEqual(q.answers, [
@@ -124,14 +126,31 @@ test("a mission at review asks for each walkthrough still to walk, how far throu
   assert.equal(statusWord(mission), "waiting for you");
 
   // One walkthrough per mission reads the same: whatever milestones carry one are what is asked.
-  const one = base({ status: "review", milestones: [ms(1, [built], { merged: "m", walkthrough: walked(9, ["pass", "blocked"]) })] });
+  const one = base({ status: "review", milestones: [ms(1, [built], { merged: at(1), walkthrough: walked(9, ["pass", "blocked"]) })] });
   assert.equal(questionsOf(one)[0].title, "ready to review: walk milestone 1, then close");
   assert.match(questionsOf(one)[0].body, /^milestone 1, m1: 2 of 9 answered, 1 blocked\./);
 
-  const done = base({ status: "review", milestones: [ms(1, [built], { merged: "m", walkthrough: walked(2, ["pass", "pass"]) })] });
+  const done = base({ status: "review", milestones: [ms(1, [built], { merged: at(1), walkthrough: walked(2, ["pass", "pass"]) })] });
   const [close] = questionsOf(done);
-  assert.equal(close.title, "ready to close");
+  assert.deepEqual([close.id, close.kind, close.title], ["review", "review", "ready to close"]);
   assert.deepEqual(close.answers, [{ label: "close", go: "close", primary: true }]);
+});
+
+test("a mission in flight asks for the walk of every merged milestone waiting on it, and never the close", () => {
+  const built = t("a", "passed", { commits: ["c"] });
+  const walking = { doc: "d.html", progress: { total: 6, answered: 2, verdicts: { c0: "pass", c1: "fail" }, updatedAt: "a" } };
+  const mission = base({ status: "flying", milestones: [
+    ms(1, [built], { merged: "2026-10-04T01:00:00.000Z", walkthrough: walking }),
+    ms(2, [t("b", "flying", { commits: ["c"] })]),
+  ] });
+  const [q] = questionsOf(mission);
+  assert.deepEqual([q.id, q.kind, q.title], ["walk:1", "walk", "walk milestone 1"]);
+  assert.equal(q.body, "milestone 1, m1: 2 of 6 answered, 1 failed.", "an unmerged milestone with commits is not asked yet");
+  assert.deepEqual(q.answers, [{ label: "walk milestone 1", go: "milestone-1", primary: true }]);
+  assert.equal(statusWord(mission), "waiting for you", "a mission waiting on a walk is waiting for you, never done");
+  assert.deepEqual(questionsOf(base({ status: "flying", milestones: [ms(1, [built])] })), [], "nothing merged, nothing to walk");
+  // Paused, the walk still opens: it posts nothing the pause refuses.
+  assert.equal(questionsOf({ ...mission, status: "paused" } as Mission).find((x) => x.kind === "walk")?.answers.length, 1);
 });
 
 test("a change asked of the Strike Lead after the work was done is said in the review question, not lost in the chat", () => {
