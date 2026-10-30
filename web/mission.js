@@ -260,6 +260,16 @@ const WORD = {
   error: { cls: "threat", lamp: ["idle", "warm"] },
   working: { cls: "", lamp: ["busy", "work"] },
 };
+/** `#gate` (where the lamp points before approval) lands on the gate with its verb focused, as `#round` lands on a round. */
+const toGate = () => {
+  const verb = location.hash === "#gate" ? document.querySelector("#gate .mv-confirm button") : null;
+  if (!verb) return;
+  requestAnimationFrame(() => {
+    document.getElementById("gate").scrollIntoView({ block: "start" });
+    verb.focus({ preventScroll: true });
+  });
+};
+
 const renderWord = () => {
   const word = mission.word ?? "working";
   const look = WORD[word] ?? WORD.working;
@@ -267,9 +277,9 @@ const renderWord = () => {
   const chip = $("#word");
   chip.className = `mv-word ${look.cls}`;
   // The loudest thing on the page goes to what it is loud about: the first question's own place when it
-  // names one, the gate before approval, the questions slot after it. Any other word is only a word.
+  // names one, the gate's verb before approval, the questions slot after it. Any other word is only a word.
   const go = mission.questions?.[0]?.answers?.find((a) => a.go)?.go;
-  if (open) chip.setAttribute("href", `#${go ?? (mission.approved ? "now" : "plan")}`);
+  if (open) chip.setAttribute("href", `#${go ?? (mission.approved ? "now" : "gate")}`);
   else chip.removeAttribute("href");
   chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
 };
@@ -494,7 +504,7 @@ const gateBlocks = () => {
         : el("p", { class: "cost-note" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
       el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."));
   }
-  blocks.push(el("section", { class: "mv-gate" }, el("h2", {}, "The gate"), ...gate));
+  blocks.push(el("section", { class: "mv-gate", id: "gate" }, el("h2", {}, "The gate"), ...gate));
 
   if (parsed?.contracts?.length) {
     blocks.push(el("section", {}, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
@@ -676,6 +686,8 @@ const boot = async () => {
   // The sections were empty when the browser tried the hash; now they have their height.
   const target = location.hash.slice(1);
   if (["ask", "plan", "progress", "result"].includes(target)) document.getElementById(target).scrollIntoView();
+  toGate();
+  window.addEventListener("hashchange", toGate);
   listen();
 };
 boot().catch((err) => setStatus(err.message, true));
