@@ -62,6 +62,10 @@ export const walkthroughState = (m: Milestone): WalkthroughState => {
 export const needsWalking = (m: Milestone): boolean =>
   m.tasks.some((t) => t.commits?.length) && !["walked", "waived"].includes(walkthroughState(m));
 
+/** The milestones waiting on their walk: merged, and neither walked nor waived. The walk question and any gate that holds on a walk read this one list. */
+export const toWalk = (mission: Pick<Mission, "milestones">): Array<Milestone & { merged: string }> =>
+  mission.milestones.filter((m): m is Milestone & { merged: string } => Boolean(m.merged) && needsWalking(m));
+
 /** How far a walkthrough still to walk has got, in the question's words: answered of total, and what came back failed or blocked. */
 const walkLeft = (m: Milestone): string => {
   const state = walkthroughState(m);
@@ -96,17 +100,19 @@ const strandedNote = (mission: Mission): string => {
  * blocked), and an answer per milestone that opens its walkthrough. Read from whatever
  * walkthroughs the milestones carry, so it holds however many there are. Its id names the latest
  * milestone in it, so a newly merged one asks again and progress through one already asked does
- * not. At review it ends "then close"; with nothing left to walk, the review question asks the close.
+ * not (nor does an earlier one reopening, which is still the same walk); gate code keys off
+ * `toWalk`, never this id. At review it ends "then close"; with nothing left to walk, the review
+ * question asks the close.
  */
-const walkQuestion = (mission: Mission, left: Milestone[]): Question => {
+const walkQuestion = (mission: Mission, left: ReturnType<typeof toWalk>): Question => {
   const review = mission.status === "review";
   const which = left.length === 1 ? `milestone ${left[0].n}` : `${left.length} milestones`;
   return {
-    id: `walk:${left.at(-1)!.n}`,
+    id: `walk:${left[left.length - 1].n}`,
     kind: "walk",
     title: review ? `ready to review: walk ${which}, then close` : `walk ${which}`,
-    body: `${left.map((m) => `milestone ${m.n}, ${m.title}: ${walkLeft(m)}`).join(". ")}.${review ? " Then close the mission." : ""}${review ? strandedNote(mission) : ""}`,
-    at: left.map((m) => m.merged!).sort()[0] ?? mission.created,
+    body: `${left.map((m) => `milestone ${m.n}, ${m.title}: ${walkLeft(m)}`).join(". ")}.${review ? ` Then close the mission.${strandedNote(mission)}` : ""}`,
+    at: left.map((m) => m.merged).sort()[0],
     answers: left.map((m, i) => ({ label: `walk milestone ${m.n}`, go: `milestone-${m.n}`, ...(i === 0 && { primary: true }) })),
   };
 };
@@ -207,7 +213,7 @@ export const questionsOf = (mission: Mission & { findings?: Record<string, strin
     at: mission.created,
     answers: [{ label: "approve", method: "POST", path: "approve", primary: true }],
   });
-  const left = mission.milestones.filter((m) => m.merged && needsWalking(m));
+  const left = toWalk(mission);
   if (left.length) out.push(walkQuestion(mission, left));
   else if (mission.status === "review") out.push(closeQuestion(mission));
   return out.sort((a, b) => a.at.localeCompare(b.at));
