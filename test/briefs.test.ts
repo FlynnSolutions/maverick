@@ -35,6 +35,18 @@ test("a Wingman's brief carries every absolute path, the standing orders and the
   assert.ok(!brief.includes("rejected your predecessor"), "a first attempt carries no findings");
 });
 
+test("a Wingman runs its task's proof and the project's before it stops, and reports each result without grading it", () => {
+  const brief = wingmanBrief({ ...ctx, proof: "npm test && npm run lint" });
+  const diff = brief.indexOf(`git -C ${task.worktree} diff --name-only mission/x...HEAD`);
+  const proof = brief.indexOf("Then run this task's own proof in your worktree: every command the task above names to prove it, then the project's proof from its maverick.json, `npm test && npm run lint`.");
+  assert.ok(diff > 0 && proof > diff, "beside the diff check, after it");
+  assert.match(brief, /Put each command in your final message with its result: whether it passed, and the lines of output that say so\. Report it; do not grade it\. The RIO judges\./);
+  const none = wingmanBrief(ctx);
+  assert.match(none, /every command the task above names to prove it\. Put each command/, "no project proof, only the task's own");
+  assert.ok(!none.includes("maverick.json, `"), "and no project proof is named");
+  assert.match(wingmanBrief({ ...ctx, proof: "make check" }, "verdict: fail\n- BLOCKER: x"), /the project's proof from its maverick\.json, `make check`/, "a retry runs it too");
+});
+
 test("both briefs carry what the task owns, what it builds on, and what strayed", () => {
   const owned = { ...task, touches: ["src/two.ts", "src/shared"], needs: ["m1-t1"], strayed: ["src/one.ts"] };
   const wingman = wingmanBrief({ ...ctx, task: owned });

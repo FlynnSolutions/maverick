@@ -14,6 +14,8 @@ export interface BriefContext {
   projectPath: string;
   /** Environments only the merged mission branch may deploy to, from the project's maverick.json. */
   shared?: string[];
+  /** The project's proof command, from its maverick.json, which the Wingman runs before it stops. */
+  proof?: string;
   mission: Pick<Mission, "id" | "name" | "plan" | "repos" | "milestones" | "contracts">;
   milestone: Pick<Milestone, "n" | "title" | "done" | "tasks">;
   task: MissionTask;
@@ -154,6 +156,7 @@ export const wingmanBrief = (ctx: BriefContext, findings?: string): string => {
     ...list(RIO_CHECKLIST),
     "",
     `Before you stop, run \`git -C ${task.worktree} diff --name-only ${repo.branch}...HEAD\` (three dots: your branch since it left the mission branch) and make sure every file in it belongs to this task${task.touches?.length ? ", which means inside: " + task.touches.join(", ") : ""}.`,
+    `Then run this task's own proof in your worktree: every command the task above names to prove it${ctx.proof ? `, then the project's proof from its maverick.json, \`${ctx.proof}\`` : ""}. Put each command in your final message with its result: whether it passed, and the lines of output that say so. Report it; do not grade it. The RIO judges.`,
     "",
     "Do not write to the project's trackers; Maverick owns those for this mission. Do not open a pull request. Do not spawn other agents.",
     "",

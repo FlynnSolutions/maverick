@@ -952,7 +952,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
 
 /* ---------- the flight ---------- */
 
-const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, shared: string[] = []): BriefContext => ({ projectPath: project.path, shared, mission, milestone: m, task, repo });
+const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, cfg?: Pick<MissionConfig, "shared" | "proof">): BriefContext => ({ projectPath: project.path, shared: cfg?.shared ?? [], ...(cfg?.proof ? { proof: cfg.proof } : {}), mission, milestone: m, task, repo });
 
 /**
  * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:
@@ -1312,7 +1312,7 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     task.base = await revParse(repo.path, task.branch);
     const out = await claimed(mission,
       () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
-      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg.shared)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
       (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
       launchFailed(task.id));
     if (!out) return;
@@ -1453,7 +1453,7 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
       task.note = undefined;
       forget(task);
     },
-    () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+    () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
     (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
     launchFailed(task.id));
   if (!out) return false;
@@ -1631,7 +1631,7 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
       const previous = reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: reviews - 1 }), "utf8").catch(() => undefined) : undefined;
       if (await claimed(mission,
         () => { task.reviews = reviews; task.status = "reviewing"; task.review = { claudeId: "", file, started: new Date().toISOString() }; },
-        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), file, previous), cfg.rioAgent, RIO_TOOLS),
+        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), file, previous), cfg.rioAgent, RIO_TOOLS),
         (on, claudeId) => { const t = taskOn(on, task.id); if (t?.review) t.review.claudeId = claudeId; },
         (on, err) => { const t = taskOn(on, task.id); if (t) { t.status = "handed-back"; t.note = `could not start the RIO: ${err.message}`; } })) {
         agentCache.delete(project.path);
