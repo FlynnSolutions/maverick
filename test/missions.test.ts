@@ -1200,7 +1200,7 @@ test("the briefing's estimate is the longest chain times the measured minutes pe
   const measured = estimateOf(plan.milestones, { minutesPerTask: 10.5, retryRate: 0.37, tasks: 51 });
   // (3 + 0.37) x 10.5 = 35.4, so 35; (1 + 0.37) x 10.5 = 14.4, so 15.
   assert.deepEqual(measured.milestones.map((m) => [m.n, m.chain, m.minutes, m.buildsOn, m.walk]), [[1, ["m1-t1", "m1-t2", "m1-t3"], 35, [], ["it works"]], [2, ["m2-t1"], 15, [1], ["it works"]]]);
-  assert.deepEqual([measured.minutes, measured.needed], [50, 2]);
+  assert.equal(measured.minutes, 50);
   assert.deepEqual(measured.basis, { measured: true, tasks: 51, minutesPerTask: 11, retryRate: 0.37 });
   const fallback = estimateOf(plan.milestones, null);
   assert.deepEqual(fallback.milestones.map((m) => m.minutes), [3 * DEFAULT_LINK_MINUTES, DEFAULT_LINK_MINUTES]);
@@ -1213,7 +1213,7 @@ test("the pace is measured from past mission records: each passed task's build p
   made.push(dir);
   config.sessionsDir = dir;
   try {
-    assert.equal(await measuredPace(), null, "no history");
+    assert.equal(await measuredPace(0), null, "no history");
     const where = join(dir, "missions", "p");
     mkdirSync(where, { recursive: true });
     const reviewed = (name: string, at: string) => {
@@ -1231,7 +1231,7 @@ test("the pace is measured from past mission records: each passed task's build p
     writeFileSync(join(where, "m.json"), JSON.stringify({ id: "m", project: "p", created: "2026-10-01T09:00:00Z", milestones: [{ n: 1, tasks }] }), "utf8");
     writeFileSync(join(dir, "missions", "stray.md"), "not a project", "utf8");
     // 6 + 4 = 10 minutes and 10 + 10 = 20: a mean of 15, one of two sent out twice. Unfinished and unreadable tasks are left out.
-    assert.deepEqual(await measuredPace(), { minutesPerTask: 15, retryRate: 0.5, tasks: 2 });
+    assert.deepEqual(await measuredPace(0), { minutesPerTask: 15, retryRate: 0.5, tasks: 2 });
   } finally {
     config.sessionsDir = was;
   }

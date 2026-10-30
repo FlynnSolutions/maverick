@@ -14,7 +14,7 @@ import { render as renderMarkdown } from "../markdown.js";
  *   and never rebuilds a round being answered, so a half-picked round survives every stream event.
  */
 export const leadThread = (ctx) => {
-  const { el, btn, post, act, actionUrl, fmtTime, plural, projectId } = ctx;
+  const { el, btn, post, act, actionUrl, fmtTime, plural, about, projectId } = ctx;
   let view = null;
 
   const log = el("ol", { class: "lead-log", "aria-live": "polite" });
@@ -160,7 +160,7 @@ export const leadThread = (ctx) => {
     fire.replaceChildren(...[
       btn("Fire mission", () => act("approve", {}, "fired; the first milestone is out"), "primary lead-fire-btn"),
       failing.length ? el("p", { class: "mv-warn" }, `${plural(failing.length, "check")} failed in the gate below (${failing.map((c) => c.name).join(", ")}); read ${failing.length === 1 ? "it" : "them"} before you fire.`) : null,
-      el("p", { class: "lead-hint" }, `Writes ${doc.cost.tasks} items into the tracker and sends out the first milestone; ${doc.cost.sessions} sessions over the mission's life.${doc.estimate ? ` ${plural(doc.estimate.milestones.length, "milestone")}, about ${doc.estimate.minutes} min of building, and you walk each one.` : ""} The briefing, the plan and its checks are in the gate below.`),
+      el("p", { class: "lead-hint" }, `Writes ${doc.cost.tasks} items into the tracker and sends out the first milestone; ${doc.cost.sessions} sessions over the mission's life.${doc.estimate ? ` ${plural(doc.estimate.milestones.length, "milestone")}, ${about(doc.estimate.minutes)} of building, and you walk each one.` : ""} The briefing, the plan and its checks are in the gate below.`),
     ].filter(Boolean));
   };
 

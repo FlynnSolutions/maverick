@@ -467,15 +467,18 @@ const shapeProblems = (milestones: Milestone[]): string[] => {
 export const longestChain = (m: Pick<Milestone, "tasks">): string[] => {
   const byId = new Map(m.tasks.map((t) => [t.id, t]));
   const memo = new Map<string, string[]>();
-  const from = (id: string, seen: Set<string>): string[] => {
+  const visiting = new Set<string>();
+  const longest = (chains: string[][]): string[] => chains.reduce((a, b) => (b.length > a.length ? b : a), []);
+  const from = (id: string): string[] => {
     const known = memo.get(id);
     if (known) return known;
-    const next = (byId.get(id)?.needs ?? []).filter((x) => byId.has(x) && !seen.has(x)).map((x) => from(x, new Set([...seen, x])));
-    const best = [...next.reduce((a, b) => (b.length > a.length ? b : a), []), id];
+    visiting.add(id);
+    const best = [...longest((byId.get(id)?.needs ?? []).filter((x) => byId.has(x) && !visiting.has(x)).map(from)), id];
+    visiting.delete(id);
     memo.set(id, best);
     return best;
   };
-  return m.tasks.map((t) => from(t.id, new Set([t.id]))).reduce((a, b) => (b.length > a.length ? b : a), [] as string[]);
+  return longest(m.tasks.map((t) => from(t.id)));
 };
 
 /** Tasks in one milestone whose `touches` overlap: they fly in parallel, so this is a collision planned in. */
@@ -522,7 +525,8 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
       continue;
     }
     const n = Number(m[1]);
-    const lineOf = (re: RegExp): string => (lines.slice(section.start + 1, section.end).map((l) => l.trim()).find((l) => re.test(l))?.match(re)?.[1] ?? "").trim().replace(/\.$/, "");
+    const body = lines.slice(section.start + 1, section.end).map((l) => l.trim());
+    const lineOf = (re: RegExp): string => (body.find((l) => re.test(l))?.match(re)?.[1] ?? "").trim().replace(/\.$/, "");
     const done = lineOf(DONE_LINE);
     if (!done) problems.push(`milestone ${n} has no "_done when: ..._" line`);
     const walk = listField(lineOf(WALK_LINE), /;/);
@@ -785,19 +789,27 @@ export const DEFAULT_LINK_MINUTES = 15;
  * Measured from the mission records under `config.sessionsDir/missions/`: every passed task's
  * last attempt, its Wingman from `started` to `ended` and its RIO from `review.started` to when
  * the RIO's findings file was last written. The retry rate is the share of those tasks that
- * took more than one attempt. Null with nothing measured.
+ * took more than one attempt. Null with nothing measured. The gate polls and the answer moves only
+ * when a task passes, so a reading is kept for a few minutes per records folder.
  */
-export const measuredPace = async (): Promise<Pace | null> => {
+const PACE_TTL_MS = 5 * 60_000;
+const paceRead = new Map<string, { at: number; pace: Promise<Pace | null> }>();
+export const measuredPace = (maxAgeMs = PACE_TTL_MS): Promise<Pace | null> => {
+  const hit = paceRead.get(config.sessionsDir);
+  if (hit && Date.now() - hit.at < maxAgeMs) return hit.pace;
+  const pace = readPace();
+  paceRead.set(config.sessionsDir, { at: Date.now(), pace });
+  return pace;
+};
+const readPace = async (): Promise<Pace | null> => {
   const projects = await readdir(join(config.sessionsDir, "missions"), { withFileTypes: true }).catch(() => []);
   const missions = (await Promise.all(projects.filter((d) => d.isDirectory()).map((d) => listMissions(d.name)))).flat();
-  const took: Array<{ minutes: number; retried: boolean }> = [];
-  for (const t of missions.flatMap((m) => m.milestones.flatMap((x) => x.tasks))) {
-    if (t.status !== "passed" || !t.started || !t.ended || !t.review?.started) continue;
-    const reviewed = await stat(t.review.file).then((s) => s.mtimeMs, () => null);
-    if (reviewed === null) continue;
-    const ms = Date.parse(t.ended) - Date.parse(t.started) + reviewed - Date.parse(t.review.started);
-    if (ms > 0) took.push({ minutes: ms / 60_000, retried: t.attempts > 1 });
-  }
+  const done = missions.flatMap((m) => m.milestones.flatMap((x) => x.tasks)).filter((t) => t.status === "passed" && t.started && t.ended && t.review?.started);
+  const took = (await Promise.all(done.map(async (t) => {
+    const reviewed = await stat(t.review!.file).then((s) => s.mtimeMs, () => null);
+    const ms = reviewed === null ? 0 : Date.parse(t.ended!) - Date.parse(t.started!) + reviewed - Date.parse(t.review!.started);
+    return ms > 0 ? [{ minutes: ms / 60_000, retried: t.attempts > 1 }] : [];
+  }))).flat();
   if (!took.length) return null;
   return { minutesPerTask: took.reduce((n, x) => n + x.minutes, 0) / took.length, retryRate: took.filter((x) => x.retried).length / took.length, tasks: took.length };
 };
@@ -809,8 +821,6 @@ export interface Estimate {
   milestones: Array<{ n: number; title: string; walk: string[]; buildsOn: number[]; chain: string[]; minutes: number }>;
   /** Every milestone one after another, since each waits on the walk of the one before. Agent time; the walks are not in it. */
   minutes: number;
-  /** One walk per milestone; the close follows the last. */
-  needed: number;
   /** Where the minutes came from: measured history, or the fixed default with none. */
   basis: { measured: true; tasks: number; minutesPerTask: number; retryRate: number } | { measured: false; linkMinutes: number };
 }
@@ -835,7 +845,6 @@ export const estimateOf = (milestones: Milestone[], pace: Pace | null): Estimate
   return {
     milestones: rows,
     minutes: rows.reduce((n, r) => n + r.minutes, 0),
-    needed: rows.length,
     basis: pace ? { measured: true, tasks: pace.tasks, minutesPerTask: Math.round(pace.minutesPerTask), retryRate: Math.round(pace.retryRate * 100) / 100 } : { measured: false, linkMinutes: DEFAULT_LINK_MINUTES },
   };
 };
@@ -1234,12 +1243,15 @@ const isBase = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean 
 const undoneBefore = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): Milestone | undefined =>
   mission.milestones.find((x) => x.n < m.n && !done(mission, x));
 
+/** What a milestone that is not done still owes, as the thing waited for: its merge (and proof), then its walk. */
+const holdback = (mission: Pick<Mission, "proofRequired">, m: Milestone): string => `milestone ${m.n} ${proved(mission, m) ? "is walked" : "has merged"}`;
+
 /** Whether a pending task may start, and if not, what holds it, in the terms `waitingOn` says it in. */
 type Gate =
   | { go: true }
   | { paused: true }
   | { needs: Array<{ id: string; title?: string; why: string }> }
-  | { milestone: Milestone; after?: Milestone; walk?: boolean }
+  | { milestone: Milestone; after?: string }
   | { clash: MissionTask; on: string[] };
 
 /**
@@ -1274,7 +1286,7 @@ const gates = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">
         if (needs.length) return { needs };
       } else if (!milestone.dispatched) {
         const after = undoneBefore(mission, milestone);
-        return { milestone, after, walk: after && proved(mission, after) };
+        return { milestone, after: after && holdback(mission, after) };
       }
       for (const other of airborne) {
         const on = clashOn(task, other);
@@ -1299,7 +1311,7 @@ const reason = (gate: Exclude<Gate, { go: true }>): string => {
     const { needs } = gate;
     return `waits for ${needs.length > 2 ? `${needs.length} tasks: ${needs.map((u) => `${u.id} (${u.why})`).join(", ")}` : needs.map((u) => `${u.id}${u.title ? ` ${u.title}` : ""} (${u.why})`).join("; ")}`;
   }
-  if ("milestone" in gate) return `starts with milestone ${gate.milestone.n}${gate.after ? `, once milestone ${gate.after.n} ${gate.walk ? "is walked" : "has merged"}` : ""}`;
+  if ("milestone" in gate) return `starts with milestone ${gate.milestone.n}${gate.after ? `, once ${gate.after}` : ""}`;
   return `waits for ${gate.clash.id} ${gate.clash.title} to finish: both own ${gate.on.join(", ")}`;
 };
 
@@ -1315,7 +1327,7 @@ export const waitingOn = (mission: Pick<Mission, "milestones" | "status" | "proo
     if (m.dispatched || m.merged) continue;
     const after = undoneBefore(mission, m);
     const early = m.tasks.some((t) => t.needs?.length) ? "; a task in it starts sooner, as soon as what it needs has passed" : "";
-    milestones[m.n] = mission.status === "paused" ? "the mission is paused" : after ? `sent once milestone ${after.n} ${proved(mission, after) ? "is walked" : "has merged"}${early}` : "sent on the next sweep";
+    milestones[m.n] = mission.status === "paused" ? "the mission is paused" : after ? `sent once ${holdback(mission, after)}${early}` : "sent on the next sweep";
   }
   return { tasks, milestones };
 };

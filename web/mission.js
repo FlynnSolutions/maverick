@@ -17,7 +17,7 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, fmtTime, plural, reveal }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, fmtTime, plural, about, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
@@ -34,6 +34,7 @@
  *                                by the shell; a module only places `thread.node`
  *   fmtTime(iso)                 a clock time, or "" for none
  *   plural(n, word)              `1 note`, `2 notes`
+ *   about(minutes)               an estimate: `about 35 min`, `about 2 h 15 min`
  *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
  *                                Result without `reveal` on its handle makes it a no-op
  *
@@ -76,6 +77,8 @@ const setStatus = (msg, isError = false) => {
 };
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+/** The minutes, said as the estimate they are. */
+const about = (minutes) => minutes >= 60 ? `about ${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}` : `about ${minutes} min`;
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
@@ -206,7 +209,7 @@ const LANDS = {
 
 const reveal = (key) => mounted.get("result")?.reveal?.(key);
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, fmtTime, plural, reveal };
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, fmtTime, plural, about, reveal };
 // One thread for the mission's whole life: in Plan before approval, placed in Progress after, never rebuilt.
 ctx.thread = leadThread(ctx);
 
@@ -387,10 +390,8 @@ const costBand = (cost, estimate) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "milestones"), el("span", { class: "v" }, String(cost.milestones))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "tasks"), el("span", { class: "v" }, String(cost.tasks))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "sessions it spawns"), el("span", { class: "v" }, String(cost.sessions))),
-  el("div", { class: "cell" }, el("span", { class: "k" }, "you are needed"), el("span", { class: "v" }, estimate ? plural(estimate.needed, "time") : "at each walk")));
+  el("div", { class: "cell" }, el("span", { class: "k" }, "you are needed"), el("span", { class: "v" }, estimate ? plural(estimate.milestones.length, "time") : "at each walk")));
 
-/** The minutes, said as the estimate they are. */
-const about = (minutes) => minutes >= 60 ? `about ${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}` : `about ${minutes} min`;
 
 /**
  * The briefing before the fire (M28): per milestone what it builds, the cases you walk at its
@@ -409,7 +410,7 @@ const briefing = (estimate) => {
         "you walk it at the end",
       ].join(" · ")),
       m.walk.length ? el("ul", { class: "cases" }, ...m.walk.map((c) => el("li", {}, c))) : null))),
-    el("p", { class: "why" }, `${plural(estimate.milestones.length, "milestone")}, ${about(estimate.minutes)} of building end to end, not counting your walks; you are needed ${plural(estimate.needed, "time")}, once per milestone to walk it, and the close follows the last walk.`),
+    el("p", { class: "why" }, `${plural(estimate.milestones.length, "milestone")}, ${about(estimate.minutes)} of building end to end, not counting your walks; you are needed ${plural(estimate.milestones.length, "time")}, once per milestone to walk it, and the close follows the last walk.`),
     el("p", { class: "cost-note" }, basis.measured
       ? `Times are measured: ${basis.minutesPerTask} min per task (build plus review) across ${plural(basis.tasks, "past task")}, ${Math.round(basis.retryRate * 100)}% of them sent out twice.`
       : `No mission has finished here yet, so times are a default: ${basis.linkMinutes} min per task in the longest chain.`));
