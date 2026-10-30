@@ -22,7 +22,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, answerLead, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, missionPath, missionQuestions, missionReport, missionView, openLeadTerminal, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, resumeMission, retryTask, sayToStrikeLead, startMission, summarizeMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
+import { abandonMission, acceptTask, answerLead, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, markReadings, missionPath, missionQuestions, missionReport, missionView, openLeadTerminal, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, resumeMission, retryTask, sayToStrikeLead, startMission, summarizeMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
@@ -641,7 +641,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, await startMission(project, body.name, body.brief, body.tracker ?? 0));
     }
   }
-  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|report|say|stream|summarize))?$/);
+  const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|readings|report|say|stream|summarize))?$/);
   if (missionAction) {
     const project = await requireProject(url);
     const [, id, action] = missionAction;
@@ -689,6 +689,11 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       const report = await missionReport(project, id);
       res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" });
       return res.end(report);
+    }
+    if (method === "POST" && action === "readings") {
+      const { byTask, state } = await readJson<{ byTask?: Record<string, string[]>; state?: "read" | "unread" }>(req);
+      if (!byTask || !state) throw new Error("readings take byTask, each task's finding keys, and a state of read or unread");
+      return sendJson(res, 200, await markReadings(project, id, byTask, state));
     }
     if (method === "POST" && action === "approve") return sendJson(res, 200, await approveMission(project, id));
     if (method === "POST" && action === "interview") return sendJson(res, 200, await openLeadTerminal(project, id));

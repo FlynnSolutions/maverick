@@ -2347,6 +2347,41 @@ export const markReading = async (project: Project, id: string, taskId: string, 
 };
 
 /**
+ * Findings marked read, or read ones handed back to unread, across any of the mission's tasks in
+ * one write: a bucket's "mark all read" and the undo after a mark. `later` is not here: it writes an
+ * item and a commit to the tracker per finding, and taking that back is the board's job, not an
+ * undo's. A finding on the checklist stays there, so unread refuses it rather than leave the two
+ * disagreeing.
+ */
+export const markReadings = async (project: Project, id: string, byTask: Record<string, string[]>, state: "read" | "unread"): Promise<Mission> => {
+  if (state !== "read" && state !== "unread") throw new Error(`findings are marked "read" or "unread" together, not "${String(state)}"`);
+  const named = Object.entries(byTask).filter(([, keys]) => keys.length);
+  if (!named.length) throw new Error("no findings named to mark");
+  const fresh = await missionOr404(project.id, id);
+  for (const [taskId] of named) if (!taskOn(fresh, taskId)) throw new Error(`no task "${taskId}" on ${fresh.name}`);
+  const { findings } = await statsOf(fresh, (t) => named.some(([taskId]) => taskId === t.id), false);
+  for (const [taskId, keys] of named) {
+    const known = new Set(taskFindings(taskOn(fresh, taskId)!, findings[taskId]).map((f) => f.key));
+    const unknown = keys.find((k) => !known.has(k));
+    if (unknown) throw new Error(`no finding "${unknown}" on ${taskId}`);
+  }
+  return changeMission(project.id, id, (mission) => {
+    for (const [taskId, keys] of named) {
+      const task = taskOn(mission, taskId);
+      if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+      const readings = { ...task.readings };
+      for (const key of keys) {
+        if (readings[key] === "later") throw new Error(`"${key}" is on the checklist; take it off there, not here`);
+        if (state === "read") readings[key] = "read";
+        else delete readings[key];
+      }
+      task.readings = readings;
+    }
+    return mission;
+  });
+};
+
+/**
  * Ask a read-only session for the three things Cory must read, from the report and the findings.
  * Refused before anything has merged, and while one is already running. A file an earlier summary
  * left is removed first, so the sweep never reads it as this one's. The checks and the claim go
