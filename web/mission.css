@@ -1,3 +1,6 @@
+/* The measure every paragraph on these pages keeps: under 80 characters a line (layout L5). */
+:root { --measure: 56ch; }
+
 /* The mission page. Four fixed anchors on the left, the same four places before, during and
    after a mission, and one status word above them. This file is the shell's: the frame, the
    rail, the ask, and the gate the shell still draws until the plan is approved. Plan, Progress
@@ -105,26 +108,26 @@ html { scroll-padding-top: 70px; }
 /* A lifted surface is brighter, so its faint text comes up a step to stay readable on it: the
    token is remapped here, so everything faint inside the gate follows without a rule each. */
 .mv-gate { --ink-faint: var(--ink-soft); padding: 14px 16px; border-radius: var(--radius-m); background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
-.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 56ch; margin: 0 0 10px; }
-.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 56ch; margin: 10px 0 0; }
+.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: var(--measure); margin: 0 0 10px; }
+.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: var(--measure); margin: 10px 0 0; }
 .mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 .mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--threat); font-size: 13px; }
 .mv-problems li { margin: 2px 0; }
-.mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: 56ch; color: var(--caution); font-size: 13px; }
+.mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: var(--measure); color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
 /* One grid for the list, each row on it, so every detail starts at the same x however long its name. */
 .mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; display: grid; grid-template-columns: 42px auto minmax(0, 1fr); gap: 3px 8px; }
 .mv-preflight li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
 .mv-preflight li strong { white-space: nowrap; }
 .mv-preflight .pf-detail { max-width: 48ch; }
-.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-faint); }
+.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
 .mv-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .mv-confirm .why { margin: 0; }
 /* The sentence takes its own row and the buttons the next, whatever measure the sentence has. */
-.mv-confirm .mv-break { flex-basis: 100%; height: 0; }
+.mv-confirm .mv-confirm-row { flex-basis: 100%; display: flex; gap: 8px; flex-wrap: wrap; }
 
 .mv-milestone { margin-bottom: 18px; }
 .mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
@@ -170,9 +173,6 @@ html { scroll-padding-top: 70px; }
 .mv-page.unopened .mv-ask .button-link { padding: 0 14px; }
 
 @media (max-width: 600px) {
-  /* The bar wraps to two rows here; pinned, it covers a sixth of the screen and sits over the
-     rail after every scroll, so on a phone it scrolls away with the page. */
-  .bar { position: static; }
   /* Five band cells in two columns leave a hole; the last one takes the row. */
   .mv-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mv-band .cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
@@ -187,4 +187,4 @@ html { scroll-padding-top: 70px; }
 .mv-confirm button[aria-busy="true"] { cursor: progress; opacity: 0.7; }
 
 /* The gate's prose and its warnings stay under 80 characters a line (L5). */
-.mv-gate .mv-warn, .lead-fire .mv-confirm .why { max-width: 56ch; }
+.mv-gate .mv-warn, .lead-fire .mv-confirm .why { max-width: var(--measure); }

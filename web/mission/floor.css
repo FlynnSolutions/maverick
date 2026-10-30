@@ -6,3 +6,9 @@
 .mv-rail a, .mv-page button, .mv-page .button-link, .mv-page summary { min-height: 44px; min-width: 44px; }
 .mv-page .button-link, .mv-page summary { display: inline-flex; align-items: center; }
 .mv-page input[type="text"] { min-height: 44px; }
+
+/* At phone width the bar wraps to two rows; pinned, it covers a sixth of the screen and sits over
+   the rail after every scroll, so on a phone it scrolls away with the page. */
+@media (max-width: 600px) {
+  .bar { position: static; }
+}

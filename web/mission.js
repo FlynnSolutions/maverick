@@ -17,7 +17,7 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, now, fmtTime, plural, armed, approveWhy, reveal }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, now, fmtTime, plural, armed, approveWhy, failingNote, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
@@ -40,6 +40,7 @@
  *   plural(n, word)              `1 note`, `2 notes`
  *   armed({ label, cls, why, yes, onYes })  an irreversible action asked twice, focus on "not yet"
  *   approveWhy(doc)              what firing the mission does, in one sentence
+ *   failingNote(checks, where, verb)  the failed preflight checks, beside the button they should stop
  *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
  *                                Result without `reveal` on its handle makes it a no-op
  *
@@ -49,7 +50,7 @@
 import { lamp } from "./lamp.js";
 import { applyProjectTheme, recall } from "./theme.js";
 import { mountDevBadge } from "./dev-badge.js";
-import { render as renderMarkdown } from "./markdown.js";
+import { inline, render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
 import { toast } from "./toast.js";
 
@@ -84,6 +85,12 @@ const setStatus = (msg, isError = false) => {
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/** A check that failed, said beside the button it should stop you pressing: in the gate and in the chat alike. */
+const failingNote = (checks, where, verb) => {
+  const failing = checks?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
+  return failing.length ? el("p", { class: "mv-warn" }, `${plural(failing.length, "check")} failed ${where} (${failing.map((c) => c.name).join(", ")}); read ${failing.length === 1 ? "it" : "them"} before you ${verb}.`) : null;
+};
+
 /** What firing does, said the same way wherever it is asked. */
 const approveWhy = (doc) => `This writes ${plural(doc.cost.tasks, "item")} into the tracker and spawns ${plural(doc.cost.sessions, "background session")} over the mission's life. After this you are asked only to walk each milestone; the close comes with the last walk.`;
 
@@ -110,7 +117,7 @@ const armed = ({ label, cls = "", why, yes, onYes }) => {
       }
     }, "primary");
     if (why) go.setAttribute("aria-describedby", whyId);
-    fill(box, ...(why ? [el("p", { class: "why", id: whyId }, why), el("span", { class: "mv-break" })] : []), go, back);
+    fill(box, why ? el("p", { class: "why", id: whyId }, why) : null, el("div", { class: "mv-confirm-row" }, go, back));
     back.focus();
   }, `primary ${cls}`.trim());
   box.append(arm);
@@ -242,7 +249,7 @@ const LANDS = {
 
 const reveal = (key) => mounted.get("result")?.reveal?.(key);
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, now: $("#now"), fmtTime, plural, armed, approveWhy, reveal };
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, now: $("#now"), fmtTime, plural, armed, approveWhy, failingNote, reveal };
 // One thread for the mission's whole life: in Plan before approval, placed in Progress after, never rebuilt.
 ctx.thread = leadThread(ctx);
 
@@ -424,14 +431,12 @@ const reposBand = (repos) => {
       : null);
 };
 
-/** A check that failed, said beside the button it should stop you pressing, as the chat's Fire mission says it. */
-const failingNote = (checks) => {
-  const failing = checks?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
-  return failing.length ? el("p", { class: "mv-warn" }, `${plural(failing.length, "check")} failed below (${failing.map((c) => c.name).join(", ")}); read ${failing.length === 1 ? "it" : "them"} before you approve.`) : null;
+/** A check's detail as the markdown sets it: a `backticked` command reads as code. */
+const pfDetail = (detail) => {
+  const span = el("span", { class: "pf-detail" });
+  span.innerHTML = inline(detail, { project: projectId });
+  return span;
 };
-
-/** A check's detail with its `backticked` commands set as code, the way the markdown renders them. */
-const inlineCode = (text) => text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? el("code", {}, part) : part));
 
 /** What the host can and cannot give the mission, checked before the person approves and leaves. */
 const preflightBand = (checks) => {
@@ -441,7 +446,7 @@ const preflightBand = (checks) => {
   const refusing = checks.some((c) => c.refuses);
   return el("div", { class: "mv-preflight" },
     el("p", { class: failed || warned ? "mv-warn" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${plural(warned, "thing")} this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
-    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), el("span", { class: "pf-detail" }, ...inlineCode(c.detail))))));
+    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), pfDetail(c.detail)))));
 };
 
 const costBand = (cost) => el("div", { class: "mv-band" },
@@ -478,7 +483,7 @@ const gateBlocks = () => {
       el("div", { class: "gate-actions" },
         doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
         el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")),
-      failingNote(doc.preflight),
+      failingNote(doc.preflight, "below", "approve"),
       reposBand(doc.repos ?? []),
       preflightBand(doc.preflight),
       doc.wingmanAgent
