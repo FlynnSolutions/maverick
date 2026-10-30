@@ -38,6 +38,7 @@ export const leadThread = (ctx) => {
     const text = box.value.trim();
     if (!text) return box.focus();
     send.disabled = true;
+    send.textContent = "sending";
     try {
       await say({ text });
       box.value = "";
@@ -45,6 +46,7 @@ export const leadThread = (ctx) => {
       fail(err);
     } finally {
       send.disabled = false;
+      send.textContent = "send";
     }
   } }, box, send);
   // Enter sends, as in every chat; Shift+Enter is a new line.
@@ -62,9 +64,27 @@ export const leadThread = (ctx) => {
     }
   }, "ghost lead-raw");
 
+  /* The conversation is history once it has run long: the last few entries show, the rest fold behind one line above them. */
+  const KEEP = 6;
+  let unfolded = false;
+  const earlier = btn("", () => { unfolded = !unfolded; foldLog(); }, "ghost lead-earlier");
+  const foldLog = () => {
+    const items = [...log.children];
+    const folded = unfolded ? 0 : Math.max(0, items.length - KEEP);
+    items.forEach((li, i) => {
+      li.hidden = i < folded;
+      if (li.hidden) li.dataset.folded = "";
+    });
+    earlier.hidden = items.length <= KEEP;
+    earlier.textContent = unfolded ? "fold the earlier conversation" : `the earlier conversation, ${folded} ${folded === 1 ? "entry" : "entries"}`;
+    earlier.setAttribute("aria-expanded", String(unfolded));
+  };
+  /** An ended mission's Strike Lead is stood down and the server refuses anything said to it, so nothing here offers to. */
+  const ended = el("p", { class: "lead-hint", hidden: true }, "This mission has ended, so its Strike Lead takes nothing more. Start a new mission from the workspace for anything still to do.");
+
   const node = el("section", { class: "lead" },
     el("h3", { class: "lead-head" }, "The Strike Lead"),
-    log, thinking, fire, composer, heard,
+    earlier, log, thinking, fire, composer, ended, heard,
     el("div", { class: "lead-foot" }, raw), well);
 
   /* ---------- one round of questions, answered with clicks ---------- */
@@ -112,7 +132,8 @@ export const leadThread = (ctx) => {
     entry.questions?.length ? (open ? round(entry) : asked(entry)) : null);
 
   /** The last entry is the only one whose round is still open, and only while nothing has been said after it. */
-  const isOpen = (chat, i) => i === chat.length - 1 && chat[i].who === "Strike Lead" && Boolean(chat[i].questions?.length);
+  const isOpen = (chat, i) => !over() && i === chat.length - 1 && chat[i].who === "Strike Lead" && Boolean(chat[i].questions?.length);
+  const over = () => ["closed", "abandoned"].includes(view?.status);
 
   /** Maverick's own line about the flight: a task out, passed or back, a milestone merged. One quiet line each. */
   const note = (u) => el("li", { class: `lead-note ${u.kind}` }, el("span", { class: "lead-at" }, fmtTime(u.at)), el("span", {}, u.text));
@@ -167,8 +188,11 @@ export const leadThread = (ctx) => {
   const update = (next) => {
     view = next;
     paintLog(next.chat ?? [], next.updates ?? []);
+    foldLog();
+    composer.hidden = over();
+    ended.hidden = !over();
     thinking.hidden = !next.leadBusy;
-    raw.hidden = !next.lead || next.leadBusy;
+    raw.hidden = !next.lead || next.leadBusy || over();
     paintFire();
   };
 
