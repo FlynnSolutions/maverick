@@ -331,8 +331,8 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Buttons**: primary is accent with `0 1px 2px rgba(0,0,0,.4)`, never a coloured halo. Ghost
   actions are lower-case verbs (`dock`, `close`, `stop`, `refresh`). Focus ring is
   `2px solid var(--accent)`.
-- **What waits on you is the first thing on the mission page.** The open questions sit in the
-  `#now` slot above The ask, not part way down Progress, and every mission that wants something
+- **What waits on you is the first thing on the mission page.** The open questions, and the reason
+  behind the word, sit in the `#now` slot above The ask, not part way down Progress, and every mission that wants something
   has one: at review that is the walkthroughs left, then the close. The ask is context: a brief
   over 320 characters folds to four lines. The Strike Lead's conversation shows its last six
   entries and folds the rest behind one line. A milestone merged but not walked reads `to walk`
@@ -344,7 +344,7 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   stream dropped, the stream is back). A page that cannot open its mission says why in the page,
   with the way back, and draws none of its sections.
 - **Motion is the feedback that something landed.** Durations are tokens (`--dur-press` 140,
-  `--dur-exit` 150, `--dur-enter` 220, `--dur-land` 420) on `--ease-out`. New task cards,
+  `--dur-exit` 150, `--dur-enter` 220, `--dur-land` 280) on `--ease-out`. New task cards,
   timeline lines and chat entries rise 6px into place, the first few 40ms apart; a toast rises
   and leaves the way it came, faster. The one authored moment is a question landing in `#now`:
   it rises from below and its caution ring flares once. Reduced motion keeps the fades and drops

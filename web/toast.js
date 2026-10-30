@@ -43,18 +43,28 @@ const show = ({ msg, error }) => {
     node.append(close);
   } else {
     let left = lifetime(msg);
-    let started = Date.now();
+    let started = 0;
     let timer = 0;
-    const tab = () => (document.hidden ? hold() : run());
+    // The pointer, the focus and a hidden tab each hold the clock; it runs only while none does.
+    const holders = new Set();
+    const hold = (why) => {
+      if (!holders.size) { window.clearTimeout(timer); left -= Date.now() - started; }
+      holders.add(why);
+    };
+    const release = (why) => {
+      if (!holders.delete(why) || holders.size) return;
+      started = Date.now();
+      timer = window.setTimeout(go, left);
+    };
+    const tab = () => (document.hidden ? hold("tab") : release("tab"));
     const go = () => { document.removeEventListener("visibilitychange", tab); leave(node); };
-    const run = () => { started = Date.now(); timer = window.setTimeout(go, left); };
-    const hold = () => { window.clearTimeout(timer); left -= Date.now() - started; };
-    node.addEventListener("pointerenter", hold);
-    node.addEventListener("pointerleave", run);
-    node.addEventListener("focusin", hold);
-    node.addEventListener("focusout", run);
+    node.addEventListener("pointerenter", () => hold("pointer"));
+    node.addEventListener("pointerleave", () => release("pointer"));
+    node.addEventListener("focusin", () => hold("focus"));
+    node.addEventListener("focusout", () => release("focus"));
     document.addEventListener("visibilitychange", tab);
-    run();
+    holders.add("start");
+    release("start");
   }
   region.prepend(node);
 };

@@ -61,7 +61,7 @@
 .prog-cards > :nth-child(2) { transition-delay: 40ms; }
 .prog-cards > :nth-child(3) { transition-delay: 80ms; }
 .mv-now .prog-q { position: relative; transition-duration: var(--dur-land);
-  @starting-style { opacity: 0; transform: translateY(calc(var(--rise) * 2)) scale(0.97); } }
+  @starting-style { opacity: 0; transform: translateY(calc(var(--rise) * 2)) scale(var(--enter-scale)); } }
 .mv-now .prog-q::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 2px var(--caution); opacity: 0; pointer-events: none; animation: prog-flare var(--dur-land) var(--ease-out) 120ms; }
 @keyframes prog-flare { from { opacity: 0.9; transform: scale(1); } to { opacity: 0; transform: scale(1.03); } }
 @media (prefers-reduced-motion: reduce) { .mv-now .prog-q::after { animation: none; } }

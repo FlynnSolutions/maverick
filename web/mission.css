@@ -151,8 +151,10 @@ html { scroll-padding-top: 70px; }
 .mv-warn { margin: 10px 0 0; padding: 8px 12px; font-size: 12.5px; color: var(--caution); max-width: 74ch; background: var(--carbon); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--caution); }
 
 /* ---------- what waits on you, first: the open questions sit above the ask (ctx.now) ---------- */
-.mv-now { scroll-margin-top: 70px; }
-.mv-now:has(.prog-pins:not([hidden])) { margin: 0 0 32px; }
+.mv-now:has(.prog-pins:not([hidden]), .mv-trouble:not(:empty)) { margin: 0 0 32px; }
+/* The reason behind the word is waiting on you as much as a question is, so it leads the slot too. */
+.mv-now .mv-trouble { margin: 0 0 16px; }
+.mv-now .mv-trouble .mv-warn { max-width: none; font-size: 13.5px; }
 
 /* A long brief folds to four lines; the ask is context, not the action. */
 .mv-ask .mv-ask-brief.folded { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
