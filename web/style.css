@@ -38,6 +38,13 @@
   --radius-s: 4px;
   --radius-m: 6px;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* The kit's motion durations (ui-design motion.md): a press, an exit, an entrance, and the one authored landing. */
+  --dur-press: 140ms;
+  --dur-exit: 150ms;
+  --dur-enter: 220ms;
+  --dur-land: 420ms;
+  /* How far an arrival rises; reduced motion sets it to nothing and keeps the fade. */
+  --rise: 6px;
   --display: "Chakra Petch", "IBM Plex Sans", sans-serif;
   --sans: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
@@ -598,8 +605,20 @@ body.dragging-strip .forms button { color: var(--ink-soft); }
 .tab-menu .pick-row { width: 100%; justify-content: flex-start; border: 0; background: transparent; box-shadow: none; height: 32px; }
 .tab-menu .pick-row.danger b { color: var(--threat); }
 
+/* ---------- toasts: what an action did, said once and gone, over the page so nothing shifts (web/toast.js) ---------- */
+.toasts { position: fixed; right: 24px; bottom: 24px; z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 48px)); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; gap: 10px; align-items: center; padding: 10px 12px 10px 14px; border-radius: var(--radius-m); background: var(--panel-lifted); color: var(--ink); font-size: 13px; line-height: 1.45; box-shadow: 0 0 0 1px var(--seam-strong), 0 8px 24px var(--shade);
+  transition: opacity var(--dur-enter) var(--ease-out), transform var(--dur-enter) var(--ease-out); }
+@starting-style { .toast { opacity: 0; transform: translateY(var(--rise)) scale(0.97); } }
+.toast p { margin: 0; flex: 1; overflow-wrap: anywhere; }
+.toast.error { box-shadow: 0 0 0 1px var(--threat), 0 8px 24px var(--shade); }
+.toast button { flex: 0 0 auto; min-height: 32px; }
+.toast.leaving { opacity: 0; transform: translateY(var(--rise)); transition-duration: var(--dur-exit); }
+@media (max-width: 600px) { .toasts { right: 16px; left: 16px; bottom: 16px; width: auto; } }
+
 /* Reduce motion quiets the ambient pulses and entrances; the action effects stay. */
 @media (prefers-reduced-motion: reduce) {
+  :root { --rise: 0px; }
   .card, .lamp { animation: none !important; }
   .card, .row, button, .items { transition: none !important; }
 }
@@ -1110,7 +1129,8 @@ body.ask-open { overflow: hidden; }
    the document in a frame. */
 .crumb { font-family: var(--display); font-size: 13px; letter-spacing: 0.04em; color: var(--ink-soft); }
 .crumb b { color: var(--accent-hot); font-weight: 600; }
-.button-link { height: 28px; padding: 0 10px; display: inline-flex; align-items: center; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--steel); color: var(--ink); text-decoration: none; font-size: 13px; }
+.button-link { height: 28px; padding: 0 10px; display: inline-flex; align-items: center; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--steel); color: var(--ink); text-decoration: none; font-size: 13px; transition: transform var(--dur-press) var(--ease-out); }
+.button-link:active { transform: scale(0.97); }
 .walkthrough-panel h2 a { color: var(--accent-hot); text-decoration: none; }
 .wt-progress { margin: 0 0 10px; }
 .wt-progress .runway.small { height: 8px; }

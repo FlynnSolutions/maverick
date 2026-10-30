@@ -46,3 +46,22 @@
   .prog-moves > summary { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) { .prog-live::before { animation: none; } }
+
+/* In the shell's top slot (ctx.now) the pins carry no margin of their own; the slot spaces them. */
+.mv-now .prog-pins { margin: 0; }
+
+/* Arrivals are the feedback that something happened: a task card or a timeline line rises 6px into
+   place as it lands. Only the first few cards rise on the first paint, 40 ms apart; once the page
+   has settled every new one does. The one authored moment is a question landing in the top slot:
+   it rises from a little below and its caution ring flares once, because that is the page asking. */
+.prog-cards > :nth-child(-n + 3), .mv-page.settled .prog-cards > *, .mv-page.settled .prog-timeline > li, .mv-now .prog-q {
+  transition: opacity var(--dur-enter) var(--ease-out), transform var(--dur-enter) var(--ease-out);
+  @starting-style { opacity: 0; transform: translateY(var(--rise)); }
+}
+.prog-cards > :nth-child(2) { transition-delay: 40ms; }
+.prog-cards > :nth-child(3) { transition-delay: 80ms; }
+.mv-now .prog-q { position: relative; transition-duration: var(--dur-land);
+  @starting-style { opacity: 0; transform: translateY(calc(var(--rise) * 2)) scale(0.97); } }
+.mv-now .prog-q::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 2px var(--caution); opacity: 0; pointer-events: none; animation: prog-flare var(--dur-land) var(--ease-out) 120ms; }
+@keyframes prog-flare { from { opacity: 0.9; transform: scale(1); } to { opacity: 0; transform: scale(1.03); } }
+@media (prefers-reduced-motion: reduce) { .mv-now .prog-q::after { animation: none; } }

@@ -75,3 +75,13 @@
   .lead-opts { display: grid; grid-template-columns: minmax(0, 1fr); }
   .lead-msg.you { max-width: 100%; }
 }
+
+.lead-earlier { justify-self: start; height: 32px; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
+
+/* A new entry rises into the thread as it lands. Not on the first paint, and not an entry the fold
+   is only showing again: those were already there. */
+.mv-page.settled .lead-log > li:not([data-folded]) {
+  transition: opacity var(--dur-enter) var(--ease-out), transform var(--dur-enter) var(--ease-out);
+  @starting-style { opacity: 0; transform: translateY(var(--rise)); }
+}
+@media (prefers-reduced-motion: reduce) { .mv-page.settled .lead-log > li:not([data-folded]) { transition-property: opacity; } }
