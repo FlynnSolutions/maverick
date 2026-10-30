@@ -119,7 +119,7 @@ test("a person's decision is written into the plan on the mission branch and com
   // A real repo standing in for the project, with its integration worktree being the repo itself.
   const { dir: repoDir, git } = tempRepo("mv-ledger");
   mkdirSync(join(repoDir, "deliverables", "missions"), { recursive: true });
-  await writeFile(join(repoDir, "deliverables", "missions", "ledger.md"), "# Mission: ledger\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  Build it.\n", "utf8");
+  await writeFile(join(repoDir, "deliverables", "missions", "ledger.md"), "# Mission: ledger\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n_walk: it works._\n\n- [ ] **t**\n  Build it.\n", "utf8");
   git("add", "-A"); git("commit", "-q", "-m", "the plan");
   const integration = join(repoDir, ".claude", "worktrees", "ledger-integration-root");
   git("worktree", "add", "-q", "-b", "mission/ledger", integration, "HEAD");
@@ -152,7 +152,7 @@ test("a plan no mission repo holds lands on the first repo's mission branch, and
   const { dir: root, git: rootGit } = tempRepo("mv-ledger-root");
   const g = (dir: string, ...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
   mkdirSync(join(root, "deliverables", "missions"), { recursive: true });
-  const planText = "# Mission: held\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  - repo: svc\n  Build it.\n";
+  const planText = "# Mission: held\n\nIntro.\n\n## Milestone 1 — m\n\n_done when: d._\n_walk: it works._\n\n- [ ] **t**\n  - repo: svc\n  Build it.\n";
   await writeFile(join(root, "deliverables", "missions", "held.md"), planText, "utf8");
   rootGit("add", "-A"); rootGit("commit", "-q", "-m", "the plan, on main");
   const svc = join(root, "svc");

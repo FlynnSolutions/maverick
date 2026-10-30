@@ -6,14 +6,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
+import { DEFAULT_LINK_MINUTES, MAX_ATTEMPTS, applyPlanState, costOf, endFinished, estimateOf, longestChain, measuredPace, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -27,6 +27,7 @@ answers project questions, and it never writes product code itself.
 ## Milestone 1 — the plan and the gate
 
 _done when: a plan exists in the tracker as items and nothing has spawned._
+_walk: it works._
 
 - [ ] **Parse the plan document**
   Read the Strike Lead's markdown into milestones and tasks, reusing the tracker parser.
@@ -38,6 +39,7 @@ _done when: a plan exists in the tracker as items and nothing has spawned._
 ## Milestone 2 — the flight
 
 _done when: every task has a passing verdict from a reviewer that did not write it._
+_walk: it works._
 
 - [ ] **Dispatch one Wingman per task**
   A worktree each, branched from the mission branch.
@@ -62,7 +64,7 @@ test("a plan missing its done line, its tasks or a task's body is named, not flo
   assert.ok(bad.problems.some((p) => /no "_done when/.test(p)), bad.problems.join("; "));
   assert.ok(bad.problems.some((p) => /a Wingman gets no other context/.test(p)), bad.problems.join("; "));
 
-  const empty = parsePlan(`# Mission: empty\n\n## Milestone 1 — nothing here\n\n_done when: never._\n`, ["root"]);
+  const empty = parsePlan(`# Mission: empty\n\n## Milestone 1 — nothing here\n\n_done when: never._\n_walk: it works._\n`, ["root"]);
   assert.ok(empty.problems.some((p) => /milestone 1 has no tasks/.test(p)), empty.problems.join("; "));
 
   const stray = parsePlan(`# Mission: stray\n\n## Notes\n\n- [ ] **x**\n  y\n`, ["root"]);
@@ -71,7 +73,7 @@ test("a plan missing its done line, its tasks or a task's body is named, not flo
 });
 
 test("a plan with no mission heading is rejected", () => {
-  assert.ok(parsePlan("## Milestone 1 — x\n\n_done when: y._\n\n- [ ] **z**\n  w\n", ["root"]).problems.some((p) => /no "# Mission/.test(p)));
+  assert.ok(parsePlan("## Milestone 1 — x\n\n_done when: y._\n_walk: it works._\n\n- [ ] **z**\n  w\n", ["root"]).problems.some((p) => /no "# Mission/.test(p)));
 });
 
 test("costOf counts two background sessions per task: the Wingman and the reviewer that is not it", () => {
@@ -121,34 +123,30 @@ test("mission membership survives the move a group would not", () => {
 
 const MULTI = `# Mission: the conversation foundation
 
-Scope as a real key across three repos, in the order they have to land.
+Scope as a real key across three repos: one foundation, the contract first, then the backend and the client against it.
 
-## Milestone 1 — the contract
+## Milestone 1: scope is a real key
 
-_done when: the scope pair is on main in contracts and pushed._
+_done when: the dock reads the scope key and the backfill dry-run reports counts for every environment._
+_walk: a message in a channel shows in the dock under its scope; the backfill dry run on the preview, before and after_
 
 - [ ] **Reshape MessageScopeType**
   - repo: contracts
   Rename the scope pair and regenerate.
 
-## Milestone 2 — the backend and its migration
-
-_done when: the backfill dry-run reports counts for every environment._
-
 - [ ] **Scope key on Message and Notification**
   - repo: orbit-api
+  - needs: m1-t1
   Add scopeType, scopeId and the stored scopeKey with a byScope index.
 
 - [ ] **The backfill**
   - repo: orbit-api
+  - needs: m1-t2
   Write the migration and dry-run it.
-
-## Milestone 3 — the client
-
-_done when: the dock reads the scope key and the E2E suite is green._
 
 - [ ] **Read the scope key**
   - repo: orbit-web
+  - needs: m1-t1
   Point MessagingConversation at the new key.
 `;
 
@@ -157,11 +155,11 @@ const REPOS = ["root", "contracts", "orbit-api", "orbit-web"];
 test("a task names the repo it works in, and the plan carries the order across them", () => {
   const plan = parsePlan(MULTI, REPOS);
   assert.equal(plan.problems.length, 0, plan.problems.join("; "));
-  assert.deepEqual(plan.milestones.map((m) => m.tasks.map((t) => t.repo)), [["contracts"], ["orbit-api", "orbit-api"], ["orbit-web"]]);
-  // Two tasks in one milestone share a repo, so they are parallel inside it; the repos that
-  // must land in order are in different milestones, which is what makes that order hold.
+  assert.deepEqual(plan.milestones.map((m) => m.tasks.map((t) => t.repo)), [["contracts", "orbit-api", "orbit-api", "orbit-web"]]);
+  // The order across repos is the needs, not milestone boundaries: the contract first, then the backend and the client against it.
+  assert.deepEqual(plan.milestones[0].tasks.map((t) => t.needs ?? []), [[], ["m1-t1"], ["m1-t2"], ["m1-t1"]]);
   const cost = costOf(plan.milestones);
-  assert.deepEqual({ repos: cost.repos, tasks: cost.tasks, milestones: cost.milestones }, { repos: 3, tasks: 4, milestones: 3 });
+  assert.deepEqual({ repos: cost.repos, tasks: cost.tasks, milestones: cost.milestones }, { repos: 3, tasks: 4, milestones: 1 });
 });
 
 test("a multi-repo project refuses a plan whose task does not say where it works", () => {
@@ -189,6 +187,7 @@ Half way through.
 ## Milestone 1 — the first
 
 _done when: both tasks pass._
+_walk: it works._
 
 - [x] **Already passed**
   - repo: root
@@ -270,6 +269,7 @@ Who touches what.
 ## Milestone 1 — parallel
 
 _done when: both pass._
+_walk: it works._
 
 - [ ] **Alpha**
   - touches: src/alpha.ts, src/shared/
@@ -283,6 +283,7 @@ _done when: both pass._
 ## Milestone 2 — after
 
 _done when: it lands._
+_walk: it works._
 
 - [ ] **Charlie**
   - touches: src/charlie/
@@ -316,7 +317,7 @@ test("a need that is missing, itself, later, or mutual is a problem", () => {
 });
 
 test("a dense plan with no loop parses in milliseconds, and a dense loop is reported once per back edge", () => {
-  const dense = (n: number, loop: boolean) => ["# Mission: dense", "", "D.", "", "## Milestone 1 — all", "", "_done when: d._", "",
+  const dense = (n: number, loop: boolean) => ["# Mission: dense", "", "D.", "", "## Milestone 1 — all", "", "_done when: d._", "_walk: it works._", "",
     ...Array.from({ length: n }, (_, i) => {
       const needs = Array.from({ length: i }, (_, j) => `m1-t${j + 1}`).concat(loop && i === 0 ? [`m1-t${n}`] : []);
       return [`- [ ] **T${i + 1}**`, ...(needs.length ? [`  - needs: ${needs.join(" ")}`] : []), "  Build it."].join("\n");
@@ -349,7 +350,7 @@ test("strays are the files a Wingman changed that none of its touches cover", ()
 });
 
 test("a task whose title is not bold survives the marker the ledger puts on it", () => {
-  const plain = "# Mission: plain\n\nP.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] Plain title task\n  Do the plain thing.\n";
+  const plain = "# Mission: plain\n\nP.\n\n## Milestone 1 — m\n\n_done when: d._\n_walk: it works._\n\n- [ ] Plain title task\n  Do the plain thing.\n";
   const { milestones } = parsePlan(plain, ["root"]);
   milestones[0].tasks[0] = { ...milestones[0].tasks[0], status: "flying", attempts: 1 };
   const back = parsePlan(applyPlanState(plain, milestones), ["root"]);
@@ -451,6 +452,7 @@ What they share is named first.
 ## Milestone 1 — both
 
 _done when: both pass._
+_walk: it works._
 
 - [ ] **The data module**
   - touches: src/data/
@@ -510,7 +512,7 @@ test("a person is needed for a handed-back task or a held milestone, and for not
 });
 
 test("one deployer per stack per milestone, and a shared environment is nobody's to deploy from a task", () => {
-  const plan = (deploys: string) => `# Mission: d\n\nD.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **Infra**\n  - deploys: data, compute\n  a\n\n- [ ] **App**\n  - deploys: ${deploys}\n  b\n`;
+  const plan = (deploys: string) => `# Mission: d\n\nD.\n\n## Milestone 1 — m\n\n_done when: d._\n_walk: it works._\n\n- [ ] **Infra**\n  - deploys: data, compute\n  a\n\n- [ ] **App**\n  - deploys: ${deploys}\n  b\n`;
   const fine = parsePlan(plan("api"), ["root"], ["dev"]);
   assert.equal(fine.problems.length, 0, fine.problems.join("; "));
   assert.deepEqual(fine.milestones[0].tasks[0].deploys, ["data", "compute"]);
@@ -1121,4 +1123,116 @@ test("the sweep does not follow an edit to how a repo lands: only try landing ag
   agentsSay([{ id: "rio-frozen", state: "working" }]);
   await sweepMissions(project);
   assert.equal(recordOf("frozen-land").repos[0].land, "merge", "what was approved stands");
+});
+
+/* ---------- M28: a milestone is a foundation, walked before anything builds on it ---------- */
+
+/** A plan from milestone bodies: each is a title, its walk line (or none) and its tasks. */
+const shaped = (...milestones: Array<{ walk?: string; tasks: string[] }>) => ["# Mission: shaped", "", "S.", "",
+  ...milestones.flatMap((m, i) => [`## Milestone ${i + 1}: m${i + 1}`, "", "_done when: d._", ...(m.walk === undefined ? ["_walk: it works._"] : m.walk ? [m.walk] : []), "", ...m.tasks]),
+].join("\n");
+const task = (title: string, fields: string[] = []) => [`- [ ] **${title}**`, ...fields.map((f) => `  - ${f}`), `  ${title} body.`, ""].join("\n");
+
+test("each milestone carries the cases Cory walks at its end, and a milestone without them is a problem", () => {
+  const plan = parsePlan(shaped({ walk: "_walk: a scope shows in the dock; the dry run, before and after_", tasks: [task("A", ["touches: src/a.ts"])] }), ["root"]);
+  assert.deepEqual(plan.problems, []);
+  assert.deepEqual(plan.milestones[0].walk, ["a scope shows in the dock", "the dry run, before and after"]);
+  const bare = parsePlan(shaped({ walk: "", tasks: [task("A", ["touches: src/a.ts"])] }), ["root"]);
+  assert.deepEqual(bare.problems, ['milestone 1 has no "_walk: <case>; <case>_" line: the cases Cory will walk at its end']);
+});
+
+test("a milestone cut by repo is a problem, and a milestone spanning repos is a foundation", () => {
+  const repos = ["root", "api", "web"];
+  const layered = parsePlan(shaped({ tasks: [task("Backend", ["repo: api"])] }, { tasks: [task("Frontend", ["repo: web"])] }), repos);
+  assert.equal(layered.problems.length, 2, layered.problems.join("; "));
+  assert.match(layered.problems[0], /^milestone 1 works only in api while another milestone works in web: a milestone is a foundation/);
+  const wide = parsePlan(shaped({ tasks: [task("Backend", ["repo: api"]), task("Frontend", ["repo: web"])] }, { tasks: [task("More", ["repo: api"]), task("And", ["repo: web"])] }), repos);
+  assert.deepEqual(wide.problems, [], "every milestone spans both repos");
+  const one = parsePlan(shaped({ tasks: [task("A")] }, { tasks: [task("B")] }), ["root"]);
+  assert.deepEqual(one.problems, [], "one repo is never cut by repo");
+});
+
+test("a milestone that is only a walkthrough is a problem, judged from what its tasks touch, not from its title", () => {
+  const walkOnly = parsePlan(shaped({ tasks: [task("Build it", ["touches: src/a.ts"])] }, { tasks: [task("Ship it", ["touches: deliverables/testing/x.html"]), task("Note it", ["touches: docs/03-decisions.md"])] }), ["root"]);
+  assert.deepEqual(walkOnly.problems, ["milestone 2 changes no product code (its tasks touch only deliverables, docs, test, tests): the walkthrough is never a milestone; it is how every milestone ends"]);
+  const titled = parsePlan(shaped({ tasks: [task("Walkthrough", ["touches: src/walk.ts"])] }), ["root"]);
+  assert.deepEqual(titled.problems, [], "a title that says walkthrough on a task that changes code is fine");
+  const unsaid = parsePlan(shaped({ tasks: [task("Something")] }), ["root"]);
+  assert.deepEqual(unsaid.problems, [], "a task that names no touches is not called a walkthrough");
+});
+
+test("a milestone of four or more tasks that is mostly one chain is warned, by task id", () => {
+  const chain = parsePlan(shaped({ tasks: [task("A"), task("B", ["needs: m1-t1"]), task("C", ["needs: m1-t2"]), task("D")] }), ["root"]);
+  assert.deepEqual(chain.problems, []);
+  assert.ok(chain.warnings.includes("milestone 1 is mostly one chain: m1-t1, m1-t2, m1-t3 run one after another, so at most 2 of its 4 tasks can fly at once"), chain.warnings.join("; "));
+  const half = parsePlan(shaped({ tasks: [task("A"), task("B", ["needs: m1-t1"]), task("C"), task("D")] }), ["root"]);
+  assert.ok(!half.warnings.some((w) => /one chain/.test(w)), "two of four is half, not more");
+  const three = parsePlan(shaped({ tasks: [task("A"), task("B", ["needs: m1-t1"]), task("C", ["needs: m1-t2"])] }), ["root"]);
+  assert.ok(!three.warnings.some((w) => /one chain/.test(w)), "under four tasks is not judged");
+  assert.deepEqual(longestChain({ tasks: [{ id: "a", needs: ["b"] }, { id: "b", needs: ["a"] }] as never }).length, 2, "a loop stops the walk");
+});
+
+test("a milestone that merged holds the next one until it is walked, and a walk or a waiver releases it", () => {
+  const t = (id: string, status: MissionTask["status"], needs?: string[]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, commits: ["c"], ...(needs ? { needs } : {}) });
+  const merged = { n: 1, title: "a", done: "d", dispatched: "x", merged: "x", tasks: [t("m1-t1", "passed")] };
+  const later = { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending"), t("m2-t2", "pending", ["m1-t1"])] };
+  const flying = (first: typeof merged & { walkthrough?: object }) => ({ status: "flying" as const, milestones: [first, later] });
+  const unwalked = flying({ ...merged, walkthrough: { doc: "w.html", progress: { total: 3, answered: 1, verdicts: {}, updatedAt: "x" } } });
+  assert.deepEqual(startable(unwalked), [], "neither the next milestone nor a task needing this one starts");
+  assert.deepEqual(waitingOn(unwalked).tasks, { "m2-t1": "starts with milestone 2, once milestone 1 is walked", "m2-t2": "waits for m1-t1 (its milestone is not walked yet)" });
+  assert.equal(waitingOn(unwalked).milestones[2], "sent once milestone 1 is walked; a task in it starts sooner, as soon as what it needs has passed");
+  const second = { n: 2, title: "b", done: "d", dispatched: "x", tasks: [t("m2-t1", "passed")] };
+  assert.equal(mergeable({ milestones: [unwalked.milestones[0], second] }, second), false, "nor does the next milestone merge past it");
+  const walked = flying({ ...merged, walkthrough: { doc: "w.html", progress: { total: 3, answered: 3, verdicts: {}, updatedAt: "x" } } });
+  assert.deepEqual(startable(walked).map((s) => s.task.id), ["m2-t2"], "walked: the task that needs it starts, and the milestone is sent on the next pass");
+  assert.equal(waitingOn(walked).milestones[2], "sent on the next sweep");
+  const waived = flying({ ...merged, walkthrough: { waived: { note: "tested by hand", at: "x" } } });
+  assert.deepEqual(startable(waived).map((s) => s.task.id), ["m2-t2"], "a waiver counts, with its reason");
+  const unchanged = flying({ ...merged, tasks: [{ ...t("m1-t1", "passed"), commits: [] }] });
+  assert.deepEqual(startable(unchanged).map((s) => s.task.id), ["m2-t2"], "a milestone that changed nothing has nothing to walk");
+  // The mission is still ready for review with the last walk to go: the review gate asks for it.
+  const last = settle({ id: "x", status: "flying", milestones: [unwalked.milestones[0]] } as never);
+  assert.equal(last.status, "review");
+});
+
+test("the briefing's estimate is the longest chain times the measured minutes per task, plus the retry rate times those minutes", () => {
+  const plan = parsePlan(shaped({ tasks: [task("A"), task("B", ["needs: m1-t1"]), task("C", ["needs: m1-t2"]), task("D")] }, { tasks: [task("E", ["needs: m1-t4"])] }), ["root"]);
+  const measured = estimateOf(plan.milestones, { minutesPerTask: 10.5, retryRate: 0.37, tasks: 51 });
+  // (3 + 0.37) x 10.5 = 35.4, so 35; (1 + 0.37) x 10.5 = 14.4, so 15.
+  assert.deepEqual(measured.milestones.map((m) => [m.n, m.chain, m.minutes, m.buildsOn, m.walk]), [[1, ["m1-t1", "m1-t2", "m1-t3"], 35, [], ["it works"]], [2, ["m2-t1"], 15, [1], ["it works"]]]);
+  assert.deepEqual([measured.minutes, measured.needed], [50, 2]);
+  assert.deepEqual(measured.basis, { measured: true, tasks: 51, minutesPerTask: 11, retryRate: 0.37 });
+  const fallback = estimateOf(plan.milestones, null);
+  assert.deepEqual(fallback.milestones.map((m) => m.minutes), [3 * DEFAULT_LINK_MINUTES, DEFAULT_LINK_MINUTES]);
+  assert.deepEqual(fallback.basis, { measured: false, linkMinutes: 15 }, "and it says it is a default");
+});
+
+test("the pace is measured from past mission records: each passed task's build plus its review, and the share sent out twice", async () => {
+  const was = config.sessionsDir;
+  const dir = mkdtempSync(join(tmpdir(), "mv-m28-pace-"));
+  made.push(dir);
+  config.sessionsDir = dir;
+  try {
+    assert.equal(await measuredPace(), null, "no history");
+    const where = join(dir, "missions", "p");
+    mkdirSync(where, { recursive: true });
+    const reviewed = (name: string, at: string) => {
+      const file = join(where, name);
+      writeFileSync(file, "verdict: pass\n", "utf8");
+      utimesSync(file, new Date(at), new Date(at));
+      return file;
+    };
+    const tasks = [
+      { id: "m1-t1", status: "passed", attempts: 1, started: "2026-10-01T10:00:00Z", ended: "2026-10-01T10:06:00Z", review: { claudeId: "r", started: "2026-10-01T10:07:00Z", file: reviewed("a.md", "2026-10-01T10:11:00Z") } },
+      { id: "m1-t2", status: "passed", attempts: 2, started: "2026-10-01T11:00:00Z", ended: "2026-10-01T11:10:00Z", review: { claudeId: "r", started: "2026-10-01T11:10:00Z", file: reviewed("b.md", "2026-10-01T11:20:00Z") } },
+      { id: "m1-t3", status: "flying", attempts: 1, started: "2026-10-01T12:00:00Z" },
+      { id: "m1-t4", status: "passed", attempts: 1, started: "2026-10-01T12:00:00Z", ended: "2026-10-01T12:05:00Z", review: { claudeId: "r", started: "2026-10-01T12:05:00Z", file: join(where, "gone.md") } },
+    ];
+    writeFileSync(join(where, "m.json"), JSON.stringify({ id: "m", project: "p", created: "2026-10-01T09:00:00Z", milestones: [{ n: 1, tasks }] }), "utf8");
+    writeFileSync(join(dir, "missions", "stray.md"), "not a project", "utf8");
+    // 6 + 4 = 10 minutes and 10 + 10 = 20: a mean of 15, one of two sent out twice. Unfinished and unreadable tasks are left out.
+    assert.deepEqual(await measuredPace(), { minutesPerTask: 15, retryRate: 0.5, tasks: 2 });
+  } finally {
+    config.sessionsDir = was;
+  }
 });
