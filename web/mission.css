@@ -122,7 +122,8 @@ html { scroll-padding-top: 70px; }
 .mv-brief ol { margin: 0 0 10px; padding-left: 18px; font-size: 13px; }
 .mv-brief ol > li { margin: 0 0 10px; }
 .mv-brief .t { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
-.mv-brief .muted { margin: 2px 0 0; }
+.mv-brief .muted { margin: 2px 0 0; max-width: 64ch; }
+.mv-brief .cases, .mv-brief .why, .mv-brief .cost-note { max-width: 56ch; }
 .mv-brief .cases { margin: 4px 0 0; padding-left: 16px; color: var(--ink-soft); overflow-wrap: anywhere; }
 .mv-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .mv-confirm .why { flex-basis: 100%; margin: 0; }
