@@ -7,7 +7,7 @@
 .mv-page { display: grid; grid-template-columns: 200px minmax(0, 760px); gap: 40px; max-width: 1040px; margin: 0 auto; padding: 24px 24px 96px; }
 
 /* The rail. It never moves, so it is the one place the status and the way back to each section always are. */
-.mv-rail { position: sticky; top: 70px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.mv-rail { position: sticky; top: 70px; align-self: start; display: flex; flex-direction: column; gap: 8px; }
 .mv-word { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 10px; border-radius: 5px; font: 600 13px var(--sans); color: var(--ink); background: var(--steel); }
 .mv-word:empty { visibility: hidden; }
 a.mv-word { text-decoration: none; }
@@ -33,7 +33,7 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 .mv-controls:empty { display: none; }
 .mv-controls p { margin: 0; }
 .mv-controls .mv-warn { margin: 0; padding: 8px 10px; }
-.mv-controls-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.mv-controls-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .mv-controls .danger { color: var(--threat); }
 .mv-note { align-self: stretch; height: 30px; padding: 0 10px; background: var(--carbon); border: 1px solid var(--seam); border-radius: var(--radius-s); color: var(--ink); font: 13px var(--sans); min-width: 0; }
 .mv-note::placeholder { color: var(--ink-faint); }
@@ -42,7 +42,7 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 
 /* The answer row a question draws wherever it sits (web/answers.js): the buttons in the feed's
    caution dress, then the note and the hint on a line of their own. */
-.mv-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.mv-opts { display: flex; flex-wrap: wrap; gap: 8px; }
 .mv-opts button { height: 32px; padding: 0 12px; font: 500 13px var(--sans); }
 .mv-opts button.primary { background: var(--caution); color: var(--carbon); border-color: transparent; }
 .mv-opts button.primary:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
@@ -114,7 +114,7 @@ html { scroll-padding-top: 70px; }
 .mv-overlaps li { margin: 2px 0; }
 .mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; }
 .mv-preflight li { margin: 3px 0; display: flex; gap: 8px; align-items: baseline; }
-.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-faint); }
+.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-soft); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
@@ -163,3 +163,27 @@ html { scroll-padding-top: 70px; }
 /* A page that could not open its mission draws only the reason and the way back. */
 .mv-page.unopened .mv-nav, .mv-page.unopened #plan, .mv-page.unopened #progress, .mv-page.unopened #result { display: none; }
 .mv-page.unopened .mv-ask .button-link { height: 36px; padding: 0 14px; }
+
+/* The floor (ui-audit): every control on this page is a real 44px target, 8px from the next.
+   This sheet loads only here, so the shared 28px button stays as it is everywhere else. */
+.bar { gap: 14px 8px; }
+.bar #back, .bar #board-link { min-height: 44px; min-width: 44px; padding-inline: 10px; }
+#rail a, #page button, #page .button-link, #page summary { min-height: 44px; min-width: 44px; }
+#page .button-link, #page summary { display: inline-flex; align-items: center; }
+.mv-rail a.mv-nav { align-items: center; }
+
+/* Five band cells in two columns leave a hole; the last one takes the row. */
+@media (max-width: 600px) {
+  .mv-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mv-band .cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
+/* On the lifted gate the faint and the threat inks fall under 4.5:1; mixed toward the ink they
+   hold in either theme, since the ink is the one colour furthest from every surface. */
+.mv-gate .mv-problems, .mv-gate .pf-fail .pf-status { color: color-mix(in srgb, var(--threat) 60%, var(--ink)); }
+.mv-gate button.ghost, .mv-repo { color: var(--ink-soft); }
+
+/* At phone width the bar wraps to two rows; pinned, it parks over the rail after every scroll. */
+@media (max-width: 600px) {
+  .bar { position: static; }
+}

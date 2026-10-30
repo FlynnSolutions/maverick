@@ -45,7 +45,7 @@
  */
 
 import { lamp } from "./lamp.js";
-import { readableOn, recall } from "./theme.js";
+import { holdsOn, readableOn, recall } from "./theme.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
@@ -97,7 +97,8 @@ const applyTheme = (theme) => {
   if (!theme || recall("mv.projectTheme", "1") === "0") return;
   const root = document.documentElement.style;
   root.setProperty("--accent", theme.accent);
-  root.setProperty("--accent-hot", theme.accentHot);
+  // Text in the hot accent sits on the bar at its darkest; on the light deck that is #c6cdd3.
+  root.setProperty("--accent-hot", getComputedStyle(document.documentElement).colorScheme === "light" ? holdsOn(theme.accentHot, "#c6cdd3") : theme.accentHot);
   root.setProperty("--on-accent", readableOn(theme.accent));
   root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
   if (theme.font !== "Chakra Petch") document.head.append(el("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
