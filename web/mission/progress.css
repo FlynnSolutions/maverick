@@ -22,7 +22,7 @@
 
 /* The fold of every move, and the raw rows inside it as the ledger wrote them. */
 .prog-moves { margin-top: 12px; }
-.prog-moves > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 28px; cursor: pointer; font-size: 12.5px; color: var(--ink-faint); list-style: none; }
+.prog-moves > summary { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; color: var(--ink-faint); list-style: none; }
 .prog-moves > summary::-webkit-details-marker { display: none; }
 .prog-moves > summary:hover { color: var(--ink-soft); }
 .prog-feed { list-style: none; margin: 4px 0 0; padding: 0; }

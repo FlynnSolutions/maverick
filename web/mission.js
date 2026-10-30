@@ -17,7 +17,7 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, now, fmtTime, plural, reveal }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, now, fmtTime, plural, armed, approveWhy, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
@@ -38,6 +38,8 @@
  *                                the open questions there, so they are the first thing on the page
  *   fmtTime(iso)                 a clock time, or "" for none
  *   plural(n, word)              `1 note`, `2 notes`
+ *   armed({ label, cls, why, yes, onYes })  an irreversible action asked twice, focus on "not yet"
+ *   approveWhy(doc)              what firing the mission does, in one sentence
  *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
  *                                Result without `reveal` on its handle makes it a no-op
  *
@@ -45,7 +47,7 @@
  */
 
 import { lamp } from "./lamp.js";
-import { holdsOn, readableOn, recall } from "./theme.js";
+import { applyProjectTheme, recall } from "./theme.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
@@ -82,6 +84,36 @@ const setStatus = (msg, isError = false) => {
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/**
+ * An irreversible action asked twice: the first press arms it, says what it does and moves focus
+ * to "not yet"; "not yet" puts the arm back and focuses it. Firing a mission is asked this way in
+ * the gate and in the Strike Lead's chat alike.
+ */
+let armedCount = 0;
+const armed = ({ label, cls = "", why, yes, onYes }) => {
+  const box = el("div", { class: "mv-confirm" });
+  const whyId = `armed-why-${(armedCount += 1)}`;
+  const arm = btn(label, () => {
+    const back = btn("not yet", () => { fill(box, arm); arm.focus(); }, "ghost");
+    // Disabled and marked busy while the request runs, so a second press cannot send it twice.
+    const go = btn(yes, async () => {
+      go.disabled = back.disabled = true;
+      go.setAttribute("aria-busy", "true");
+      try {
+        await onYes();
+      } finally {
+        go.disabled = back.disabled = false;
+        go.removeAttribute("aria-busy");
+      }
+    }, "primary");
+    if (why) go.setAttribute("aria-describedby", whyId);
+    fill(box, why ? el("p", { class: "why", id: whyId }, why) : null, go, back);
+    back.focus();
+  }, `primary ${cls}`.trim());
+  box.append(arm);
+  return box;
+};
+
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
 const missionId = params.get("mission");
@@ -95,12 +127,7 @@ const applyTheme = (theme) => {
   const mode = recall("mv.theme", "");
   if (mode) document.documentElement.setAttribute("data-theme", mode);
   if (!theme || recall("mv.projectTheme", "1") === "0") return;
-  const root = document.documentElement.style;
-  root.setProperty("--accent", theme.accent);
-  // Text in the hot accent sits on the bar at its darkest; on the light deck that is #c6cdd3.
-  root.setProperty("--accent-hot", getComputedStyle(document.documentElement).colorScheme === "light" ? holdsOn(theme.accentHot, "#c6cdd3") : theme.accentHot);
-  root.setProperty("--on-accent", readableOn(theme.accent));
-  root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
+  applyProjectTheme(document.documentElement.style, theme);
   if (theme.font !== "Chakra Petch") document.head.append(el("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
 };
 
@@ -212,7 +239,7 @@ const LANDS = {
 
 const reveal = (key) => mounted.get("result")?.reveal?.(key);
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, now: $("#now"), fmtTime, plural, reveal };
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, now: $("#now"), fmtTime, plural, armed, approveWhy, reveal };
 // One thread for the mission's whole life: in Plan before approval, placed in Progress after, never rebuilt.
 ctx.thread = leadThread(ctx);
 
@@ -401,7 +428,7 @@ const preflightBand = (checks) => {
   const warned = checks.filter((c) => c.status === "warn").length;
   const refusing = checks.some((c) => c.refuses);
   return el("div", { class: "mv-preflight" },
-    el("p", { class: failed || warned ? "mv-warn" : "muted small" }, refusing ? `${failed} thing(s) the mission cannot run without are not there; approving is refused until they are.` : failed ? `${failed} thing(s) the plan needs are not there. Settle them before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${warned} thing(s) this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
+    el("p", { class: failed || warned ? "mv-warn" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${plural(warned, "thing")} this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
     el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), ` ${c.detail}`))));
 };
 
@@ -413,18 +440,15 @@ const costBand = (cost) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "you are asked"), el("span", { class: "v" }, "twice")));
 
 /** Approving is a decision, not a click: the first press says what it costs, the second flies. */
-const approveButton = (doc) => {
-  const box = el("div", { class: "mv-confirm" });
-  const arm = btn("approve and fly", () => {
-    fill(box,
-      el("p", { class: "why" }, `This writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. It is the last thing you are asked until the result.`),
-      btn(`yes, approve "${mission.name}"`, () => act("approve", {}, "approved; the first milestone is out"), "primary"),
-      btn("not yet", () => { fill(box, arm); arm.focus(); }, "ghost"));
-    box.querySelector("button:last-of-type")?.focus();
-  }, "primary");
-  box.append(arm);
-  return box;
-};
+/** What firing does, said the same way wherever it is asked. */
+const approveWhy = (doc) => `This writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. After this you are asked only to walk each milestone, then to close.`;
+
+const approveButton = (doc) => armed({
+  label: "approve and fly",
+  why: approveWhy(doc),
+  yes: `yes, approve "${mission.name}"`,
+  onYes: () => act("approve", {}, "approved; the first milestone is out"),
+});
 
 const gateBlocks = () => {
   const doc = mission.planDoc ?? {};
@@ -437,7 +461,7 @@ const gateBlocks = () => {
     gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. The Strike Lead is sent these to fix; tell it in the chat above if it stalls. They are the reasons a Wingman would be sent out under-briefed:"),
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
   } else {
-    gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
+    gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in ${doc.cost.repos === 1 ? "the repo" : `each of the ${doc.cost.repos} repos`} the plan names, and sends the first milestone out.`),
       parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
         el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
       costBand(doc.cost),

@@ -1,0 +1,7 @@
+/* The floor (ui-audit): every control on the mission page is a real 44px target, 8px from the
+   next. It is the last sheet the page loads, so it wins over each component's own size by order
+   rather than by a heavier selector; the shared 28px button stays as it is on every other page. */
+.bar { gap: 14px 8px; }
+.bar .brand, .bar .button-link { min-height: 44px; min-width: 44px; padding-inline: 10px; }
+.mv-rail a, .mv-page button, .mv-page .button-link, .mv-page summary { min-height: 44px; min-width: 44px; }
+.mv-page .button-link, .mv-page summary { display: inline-flex; align-items: center; }

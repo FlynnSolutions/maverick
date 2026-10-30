@@ -2,7 +2,7 @@
 // window because it only ever talks to /api/*. One project at a time: `?project=<id>`
 // selects it, no parameter reopens the last one, and `?pick` shows the picker.
 import { jetSvg } from "./jet.js";
-import { readableOn } from "./theme.js";
+import { PROJECT_PROPS, applyProjectTheme } from "./theme.js";
 import { strike, loading, missile, flares, flyby } from "./afterburner.js";
 import { mountCommandCenter } from "./command.js";
 import { mountDevBadge } from "./dev-badge.js";
@@ -1759,15 +1759,10 @@ const usingProjectTheme = () => {
 const applyTheme = (theme) => {
   const root = document.documentElement.style;
   if (!theme || !usingProjectTheme()) {
-    for (const prop of ["--accent", "--accent-hot", "--display", "--on-accent"]) root.removeProperty(prop);
+    for (const prop of PROJECT_PROPS) root.removeProperty(prop);
     return;
   }
-  root.setProperty("--accent", theme.accent);
-  root.setProperty("--accent-hot", theme.accentHot);
-  // A project picks its own accent, so what reads on top of it cannot be a fixed colour:
-  // white on Realtime's cyan is 3.2:1. Take whichever of ink or paper contrasts better.
-  root.setProperty("--on-accent", readableOn(theme.accent));
-  root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
+  applyProjectTheme(root, theme);
   if (theme.font !== "Chakra Petch" && !document.querySelector(`link[data-font="${theme.font}"]`)) {
     document.head.append(el("link", { rel: "stylesheet", "data-font": theme.font, href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
   }

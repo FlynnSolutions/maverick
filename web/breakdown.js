@@ -2,7 +2,7 @@
 // gate on the right. It borrows the mission page's frame because it is the same shape of thing:
 // a document a CAG wrote, parsed into what it would do to the board, and one approve.
 
-import { readableOn, recall } from "./theme.js";
+import { applyProjectTheme, recall } from "./theme.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -40,11 +40,7 @@ const applyTheme = (theme) => {
   const mode = recall("mv.theme", "");
   if (mode) document.documentElement.setAttribute("data-theme", mode);
   if (!theme || recall("mv.projectTheme", "1") === "0") return;
-  const root = document.documentElement.style;
-  root.setProperty("--accent", theme.accent);
-  root.setProperty("--accent-hot", theme.accentHot);
-  root.setProperty("--on-accent", readableOn(theme.accent));
-  root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
+  applyProjectTheme(document.documentElement.style, theme);
   if (theme.font !== "Chakra Petch") document.head.append(el("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
 };
 

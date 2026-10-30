@@ -19,7 +19,7 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 .mv-word.caution { background: var(--caution-dim); color: var(--caution); }
 .mv-word.hud { background: var(--hud-dim); color: var(--hud); }
 .mv-word.threat { background: var(--threat-dim); color: var(--threat); }
-.mv-rail a.mv-nav { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
+.mv-rail a.mv-nav { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
 .mv-rail a.mv-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mv-rail a.mv-nav:hover { background: var(--steel); color: var(--ink); }
 .mv-rail a.mv-nav.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam-strong); }
@@ -43,7 +43,7 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 /* The answer row a question draws wherever it sits (web/answers.js): the buttons in the feed's
    caution dress, then the note and the hint on a line of their own. */
 .mv-opts { display: flex; flex-wrap: wrap; gap: 8px; }
-.mv-opts button { height: 32px; padding: 0 12px; font: 500 13px var(--sans); }
+.mv-opts button { padding: 0 12px; font: 500 13px var(--sans); }
 .mv-opts button.primary { background: var(--caution); color: var(--carbon); border-color: transparent; }
 .mv-opts button.primary:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
 .mv-opts button:disabled { opacity: 0.6; cursor: progress; }
@@ -98,23 +98,24 @@ html { scroll-padding-top: 70px; }
   overflow: hidden;
   box-shadow: 0 0 0 1px var(--seam-soft);
 }
-.mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; gap: 2px; }
 .mv-band .k { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .mv-band .v { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
-.mv-gate { padding: 14px 16px; border-radius: var(--radius-m); background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
-/* A lifted surface is brighter, so its secondary text comes up a step to stay readable on it. */
-.mv-gate-host .mv-gate > h2 { color: var(--ink-soft); }
-.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 70ch; margin: 0 0 10px; }
-.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 70ch; margin: 10px 0 0; }
+/* A lifted surface is brighter, so its faint text comes up a step to stay readable on it: the
+   token is remapped here, so everything faint inside the gate follows without a rule each. */
+.mv-gate { --ink-faint: var(--ink-soft); padding: 14px 16px; border-radius: var(--radius-m); background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
+.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 60ch; margin: 0 0 10px; }
+.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 60ch; margin: 10px 0 0; }
 .mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 .mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--threat); font-size: 13px; }
 .mv-problems li { margin: 2px 0; }
-.mv-overlaps { margin: 10px 0 0; padding-left: 18px; color: var(--caution); font-size: 13px; }
+.mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: 60ch; color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
 .mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; }
-.mv-preflight li { margin: 3px 0; display: flex; gap: 8px; align-items: baseline; }
-.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-soft); }
+.mv-preflight li { margin: 3px 0; display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; }
+.mv-preflight li strong { white-space: nowrap; }
+.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-faint); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
@@ -158,32 +159,25 @@ html { scroll-padding-top: 70px; }
 
 /* A long brief folds to four lines; the ask is context, not the action. */
 .mv-ask .mv-ask-brief.folded { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
-.mv-ask .mv-more { height: 32px; margin: 0 0 8px; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
+.mv-ask .mv-more { margin: 0 0 8px; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
 
 /* A page that could not open its mission draws only the reason and the way back. */
 .mv-page.unopened .mv-nav, .mv-page.unopened #plan, .mv-page.unopened #progress, .mv-page.unopened #result { display: none; }
-.mv-page.unopened .mv-ask .button-link { height: 36px; padding: 0 14px; }
+.mv-page.unopened .mv-ask .button-link { padding: 0 14px; }
 
-/* The floor (ui-audit): every control on this page is a real 44px target, 8px from the next.
-   This sheet loads only here, so the shared 28px button stays as it is everywhere else. */
-.bar { gap: 14px 8px; }
-.bar #back, .bar #board-link { min-height: 44px; min-width: 44px; padding-inline: 10px; }
-#rail a, #page button, #page .button-link, #page summary { min-height: 44px; min-width: 44px; }
-#page .button-link, #page summary { display: inline-flex; align-items: center; }
-.mv-rail a.mv-nav { align-items: center; }
-
-/* Five band cells in two columns leave a hole; the last one takes the row. */
 @media (max-width: 600px) {
+  /* The bar wraps to two rows here; pinned, it covers a sixth of the screen and sits over the
+     rail after every scroll, so on a phone it scrolls away with the page. */
+  .bar { position: static; }
+  /* Five band cells in two columns leave a hole; the last one takes the row. */
   .mv-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mv-band .cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  /* The repo's name over where it lands, rather than squeezing the sentence into a third of the row. */
+  .mv-land { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
 
-/* On the lifted gate the faint and the threat inks fall under 4.5:1; mixed toward the ink they
-   hold in either theme, since the ink is the one colour furthest from every surface. */
-.mv-gate .mv-problems, .mv-gate .pf-fail .pf-status { color: color-mix(in srgb, var(--threat) 60%, var(--ink)); }
-.mv-gate button.ghost, .mv-repo { color: var(--ink-soft); }
+/* A confirm whose request is running: it cannot be pressed again, and it looks it. */
+.mv-confirm button[aria-busy="true"] { cursor: progress; opacity: 0.7; }
 
-/* At phone width the bar wraps to two rows; pinned, it parks over the rail after every scroll. */
-@media (max-width: 600px) {
-  .bar { position: static; }
-}
+/* The gate's prose and its warnings stay under 80 characters a line (L5). */
+.mv-gate .mv-warn { max-width: 60ch; }
