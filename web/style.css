@@ -1124,7 +1124,7 @@ body.ask-open { overflow: hidden; }
 .doc-frame.tall { height: 78vh; }
 
 /* ---------- rendered markdown (reports, and conversations in the command center) ---------- */
-.md { font-size: 13.5px; line-height: 1.55; color: var(--ink); }
+.md { font-size: 13.5px; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
 .md h3, .md h4, .md h5, .md h6 { font-family: var(--display); letter-spacing: 0.04em; color: var(--accent-hot); margin: 16px 0 6px; }
 .md h3 { font-size: 15px; } .md h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); } .md h5, .md h6 { font-size: 12.5px; }
 .md p { margin: 0 0 10px; }
