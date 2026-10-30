@@ -273,19 +273,23 @@ mission page: it reads the repo, probes what done means and what is out of scope
 plan off your first line. Each round of its questions is a set of cards, the question first, its
 answers as buttons, a box for your own words and the reasoning folded under **more context**;
 you answer the round and it asks the next. When you agree, it writes a plan to
-`deliverables/missions/<id>.md` as milestones, each with one testable "done when" line and its
-tasks, and a **Fire mission** button appears under its message. A plan it calls ready that
+`deliverables/missions/<id>.md` as milestones, each with one testable "done when" line, the
+cases you will walk at its end, and its tasks, and a **Fire mission** button appears under its message. A plan it calls ready that
 cannot be flown goes back to it to fix before you see the button.
 
-That plan is the first gate. Maverick shows it with what it will cost (how many tasks, how many
+That plan is the first gate. Maverick briefs it (per milestone what it builds, the cases you
+walk at its end, what it builds on and how long it should take, worked out from the plan's shape
+and from how long past tasks took) and shows what it will cost (how many tasks, how many
 background sessions, and Factory's published numbers for a mission of this kind), and nothing
 has spawned yet. Approving writes the whole plan into your tracker as ordinary items carrying
 `mission` and `milestone` fields, cuts a `mission/<id>` branch, and sends the first milestone out:
 one **Wingman** per task, each in its own worktree. A task with no `needs` starts with its
 milestone; a task that names what it builds on starts the moment those tasks pass, even in a
-milestone not yet sent, so one straggler does not idle everything behind it. What tasks share
+milestone not yet sent, so one straggler does not idle everything behind it. A milestone is a
+foundation, so a task never builds on an earlier milestone you have not walked yet. What tasks share
 is named in the plan's `## Contracts` section before any of them starts, with an owner and a
-shape. A milestone still merges as one, once every task in it has passed.
+shape. A milestone still merges as one, once every task in it has passed, and the next one is
+sent only when you have walked it (or waived the walk, with a reason).
 
 When a Wingman finishes, a **RIO** climbs into its back seat: a separate session that did not
 write the code, reads every commit on the branch, runs the thing, and writes a verdict. It never

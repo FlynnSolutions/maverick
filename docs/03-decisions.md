@@ -255,6 +255,8 @@ neighbours, and three times as many sessions.
 **The walkthrough does not block the next milestone.** Wingmen keep flying while the person
 sleeps; the gate is at the close, where the work would otherwise leave the mission branches.
 What the walkthrough blocks is the landing, which is the only thing that needed blocking.
+*Amended by [M28](#m28-a-milestone-is-a-foundation-and-it-is-walked-before-anything-builds-on-it--built):
+the walkthrough now blocks the next milestone too.*
 
 **Waiving is allowed and recorded.** A builder can fail, or a person can have tested the branch
 by hand. The waiver carries its reason on the milestone so the review reads it later. Decided by
@@ -784,3 +786,53 @@ system's own handler.
 Maverick application... it's failing to load"; "open those links in a Chrome browser... uses the
 same tab, same exact window... so I can just leave that open on another window, click it, and
 quickly step through each of these walkthrough steps."
+
+## M28: A milestone is a foundation, and it is walked before anything builds on it ✅ built
+
+**A milestone is a foundation**: work that what comes after it builds on. Everything that can be
+built at the same time is one milestone: the contract first, then the backend and the frontend in
+parallel against it. It is never cut by layer or by repo, and the walkthrough is never a
+milestone. Most missions are one milestone. A milestone is not a feature either; features are the
+cases its walkthrough tests.
+
+**The walkthrough blocks the next milestone.** One walkthrough per milestone stays (M12 holds),
+but this amends M12's "does not block the next milestone": `done` now needs the milestone walked
+or waived as well as merged and proved, so nothing builds on, merges after, or is sent past one
+that has not been walked. A waiver still counts, with its reason. A milestone that changed
+nothing has nothing to walk. Review, landing and the commissioning of the walkthrough itself
+still follow the merge and the proof (`proved`), so the last walk is asked at review.
+
+**Every walkthrough is something Cory can see.** Each milestone carries a `_walk: <case>; ..._`
+line in the plan beside its `_done when_`, and a plan without one cannot fly. Work with no screen
+(a migration, a backfill) shows its dry run on the preview, before and after, as part of building it.
+
+**The plan is briefed before it is fired**: per milestone what it builds, the cases Cory walks at
+its end, what it builds on, a rough time, and that he walks it; then the totals. Maverick computes
+the times: the longest `needs` chain inside the milestone times the measured minutes per task
+(build plus review, last attempt), plus the measured retry rate times those minutes, read from the
+mission records. With no history, 15 minutes per chain link, said to be a default. Minutes are
+rounded to the nearest 5.
+
+**The gate refuses** a milestone whose tasks all work in one repo while another milestone works
+in a different one, and a milestone none of whose tasks touches product code (judged from
+`touches`: only `deliverables/`, `docs/`, `test/` or `tests/`). It **warns** on a milestone of four
+or more tasks whose longest `needs` chain is more than half of them, and names the chain.
+
+**Why:** a review of five missions (51 tasks), 2026-10-29. Missions came to Cory slice by slice
+and ran about one session at a time, because the only milestone guidance the Strike Lead had was
+"keep milestones small enough that a failure costs one milestone". It cut by layer (contract,
+backend, frontend, then a walkthrough milestone) and chained the tasks inside each. Concept Build
+was four milestones, none a foundation the others waited for; its backend walkthrough was waived
+as "no user-facing screen", and the files redesign's backend walkthrough asked Cory to run
+`vitest`. 19 of 51 tasks needed a second build and review.
+
+| Mission | Tasks | Wall clock | Agent build | RIO review | Avg running | Peak | Retried |
+|---|---|---|---|---|---|---|---|
+| Mission page and inbox | 12 | 760 m | 58 m | 57 m | 0.2 | 3 | 7 |
+| The result reads itself | 8 | 68 m | 39 m | 32 m | 1.0 | 2 | 2 |
+| Progress reads itself | 8 | 61 m | 48 m | 38 m | 1.4 | 3 | 2 |
+| Concept Build | 9 | 385 m | 57 m | 26 m | 0.2 | 2 | 4 |
+| A files redesign | 14 | 145 m | 125 m | 54 m | 1.2 | 2 | 4 |
+
+Wall clock is approval to last review; build and review count the final attempt only. Decided by
+Cory 2026-10-29.
