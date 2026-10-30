@@ -151,7 +151,7 @@ export const leadThread = (ctx) => {
     const ready = !view.approved && last?.planReady && doc.found && !doc.parsed?.problems?.length;
     const refusing = doc.preflight?.filter((c) => c.refuses) ?? [];
     const failing = doc.preflight?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
-    const key = JSON.stringify([ready, refusing.map((c) => c.name), failing.map((c) => c.name), doc.cost]);
+    const key = JSON.stringify([ready, refusing.map((c) => c.name), failing.map((c) => c.name), doc.cost, doc.estimate?.minutes]);
     if (key === fireKey) return;
     fireKey = key;
     if (!ready) return fire.replaceChildren();
@@ -160,7 +160,7 @@ export const leadThread = (ctx) => {
     fire.replaceChildren(...[
       btn("Fire mission", () => act("approve", {}, "fired; the first milestone is out"), "primary lead-fire-btn"),
       failing.length ? el("p", { class: "mv-warn" }, `${plural(failing.length, "check")} failed in the gate below (${failing.map((c) => c.name).join(", ")}); read ${failing.length === 1 ? "it" : "them"} before you fire.`) : null,
-      el("p", { class: "lead-hint" }, `Writes ${doc.cost.tasks} items into the tracker and sends out the first milestone; ${doc.cost.sessions} sessions over the mission's life. The plan and its checks are in the gate below.`),
+      el("p", { class: "lead-hint" }, `Writes ${doc.cost.tasks} items into the tracker and sends out the first milestone; ${doc.cost.sessions} sessions over the mission's life.${doc.estimate ? ` ${plural(doc.estimate.milestones.length, "milestone")}, about ${doc.estimate.minutes} min of building, and you walk each one.` : ""} The briefing, the plan and its checks are in the gate below.`),
     ].filter(Boolean));
   };
 

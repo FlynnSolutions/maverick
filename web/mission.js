@@ -382,12 +382,38 @@ const preflightBand = (checks) => {
     el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), ` ${c.detail}`))));
 };
 
-const costBand = (cost) => el("div", { class: "mv-band" },
+const costBand = (cost, estimate) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "repos"), el("span", { class: "v" }, String(cost.repos ?? 1))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "milestones"), el("span", { class: "v" }, String(cost.milestones))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "tasks"), el("span", { class: "v" }, String(cost.tasks))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "sessions it spawns"), el("span", { class: "v" }, String(cost.sessions))),
-  el("div", { class: "cell" }, el("span", { class: "k" }, "you are asked"), el("span", { class: "v" }, "twice")));
+  el("div", { class: "cell" }, el("span", { class: "k" }, "you are needed"), el("span", { class: "v" }, estimate ? plural(estimate.needed, "time") : "at each walk")));
+
+/** The minutes, said as the estimate they are. */
+const about = (minutes) => minutes >= 60 ? `about ${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}` : `about ${minutes} min`;
+
+/**
+ * The briefing before the fire (M28): per milestone what it builds, the cases you walk at its
+ * end, what it builds on and roughly how long, then the totals. The minutes are Maverick's, from
+ * the plan's shape and measured history, not the Strike Lead's guess.
+ */
+const briefing = (estimate) => {
+  if (!estimate?.milestones.length) return null;
+  const { basis } = estimate;
+  return el("div", { class: "mv-brief" },
+    el("ol", {}, ...estimate.milestones.map((m) => el("li", {},
+      el("p", { class: "t" }, `Milestone ${m.n}: ${m.title}`),
+      el("p", { class: "muted small" }, [
+        m.buildsOn.length ? `builds on milestone ${m.buildsOn.join(", ")}` : "builds on nothing before it",
+        `${about(m.minutes)} to build${m.chain.length > 1 ? ` (${m.chain.length} tasks in a row)` : ""}`,
+        "you walk it at the end",
+      ].join(" · ")),
+      m.walk.length ? el("ul", { class: "cases" }, ...m.walk.map((c) => el("li", {}, c))) : null))),
+    el("p", { class: "why" }, `${plural(estimate.milestones.length, "milestone")}, ${about(estimate.minutes)} of building end to end, not counting your walks; you are needed ${plural(estimate.needed, "time")}, once per milestone to walk it, and the close follows the last walk.`),
+    el("p", { class: "cost-note" }, basis.measured
+      ? `Times are measured: ${basis.minutesPerTask} min per task (build plus review) across ${plural(basis.tasks, "past task")}, ${Math.round(basis.retryRate * 100)}% of them sent out twice.`
+      : `No mission has finished here yet, so times are a default: ${basis.linkMinutes} min per task in the longest chain.`));
+};
 
 /** Approving is a decision, not a click: the first press says what it costs, the second flies. */
 const approveButton = (doc) => {
@@ -417,7 +443,8 @@ const gateBlocks = () => {
     gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
       parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
         el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
-      costBand(doc.cost),
+      briefing(doc.estimate),
+      costBand(doc.cost, doc.estimate),
       reposBand(doc.repos ?? []),
       preflightBand(doc.preflight),
       doc.wingmanAgent
