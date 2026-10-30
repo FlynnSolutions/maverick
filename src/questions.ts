@@ -9,7 +9,7 @@ import type { Milestone, Mission, MissionTask, WalkthroughState } from "./missio
 
 export interface Question {
   id: string;
-  kind: "handed-back" | "collision" | "landing" | "proof" | "plan" | "paused" | "gate" | "walk" | "review";
+  kind: "handed-back" | "collision" | "landing" | "proof" | "plan" | "paused" | "gate" | "walk" | "review" | "lead";
   title: string;
   body: string;
   at: string;
@@ -126,6 +126,26 @@ const closeQuestion = (mission: Mission): Question => ({
   answers: [{ label: "close", go: "close", primary: true }],
 });
 
+/**
+ * The Strike Lead waiting on its own round of questions: its last word asked them and nothing has
+ * been said since, the same rule the chat uses to keep a round open. It is answered in the chat,
+ * so the answer goes there rather than posting anything. Cory's call, 2026-10-30: a round waiting
+ * on him is waiting for him, in the inbox and on the lamp, like anything else.
+ */
+const leadRound = (mission: Mission): Question | undefined => {
+  const last = mission.chat?.at(-1);
+  if (last?.who !== "Strike Lead" || !last.questions?.length) return undefined;
+  const n = last.questions.length;
+  return {
+    id: `round:${last.at}`,
+    kind: "lead",
+    title: `the Strike Lead is asking ${n === 1 ? "a question" : `${n} questions`}`,
+    body: last.questions.map((q) => q.question).join(" "),
+    at: last.at,
+    answers: [{ label: "answer in the chat", go: "plan", primary: true }],
+  };
+};
+
 /** The first blocker's headline: the one sentence, not the line with its kind and evidence. */
 const blockerOf = (findings: string | undefined): string | undefined => {
   const line = findings ? findingsOf(findings).blockers[0] : undefined;
@@ -205,6 +225,8 @@ export const questionsOf = (mission: Mission & { findings?: Record<string, strin
     at: mission.created,
     answers: [{ label: "resume", method: "POST", path: "resume", primary: true }],
   });
+  const round = leadRound(mission);
+  if (round) out.push(round);
   if (mission.status === "planned") out.push({
     id: "gate",
     kind: "gate",

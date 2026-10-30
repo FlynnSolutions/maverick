@@ -164,6 +164,14 @@ export const leadThread = (ctx) => {
     ].filter(Boolean));
   };
 
+  // The inbox's "answer in the chat" lands on `#plan`: the open round comes into view with its first option focused.
+  window.addEventListener("hashchange", () => {
+    const first = location.hash === "#plan" ? log.querySelector(".lead-round .lead-opt") : null;
+    if (!first) return;
+    first.closest(".lead-round").scrollIntoView({ block: "start" });
+    first.focus({ preventScroll: true });
+  });
+
   const update = (next) => {
     view = next;
     paintLog(next.chat ?? [], next.updates ?? []);
