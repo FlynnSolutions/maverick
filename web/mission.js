@@ -24,7 +24,7 @@
  *   post(path, body)             fetch JSON; throws with the server's error on a non-2xx
  *   act(path, body, said)        posts to actionUrl(path), says `said` in a toast (or the error,
  *                                in one that stays until closed), and lets the stream refresh
- *                                every module
+ *                                every module; resolves to whether the post went through
  *   actionUrl(path)              /api/missions/<id>/<path>?project=
  *   LANDS[land](base)            the sentence for where a repo's work lands
  *   projectId, missionId
@@ -35,7 +35,8 @@
  *                                by the shell; a module only places `thread.node`
  *   now                          the slot at the top of the page for what is waiting on you, the
  *                                one place outside its section a module may write: Progress puts
- *                                the open questions there, so they are the first thing on the page
+ *                                the open questions there, so they are the first thing on the page,
+ *                                and Result puts what to fix or decide before the merge there at review
  *   fmtTime(iso)                 a clock time, or "" for none
  *   plural(n, word)              `1 note`, `2 notes`
  *   armed({ label, cls, why, yes, onYes })  an irreversible action asked twice, focus on "not yet"
@@ -49,10 +50,13 @@
 
 import { lamp } from "./lamp.js";
 import { applyProjectTheme, recall } from "./theme.js";
+import { jetSvg } from "./jet.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { inline, render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
+import { atReview, isEnded } from "./mission/state.js";
 import { toast } from "./toast.js";
+import { foldable } from "./card.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -128,7 +132,10 @@ const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
 const missionId = params.get("mission");
 let mission = null;
+let projectName = "";
+let baseTitle = "";
 
+const ended = () => isEnded(mission?.status);
 const missionUrl = () => `/api/missions/${encodeURIComponent(missionId)}?project=${encodeURIComponent(projectId)}`;
 const actionUrl = (action) => `/api/missions/${encodeURIComponent(missionId)}/${action}?project=${encodeURIComponent(projectId)}`;
 
@@ -229,14 +236,21 @@ const openSession = (taskId, under) => {
 };
 
 /* ---------- data ---------- */
+/** What each action is called when it fails, so the toast says which one did not go through. */
+const ACTION_NAMES = [[/^approve$/, "approve the plan"], [/^pause$/, "pause the mission"], [/^resume$/, "resume the mission"], [/^abandon$/, "stop the mission"], [/^close$/, "close the mission"], [/^land$/, "land the work"], [/^summarize$/, "ask for the summary"], [/\/retry$/, "send the task out again"], [/\/accept$/, "accept the task"], [/\/release$/, "release the milestone"], [/\/readings$/, "mark the finding"], [/\/walkthrough$/, "save the walk"]];
+const READING = { read: "mark the findings read", unread: "mark the finding unread", later: "put the finding on the checklist" };
+const actionName = (action, body) => (/readings$/.test(action) && READING[body?.state]) || ACTION_NAMES.find(([re]) => re.test(action))?.[1] || action;
+/** Posts an action and says what it did; returns whether it went through, for a caller that holds a state until then. */
 const act = async (action, body, said) => {
   try {
     await post(actionUrl(action), body);
     toast(said);
     // On the stream the server's own flush lands the change; only the 8 s fallback has to ask.
     if (!streaming) await load();
+    return true;
   } catch (err) {
-    toast(err.message, { error: true });
+    toast(`Could not ${actionName(action, body)}: ${err.message}`, { error: true });
+    return false;
   }
 };
 
@@ -257,6 +271,7 @@ ctx.thread = leadThread(ctx);
 const WORD = {
   "waiting for you": { cls: "caution", lamp: ["blocked", "work"] },
   done: { cls: "hud", lamp: ["done", "work"] },
+  stopped: { cls: "", lamp: ["idle", "stale"] },
   error: { cls: "threat", lamp: ["idle", "warm"] },
   working: { cls: "", lamp: ["busy", "work"] },
 };
@@ -271,10 +286,14 @@ const toGate = () => {
   });
 };
 
+/** What waits on the person: the server's questions, an open interview round and the gate among them. */
+const waiting = () => mission.questions?.length ?? 0;
+/** A stopped mission is not a finished one: "done" in the good colour is for work that landed. */
+const wordOf = () => (mission.status === "abandoned" && mission.word !== "error" ? "stopped" : mission.word ?? "working");
 const renderWord = () => {
-  const word = mission.word ?? "working";
+  const word = wordOf();
   const look = WORD[word] ?? WORD.working;
-  const open = mission.questions?.length ?? 0;
+  const open = waiting();
   const chip = $("#word");
   chip.className = `mv-word ${look.cls}`;
   // The loudest thing on the page goes to what it is loud about: the first question's own place when it
@@ -283,6 +302,8 @@ const renderWord = () => {
   if (open) chip.setAttribute("href", `#${go ?? (mission.approved ? "now" : "gate")}`);
   else chip.removeAttribute("href");
   chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
+  // From another tab the title is the only thing that shows, so what waits is counted there too.
+  if (baseTitle) document.title = open ? `(${open}) ${baseTitle}` : baseTitle;
 };
 
 /**
@@ -291,17 +312,26 @@ const renderWord = () => {
  * shows. A landing that failed is a question with its own answer, drawn where questions are.
  */
 let troubleKey = null;
+/** A failure is red, and says what still works and what to do; anything else the trouble line carries (a pause, a hold) is the caution it always was. */
+const troubleBroken = (t) => /could not be written|killed by SIG|still could not land/.test(t);
+const recoveryOf = (t) => {
+  if (/the report could not be written/.test(t)) return el("span", { class: "mv-recover" }, " The report itself still reads in full under the second gate, built from the record; only its copy on the mission branch is missing. ", el("a", { href: "#close" }, "read the report"));
+  if (/the ledger .*could not be written/.test(t)) return el("span", { class: "mv-recover" }, " The mission's own record still holds what happened. Check that the mission branch's worktree is there (git worktree list); if it is not, ask the Strike Lead below what it needs.");
+  if (/killed by SIG/.test(t)) return el("span", { class: "mv-recover" }, " The task it names can be sent out again from its question.");
+  return null;
+};
 const renderTrouble = () => {
   const trouble = mission.trouble ?? "";
   if (trouble === troubleKey) return;
   troubleKey = trouble;
-  fill($("#trouble"), trouble ? el("p", { class: "mv-warn" }, trouble) : null);
+  fill($("#trouble"), trouble ? el("p", { class: troubleBroken(trouble) ? "mv-fail" : "mv-warn" }, trouble, recoveryOf(trouble)) : null);
 };
 
 const count = (id, label, needs = false) => {
   const n = $(`#rail a[href="#${id}"] .n`);
   n.textContent = label;
-  n.classList.toggle("needs", needs);
+  // Amber is for what waits on you; an ended mission waits on nobody.
+  n.classList.toggle("needs", needs && !ended());
 };
 const renderCounts = () => {
   const ms = mission.milestones;
@@ -311,18 +341,23 @@ const renderCounts = () => {
     count("plan", ms.length ? `milestone ${at.n} of ${ms.length}` : "no milestones");
   } else {
     const planned = mission.planDoc?.parsed?.milestones?.length ?? 0;
-    count("plan", planned ? `${planned} milestone${planned === 1 ? "" : "s"}` : "no plan yet", Boolean(mission.questions?.length));
+    count("plan", planned ? `${planned} milestone${planned === 1 ? "" : "s"}` : ended() ? "none" : "no plan yet", waiting() > 0);
   }
   const open = mission.questions?.length ?? 0;
-  // Before approval the only question is the gate, and the gate is drawn in Plan.
-  if (!mission.approved) count("progress", "not yet");
+  // Before approval what waits is in Plan, with the Strike Lead; after the end nothing is live.
+  if (!mission.approved) count("progress", ended() ? "nothing flew" : "not yet");
+  else if (ended()) {
+    const n = mission.feed?.length ?? 0;
+    count("progress", `${n} ${n === 1 ? "entry" : "entries"}`);
+  }
   else count("progress", open ? `${open} question${open === 1 ? "" : "s"}` : "live", open > 0);
   // A finding Cory has marked, read or later, is off the count: later is already on the checklist.
+  // Fix is his to act on at review; in flight it is the RIO's word on work still moving.
   const unread = (mission.readings ?? []).filter((r) => !r.state);
   const fix = unread.filter((r) => r.severity === "fix").length;
-  if (fix) count("result", `${fix} to fix`, true);
+  if (fix) count("result", ended() ? `${fix} marked fix` : `${fix} to fix`, atReview(mission.status));
   else if (unread.length) count("result", `${unread.length} to read`);
-  else count("result", merged ? "read" : "not yet");
+  else count("result", merged ? "read" : ended() ? "nothing built" : "not yet");
 };
 
 /**
@@ -341,7 +376,7 @@ const renderControls = () => {
   controlsLive = live;
   asking = false;
   const box = $("#controls");
-  if (!mission.approved || ["closed", "abandoned"].includes(mission.status)) return fill(box);
+  if (!mission.approved || ended()) return fill(box);
   const resting = () => {
     asking = false;
     fill(box,
@@ -352,7 +387,7 @@ const renderControls = () => {
   };
   const askPause = () => {
     asking = true;
-    const note = el("input", { type: "text", class: "mv-note", "aria-label": "Why pause the mission", placeholder: "why, in a line; kept in the ledger" });
+    const note = el("input", { type: "text", class: "mv-note", "aria-label": "Why pause the mission", placeholder: "why; kept in the ledger" });
     fill(box,
       el("p", { class: "muted small" }, "Nothing new starts; what is running finishes and is recorded."),
       note,
@@ -396,28 +431,21 @@ const spy = () => {
 };
 
 /* ---------- the ask: the shell's own section ---------- */
-/** A brief longer than a few lines folds to them: the ask is context, and what waits on you sits above it. */
+/** A brief longer than a few lines folds to them: the ask is context, and what waits on you sits above it. It is written as markdown and read as it was written. */
 const BRIEF_FOLD = 320;
 const briefOf = (brief) => {
-  const p = el("p", { class: "mv-ask-brief" }, brief);
-  if (brief.length <= BRIEF_FOLD) return p;
-  p.classList.add("folded");
-  const more = btn("the whole brief", () => {
-    const folded = p.classList.toggle("folded");
-    more.textContent = folded ? "the whole brief" : "fold it";
-    more.setAttribute("aria-expanded", String(!folded));
-  }, "ghost mv-more");
-  more.setAttribute("aria-expanded", "false");
-  return el("div", {}, p, more);
+  const p = renderMarkdown(brief, { project: projectId });
+  p.classList.add("mv-ask-brief");
+  return brief.length <= BRIEF_FOLD ? p : foldable({ el, btn }, p, { more: "the whole brief", height: "6.4em" });
 };
 let askKey = "";
 const renderAsk = () => {
   const key = JSON.stringify([mission.name, mission.brief, mission.created, mission.approved, mission.planCommit]);
   if (key === askKey) return;
   askKey = key;
-  $("#crumb").replaceChildren(text("Mission "), el("b", {}, mission.name));
+  $("#crumb").replaceChildren(text(`${projectName} · Mission `), el("b", {}, mission.name));
+  $("#ask").removeAttribute("aria-busy");
   fill($("#ask"),
-    el("h2", {}, "The ask"),
     el("h1", {}, mission.name),
     briefOf(mission.brief),
     el("p", { class: "mv-ask-meta" }, [
@@ -483,7 +511,9 @@ const gateBlocks = () => {
   const parsed = doc.parsed;
   const blocks = [];
   const gate = [];
-  if (!doc.found) {
+  if (ended()) {
+    gate.push(el("p", { class: "why" }, `This mission ended before it was approved, so nothing flew and nothing was written to the tracker. The plan${doc.found ? ` it had reached is still at ${mission.plan}` : " was never written"}; start a new mission from the workspace to pick it up.`));
+  } else if (!doc.found) {
     gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the chat above; it will not plan off your first line.`));
   } else if (parsed?.problems?.length) {
     gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. The Strike Lead is sent these to fix; tell it in the chat above if it stalls. They are the reasons a Wingman would be sent out under-briefed:"),
@@ -534,15 +564,13 @@ const gateBlocks = () => {
 let gateKey = "";
 const renderGate = () => {
   const plan = $("#plan");
-  if (!plan.querySelector(".mv-gate-host")) {
-    fill(plan, el("h2", {}, "Plan"), ctx.thread.node, el("div", { class: "mv-gate-host" }));
-    fill($("#progress"), el("h2", {}, "Progress"), el("p", { class: "mv-empty" }, "Nothing has flown yet. What the mission does shows here once you fire it."));
-    fill($("#result"), el("h2", {}, "Result"), el("p", { class: "mv-empty" }, "not yet"));
-  }
-  const nextGate = JSON.stringify([mission.planDoc, mission.plan, mission.name]);
+  if (!plan.querySelector(".mv-gate-host")) fill(plan, el("h2", {}, "Plan"), ctx.thread.node, el("div", { class: "mv-gate-host" }));
+  const nextGate = JSON.stringify([mission.planDoc, mission.plan, mission.name, ended()]);
   if (nextGate !== gateKey) {
     gateKey = nextGate;
     fill(plan.querySelector(".mv-gate-host"), ...gateBlocks());
+    fill($("#progress"), el("h2", {}, "Progress"), el("p", { class: "mv-empty" }, ended() ? "Nothing flew." : "Nothing has flown yet. What the mission does shows here once you fire it."));
+    fill($("#result"), el("h2", {}, "Result"), el("p", { class: "mv-empty" }, ended() ? "Nothing was built." : "Nothing yet: the result is what merges, and nothing can merge before the plan is approved."));
   }
 };
 
@@ -584,12 +612,13 @@ const updateModules = () => {
 
 /* ---------- paint: the first one builds, every one after patches ---------- */
 const paint = () => {
+  // The thread first: before approval what it holds open is what the word and the counts read.
+  ctx.thread.update(mission);
   renderWord();
   renderTrouble();
   renderCounts();
   renderControls();
   renderAsk();
-  ctx.thread.update(mission);
   if (!mission.approved) return renderGate();
   if (!modulesUp) return mountModules();
   updateModules();
@@ -638,7 +667,7 @@ let pollTimer = 0;
 const poll = () => {
   // A hidden tab would otherwise keep driving a full server sweep, and its git calls, forever.
   pollTimer = window.setInterval(async () => {
-    if (document.hidden || ["closed", "abandoned"].includes(mission?.status)) return;
+    if (document.hidden || ended()) return;
     try {
       await load();
     } catch (err) {
@@ -656,20 +685,25 @@ document.addEventListener("visibilitychange", () => { if (pollTimer && !document
 /** A page that cannot show its mission says why in the page, with the way back, and draws none of the sections it cannot fill. */
 const cannotOpen = (why, back = "/") => {
   $("#page").classList.add("unopened");
-  setStatus(why, true);
+  // Said once, in the page, where the way back is; the bar would only repeat it.
+  setStatus("");
   fill($("#ask"),
     el("h1", {}, "This mission cannot be opened"),
-    el("p", { class: "mv-warn" }, why),
+    el("p", { class: "mv-fail" }, why),
     el("p", {}, el("a", { class: "button-link", href: back }, "back to the workspace"), " where its row says what it is waiting for, or open it from there again."));
 };
 
 const boot = async () => {
   void mountDevBadge();
+  $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
   if (!projectId || !missionId) return cannotOpen("the link is missing its project or its mission: open the mission from the workspace, which writes both");
   const projects = await api("/api/projects");
   const project = projects.find((p) => p.id === projectId);
   if (!project) return cannotOpen(`there is no project "${projectId}" on this machine; it may have been removed from the registry`);
-  document.title = `Mission · ${project.name} · Maverick`;
+  baseTitle = `Mission · ${project.name} · Maverick`;
+  document.title = baseTitle;
+  projectName = project.name;
+  $("#crumb").replaceChildren(text(project.name));
   applyTheme(project.theme);
   const workspace = `/?project=${encodeURIComponent(projectId)}&view=workspace`;
   $("#board-link").replaceChildren(text("Workspace"));

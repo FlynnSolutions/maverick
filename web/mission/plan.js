@@ -5,11 +5,12 @@
 
 import { answerControls } from "../answers.js";
 import { stopWalkthrough, walkthroughPanel } from "../walkthrough.js";
+import { isEnded } from "./state.js";
 
 /** The task's lamp and word, the map in /mockups/mission.html; Progress draws the same lamp on its cards. `built` is between the two: the Wingman is done and its RIO is on the way. */
 export const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
 const WORD = { passed: "done", flying: "working", built: "built", reviewing: "in review", "handed-back": "waiting for you", pending: "waiting" };
-const STEP_LAMP = { done: ["done", "work"], walk: ["blocked", "work"], waiting: ["blocked", "work"], proving: ["busy", "action"], working: ["busy", "work"], pending: ["idle", "stale"] };
+const STEP_LAMP = { stopped: ["idle", "stale"], done: ["done", "work"], walk: ["done", "action"], waiting: ["blocked", "work"], proving: ["busy", "action"], working: ["busy", "work"], pending: ["idle", "stale"] };
 /** The states with a session worth opening: a Wingman flying, a RIO reading, or the last of either before it was handed back. */
 const LIVE = new Set(["flying", "reviewing", "handed-back"]);
 
@@ -33,9 +34,11 @@ export const mount = (host, view, ctx) => {
   let current = view;
 
   const stepWord = (m, s) =>
-    s === "done" ? `done ${fmtTime(m.merged)}`
+    s === "stopped" ? "stopped before it merged"
+    : s === "done" ? `done ${fmtTime(m.merged)}`
       : s === "proving" ? `merged ${fmtTime(m.merged)}, being proved`
       : s === "waiting" ? "waiting for you"
+      : s === "walk" && isEnded(current.status) ? "merged, never walked"
       : s === "walk" ? (m.walkthrough?.progress?.total ? `to walk: ${m.walkthrough.progress.answered} of ${m.walkthrough.progress.total}` : "to walk")
         : s === "working" ? (since(m) ? `working since ${fmtTime(since(m))}` : "working")
           : "not started";
@@ -108,7 +111,7 @@ export const mount = (host, view, ctx) => {
   const walkPath = (n) => `milestones/${n}/walkthrough`;
   /** Not the answer row: a waiver's note is kept on the milestone, not in the ledger, and its line says so. */
   const waiveRow = (m) => {
-    const note = el("input", { type: "text", class: "mv-note", placeholder: "why it is let through unwalked; kept on the milestone", "aria-label": `why milestone ${m.n} is waived` });
+    const note = el("input", { type: "text", class: "mv-note", placeholder: "why, in a line; kept on the milestone", "aria-label": `why milestone ${m.n} is waived` });
     note.addEventListener("input", () => note.removeAttribute("aria-invalid"));
     return el("div", { class: "mv-note-row" }, note, btn("waive it", async () => {
       if (!note.value.trim()) {
@@ -212,7 +215,8 @@ export const mount = (host, view, ctx) => {
   const patchStep = (m) => {
     const s = steps.get(m.n) ?? makeStep(m);
     s.m = m;
-    const state = stepState(m, current);
+    // A mission that ended stops every step it had not merged; none of them is working any more.
+    const state = isEnded(current.status) && !m.merged ? "stopped" : stepState(m, current);
     // Open unless done or still to walk, decided when the step first shows and again when it becomes
     // done; a step you opened or closed yourself stays as you left it. A step to walk waits closed,
     // because opening it loads its walkthrough; the review question is what opens it.

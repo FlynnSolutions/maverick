@@ -3,12 +3,13 @@
 // patches each block in place, so an open report or an armed close survives the stream.
 
 import { render as renderMarkdown } from "../markdown.js";
-import { card, findingId } from "../card.js";
+import { card, chipLink, findingId } from "../card.js";
+import { atReview } from "./state.js";
 
 const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${repo} ${sha}`).join(" · ");
 const needsWalking = (view, m) => Boolean(view.walk?.[m.n]?.needed);
 const walkState = (view, m) => view.walk?.[m.n]?.state ?? "none";
-const branchOf = (view) => (view.repos ?? []).map((r) => r.branch).join(", ") || "the mission branch";
+const branchOf = (view) => [...new Set((view.repos ?? []).map((r) => r.branch))].join(", ") || "the mission branch";
 
 /* ---------- reading `git diff --stat` ---------- */
 /** Its last line: "3 files changed, 120 insertions(+), 4 deletions(-)". Either count is left out when it is zero. */
@@ -100,6 +101,9 @@ const byArea = (readings) => {
   return [...areas];
 };
 
+/** A summary bullet that asks something of you (fix it first, fix before merge, decide, check) rather than reporting. */
+const ASKS = /^(fix first|fix before|decide|check)\b/i;
+
 /* ---------- what I must read: three bullets asked of a read-only session ---------- */
 /** How long a post that came back holds the button before its view lands; a post that failed brings no view. */
 const HOLD_MS = 2000;
@@ -128,12 +132,32 @@ export const mount = (host, view, ctx) => {
     el("h2", {}, "What I must read", mustAt), mustBody, el("div", { class: "rs-acts" }, summarizeBtn));
   const sum = el("div", { class: "rs-sum" });
   const files = el("ul", { class: "rs-files", "aria-label": "What merged, by task" });
+  const filesAt = el("span", { class: "n" });
+  /* The file tree is the evidence, not the action: it folds under one line and opens on a chip's reveal. */
+  const filesFold = el("details", { class: "rs-files-fold" }, el("summary", {}, el("span", { class: "chev" }), "the files, by task", filesAt), files);
   const readHead = el("h2", {}, "To read before you merge", el("span", { class: "n" }));
+  // On the page, not a bucket's container: the fix bucket moves between Result and #now at review.
+  const hideRead = btn("hide read", () => {
+    const on = host.closest(".mv-page").classList.toggle("rs-hide-read");
+    hideRead.setAttribute("aria-pressed", String(on));
+  }, "ghost rs-tool");
+  hideRead.setAttribute("aria-pressed", "false");
+  const readTools = el("div", { class: "rs-tools" }, hideRead, el("span", { class: "rs-quiet" }, "Tab reaches each bucket once; j and k move between its findings, x marks the one in focus read"));
   const read = el("div", { class: "rs-read" });
   const walks = el("ul", { class: "rs-walks", "aria-label": "Milestones: walkthroughs and proofs" });
   const gate = el("div", { class: "rs-gate" });
-  const root = el("div", { class: "mv-result" }, el("h2", {}, "Result", count), must, sum, files, readHead, read, walks, gate);
+  const mustSlot = el("div", {});
+  const root = el("div", { class: "mv-result" }, el("h2", {}, "Result", count), mustSlot, sum, filesFold, readHead, readTools, read, walks, gate);
   host.append(root);
+  /**
+   * At review the result is the action: what the summary says to fix or decide, and every finding
+   * marked fix, go to the top of the page with the walk and the close, and the rest of Result is
+   * the evidence under them. The bucket is the same node either way; only where it sits moves.
+   */
+  const nowFix = el("div", { class: "rs-now-fix" });
+  const nowBox = el("section", { class: "rs-now", "aria-label": "Before you merge", hidden: true }, nowFix);
+  ctx.now.append(nowBox);
+  const atNow = (v) => atReview(v.status);
 
   /** Each block is rebuilt only when what it draws changed, so nothing open inside another is lost. */
   const drawn = new Map();
@@ -149,7 +173,11 @@ export const mount = (host, view, ctx) => {
     if (state === "written") {
       const bullets = bulletsOf(s.text);
       if (!bullets.length) return [renderMarkdown(s.text, { project: ctx.projectId })];
-      return bullets.map((b, i) => card({ key: `must-${i}`, kind: "bullet", title: plain(b) }, ctx).node);
+      return bullets.map((b, i) => {
+        const { node } = card({ key: `must-${i}`, kind: "bullet", title: plain(b) }, ctx);
+        node.classList.toggle("rs-asks", ASKS.test(plain(b)));
+        return node;
+      });
     }
     const [cls, text] = {
       unmerged: ["rs-pending", "Nothing has merged yet. Once a milestone lands, summarize asks a read-only session to read the report and every finding, and write here the three things you must read before you merge."],
@@ -181,7 +209,13 @@ export const mount = (host, view, ctx) => {
     before = latest.summary?.started;
     holding = true;
     paintMust(latest);
-    await ctx.act("summarize", {}, "summarizing: a read-only session is reading the findings");
+    const sent = await ctx.act("summarize", {}, "summarizing: a read-only session is reading the findings");
+    // A refused ask holds nothing: the button comes straight back and the toast says why.
+    if (!sent) {
+      holding = false;
+      paintMust(latest);
+      return;
+    }
     setTimeout(() => {
       if (!holding) return;
       holding = false;
@@ -211,16 +245,16 @@ export const mount = (host, view, ctx) => {
   const chips = new Map();
   /** A finding's chip on a merged-files row: a link to its row in the buckets, which it unfolds. */
   const fileChip = (r) => {
-    const chip = el("a", {
-      class: `chip ${r.severity}${r.state ? " marked" : ""}`,
+    const link = chipLink(el, r.severity, `${r.severity}${r.state ? " marked" : ""}`, {
       href: `#${findingId(r.key)}`,
       title: `${r.kind}: ${r.headline}`,
       onclick: (e) => { e.preventDefault(); reveal(r.key); },
-    }, r.severity);
+    });
+    const chip = link.firstChild;
     const mine = chips.get(r.key);
     if (mine) mine.push(chip);
     else chips.set(r.key, [chip]);
-    return chip;
+    return link;
   };
 
   const drawFiles = (merged, chipsOf) => {
@@ -232,7 +266,7 @@ export const mount = (host, view, ctx) => {
           el("span", { class: "d", title: task.title }, task.title),
           el("span", { class: "n" }, own ? plural(own.files, "file") : ""),
           own ? el("span", { class: "pm" }, el("b", {}, `+${own.plus}`), " ", el("i", {}, `−${own.minus}`)) : el("span", { class: "pm" }, "no diff recorded")),
-        ...rows.map((r) => el("li", { class: "rs-file" },
+        ...rows.map((r) => el("li", { class: `rs-file${chipsOf.get(r.path)?.length ? " chipped" : ""}` },
           el("span", { class: "d" }, el("span", { class: "p", title: r.path }, r.path), ...(chipsOf.get(r.path) ?? []).map(fileChip)),
           el("span", { class: "n" }, r.files > 1 ? plural(r.files, "file") : ""),
           el("span", { class: "pm" }, r.changes === null ? "binary" : plural(r.changes, "line")))),
@@ -248,17 +282,24 @@ export const mount = (host, view, ctx) => {
    * what was open is remembered across a rebuild too.
    */
   const rows = new Map();
+  const tallies = [];
   const opened = new Map();
   let whys = new Set();
 
-  /** A mark is posted and the card waits, disabled, for the view that carries it; a failure is said on the status line and the card goes back to what the view last said. */
+  /**
+   * A mark is posted and the card waits, disabled, for the view that carries it; a failure is said
+   * in a toast and the card goes back to what the view last said. Read is undone by the same
+   * button, which then says "mark unread"; later writes to the checklist and stays.
+   */
   const mark = async (r, state) => {
     const row = rows.get(r.key);
     row.box.disabled = true;
     row.later.disabled = true;
-    await ctx.act(`tasks/${r.taskId}/readings`, { key: r.key, state }, state === "read" ? `read: ${r.headline}` : `on the checklist: ${r.headline}`);
+    if (state === "later") await ctx.act(`tasks/${r.taskId}/readings`, { key: r.key, state }, `on the checklist: ${r.headline}`);
+    else await ctx.act("readings", { byTask: { [r.taskId]: [r.key] }, state }, `${state === "read" ? "read" : "unread again"}: ${r.headline}`);
     /* The controls were quietened here, not by a paint, so the next paint must not skip the card. */
-    row.state = null;
+    row.box.disabled = false;
+    row.state = undefined;
     const now = latest.readings?.find((x) => x.key === r.key);
     if (now) paint(now);
   };
@@ -270,14 +311,20 @@ export const mount = (host, view, ctx) => {
    */
   const paint = (r) => {
     const row = rows.get(r.key);
-    if (!row || row.state === r.state) return;
-    row.state = r.state;
-    row.node.classList.toggle("rs-seen", r.state === "read");
-    row.box.checked = r.state === "read";
-    row.box.disabled = Boolean(r.state);
-    row.later.disabled = Boolean(r.state);
-    row.slot.replaceChildren(r.state === "later" ? el("span", { class: "rs-onlist" }, "on the checklist") : row.later);
-    for (const chip of chips.get(r.key) ?? []) chip.classList.toggle("marked", Boolean(r.state));
+    const state = r.state ?? "";
+    if (!row || row.state === state) return;
+    row.state = state;
+    const focused = row.node.contains(document.activeElement) ? document.activeElement : null;
+    const verb = state === "read" ? "mark unread" : "mark read";
+    row.node.classList.toggle("rs-seen", state === "read");
+    row.box.textContent = verb;
+    row.box.setAttribute("aria-label", `${verb}: ${r.headline}`);
+    row.box.setAttribute("aria-pressed", String(state === "read"));
+    row.box.hidden = state === "later";
+    row.later.disabled = false;
+    row.slot.replaceChildren(...(state === "later" ? [el("span", { class: "rs-onlist" }, "on the checklist")] : state ? [] : [row.later]));
+    for (const chip of chips.get(r.key) ?? []) chip.classList.toggle("marked", Boolean(state));
+    if (focused && !focused.isConnected) row.box.focus({ preventScroll: true });
   };
 
   /**
@@ -287,8 +334,9 @@ export const mount = (host, view, ctx) => {
    * the end of the head row, which the card's update never touches.
    */
   const drawFinding = (r) => {
-    const box = el("input", { type: "checkbox", "aria-label": `read: ${r.headline}`, onchange: () => mark(r, "read") });
-    const later = btn("later", () => mark(r, "later"), "ghost");
+    const box = btn("mark read", () => mark(r, row().state === "read" ? "unread" : "read"), "ghost rs-mark");
+    const row = () => rows.get(r.key);
+    const later = btn("later", () => mark(r, "later"), "ghost rs-mark");
     later.setAttribute("aria-label", `later: put "${r.headline}" on the checklist`);
     const slot = el("span", { class: "rs-slot" });
     const { node } = card({
@@ -301,37 +349,125 @@ export const mount = (host, view, ctx) => {
     }, ctx);
     node.id = findingId(r.key);
     node.tabIndex = -1;
-    node.querySelector(".card-head").append(el("span", { class: "rs-marks" }, el("label", { class: "rs-rd" }, box, "read"), slot));
-    rows.set(r.key, { node, box, later, slot, state: null });
+    node.querySelector(".card-head").append(el("span", { class: "rs-marks" }, box, slot));
+    rows.set(r.key, { node, box, later, slot, state: null, r });
     return node;
   };
 
-  const drawBucket = (b, list) => {
+  /** Every unread finding in a bucket marked read in one go: one post per task, one toast for the lot. */
+  const markAll = async (list, button) => {
+    const unread = list.filter((r) => !rows.get(r.key)?.state);
+    if (!unread.length) return;
+    button.disabled = true;
+    const byTask = {};
+    for (const r of unread) (byTask[r.taskId] ??= []).push(r.key);
+    if (!(await ctx.act("readings", { byTask, state: "read" }, `${plural(unread.length, "finding")} marked read`))) button.disabled = false;
+  };
+
+  const drawBucket = (b, list, at) => {
     if (!list.length) return el("div", { class: "rs-bucket rs-empty" }, el("span", { class: "h" }, b.title), el("span", { class: "n" }, "0"), el("span", {}, b.none));
+    const all = btn("", () => markAll(list, all), "ghost rs-tool");
+    const n = el("span", { class: "n" });
+    /* The counts follow the marks in place, so marking one never rebuilds the bucket under the reader. */
+    let drawnUnread = -1;
+    tallies.push({ paint: () => {
+      const unread = list.filter((r) => !rows.get(r.key)?.state).length;
+      if (unread === drawnUnread) return;
+      drawnUnread = unread;
+      n.textContent = unread === list.length ? String(list.length) : `${unread} unread of ${list.length}`;
+      all.textContent = `mark all ${unread} read`;
+      all.hidden = !unread;
+      // The count moved, so the post that held the button has landed.
+      all.disabled = false;
+    } });
     const bucket = el("details", { class: `rs-bucket ${b.severity}` },
-      el("summary", {}, el("span", { class: "h" }, b.title), el("span", { class: "n" }, String(list.length))),
+      el("summary", {}, el("span", { class: "chev" }), el("span", { class: "h" }, b.title), n),
+      el("div", { class: "rs-tools" }, all),
       ...byArea(list).flatMap(([area, found]) => [
         el("h3", { class: "rs-area" }, area),
         el("div", { class: "rs-findings", role: "group", "aria-label": `${b.title}, ${area}` }, ...found.map(drawFinding)),
       ]));
-    bucket.open = opened.get(b.severity) ?? b === BUCKETS[0];
-    bucket.addEventListener("toggle", () => opened.set(b.severity, bucket.open));
+    pageBucket(bucket, list.length);
+    // Fix opens itself where it is the action; everything else waits to be asked.
+    bucket.open = opened.get(`${b.severity}:${at}`) ?? (b === BUCKETS[0] && at === "now");
+    /*
+     * A bucket is one stop on the Tab path, however many findings it holds: only the finding in
+     * hand has its buttons in the order, and j and k (or a click) move which one that is. Sixty
+     * findings would otherwise be a hundred and eighty presses of Tab to get past.
+     */
+    const reach = (card, on) => { for (const b of card.querySelectorAll("button")) b.tabIndex = on ? 0 : -1; };
+    const cards = bucket.querySelectorAll(".rs-findings > .mv-card");
+    cards.forEach((c, i) => reach(c, i === 0));
+    let inHand = cards[0];
+    bucket.addEventListener("focusin", (e) => {
+      const c = e.target.closest?.(".rs-findings > .mv-card");
+      if (!c || c === inHand || !bucket.contains(c)) return;
+      reach(inHand, false);
+      reach(c, true);
+      inHand = c;
+    });
+    bucket.addEventListener("toggle", () => opened.set(`${b.severity}:${at}`, bucket.open));
     return bucket;
   };
 
-  const drawRead = (readings) => {
+  /**
+   * A bucket shows its first dozen findings and offers the rest in one press: past that the list is
+   * scrolled, not read, and a reader marks the bucket read rather than going card by card.
+   */
+  const PAGE = 12;
+  const pageBucket = (bucket, total) => {
+    if (total <= PAGE || shownAll.has(bucket.className)) return;
+    const cards = [...bucket.querySelectorAll(".rs-findings > .mv-card")];
+    const areas = [...bucket.querySelectorAll(".rs-area")];
+    cards.slice(PAGE).forEach((c) => { c.hidden = true; });
+    for (const a of areas) a.hidden = ![...a.nextElementSibling.children].some((c) => !c.hidden);
+    const more = btn(`show the other ${total - PAGE}`, () => {
+      shownAll.add(bucket.className);
+      for (const n of [...cards, ...areas]) n.hidden = false;
+      more.remove();
+      cards[PAGE]?.focus({ preventScroll: true });
+    }, "ghost rs-tool");
+    bucket.append(el("div", { class: "rs-tools" }, more));
+  };
+  const shownAll = new Set();
+
+  const drawRead = (readings, now) => {
     /* The fold is the card's; which were open is read off the cards about to go, for the ones that come back. */
     whys = new Set([...rows].filter(([, row]) => row.node.classList.contains("open")).map(([key]) => key));
     rows.clear();
-    return BUCKETS.map((b) => drawBucket(b, readings.filter((r) => r.severity === b.severity)));
+    tallies.length = 0;
+    const buckets = BUCKETS.map((b) => drawBucket(b, readings.filter((r) => r.severity === b.severity), now && b === BUCKETS[0] ? "now" : "result"));
+    // Fix before merge goes to the top of the page at review, and the rest stay here.
+    nowFix.replaceChildren(...(now ? [buckets.shift()] : []));
+    return buckets;
   };
+
+  /** j and k walk the findings in page order, x marks the one in focus read; never while typing. */
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || !["j", "k", "x"].includes(e.key)) return;
+    if (e.target.closest?.("input, textarea, select, [contenteditable], .term")) return;
+    const here = document.activeElement?.closest?.(".rs-findings > .mv-card");
+    if (e.key === "x") {
+      const row = here && rows.get(here.dataset.key);
+      if (!row) return;
+      if (!row.state) mark(row.r, "read");
+      e.preventDefault();
+      return;
+    }
+    const cards = [...document.querySelectorAll(".rs-findings > .mv-card")].filter((n) => n.offsetParent !== null);
+    if (!cards.length) return;
+    const at = cards.indexOf(here);
+    const next = cards[e.key === "j" ? Math.min(cards.length - 1, at + 1) : Math.max(0, at < 0 ? 0 : at - 1)];
+    e.preventDefault();
+    next.scrollIntoView({ block: "nearest" });
+    next.focus({ preventScroll: true });
+  });
 
   /** A chip on a file row, or one of Progress's through the shell, leads here: the bucket unfolds and the card takes focus. */
   const reveal = (key) => {
     const row = rows.get(key);
     if (!row) return;
-    const bucket = row.node.closest("details");
-    if (bucket) bucket.open = true;
+    for (let d = row.node.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
     row.node.scrollIntoView({ block: "center" });
     row.node.focus({ preventScroll: true });
   };
@@ -339,7 +475,7 @@ export const mount = (host, view, ctx) => {
   /** The walk and the proof for each merged milestone, as the review page showed them. */
   const drawWalks = (v) => v.milestones.filter((m) => m.merged).map((m) => el("li", {},
     el("span", { class: "d" }, `Milestone ${m.n} · ${m.title}`),
-    el("span", { class: `w${needsWalking(v, m) ? " need" : ""}` }, needsWalking(v, m) ? "not walked" : ({ walked: "walked", waived: "waived" }[walkState(v, m)] ?? "nothing to walk")),
+    el("span", { class: "w" }, needsWalking(v, m) ? "to walk" : ({ walked: "walked", waived: "waived" }[walkState(v, m)] ?? "nothing to walk")),
     m.proof ? el("span", { class: `w ${m.proof.ok ? "ok" : "bad"}` }, `proof ${m.proof.ok ? "passed" : "failed"} ${fmtTime(m.proof.at)}`) : el("span", { class: "w" }, v.proofRequired ? "no proof yet" : ""),
     merges(m) ? el("span", { class: "sha" }, `merged as ${merges(m)}`) : null,
     m.proof ? el("details", {}, el("summary", {}, "the proof's last lines"), el("pre", { class: "rs-proof" }, m.proof.output.split("\n").slice(-20).join("\n"))) : null));
@@ -378,24 +514,39 @@ export const mount = (host, view, ctx) => {
       : "The mission branches are left for the ship.";
     const label = lands.length ? "close it and land the work" : "close the mission and tick its items";
     const acts = el("div", { class: "rs-acts" });
-    const arm = () => acts.replaceChildren(
-      btn(`yes, ${label}`, () => ctx.act("close", {}, byPr ? "closed; pull requests opened" : "mission closed; its items are ticked"), "primary"),
-      btn("not yet", disarm),
-      el("span", { class: "rs-quiet" }, "nothing has happened yet"));
-    const disarm = () => acts.replaceChildren(
-      btn(label, arm, "primary"),
-      el("a", { href: `/?project=${encodeURIComponent(ctx.projectId)}&view=workspace` }, "back to the workspace"));
+    /* Armed, the focus waits on "not yet", so a held Enter cannot close; disarmed, it comes back to the close. */
+    const arm = () => {
+      acts.replaceChildren(
+        btn(`yes, ${label}`, () => ctx.act("close", {}, byPr ? "closed; pull requests opened" : "mission closed; its items are ticked"), "primary"),
+        btn("not yet", () => disarm(true)),
+        el("span", { class: "rs-quiet" }, "nothing has happened yet"));
+      acts.querySelector("button:last-of-type").focus();
+    };
+    const disarm = (refocus) => {
+      acts.replaceChildren(
+        btn(label, arm, "primary"),
+        el("a", { href: `/?project=${encodeURIComponent(ctx.projectId)}&view=workspace` }, "back to the workspace"));
+      if (refocus === true) acts.querySelector("button").focus();
+    };
     if (ready) disarm();
     /* Removing a worktree discards whatever was left uncommitted in it, so this asks twice too,
        and says what the server removed rather than what it was asked to. */
     const tidy = el("div", { class: "rs-acts" });
-    const tidyArm = () => tidy.replaceChildren(
-      btn("yes, remove the worktrees", tidyNow, "primary"),
-      btn("not yet", tidyDisarm),
-      el("span", { class: "rs-quiet" }, "anything uncommitted in them goes with them; the branches stay"));
-    const tidyDisarm = (said, isError) => tidy.replaceChildren(
-      btn("take back the worktrees", tidyArm, "ghost"),
-      el("span", { class: isError ? "rs-warn" : "rs-quiet" }, typeof said === "string" ? said : "the branches stay; this only clears the directories"));
+    /* Each step puts the focus on the button that replaced the one pressed, never on the page: "not yet" when armed, so a held Enter cannot remove anything. */
+    const tidyArm = () => {
+      tidy.replaceChildren(
+        btn("yes, remove the worktrees", tidyNow, "primary"),
+        btn("not yet", () => tidyDisarm()),
+        el("span", { class: "rs-quiet" }, "anything uncommitted in them goes with them; the branches stay"));
+      tidy.querySelector("button:last-of-type").focus();
+    };
+    const tidyDisarm = (said, isError) => {
+      const back = tidy.contains(document.activeElement) || tidy.querySelector(".rs-quiet:only-child");
+      tidy.replaceChildren(
+        btn("take back the worktrees", tidyArm, "ghost"),
+        el("span", { class: isError ? "rs-fail" : "rs-quiet" }, typeof said === "string" ? said : "the branches stay; this only clears the directories"));
+      if (back) tidy.querySelector("button").focus();
+    };
     const tidyNow = async () => {
       tidy.replaceChildren(el("span", { class: "rs-quiet" }, "removing the worktrees"));
       try {
@@ -411,8 +562,9 @@ export const mount = (host, view, ctx) => {
       }
     };
     if (closed) tidyDisarm();
+    const head = el("h2", { id: "close", tabindex: "-1" }, "Your second and last gate", el("span", { class: "n" }, v.status));
     return [
-      el("h2", { id: "close" }, "Your second and last gate", el("span", { class: "n" }, v.status)),
+      head,
       el("div", { class: "rs-meta" },
         el("span", {}, `${passed.length} of ${tasks.length} tasks passed`),
         ...repos.map((r) => el("span", { title: `lands against ${r.base}` }, `${r.label} · ${r.branch}`)),
@@ -426,9 +578,7 @@ export const mount = (host, view, ctx) => {
               ? "Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks the tracker and opens one pull request per repo against its base. It stops there. This project forbids a tool merging, so the merge is yours."
               : "Every milestone merged onto the mission branch in each repo. Check them out and test them yourself: they are branches, not claims. Closing ticks each passed item in the tracker and hands the branches on; Maverick does not merge a mission to a base, the ship does.")
           : `Every milestone merged. ${unwalked.length} of them still to walk: a milestone is done when you have been through its walkthrough, not when its RIO said pass. Nothing lands before that.`),
-      unwalked.length && !closed ? el("div", { class: "rs-acts" },
-        ...unwalked.map((m) => el("a", { href: `#milestone-${m.n}` }, `walk milestone ${m.n}`)),
-        el("span", { class: "rs-quiet" }, "each walkthrough is under its milestone in the plan")) : null,
+      unwalked.length && !closed ? el("p", { class: "rs-quiet" }, "Each walk is asked ", el("a", { href: "#now" }, "at the top of the page"), ", with how far it has got.") : null,
       repos.length ? el("ul", { class: "rs-lands", "aria-label": "Where each repo lands" },
         ...repos.map((r) => el("li", { class: r.land }, el("span", { class: "r" }, r.label), el("span", {}, LANDS[r.land]?.(r.base) ?? r.land)))) : null,
       ready ? el("p", { class: "rs-why" }, `Closing ticks ${plural(passed.length, "item")} in the tracker in one commit. ${what}`) : null,
@@ -458,15 +608,21 @@ export const mount = (host, view, ctx) => {
     const closing = v.status === "review" || v.status === "closed";
     count.textContent = v.status === "closed" ? "closed" : v.status === "review" ? "ready" : merged.length ? "so far" : "not yet";
     if (holding && v.summary?.started !== before) holding = false;
+    const now = atNow(v);
+    nowBox.hidden = !now;
+    if (must.parentElement !== (now ? nowBox : mustSlot)) (now ? nowBox : mustSlot).prepend(must);
     paintMust(v);
     patch(sum, [merged.map((g) => g.tasks.map((t) => [t.own, t.files])), v.milestones[0]?.title, branchOf(v)], () => drawSum(v, merged));
     patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, from, fromFiles,
       rows.map((r) => [r, (chipsOf.get(r.path) ?? []).map((c) => [c.key, c.severity, c.kind, c.headline])])])]), () => drawFiles(merged, chipsOf));
-    files.hidden = !merged.length;
+    filesFold.hidden = !merged.length;
+    filesAt.textContent = merged.length ? plural(new Set(merged.flatMap((g) => g.tasks.flatMap((t) => t.files.map((f) => f.path)))).size, "file") : "";
     const unread = readings.filter((r) => !r.state).length;
     readHead.lastChild.textContent = readings.length ? `${unread} unread · ${readings.length} in all` : "";
-    patch(read, readings.map((r) => [r.key, r.severity, r.kind, r.area, r.headline, r.detail, r.taskTitle, r.milestone]), () => drawRead(readings));
+    patch(read, [now, readings.map((r) => [r.key, r.severity, r.kind, r.area, r.headline, r.detail, r.taskTitle, r.milestone])], () => drawRead(readings, now));
+    readTools.hidden = !readings.length;
     readings.forEach(paint);
+    for (const t of tallies) t.paint();
     patch(walks, closing ? v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired]) : [], () => (closing ? drawWalks(v) : []));
     walks.hidden = !closing;
     patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status)] : null, () => drawGate(v));
@@ -481,7 +637,8 @@ export const mount = (host, view, ctx) => {
     scrolledTo = location.hash;
     requestAnimationFrame(() => {
       target.scrollIntoView({ block: "start" });
-      gate.querySelector(".rs-acts button.primary")?.focus({ preventScroll: true });
+      // The close button when the gate is ready; its heading when it is not, so the keyboard lands where the eye does.
+      (gate.querySelector(".rs-acts button.primary") ?? target).focus({ preventScroll: true });
     });
   };
   window.addEventListener("hashchange", () => { scrolledTo = ""; toClose(); });
