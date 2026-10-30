@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "../src/config.ts";
 import { newQuestions } from "../src/notify.ts";
+import { browserTab } from "./browser.mjs";
 import { serverUrl, sourceDir, withoutSource } from "./source.mjs";
 
 const run = promisify(execFile);
@@ -60,16 +61,44 @@ const openWindow = (origin) => {
     title: "Maverick",
     backgroundColor: "#14171a",
   });
-  // Links into the console (a plan document, a hosted walkthrough) open as windows; anything else is the browser's.
-  const external = (url) => {
-    if (url.startsWith(origin)) return false;
-    shell.openExternal(url);
-    return true;
-  };
-  win.webContents.setWindowOpenHandler(({ url }) => (external(url) ? { action: "deny" } : { action: "allow" }));
-  win.webContents.on("will-navigate", (event, url) => { if (external(url)) event.preventDefault(); });
   win.loadURL(origin);
   return win;
+};
+
+/** The one browser tab every link out of Maverick lands in, replaced on each click. */
+const tab = browserTab(config.browser);
+const toBrowser = (url) => {
+  // A mailto: or a non-mac host has no tab to reuse; the system's own handler takes it.
+  if (process.platform !== "darwin" || !/^https?:/.test(url)) return void shell.openExternal(url);
+  tab.open(url).catch((err) => {
+    console.error(`could not open ${url} in ${tab.browser}, so it went to the default browser:`, err.message);
+    shell.openExternal(url);
+  });
+};
+
+/**
+ * Links into the console (a plan document, a hosted walkthrough) open as Maverick windows;
+ * anything else is the browser's. Set on every web contents the app makes, not only the first
+ * window's: a walkthrough opened in a window of its own, or a dev link followed inside its frame,
+ * used to load a dev app in Maverick, where it has none of the browser's sign-in.
+ */
+const keepLinksOut = (origin) => {
+  // A frame's about:blank, a data: or blob: document and the devtools are the page's own, not
+  // links out. Of what is out, only http(s) goes to the tab; toBrowser hands the rest to the system.
+  const external = (url) => !url.startsWith(origin) && !/^(about|data|blob|javascript|devtools):/.test(url);
+  app.on("web-contents-created", (_, contents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (!external(url)) return { action: "allow" };
+      toBrowser(url);
+      return { action: "deny" };
+    });
+    // Fired for the main frame and every frame inside it, such as a link in a walkthrough document.
+    contents.on("will-frame-navigate", (event) => {
+      if (!external(event.url)) return;
+      event.preventDefault();
+      toBrowser(event.url);
+    });
+  });
 };
 
 /** A notification is dropped with its click handler once nothing holds it, so the live ones are kept here. */
@@ -166,6 +195,7 @@ app.whenReady().then(async () => {
   menu();
   if (!(await answers(config.port))) await startServer();
   const origin = `http://127.0.0.1:${config.port}/`;
+  keepLinksOut(origin);
   pollQuestions(openWindow(origin), origin);
 });
 

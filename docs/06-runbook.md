@@ -45,6 +45,7 @@ Everything environment-specific is in `src/config.ts` and overridable by env:
 | `SESSION_CONSOLE_HOST` | `127.0.0.1` | `0.0.0.0` opens it to the LAN; non-loopback clients need the key from `~/.claude/session-console/access-key` once (`?key=`), then a cookie |
 | `SESSION_CONSOLE_HOME` | `~/.claude/session-console` | projects, release labels, access key, usage cache |
 | `SESSION_CONSOLE_SESSIONS` | `~/.claude/console-sessions` | session records and ship runs |
+| `MAVERICK_BROWSER` | `Google Chrome` | the Chromium browser the app sends outside links to, into one reused tab (macOS) |
 
 ## Session records
 
