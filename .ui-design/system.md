@@ -29,6 +29,12 @@ shadow only on lift (hover, popovers). Base unit 4px. Density: panels 12px 14px 
 between rows inside a panel, 16px between panels, 18px between bands, 24px between projects.
 Headings carry more space above than below.
 
+A one-column grid is written `grid-template-columns: minmax(0, 1fr)`, never a bare `display:
+grid`: the implicit `auto` column grows to its widest child, so one long `<pre>` or URL widens
+the whole stack and pushes right-aligned items off screen. The check: append a 600-character
+`<pre>` to every grid on the page and assert no grid, and not the page, grows wider. Prose that
+can carry a path or a URL (`.md`, chat text) wraps with `overflow-wrap: anywhere`, for the same reason.
+
 ## Type
 
 Display: the project's face (Chakra Petch default) at 22px/600 for a project head, 15px/600 for
