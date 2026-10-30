@@ -201,7 +201,7 @@ export const mount = (host, view, ctx) => {
     return node;
   };
 
-  const offeredOf = (q) => q.answers.map((a) => a.path).join(" ");
+  const offeredOf = (q) => q.answers.map((a) => a.path ?? a.go).join(" ");
 
   /** A question's card: its body, then its answers. Answers that changed (a pause, a resume) are swapped, keeping the note. */
   const settleQuestion = (q, i) => {

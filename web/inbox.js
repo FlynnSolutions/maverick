@@ -5,7 +5,7 @@
 import { answerControls } from "./answers.js";
 
 /** What the state column says for each kind of question. */
-const KIND = { "handed-back": "handed back", collision: "collision", landing: "landing", proof: "proof", plan: "plan", paused: "paused", gate: "gate" };
+const KIND = { "handed-back": "handed back", collision: "collision", landing: "landing", proof: "proof", plan: "plan", paused: "paused", gate: "gate", walk: "walk", review: "review" };
 
 /**
  * One strip per open question on `mission`: the lock lamp, the question as the name, its body on
@@ -24,7 +24,7 @@ export const inboxRows = (mission, ctx) => {
   const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(mission.id)}`;
   const open = () => { location.href = href; };
   return mission.questions.map((q) => {
-    const { buttons, note, hint } = answerControls(q, { el, btn, submit: async (a, body) => {
+    const { buttons, note, hint } = answerControls(q, { el, btn, open: (go) => { location.href = `${href}#${go}`; }, submit: async (a, body) => {
       try {
         await ctx.post(`/api/missions/${encodeURIComponent(mission.id)}/${a.path}?project=${encodeURIComponent(ctx.projectId)}`, body);
       } catch (err) {

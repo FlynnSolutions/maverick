@@ -108,8 +108,12 @@ hand-back ends it with its verdict and counts. A later pass, Cory accepting a ha
 replaces that end. A person's words are never read as a move.
 
 `word` is `wordFor(mission, questions)`: `waiting for you` exactly when a question is open;
-otherwise `statusWord`'s answer, read as `done` in review or closed and `working` elsewhere when
-it would have said `waiting for you` with nothing to answer (Cory's call on m1-t1). `error` is
+otherwise `statusWord`'s answer, read as `done` once closed or abandoned and `working` elsewhere
+when it would have said `waiting for you` with nothing to answer (Cory's call on m1-t1). A
+merged milestone still to walk is a question in flight as much as at review (`walk:<n>`, n the
+latest milestone in it): each walkthrough left, answered of total and what failed, an answer that
+opens it, and "then close" at review. With nothing left to walk, a review mission asks the close
+(`review`). So a mission waiting on a walk reads `waiting for you`, never `done`. `error` is
 for what no answer settles: a report or ledger that could not be written, a proof runner killed
 by a signal.
 

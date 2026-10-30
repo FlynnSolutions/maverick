@@ -200,7 +200,7 @@ export const mount = (host, view, ctx) => {
       el("summary", {}, s.lamp, el("h3", {}, s.n, s.title), s.word),
       el("div", { class: "body" }, s.gives, s.why, s.tasks, s.walk));
     s.details.addEventListener("toggle", () => patchWalk(s));
-    s.li = el("li", { "data-milestone": String(m.n) }, s.details);
+    s.li = el("li", { id: `milestone-${m.n}`, "data-milestone": String(m.n) }, s.details);
     steps.set(m.n, s);
     return s;
   };
@@ -250,7 +250,25 @@ export const mount = (host, view, ctx) => {
       const li = patchStep(m);
       if (list.children[i] !== li) list.insertBefore(li, list.children[i] ?? null);
     });
+    toHash();
   };
+
+  /* ---------- where links land ---------- */
+  /** A question's "walk milestone n" names `#milestone-<n>`: its step opens, which mounts its walkthrough, and comes into view. */
+  let scrolledTo = "";
+  const toHash = () => {
+    const id = location.hash.slice(1);
+    const s = steps.get(Number(id.match(/^milestone-(\d+)$/)?.[1]));
+    if (!s || id === scrolledTo) return;
+    scrolledTo = id;
+    s.details.open = true;
+    requestAnimationFrame(() => {
+      s.li.scrollIntoView({ block: "start" });
+      // A keyboard answer would otherwise leave the focus on a button that is now far above.
+      s.details.querySelector("summary").focus({ preventScroll: true });
+    });
+  };
+  window.addEventListener("hashchange", () => { scrolledTo = ""; toHash(); });
   update(view);
   return { update };
 };
