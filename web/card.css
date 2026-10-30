@@ -13,9 +13,11 @@
 .mv-card[id] { scroll-margin-top: 20px; }
 
 /* The head: mark, title, chips, on one x down every card. */
-.card-head { display: flex; align-items: center; gap: 12px; min-height: 40px; }
+.card-head { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+/* A head carrying a linked chip stands clear of the row above and the line below it, 8px each way. */
+.card-head:has(.chip-hit) { padding: 8px 0; }
 .card-toggle {
-  display: flex; flex: 1 1 auto; align-items: center; gap: 10px; min-width: 0; height: auto; min-height: 40px;
+  display: flex; flex: 1 1 auto; align-items: center; gap: 10px; min-width: 0; height: auto; min-height: 44px;
   padding: 0; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   color: var(--ink); font: 500 13.5px/1.3 var(--sans); text-align: left;
 }
@@ -26,9 +28,8 @@ button.card-toggle:focus-visible { outline: 2px solid var(--accent); outline-off
 .card-mark { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--ink-faint); }
 .card-mark svg.lamp { width: 14px; height: 14px; }
 .card-glyph { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.card-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A bullet's title is what to read, so it wraps rather than cutting off. */
-.card-bullet .card-title { white-space: normal; }
+/* A title is read whole: it wraps rather than cutting off, and the head grows a line for it. */
+.card-title { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; padding: 4px 0; }
 .card-why { display: inline-flex; flex: none; align-items: center; gap: 4px; font: 400 12px var(--sans); color: var(--ink-faint); }
 button.card-toggle:hover .card-why { color: var(--ink-soft); }
 
@@ -37,20 +38,27 @@ button.card-toggle:hover .card-why { color: var(--ink-soft); }
 .chev { display: inline-block; width: 5px; height: 5px; margin-top: -3px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .mv-card.open .chev, details[open] > summary .chev { margin-top: 3px; transform: rotate(-135deg); }
 
-.card-chips { display: flex; flex: none; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.card-chips { display: flex; flex: none; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
 .card-chips:empty { display: none; }
 .mv-card .chip { font-size: 11px; letter-spacing: 0.06em; background: var(--panel); color: var(--ink-soft); }
-.mv-card a.chip { text-decoration: none; }
-.mv-card a.chip:hover { background: var(--panel); }
-.mv-card a.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Long text folded to its opening (card.js foldable), faded at the cut so it reads as more to come. */
+.fold-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; justify-items: start; }
+.fold-cut.folded { max-height: var(--fold-h); overflow: hidden; mask-image: linear-gradient(to bottom, #000 60%, transparent); }
+button.fold-toggle { min-height: 44px; height: auto; padding: 0 8px; font-size: 12.5px; color: var(--accent-ink); }
+
+/* A linked chip is the pill inside a link a finger can hit: 44px square at the least, the pill centred in it. */
+.chip-hit { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; text-decoration: none; border-radius: var(--radius-s); }
+.chip-hit:hover .chip { background: var(--panel); }
+.chip-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* The three severities, wherever the mission page draws one: outlined in what each asks of you,
-   fix in threat, check in info, ship in caution. Scoped to the page, because `.chip.ship`
-   elsewhere is a release on the calendar. */
+   fix in threat, check in info, ship in the plain soft ink: fine to ship asks nothing of you, and
+   caution is reserved for what does. Scoped to the page, because `.chip.ship` elsewhere is a
+   release on the calendar. */
 .mv-page .chip.fix, .mv-page .chip.check, .mv-page .chip.ship { background: none; box-shadow: inset 0 0 0 1px currentColor; }
 .mv-page .chip.fix { color: var(--threat); }
 .mv-page .chip.check { color: var(--info); }
-.mv-page .chip.ship { color: var(--caution); }
+.mv-page .chip.ship { color: var(--ink-soft); }
 
 /* The body: the headline under the title's column, the detail under it once opened. 8px between rows. */
 .card-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0 0 12px 26px; }
@@ -59,9 +67,8 @@ button.card-toggle:hover .card-why { color: var(--ink-soft); }
 .card-detail { padding: 8px 10px; max-width: 80ch; font-size: 13px; line-height: 1.5; color: var(--ink-soft); white-space: pre-line; background: var(--inset); border-radius: var(--radius-s); }
 
 @media (max-width: 600px) {
-  .card-head { flex-wrap: wrap; gap: 4px 10px; padding-bottom: 4px; }
+  .card-head { flex-wrap: wrap; gap: 8px 10px; padding-bottom: 4px; }
   .card-toggle { flex-basis: 100%; padding: 10px 0; }
-  .card-title { white-space: normal; }
   .card-chips { justify-content: flex-start; padding-left: 26px; }
   .card-body { padding-left: 0; }
 }

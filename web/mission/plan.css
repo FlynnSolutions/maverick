@@ -3,10 +3,11 @@
 .plan-head .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 .plan-steps { list-style: none; margin: 0; padding: 0; }
 .step { border-radius: 6px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); margin-bottom: 8px; }
-.step.waiting, .step.walk { box-shadow: 0 0 0 1px var(--caution); }
+/* Only a step held on you wears the caution ring; a step still to walk says so in its word, and the walk itself is asked at the top of the page. */
+.step.waiting { box-shadow: 0 0 0 1px var(--caution); }
 .step.working { box-shadow: 0 0 0 1px var(--seam-strong); }
 .step.done { background: transparent; }
-.step > summary { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; list-style: none; border-radius: 6px; }
+.step > summary { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 48px; padding: 8px 14px; cursor: pointer; list-style: none; border-radius: 6px; }
 .step > summary::-webkit-details-marker { display: none; }
 .step > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .step .plan-lamp { display: inline-flex; }
@@ -15,7 +16,8 @@
 .step > summary h3 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); margin-right: 8px; }
 .step.done > summary h3 { font-weight: 500; color: var(--ink-soft); }
 .step > summary .w { font: 500 12.5px var(--sans); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
-.step.waiting > summary .w, .step.walk > summary .w { color: var(--caution); }
+.step.waiting > summary .w { color: var(--caution); }
+.step.walk > summary .w { color: var(--ink-soft); }
 .step.done > summary .w { color: var(--hud); }
 .step.working > summary .w { color: var(--ink-soft); }
 .step .body { padding: 0 14px 12px 42px; }
@@ -27,9 +29,9 @@
 .step .tasks li:last-child { box-shadow: none; }
 .step .tasks .plan-lamp { align-self: center; }
 .step .tasks .lamp { width: 14px; height: 14px; }
-.step .tasks .t { font: 500 13.5px var(--sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* An intent is the Wingman's whole brief; the row shows its opening and the title attribute keeps the rest. */
-.step .tasks .i { grid-column: 2; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); max-width: 56ch; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.step .tasks .t { font: 500 13.5px var(--sans); color: var(--ink); overflow-wrap: anywhere; }
+/* An intent is the Wingman's whole brief, read in full on an open step: a step folds, the brief does not. */
+.step .tasks .i { grid-column: 2; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); max-width: 64ch; }
 .step .tasks .w { grid-column: 3; grid-row: 1 / span 2; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; text-align: right; }
 .step .tasks .w b { font-weight: 500; color: var(--ink-soft); }
 /* Why a task or a milestone has not started: the reason, not just the word, so nobody works it out from the ledger. */
@@ -37,7 +39,7 @@
 .step .body > .why { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-soft); }
 .step .tasks .w b.needs { color: var(--caution); }
 .step .tasks .w b.ok { color: var(--hud); }
-.step .tasks .w a { color: var(--accent-hot); text-decoration: none; }
+.step .tasks .w a { color: var(--accent-ink); text-decoration: none; }
 .step .tasks .w a:hover { text-decoration: underline; }
 .step .tasks .w a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
 
@@ -55,3 +57,10 @@
 .plan-walk p { margin: 0 0 8px; max-width: 64ch; }
 .plan-walk-meta { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
 .plan-walk .warn { color: var(--threat); }
+
+.plan-walk .mv-note-row button { padding: 0 12px; }
+@media (max-width: 600px) {
+  .step .body { padding-left: 14px; }
+  .step .tasks li { grid-template-columns: 14px minmax(0, 1fr); }
+  .step .tasks .w { grid-column: 2; grid-row: auto; text-align: left; }
+}

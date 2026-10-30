@@ -195,7 +195,7 @@ const renderTop = () => {
   const pct = (done / ship.steps.length) * 100;
   $("#crumb").replaceChildren(text("Ship "), el("b", {}, `v${version}`));
   $("#top").replaceChildren(
-    el("div", { class: "ship-progress" }, el("div", { class: "runway" }, el("div", { class: "fill", style: `width:${pct}%` }), el("div", { class: "jet-marker", style: `left:${pct}%` }, jetGlyph()))),
+    el("div", { class: "ship-progress" }, el("div", { class: "runway", style: `--p:${pct}` }, el("div", { class: "fill" }), el("div", { class: "jet-marker" }, jetGlyph()))),
     el("div", { class: "summary" }, el("span", {}, `${done} of ${ship.steps.length} steps`), el("span", {}, `started ${fmtDate(ship.started)}`), ship.finished ? el("span", {}, `shipped ${fmtDate(ship.finished)}`) : null),
   );
 };

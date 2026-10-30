@@ -19,7 +19,7 @@
 </head>
 <body>
   <header class="bar">
-    <a id="back" href="/" class="brand">Maverick</a>
+    <a id="back" href="/" class="brand" aria-label="Maverick, back to the workspace"><span id="brand-mark" class="mark"></span><span class="wm">Maverick</span></a>
     <span class="crumb" id="crumb"></span>
     <span id="status" class="status" role="status"></span>
     <a id="board-link" class="button-link" href="/">Board</a>
@@ -27,15 +27,17 @@
   <main class="mv-page" id="page">
     <nav class="mv-rail" id="rail" aria-label="Mission">
       <a class="mv-word" id="word"></a>
-      <a class="mv-nav" href="#ask">The ask<span class="n"></span></a>
-      <a class="mv-nav" href="#plan">Plan<span class="n"></span></a>
-      <a class="mv-nav" href="#progress">Progress<span class="n"></span></a>
-      <a class="mv-nav" href="#result">Result<span class="n"></span></a>
+      <div class="mv-anchors">
+        <a class="mv-nav" href="#ask">The ask<span class="n"></span></a>
+        <a class="mv-nav" href="#plan">Plan<span class="n"></span></a>
+        <a class="mv-nav" href="#progress">Progress<span class="n"></span></a>
+        <a class="mv-nav" href="#result">Result<span class="n"></span></a>
+      </div>
       <div class="mv-controls" id="controls"></div>
     </nav>
     <div class="mv-content">
       <div id="now" class="mv-now"><div class="mv-trouble" id="trouble"></div></div>
-      <section id="ask" class="mv-ask"></section>
+      <section id="ask" class="mv-ask" aria-busy="true"><h1 class="mv-loading">opening the mission</h1><div class="mv-skel" aria-hidden="true"><i></i><i></i><i></i></div><div class="mv-skel-block" aria-hidden="true"></div></section>
       <section id="plan"></section>
       <section id="progress"></section>
       <section id="result"></section>
