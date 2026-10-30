@@ -9,7 +9,7 @@ import type { Milestone, Mission, MissionTask, WalkthroughState } from "./missio
 
 export interface Question {
   id: string;
-  kind: "handed-back" | "collision" | "landing" | "proof" | "plan" | "paused" | "gate" | "review";
+  kind: "handed-back" | "collision" | "landing" | "proof" | "plan" | "paused" | "gate" | "walk" | "review";
   title: string;
   body: string;
   at: string;
@@ -91,24 +91,34 @@ const strandedNote = (mission: Mission): string => {
 };
 
 /**
- * A mission at the review gate asks for what is left of it: each walkthrough still to walk, how
- * far through it is, then the close. Read from whatever walkthroughs the milestones carry, so it
- * holds however many there are.
+ * The walk, asked as one question whenever a merged milestone waits on it, in flight as much as at
+ * review: which milestones, how far through each is (answered of total, what failed or was
+ * blocked), and an answer per milestone that opens its walkthrough. Read from whatever
+ * walkthroughs the milestones carry, so it holds however many there are. Its id names the latest
+ * milestone in it, so a newly merged one asks again and progress through one already asked does
+ * not. At review it ends "then close"; with nothing left to walk, the review question asks the close.
  */
-const reviewQuestion = (mission: Mission): Question => {
-  const left = mission.milestones.filter(needsWalking);
-  const walks: Answer[] = left.map((m, i) => ({ label: `walk milestone ${m.n}`, go: `milestone-${m.n}`, ...(i === 0 && { primary: true }) }));
+const walkQuestion = (mission: Mission, left: Milestone[]): Question => {
+  const review = mission.status === "review";
+  const which = left.length === 1 ? `milestone ${left[0].n}` : `${left.length} milestones`;
   return {
-    id: "review",
-    kind: "review",
-    title: left.length ? `ready to review: walk ${left.length === 1 ? `milestone ${left[0].n}` : `${left.length} milestones`}, then close` : "ready to close",
-    body: (left.length
-      ? `${left.map((m) => `milestone ${m.n}, ${m.title}: ${walkLeft(m)}`).join(". ")}. Then close the mission.`
-      : "Every milestone is walked or waived. Closing ticks the tracker and lands the work.") + strandedNote(mission),
-    at: mission.finished ?? mission.created,
-    answers: left.length ? walks : [{ label: "close", go: "close", primary: true }],
+    id: `walk:${left.at(-1)!.n}`,
+    kind: "walk",
+    title: review ? `ready to review: walk ${which}, then close` : `walk ${which}`,
+    body: `${left.map((m) => `milestone ${m.n}, ${m.title}: ${walkLeft(m)}`).join(". ")}.${review ? " Then close the mission." : ""}${review ? strandedNote(mission) : ""}`,
+    at: left.map((m) => m.merged!).sort()[0] ?? mission.created,
+    answers: left.map((m, i) => ({ label: `walk milestone ${m.n}`, go: `milestone-${m.n}`, ...(i === 0 && { primary: true }) })),
   };
 };
+
+const closeQuestion = (mission: Mission): Question => ({
+  id: "review",
+  kind: "review",
+  title: "ready to close",
+  body: `Every milestone is walked or waived. Closing ticks the tracker and lands the work.${strandedNote(mission)}`,
+  at: mission.finished ?? mission.created,
+  answers: [{ label: "close", go: "close", primary: true }],
+});
 
 /** The first blocker's headline: the one sentence, not the line with its kind and evidence. */
 const blockerOf = (findings: string | undefined): string | undefined => {
@@ -197,6 +207,8 @@ export const questionsOf = (mission: Mission & { findings?: Record<string, strin
     at: mission.created,
     answers: [{ label: "approve", method: "POST", path: "approve", primary: true }],
   });
-  if (mission.status === "review") out.push(reviewQuestion(mission));
+  const left = mission.milestones.filter((m) => m.merged && needsWalking(m));
+  if (left.length) out.push(walkQuestion(mission, left));
+  else if (mission.status === "review") out.push(closeQuestion(mission));
   return out.sort((a, b) => a.at.localeCompare(b.at));
 };
