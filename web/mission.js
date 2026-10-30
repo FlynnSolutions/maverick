@@ -402,6 +402,7 @@ const briefing = (estimate) => {
   if (!estimate?.milestones.length) return null;
   const { basis } = estimate;
   return el("div", { class: "mv-brief" },
+    el("h3", { class: "k" }, "The briefing"),
     el("ol", {}, ...estimate.milestones.map((m) => el("li", {},
       el("p", { class: "t" }, `Milestone ${m.n}: ${m.title}`),
       el("p", { class: "muted small" }, [
@@ -442,9 +443,9 @@ const gateBlocks = () => {
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
   } else {
     gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
+      briefing(doc.estimate),
       parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
         el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
-      briefing(doc.estimate),
       costBand(doc.cost, doc.estimate),
       reposBand(doc.repos ?? []),
       preflightBand(doc.preflight),

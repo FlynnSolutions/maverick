@@ -114,6 +114,10 @@ html { scroll-padding-top: 70px; }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
 /* The briefing: one row per milestone, its cases under it, the totals after. */
+.mv-brief { margin: 4px 0 14px; padding: 10px 12px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); }
+.mv-brief .k { margin: 0 0 8px; font-family: var(--display); font-size: 11px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.mv-brief .why { margin-bottom: 4px; }
+.mv-brief .cost-note { margin-top: 4px; }
 .mv-brief ol { margin: 0 0 10px; padding-left: 18px; font-size: 13px; }
 .mv-brief ol > li { margin: 0 0 10px; }
 .mv-brief .t { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
