@@ -1505,17 +1505,19 @@ export const sweepMissions = async (project: Project): Promise<void> => {
 };
 
 /** How long a burst of endings is let settle before the one pass it earns. */
-export const ENDING_SETTLE_MS = 3_000;
+const ENDING_SETTLE_MS = 3_000;
 const soon = new Map<string, NodeJS.Timeout>();
 
 /**
  * A pass soon, not on the next tick: a Wingman or RIO that ended is the moment its review, its
  * merge or its dependant can go, and waiting for the tick cost up to a minute on every link of a
- * chain. Debounced per project, so a burst of endings is one pass. The listing is dropped first,
- * or the pass would read the cached word from before the ending; a pass already running is
- * waited out rather than skipped, since it may have read the listing before this ending.
+ * chain. Debounced per project, so a burst of endings is one pass. The listing is dropped at the
+ * ending and again when the pass goes, or a pass in between would read and keep the word from
+ * before it; a pass already running is waited out rather than skipped, since it may have read
+ * the listing before this ending.
  */
 export const sweepSoon = (project: Project, sweep: (project: Project) => Promise<void> = sweepMissions, wait = ENDING_SETTLE_MS): void => {
+  agentCache.delete(project.path);
   clearTimeout(soon.get(project.id));
   soon.set(project.id, setTimeout(() => {
     if (sweeping.has(project.id)) return sweepSoon(project, sweep, wait);
@@ -1526,16 +1528,22 @@ export const sweepSoon = (project: Project, sweep: (project: Project) => Promise
 };
 
 /**
- * Claude Code writes each background session's state to `<jobs>/<id>/state.json`. A session
- * working under a project that reaches a finished word calls `onEnd` with that project. Only a
- * trigger: the pass still reads `claude agents` for the truth, and the server's 60 s tick stays
- * the backstop for anything the watch misses. Returns the close.
+ * Claude Code writes each background session's state to `<jobs>/<id>/state.json`, many times
+ * while it works. A session under a project whose state moves into a finished word calls `onEnd`
+ * with that project, once: a rewrite of a session already finished is not another ending, so it
+ * neither reads the project list again nor holds the pass back. Only a trigger: the pass still
+ * reads `claude agents` for the truth, and the server's 60 s tick stays the backstop for
+ * anything the watch misses. Returns the close.
  */
 export const watchEndings = (projects: () => Promise<Project[]>, onEnd: (project: Project) => void, dir = config.claudeJobsDir): (() => void) => {
+  const finished = new Map<string, boolean>();
   const seen = async (file: string): Promise<void> => {
     const { state, cwd } = JSON.parse(await readFile(join(dir, file), "utf8")) as { state?: string; cwd?: string };
-    if (!cwd || !FINISHED.test(state ?? "")) return;
-    const project = (await projects()).filter((p) => underPath(cwd, p.path)).sort((a, b) => b.path.length - a.path.length)[0];
+    const now = FINISHED.test(state ?? "");
+    const was = finished.get(file);
+    finished.set(file, now);
+    if (!cwd || !now || was) return;
+    const project = (await projects()).reduce<Project | undefined>((best, p) => (underPath(cwd, p.path) && p.path.length > (best?.path.length ?? -1) ? p : best), undefined);
     if (project) onEnd(project);
   };
   try {

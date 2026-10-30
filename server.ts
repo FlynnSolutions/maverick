@@ -918,7 +918,7 @@ const sweepAll = async (): Promise<void> => {
 };
 setInterval(() => { sweepAll().catch((err: Error) => console.error("sweep:", err.message)); }, 60_000).unref();
 // A Wingman or RIO that ends sweeps its project's missions then; the tick above is the backstop.
-watchEndings(readProjects, (project) => sweepSoon(project));
+watchEndings(readProjects, sweepSoon);
 
 createServer((req, res) => {
   handle(req, res).catch((err: Error) => {

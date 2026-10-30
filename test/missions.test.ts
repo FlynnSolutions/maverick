@@ -1164,7 +1164,9 @@ test("a session under a project that reaches a finished word sweeps that project
     await until(() => ended.length > 0);
     job("aaaa0005", "exited", "/work/app/svc");
     await until(() => ended.includes("inner"));
+    job("aaaa0004", "done", "/work/app/.claude/worktrees/m-m1-t1");
     await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(ended, ["outer", "inner"], "one call per session that ends: a rewrite of a finished one is not another ending");
     assert.deepEqual([...new Set(ended)], ["outer", "inner"], "a Wingman's worktree is its project's, the deepest project holding the cwd is the one swept, and a session still working or waiting sweeps nothing");
   } finally {
     close();
