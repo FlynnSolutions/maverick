@@ -1138,7 +1138,7 @@ test("each milestone carries the cases Cory walks at its end, and a milestone wi
   assert.deepEqual(plan.problems, []);
   assert.deepEqual(plan.milestones[0].walk, ["a scope shows in the dock", "the dry run, before and after"]);
   const bare = parsePlan(shaped({ walk: "", tasks: [task("A", ["touches: src/a.ts"])] }), ["root"]);
-  assert.deepEqual(bare.problems, ['milestone 1 has no "_walk: <case>; <case>_" line: the cases Cory will walk at its end']);
+  assert.deepEqual(bare.problems, ['milestone 1 has no "_walk: <case>; <case>_" line: the cases walked at its end']);
 });
 
 test("a milestone cut by repo is a problem, and a milestone spanning repos is a foundation", () => {

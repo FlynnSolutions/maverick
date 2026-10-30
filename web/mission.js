@@ -413,7 +413,7 @@ const briefing = (estimate) => {
       m.walk.length ? el("ul", { class: "cases" }, ...m.walk.map((c) => el("li", {}, c))) : null))),
     el("p", { class: "why" }, `${plural(estimate.milestones.length, "milestone")}, ${about(estimate.minutes)} of building end to end, not counting your walks; you are needed ${plural(estimate.milestones.length, "time")}, once per milestone to walk it, and the close follows the last walk.`),
     el("p", { class: "cost-note" }, basis.measured
-      ? `Times are measured: ${basis.minutesPerTask} min per task (build plus review) across ${plural(basis.tasks, "past task")}, ${Math.round(basis.retryRate * 100)}% of them sent out twice.`
+      ? `Times are measured from ${plural(basis.tasks, "past task")}: ${basis.minutesPerTask} min per task (build plus review), and ${Math.round(basis.retryRate * 100)}% were sent out twice, so each milestone is its tasks in a row plus ${basis.retryRate} of a retry, times ${basis.minutesPerTask} min, to the nearest 5.`
       : `No mission has finished here yet, so times are a default: ${basis.linkMinutes} min per task in the longest chain.`));
 };
 
@@ -466,7 +466,7 @@ const gateBlocks = () => {
   if (parsed?.milestones?.length) {
     blocks.push(el("section", {}, el("h2", {}, "The plan"),
       ...parsed.milestones.map((m) => el("div", { class: "mv-milestone" },
-        el("h3", {}, el("span", {}, `Milestone ${m.n} — ${m.title}`)),
+        el("h3", {}, el("span", {}, `Milestone ${m.n}: ${m.title}`)),
         el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
         ...m.tasks.map((t) => el("div", { class: "mv-plan-task" },
           el("h4", {}, t.title, t.repo ? el("span", { class: "mv-repo" }, t.repo) : null),

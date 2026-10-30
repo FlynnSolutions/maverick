@@ -530,7 +530,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
     const done = lineOf(DONE_LINE);
     if (!done) problems.push(`milestone ${n} has no "_done when: ..._" line`);
     const walk = listField(lineOf(WALK_LINE), /;/);
-    if (!walk.length) problems.push(`milestone ${n} has no "_walk: <case>; <case>_" line: the cases Cory will walk at its end`);
+    if (!walk.length) problems.push(`milestone ${n} has no "_walk: <case>; <case>_" line: the cases walked at its end`);
     const only = repos.length === 1 ? repos[0] : "";
     const tasks = section.groups.flatMap((g) => g.items).map((item, i) => {
       const { status, attempt, verdict, commit, touches, needs, deploys, repo } = item.fields;
