@@ -105,22 +105,25 @@ html { scroll-padding-top: 70px; }
 /* A lifted surface is brighter, so its faint text comes up a step to stay readable on it: the
    token is remapped here, so everything faint inside the gate follows without a rule each. */
 .mv-gate { --ink-faint: var(--ink-soft); padding: 14px 16px; border-radius: var(--radius-m); background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
-.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 60ch; margin: 0 0 10px; }
-.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 60ch; margin: 10px 0 0; }
+.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 56ch; margin: 0 0 10px; }
+.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 56ch; margin: 10px 0 0; }
 .mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 .mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--threat); font-size: 13px; }
 .mv-problems li { margin: 2px 0; }
-.mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: 60ch; color: var(--caution); font-size: 13px; }
+.mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: 56ch; color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
 .mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; }
-.mv-preflight li { margin: 3px 0; display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; }
+.mv-preflight li { margin: 3px 0; display: grid; grid-template-columns: 42px auto minmax(0, 1fr); gap: 0 8px; align-items: baseline; }
 .mv-preflight li strong { white-space: nowrap; }
+.mv-preflight .pf-detail { max-width: 56ch; }
 .mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-faint); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
 .mv-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .mv-confirm .why { flex-basis: 100%; margin: 0; }
+/* The gate's measure would cap the sentence's width and pull "yes" up beside it; here it takes its row. */
+.mv-gate .mv-confirm .why { max-width: none; padding-right: calc(100% - 56ch); box-sizing: border-box; }
 
 .mv-milestone { margin-bottom: 18px; }
 .mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
@@ -174,10 +177,13 @@ html { scroll-padding-top: 70px; }
   .mv-band .cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
   /* The repo's name over where it lands, rather than squeezing the sentence into a third of the row. */
   .mv-land { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  /* The detail goes under the name, the same for every check, rather than wherever it wraps. */
+  .mv-preflight li { grid-template-columns: 42px minmax(0, 1fr); }
+  .mv-preflight .pf-detail { grid-column: 2; }
 }
 
 /* A confirm whose request is running: it cannot be pressed again, and it looks it. */
 .mv-confirm button[aria-busy="true"] { cursor: progress; opacity: 0.7; }
 
 /* The gate's prose and its warnings stay under 80 characters a line (L5). */
-.mv-gate .mv-warn { max-width: 60ch; }
+.mv-gate .mv-warn, .lead-fire .mv-confirm .why { max-width: 56ch; }

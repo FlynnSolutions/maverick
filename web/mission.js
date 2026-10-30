@@ -85,7 +85,7 @@ const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "nu
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** What firing does, said the same way wherever it is asked. */
-const approveWhy = (doc) => `This writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. After this you are asked only to walk each milestone, then to close.`;
+const approveWhy = (doc) => `This writes ${plural(doc.cost.tasks, "item")} into the tracker and spawns ${plural(doc.cost.sessions, "background session")} over the mission's life. After this you are asked only to walk each milestone; the close comes with the last walk.`;
 
 /**
  * An irreversible action asked twice: the first press arms it, says what it does and moves focus
@@ -432,7 +432,7 @@ const preflightBand = (checks) => {
   const refusing = checks.some((c) => c.refuses);
   return el("div", { class: "mv-preflight" },
     el("p", { class: failed || warned ? "mv-warn" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${plural(warned, "thing")} this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
-    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), ` ${c.detail}`))));
+    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), el("span", { class: "pf-detail" }, c.detail)))));
 };
 
 const costBand = (cost) => el("div", { class: "mv-band" },

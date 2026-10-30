@@ -39,7 +39,7 @@
 .lead-opt[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 1px var(--accent); }
 .lead-q .mv-note { height: 32px; }
 .lead-compose textarea::placeholder { color: var(--ink-faint); }
-.lead-hint { margin: 0; max-width: 60ch; font-size: 12.5px; color: var(--ink-soft); }
+.lead-hint { margin: 0; max-width: 56ch; font-size: 12.5px; color: var(--ink-soft); }
 .lead-why > summary { display: inline-flex; align-items: center; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
 .lead-why > p { margin: 4px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
 .lead-round-foot { display: flex; }
