@@ -98,7 +98,7 @@ export const leadThread = (ctx) => {
         other,
         q.context ? el("details", { class: "lead-why" }, el("summary", {}, "more context"), el("p", {}, q.context)) : null);
     });
-    return el("div", { class: "lead-round" }, el("ol", { class: "lead-qs" }, ...cards), el("div", { class: "lead-round-foot" }, sendRound));
+    return el("div", { class: "lead-round", id: "round" }, el("ol", { class: "lead-qs" }, ...cards), el("div", { class: "lead-round-foot" }, sendRound));
   };
 
   /** A round already answered: its questions folded, so the thread reads as the conversation it was. */
@@ -111,8 +111,8 @@ export const leadThread = (ctx) => {
     entry.who === "you" ? el("p", { class: "lead-text" }, entry.text) : el("div", { class: "lead-text" }, renderMarkdown(entry.text, { project: projectId })),
     entry.questions?.length ? (open ? round(entry) : asked(entry)) : null);
 
-  /** The last entry is the only one whose round is still open, and only while nothing has been said after it. */
-  const isOpen = (chat, i) => i === chat.length - 1 && chat[i].who === "Strike Lead" && Boolean(chat[i].questions?.length);
+  /** Whether this entry's round is still open, as the server says it (`openRound`): it is the one the mission's questions name. */
+  const isOpen = (chat, i) => Boolean(view?.questions?.some((q) => q.id === `round:${chat[i].at}`));
 
   /** Maverick's own line about the flight: a task out, passed or back, a milestone merged. One quiet line each. */
   const note = (u) => el("li", { class: `lead-note ${u.kind}` }, el("span", { class: "lead-at" }, fmtTime(u.at)), el("span", {}, u.text));
@@ -164,17 +164,24 @@ export const leadThread = (ctx) => {
     ].filter(Boolean));
   };
 
-  // The inbox's "answer in the chat" lands on `#plan`: the open round comes into view with its first option focused.
-  window.addEventListener("hashchange", () => {
-    const first = location.hash === "#plan" ? log.querySelector(".lead-round .lead-opt") : null;
-    if (!first) return;
-    first.closest(".lead-round").scrollIntoView({ block: "start" });
-    first.focus({ preventScroll: true });
-  });
+  /* ---------- where links land ---------- */
+  /** A question's "answer in the chat" names `#round`: the open round comes into view with its first option focused, on a load as on a jump. */
+  let scrolledTo = "";
+  const toRound = () => {
+    const first = location.hash === "#round" ? log.querySelector("#round .lead-opt") : null;
+    if (!first || scrolledTo === location.hash) return;
+    scrolledTo = location.hash;
+    requestAnimationFrame(() => {
+      first.closest("#round").scrollIntoView({ block: "start" });
+      first.focus({ preventScroll: true });
+    });
+  };
+  window.addEventListener("hashchange", () => { scrolledTo = ""; toRound(); });
 
   const update = (next) => {
     view = next;
     paintLog(next.chat ?? [], next.updates ?? []);
+    toRound();
     thinking.hidden = !next.leadBusy;
     raw.hidden = !next.lead || next.leadBusy;
     paintFire();

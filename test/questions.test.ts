@@ -213,7 +213,7 @@ test("a round of questions the Strike Lead is waiting on is a question for you, 
   assert.equal(q.kind, "lead");
   assert.equal(q.title, "the Strike Lead is asking 2 questions");
   assert.equal(q.body, "Stored or computed? Which surface first?");
-  assert.deepEqual(q.answers, [{ label: "answer in the chat", go: "plan", primary: true }]);
+  assert.deepEqual(q.answers, [{ label: "answer in the chat", go: "round", primary: true }]);
   assert.equal(statusWord(mission), "waiting for you", "the lamp says so");
   // Answered (anything said after it), or a turn with no questions, asks nothing.
   assert.deepEqual(questionsOf(base({ status: "interviewing", chat: [asked, { at: "2026-10-29T20:03:00.000Z", who: "you", text: "stored; the dock" }] })), []);

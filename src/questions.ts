@@ -6,6 +6,7 @@
 import { findingsOf } from "./audits.ts";
 import { parseFinding } from "./findings.ts";
 import type { Milestone, Mission, MissionTask, WalkthroughState } from "./missions.ts";
+import type { ChatEntry } from "./strike-lead.ts";
 
 export interface Question {
   id: string;
@@ -132,9 +133,15 @@ const closeQuestion = (mission: Mission): Question => ({
  * so the answer goes there rather than posting anything. Cory's call, 2026-10-30: a round waiting
  * on him is waiting for him, in the inbox and on the lamp, like anything else.
  */
+/** The Strike Lead's round still waiting for answers: its last word, when that word asked something. The one definition; the chat answers it and the page reads it off the questions. */
+export const openRound = (chat: ChatEntry[] | undefined): (ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) | undefined => {
+  const last = chat?.at(-1);
+  return last?.who === "Strike Lead" && last.questions?.length ? (last as ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) : undefined;
+};
+
 const leadRound = (mission: Mission): Question | undefined => {
-  const last = mission.chat?.at(-1);
-  if (last?.who !== "Strike Lead" || !last.questions?.length) return undefined;
+  const last = openRound(mission.chat);
+  if (!last) return undefined;
   const n = last.questions.length;
   return {
     id: `round:${last.at}`,
@@ -142,7 +149,7 @@ const leadRound = (mission: Mission): Question | undefined => {
     title: `the Strike Lead is asking ${n === 1 ? "a question" : `${n} questions`}`,
     body: last.questions.map((q) => q.question).join(" "),
     at: last.at,
-    answers: [{ label: "answer in the chat", go: "plan", primary: true }],
+    answers: [{ label: "answer in the chat", go: "round", primary: true }],
   };
 };
 
