@@ -84,6 +84,9 @@ const setStatus = (msg, isError = false) => {
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/** What firing does, said the same way wherever it is asked. */
+const approveWhy = (doc) => `This writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. After this you are asked only to walk each milestone, then to close.`;
+
 /**
  * An irreversible action asked twice: the first press arms it, says what it does and moves focus
  * to "not yet"; "not yet" puts the arm back and focuses it. Firing a mission is asked this way in
@@ -440,9 +443,6 @@ const costBand = (cost) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "you are asked"), el("span", { class: "v" }, "twice")));
 
 /** Approving is a decision, not a click: the first press says what it costs, the second flies. */
-/** What firing does, said the same way wherever it is asked. */
-const approveWhy = (doc) => `This writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. After this you are asked only to walk each milestone, then to close.`;
-
 const approveButton = (doc) => armed({
   label: "approve and fly",
   why: approveWhy(doc),
