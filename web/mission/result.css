@@ -105,6 +105,3 @@
   .rs-slot { min-width: 0; }
   .rs-slot button { height: 44px; }
 }
-
-/* The close a link lands on clears the sticky bar. */
-#close { scroll-margin-top: 70px; }

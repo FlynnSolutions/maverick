@@ -55,7 +55,9 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 /* The four sections, set apart by space and not by panels. A heading straight under one is the
    shell's, whichever module wrote it: a quiet 15px divider, as the design contract has it. */
 .mv-content { min-width: 0; }
-.mv-content > section { margin: 0 0 48px; scroll-margin-top: 70px; }
+/* Every anchor on the page (a section, a milestone, the close, a question) lands clear of the sticky bar. */
+html { scroll-padding-top: 70px; }
+.mv-content > section { margin: 0 0 48px; }
 .mv-content > section > h2 { font: 600 15px var(--display); letter-spacing: 0.04em; color: var(--ink-faint); margin: 0 0 10px; display: flex; gap: 10px; align-items: baseline; }
 .mv-content > section > h2 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; }
 

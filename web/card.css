@@ -10,7 +10,7 @@
   border-radius: var(--radius-m);
   box-shadow: 0 0 0 1px var(--seam-soft);
 }
-.mv-card[id] { scroll-margin-top: 90px; }
+.mv-card[id] { scroll-margin-top: 20px; }
 
 /* The head: mark, title, chips, on one x down every card. */
 .card-head { display: flex; align-items: center; gap: 12px; min-height: 40px; }
