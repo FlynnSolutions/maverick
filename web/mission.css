@@ -114,7 +114,8 @@ html { scroll-padding-top: 70px; }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
 /* The briefing: one row per milestone, its cases under it, the totals after. */
-.mv-brief { margin: 4px 0 14px; padding: 10px 12px; border-radius: var(--radius-m); background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); font-variant-numeric: tabular-nums; }
+/* Set apart by a rule above and below rather than a panel of its own: the gate is already the surface. */
+.mv-brief { margin: 4px 0 14px; padding: 10px 0; border-block: 1px solid var(--seam); font-variant-numeric: tabular-nums; }
 .mv-brief .k { margin: 0 0 8px; font-family: var(--display); font-size: 11px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .mv-brief .why { margin-bottom: 4px; }
 .mv-brief .cost-note { margin-top: 4px; }
