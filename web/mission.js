@@ -266,8 +266,10 @@ const renderWord = () => {
   const open = mission.questions?.length ?? 0;
   const chip = $("#word");
   chip.className = `mv-word ${look.cls}`;
-  // The loudest thing on the page goes to what it is loud about; any other word is only a word.
-  if (open) chip.setAttribute("href", "#now");
+  // The loudest thing on the page goes to what it is loud about: the first question's own place when it
+  // names one, the gate before approval, the questions slot after it. Any other word is only a word.
+  const go = mission.questions?.[0]?.answers?.find((a) => a.go)?.go;
+  if (open) chip.setAttribute("href", `#${go ?? (mission.approved ? "now" : "plan")}`);
   else chip.removeAttribute("href");
   chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
 };
