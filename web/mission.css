@@ -112,8 +112,9 @@ html { scroll-padding-top: 70px; }
 .mv-problems li { margin: 2px 0; }
 .mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: 56ch; color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
-.mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; }
-.mv-preflight li { margin: 3px 0; display: grid; grid-template-columns: 42px auto minmax(0, 1fr); gap: 0 8px; align-items: baseline; }
+/* One grid for the list, each row on it, so every detail starts at the same x however long its name. */
+.mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; display: grid; grid-template-columns: 42px auto minmax(0, 1fr); gap: 3px 8px; }
+.mv-preflight li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
 .mv-preflight li strong { white-space: nowrap; }
 .mv-preflight .pf-detail { max-width: 48ch; }
 .mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-faint); }
@@ -121,9 +122,9 @@ html { scroll-padding-top: 70px; }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
 .mv-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.mv-confirm .why { flex-basis: 100%; margin: 0; }
-/* The gate's measure would cap the sentence's width and pull "yes" up beside it; here it takes its row. */
-.mv-gate .mv-confirm .why { max-width: none; padding-right: calc(100% - 56ch); box-sizing: border-box; }
+.mv-confirm .why { margin: 0; }
+/* The sentence takes its own row and the buttons the next, whatever measure the sentence has. */
+.mv-confirm .mv-break { flex-basis: 100%; height: 0; }
 
 .mv-milestone { margin-bottom: 18px; }
 .mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
@@ -178,7 +179,7 @@ html { scroll-padding-top: 70px; }
   /* The repo's name over where it lands, rather than squeezing the sentence into a third of the row. */
   .mv-land { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   /* The detail goes under the name, the same for every check, rather than wherever it wraps. */
-  .mv-preflight li { grid-template-columns: 42px minmax(0, 1fr); }
+  .mv-preflight ul { grid-template-columns: 42px minmax(0, 1fr); }
   .mv-preflight .pf-detail { grid-column: 2; }
 }
 

@@ -110,7 +110,7 @@ const armed = ({ label, cls = "", why, yes, onYes }) => {
       }
     }, "primary");
     if (why) go.setAttribute("aria-describedby", whyId);
-    fill(box, why ? el("p", { class: "why", id: whyId }, why) : null, go, back);
+    fill(box, ...(why ? [el("p", { class: "why", id: whyId }, why), el("span", { class: "mv-break" })] : []), go, back);
     back.focus();
   }, `primary ${cls}`.trim());
   box.append(arm);
@@ -424,6 +424,9 @@ const reposBand = (repos) => {
       : null);
 };
 
+/** A check's detail with its `backticked` commands set as code, the way the markdown renders them. */
+const inlineCode = (text) => text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? el("code", {}, part) : part));
+
 /** What the host can and cannot give the mission, checked before the person approves and leaves. */
 const preflightBand = (checks) => {
   if (!checks?.length) return null;
@@ -432,7 +435,7 @@ const preflightBand = (checks) => {
   const refusing = checks.some((c) => c.refuses);
   return el("div", { class: "mv-preflight" },
     el("p", { class: failed || warned ? "mv-warn" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${plural(warned, "thing")} this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
-    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), el("span", { class: "pf-detail" }, c.detail)))));
+    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), el("span", { class: "pf-detail" }, ...inlineCode(c.detail))))));
 };
 
 const costBand = (cost) => el("div", { class: "mv-band" },
