@@ -449,7 +449,7 @@ const LANE_EMPTY = {
 };
 
 const quickAdd = (tracker, section, label, key) => {
-  const input = el("input", { type: "text", placeholder: `add to ${label.toLowerCase()}`, "aria-label": `new item in ${label}`, autocomplete: "off" });
+  const input = el("input", { type: "text", placeholder: "add an item", "aria-label": `new item in ${label}`, autocomplete: "off" });
   return el("form", {
     class: "quick-add",
     "data-lane": key,
