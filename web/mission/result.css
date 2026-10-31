@@ -32,25 +32,29 @@
 .rs-files li { display: grid; grid-template-columns: minmax(0, 1fr) 70px 120px; gap: 12px; align-items: center; padding: 8px 14px; box-shadow: inset 0 -1px 0 var(--seam-soft); font-size: 13px; }
 .rs-files li:last-child { box-shadow: none; }
 .rs-files .rs-ms { display: block; padding-top: 12px; font: 600 11px var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
-.rs-files .rs-task { background: var(--panel); }
+.rs-files .rs-task { box-shadow: inset 0 1px 0 var(--seam), inset 0 -1px 0 var(--seam-soft); }
 .rs-files .rs-task .d { font: 500 13px var(--sans); }
 .rs-files .rs-file { padding-top: 5px; padding-bottom: 5px; }
 .rs-files .rs-file .d { padding-left: 14px; font-family: var(--mono); font-size: 12px; }
-.rs-files .rs-from .d { font-family: var(--sans); color: var(--ink-faint); }
+.rs-files .rs-from .d { font-family: var(--sans); color: var(--ink-soft); white-space: normal; }
 .rs-files .d { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rs-files .n, .rs-files .pm { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); text-align: right; font-variant-numeric: tabular-nums; }
+.rs-files .n, .rs-files .pm { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); text-align: right; font-variant-numeric: tabular-nums; }
 .rs-files .pm b { color: var(--hud); font-weight: 400; }
 .rs-files .pm i { color: var(--threat); font-style: normal; }
 
-/* A finding's chip on a file row is the severity chip card.css draws, a link to the finding's card. */
-.mv-result a.chip:hover { text-decoration: none; background: var(--panel); }
-.rs-files .rs-file .d { display: flex; gap: 6px; align-items: center; }
+/* A finding's chip on a file row is the severity chip card.css draws, inside a 44px link to the finding's card.
+   A row carrying one stands tall enough that the next row's chip is a clear 8px away. */
+.mv-result a.chip-hit:hover { text-decoration: none; }
+.rs-files .rs-file.chipped { min-height: 52px; padding-top: 0; padding-bottom: 0; }
+.rs-files .rs-file .d { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: center; }
 .rs-files .rs-file .p { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* To read before you merge: three buckets, the first open; inside each, an area heading over a card per finding.
    The cards are the surface, so a bucket is a heading row on the page and not a box around them. */
 .rs-read { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-.rs-bucket summary { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; cursor: pointer; }
+.rs-bucket summary { display: flex; gap: 10px; align-items: center; cursor: pointer; list-style: none; }
+.rs-bucket summary::-webkit-details-marker { display: none; }
+.rs-bucket summary .chev { color: var(--ink-faint); }
 .rs-bucket summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
 .rs-bucket .h { font: 600 13px var(--sans); color: var(--ink); }
 .rs-bucket .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
@@ -64,12 +68,11 @@
 /* A read finding fades to the faint ink, the floor for text, rather than below it. */
 .rs-seen .card-title { font-weight: 400; color: var(--ink-faint); }
 .rs-seen .card-chips .chip, .mv-result .chip.marked { color: var(--ink-faint); }
-/* The read box and `later`, after the card's chips on its head row. */
+/* `mark read` and `later`, after the card's chips on its head row. */
 .rs-marks { display: flex; flex: none; gap: 12px; align-items: center; }
-.rs-rd { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-soft); cursor: pointer; }
-.rs-rd input { margin: 0; width: 15px; height: 15px; accent-color: var(--accent); }
-.rs-slot { display: inline-flex; justify-content: flex-end; min-width: 108px; }
-.rs-slot button { padding: 0 10px; font-size: 12px; }
+.rs-marks button.rs-mark { padding: 0 10px; font-size: 12.5px; color: var(--ink-soft); }
+.rs-marks button.rs-mark[aria-pressed="true"] { color: var(--ink-faint); }
+.rs-slot { display: inline-flex; justify-content: flex-end; min-width: 60px; }
 .rs-onlist { font-size: 12px; color: var(--ink-soft); }
 
 /* Each merged milestone's walk and proof. */
@@ -77,12 +80,17 @@
 .rs-walks li { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 8px 0; box-shadow: inset 0 -1px 0 var(--seam-soft); font-size: 13px; }
 .rs-walks .d { flex: 1 1 260px; color: var(--ink); }
 .rs-walks .w { font: 500 12px var(--sans); color: var(--ink-soft); }
-.rs-walks .w.need { color: var(--caution); }
 .rs-walks .w.ok { color: var(--hud); }
 .rs-walks .w.bad { color: var(--threat); }
 .rs-walks .sha { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
 .rs-walks details { flex-basis: 100%; }
-.rs-walks summary, .rs-report summary { cursor: pointer; font-size: 12px; color: var(--ink-faint); }
+.rs-walks summary, .rs-report summary, .rs-files-fold > summary { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); list-style: none; }
+.rs-walks summary::-webkit-details-marker, .rs-report summary::-webkit-details-marker, .rs-files-fold > summary::-webkit-details-marker { display: none; }
+.rs-walks summary::before, .rs-report summary::before { content: ""; width: 5px; height: 5px; margin: -3px 2px 0; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.rs-walks details[open] > summary::before, .rs-report[open] > summary::before { margin-top: 3px; transform: rotate(-135deg); }
+.rs-files-fold { margin: 0 0 18px; }
+.rs-files-fold > summary .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+.rs-files-fold > .rs-files { margin-bottom: 0; }
 .rs-proof { margin: 6px 0 0; padding: 10px 12px; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; max-height: 320px; overflow: auto; color: var(--ink-soft); background: var(--inset); border-radius: var(--radius-s); }
 
 /* The second gate: lifted, the one loud surface in the section. */
@@ -91,7 +99,13 @@
 .rs-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 10px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); }
 .rs-why { margin: 0 0 10px; font-size: 13px; color: var(--ink-soft); max-width: 70ch; }
 .rs-quiet { font-size: 12px; color: var(--ink-soft); }
+/* A link set in a sentence is underlined, so it is not told from the words around it by colour alone. */
+.mv-result p a, .mv-result .rs-quiet a { text-decoration: underline; text-underline-offset: 2px; }
+.rs-gate .rs-acts button.ghost { color: var(--ink-soft); }
 .rs-warn { font-size: 13px; color: var(--caution); }
+.rs-fail { font-size: 13px; color: var(--threat); }
+.rs-gate h2#close:focus { outline: none; }
+.rs-gate h2#close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
 .rs-lands { list-style: none; margin: 0 0 10px; padding: 0; font-size: 12.5px; }
 .rs-lands li { display: flex; gap: 10px; padding: 3px 0; color: var(--ink-soft); }
 .rs-lands .r { min-width: 80px; font-family: var(--mono); font-size: 12px; color: var(--ink); }
@@ -99,9 +113,29 @@
 .rs-report { margin: 10px 0 0; }
 .rs-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
 .rs-acts button { padding: 0 14px; font: 500 13px var(--sans); }
+.rs-acts > a, .rs-meta > a { display: inline-flex; align-items: center; min-height: 44px; }
+
+/* The tools over the findings: hide what is read, mark a bucket read, and the keys. */
+.rs-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 8px 0; }
+.rs-tools:has(> button[hidden]:only-child) { display: none; }
+.rs-tools button.rs-tool { padding: 0 12px; font-size: 12.5px; color: var(--accent-hot); }
+.rs-tools button.rs-tool[aria-pressed="true"] { color: var(--ink); background: var(--steel); }
+.rs-hide-read .rs-seen { display: none; }
+
+/* At review, in the slot at the top of the page: the summary's asks and the fix bucket, under the questions. */
+.rs-now { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 24px; }
+.rs-now .rs-must { margin: 0; }
+.rs-now .rs-must h2 { font: 600 15px var(--display); letter-spacing: 0.02em; color: var(--ink); margin: 0 0 10px; display: flex; gap: 10px; align-items: baseline; }
+.rs-now .rs-must h2 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
+/* A bullet that asks you to fix or decide is the needs-you colour; one that only reports stays quiet. */
+.mv-card.rs-asks { box-shadow: 0 0 0 1px var(--caution); background: var(--caution-dim); }
+.mv-card.rs-asks .card-mark { color: var(--caution); }
+.rs-now .rs-bucket > summary .h { font: 600 15px var(--display); letter-spacing: 0.02em; }
+.rs-now .rs-bucket.fix > summary .n { font-size: 12px; }
 
 @media (max-width: 600px) {
   .rs-marks { margin-left: auto; }
   .rs-slot { min-width: 0; }
-  .rs-slot button { height: 44px; }
+  .rs-files li { grid-template-columns: minmax(0, 1fr) auto; }
+  .rs-files li > .n { display: none; }
 }

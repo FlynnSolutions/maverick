@@ -18,6 +18,7 @@
  * RIO said, which gates opened — at `~/.claude/console-sessions/missions/<project>/<id>.json`,
  * the same named exception `ships/` already uses.
  */
+import { fileURLToPath } from "node:url";
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
@@ -110,7 +111,7 @@ export interface WalkthroughProgress {
   answered: number;
   /** Case id -> what the person said. The gate counts answers; the verdicts are the person's record of what they found. */
   verdicts: Record<string, string>;
-  /** Case id -> what the person wrote beside the verdict. What a fix task is told about a failed case. */
+  /** Case id -> what the person wrote beside the verdict: kept with the verdicts so a note survives another browser, and what a fix task is told about a failed case. */
   notes?: Record<string, string>;
   /** Sent by the page, not kept to: the last fix round it has dropped the cleared answers for. A save that has not seen the latest round has those cases' answers stripped. */
   round?: number;
@@ -1225,12 +1226,27 @@ const resolvePrompt = (project: Project, mission: Mission, m: Milestone, repo: M
   "When the merge is committed, or when you have aborted it, stop.",
 ].join("\n");
 
+/** The document every walkthrough starts from: the console's contract, its four pillars and the design system, in one file (web/walkthrough-template.html). */
+export const WALKTHROUGH_TEMPLATE = fileURLToPath(new URL("../web/walkthrough-template.html", import.meta.url));
+
+/**
+ * The template, placed where the milestone's document goes with its key already set, before the
+ * session that fills it starts: the session never needs to reach Maverick's install, and the key the
+ * console reads is the one Maverick chose, not one a session had to type correctly.
+ */
+export const placeWalkthrough = async (dir: string, file: string, key: string): Promise<void> => {
+  const template = await readFile(WALKTHROUGH_TEMPLATE, "utf8");
+  await mkdir(dirname(join(dir, file)), { recursive: true });
+  await writeFile(join(dir, file), template.replace(/const KEY = "[^"]*";/, `const KEY = ${JSON.stringify(key)};`), "utf8");
+};
+export const walkKey = (mission: Pick<Mission, "id">, m: Pick<Milestone, "n">): string => `${mission.id}-m${m.n}`;
+
 /**
  * The walkthrough builder works where the milestone's work has been merged together, so the
  * document describes what a person will actually find on the mission branch. It commits the
  * document there and nothing else.
  */
-const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, repo: MissionRepo, file: string): string => [
+export const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, repo: MissionRepo, file: string): string => [
   `You are writing the test walkthrough for milestone ${m.n} of the mission "${mission.name}" in the project at ${project.path}.`,
   "",
   `The milestone's work is merged on branch ${repo.branch} of the ${repo.label} repo, checked out at ${repo.integration}. Work there and only there. Read what the milestone changed (\`git -C ${repo.integration} log ${repo.base}..HEAD --stat\`) before you write a word.`,
@@ -1240,12 +1256,19 @@ const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, rep
   "The tasks that went into it:",
   ...m.tasks.map((t) => `  - ${t.title}`),
   "",
-  `Run the /ship-test-walkthrough skill for this milestone, treating the milestone as the batch, and write the document to ${file}. If that skill is not available to you, write the same kind of document by hand, and it must keep the contract the console reads: a \`KEY = "..."\` string that names its localStorage key, an \`<h2>\` per pillar, and one \`.tc\` element with a \`data-id\` per test case. A person walks it in the browser and answers every case; those answers are the gate.`,
+  `The document is already at ${file}: Maverick's walkthrough template, with its key set. Fill it in. Do not touch its <script> or <style>; keep one <h2> per pillar and one \`.tc\` with a unique \`data-id\` per case. Replace every element marked \`data-example\` (the title, the meta line, the lede, the run command and the example cases) with this milestone's own, and drop the attribute. Cases use the template's markup: a \`.tc-title\`, then Setup, Steps and Expected, and a \`.cmd\` block for anything to run.`,
+  "",
+  "The four pillars, in the template's order. A pillar with nothing to walk keeps its heading and says why in one `.tc-none` line; it is never dropped.",
+  "  1. Journeys: what a person does across the whole stack, start to end (a screen, what the server does, what is stored, and the screen again). One case per journey.",
+  "  2. Look and feel: every screen the milestone touched, at 390 and 1280, light and dark, named by what to look at.",
+  "  3. At scale: the same screens under a large data set. Give the command that seeds it from invented data (never client data) and the one that clears it; write that seed script into the repo if none exists.",
+  "  4. Before and after: work with no screen (a migration, a backfill, a script) shown as its dry run before the change and after it, both outputs pasted into the case's `.ba` pair from real runs.",
+  ...(m.walk?.length ? ["", "The plan named the cases walked at this milestone's end; each must be a case in the document:", ...m.walk.map((c) => `  - ${c}`)] : []),
   "",
   "Cases are what a person does with the real thing and what they should see, not unit tests. Fewer, sharper cases beat a long list.",
   ...looksLike(mission, m),
   "",
-  `Commit the document in ${repo.integration} with a plain lowercase subject. Do not change any other file, do not touch the trackers, do not push, do not open a pull request, do not spawn other agents. When the document is committed, stop.`,
+  `Commit the document in ${repo.integration} with a plain lowercase subject, with the seed script if you wrote one. Do not change any other file, do not touch the trackers, do not push, do not open a pull request, do not spawn other agents. When the document is committed, stop.`,
 ].join("\n");
 
 /**
@@ -1263,7 +1286,7 @@ const looksLike = (mission: Mission, m: Milestone): string[] => {
   const cells = [...new Set(m.tasks.flatMap((t) => t.cells ?? []))].sort((a, b) => a - b);
   if (!cells.length || !mission.mockups) return [];
   return ["",
-    `This milestone builds approved mockup cells ${cells.join(", ")}, from ${mission.mockups}. Add a pillar of look cases: one case per screen, titled "Looks like cell N", with that cell embedded beside the link to the built screen (an <iframe> of the mockup page at the cell, by its anchor where it has one), so the person checks the look in this round and not at the end. Say in the case what to compare: the components the plan decided for it, ${componentsOver(mission.components, cells).map((c) => `${c.name}, ${DECISION_WORDS[c.decision]}`).join("; ") || "as the plan's Components section says"}.`];
+    `This milestone builds approved mockup cells ${cells.join(", ")}, from ${mission.mockups}. In the look and feel pillar, add one case per screen, titled "Looks like cell N", with that cell embedded beside the link to the built screen (an <iframe> of the mockup page at the cell, by its anchor where it has one), so the person checks the look in this round and not at the end. Say in the case what to compare: the components the plan decided for it, ${componentsOver(mission.components, cells).map((c) => `${c.name}, ${DECISION_WORDS[c.decision]}`).join("; ") || "as the plan's Components section says"}.`];
 };
 
 const walkthroughFile = (mission: Mission, m: Milestone): string => join("deliverables", "testing", `${mission.id}-m${m.n}-walkthrough.html`);
@@ -1285,7 +1308,10 @@ const commissionWalkthrough = async (project: Project, mission: Mission, m: Mile
   const on = (x: Mission) => x.milestones.find((y) => y.n === m.n);
   if (await claimed(mission,
     () => { m.walkthrough = { claudeId: "", started }; },
-    () => spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m))),
+    async () => {
+      await placeWalkthrough(repo.integration, walkthroughFile(mission, m), walkKey(mission, m));
+      return spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m)));
+    },
     (x, claudeId) => { const w = on(x)?.walkthrough; if (w) w.claudeId = claudeId; },
     (x, err) => { const y = on(x); if (y) y.walkthrough = { started, failed: `could not start the walkthrough builder: ${err.message}` }; })) agentCache.delete(project.path);
 };
@@ -2764,6 +2790,41 @@ export const markReading = async (project: Project, id: string, taskId: string, 
     return mission;
   });
   return state === "later" && was !== "later" ? recorded(project, mission, [`${taskId} finding "${finding.headline}" marked later by Cory`]) : mission;
+};
+
+/**
+ * Findings marked read, or read ones handed back to unread, across any of the mission's tasks in
+ * one write: a bucket's "mark all read" and the undo after a mark. `later` is not here: it writes an
+ * item and a commit to the tracker per finding, and taking that back is the board's job, not an
+ * undo's. A finding on the checklist stays there, so unread refuses it rather than leave the two
+ * disagreeing.
+ */
+export const markReadings = async (project: Project, id: string, byTask: Record<string, string[]>, state: "read" | "unread"): Promise<Mission> => {
+  if (state !== "read" && state !== "unread") throw new Error(`findings are marked "read" or "unread" together, not "${String(state)}"`);
+  const named = Object.entries(byTask).filter(([, keys]) => keys.length);
+  if (!named.length) throw new Error("no findings named to mark");
+  const fresh = await missionOr404(project.id, id);
+  for (const [taskId] of named) if (!taskOn(fresh, taskId)) throw new Error(`no task "${taskId}" on ${fresh.name}`);
+  const { findings } = await statsOf(fresh, (t) => named.some(([taskId]) => taskId === t.id), false);
+  for (const [taskId, keys] of named) {
+    const known = new Set(taskFindings(taskOn(fresh, taskId)!, findings[taskId]).map((f) => f.key));
+    const unknown = keys.find((k) => !known.has(k));
+    if (unknown) throw new Error(`no finding "${unknown}" on ${taskId}`);
+  }
+  return changeMission(project.id, id, (mission) => {
+    for (const [taskId, keys] of named) {
+      const task = taskOn(mission, taskId);
+      if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+      const readings = { ...task.readings };
+      for (const key of keys) {
+        if (readings[key] === "later") throw new Error(`"${key}" is on the checklist; take it off there, not here`);
+        if (state === "read") readings[key] = "read";
+        else delete readings[key];
+      }
+      task.readings = readings;
+    }
+    return mission;
+  });
 };
 
 /**
