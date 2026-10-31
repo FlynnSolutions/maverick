@@ -10,16 +10,21 @@
 .mv-rail { position: sticky; top: 70px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
 .mv-word { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 10px; border-radius: 5px; font: 600 13px var(--sans); color: var(--ink); background: var(--steel); }
 .mv-word:empty { visibility: hidden; }
+a.mv-word { text-decoration: none; }
+a.mv-word[href] { cursor: pointer; transition: transform var(--dur-press) var(--ease-out); }
+a.mv-word[href]:active { transform: scale(0.97); }
+a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { a.mv-word[href]:active { transform: none; } }
 .mv-word .lamp { width: 14px; height: 14px; flex: none; }
 .mv-word.caution { background: var(--caution-dim); color: var(--caution); }
 .mv-word.hud { background: var(--hud-dim); color: var(--hud); }
 .mv-word.threat { background: var(--threat-dim); color: var(--threat); }
-.mv-rail a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
-.mv-rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.mv-rail a:hover { background: var(--steel); color: var(--ink); }
-.mv-rail a.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam-strong); }
-.mv-rail a .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
-.mv-rail a .n.needs { color: var(--caution); }
+.mv-rail a.mv-nav { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
+.mv-rail a.mv-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mv-rail a.mv-nav:hover { background: var(--steel); color: var(--ink); }
+.mv-rail a.mv-nav.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam-strong); }
+.mv-rail a.mv-nav .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.mv-rail a.mv-nav .n.needs { color: var(--caution); }
 /* The reason behind the word, when there is one: an error has to say what broke, on the page. */
 .mv-trouble { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: -6px 0 14px; }
 .mv-trouble:empty { display: none; }
@@ -93,7 +98,7 @@ html { scroll-padding-top: 70px; }
   overflow: hidden;
   box-shadow: 0 0 0 1px var(--seam-soft);
 }
-.mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; gap: 2px; }
+.mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .mv-band .k { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .mv-band .v { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
@@ -146,7 +151,7 @@ html { scroll-padding-top: 70px; }
 /* What happens to each repo when it is done. The one that reaches a shared branch on its own
    is drawn as a caution, because it is the only thing here that acts without a second pair of
    eyes and it must not read like the other two. */
-.mv-lands { display: grid; gap: 6px; margin-top: 12px; }
+.mv-lands { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 12px; }
 .mv-land { display: grid; grid-template-columns: minmax(0, 160px) minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 6px 10px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); }
 .mv-land .r { font-family: var(--mono); font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
 .mv-land .l { font-size: 12.5px; color: var(--ink-soft); }
@@ -156,3 +161,17 @@ html { scroll-padding-top: 70px; }
    the page that must not be skimmed. It gets the deck's own darker surface to sit on and a
    caution ring, rather than a lighter shade of warning on a brighter panel. */
 .mv-warn { margin: 10px 0 0; padding: 8px 12px; font-size: 12.5px; color: var(--caution); max-width: 74ch; background: var(--carbon); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--caution); }
+
+/* ---------- what waits on you, first: the open questions sit above the ask (ctx.now) ---------- */
+.mv-now:has(.prog-pins:not([hidden]), .mv-trouble:not(:empty)) { margin: 0 0 32px; }
+/* The reason behind the word is waiting on you as much as a question is, so it leads the slot too. */
+.mv-now .mv-trouble { margin: 0 0 16px; }
+.mv-now .mv-trouble .mv-warn { max-width: none; font-size: 13.5px; }
+
+/* A long brief folds to four lines; the ask is context, not the action. */
+.mv-ask .mv-ask-brief.folded { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.mv-ask .mv-more { height: 32px; margin: 0 0 8px; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
+
+/* A page that could not open its mission draws only the reason and the way back. */
+.mv-page.unopened .mv-nav, .mv-page.unopened #plan, .mv-page.unopened #progress, .mv-page.unopened #result { display: none; }
+.mv-page.unopened .mv-ask .button-link { height: 36px; padding: 0 14px; }

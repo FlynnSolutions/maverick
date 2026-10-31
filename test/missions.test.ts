@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { DEFAULT_LINK_MINUTES, MAX_ATTEMPTS, applyPlanState, costOf, endFinished, estimateOf, longestChain, measuredPace, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
+import { applyPlanState, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -1234,5 +1234,55 @@ test("the pace is measured from past mission records: each passed task's build p
     assert.deepEqual(await measuredPace(0), { minutesPerTask: 15, retryRate: 0.5, tasks: 2 });
   } finally {
     config.sessionsDir = was;
+  }
+});
+
+/* ---------- the sweep runs when a session ends ---------- */
+
+const until = async (ok: () => boolean, ms = 5_000): Promise<void> => {
+  for (const start = Date.now(); !ok(); await new Promise((r) => setTimeout(r, 25))) if (Date.now() - start > ms) throw new Error(`not within ${ms} ms`);
+};
+
+test("a burst of endings is one pass, run once the burst settles", async () => {
+  const project = { id: "p-soon", name: "P", path: "/p" } as never;
+  const passes: number[] = [];
+  const sweep = async () => { passes.push(Date.now()); };
+  const first = Date.now();
+  for (let i = 0; i < 3; i += 1) {
+    sweepSoon(project, sweep, 100);
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  await until(() => passes.length > 0);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(passes.length, 1, "three endings, one pass");
+  assert.ok(passes[0] - first >= 160, "after the last ending settled, not the first");
+});
+
+test("a session under a project that reaches a finished word sweeps that project, and nothing else does", async () => {
+  const jobs = mkdtempSync(join(tmpdir(), "mv-jobs-"));
+  made.push(jobs);
+  const outer = { id: "outer", name: "Outer", path: "/work/app" } as never;
+  const inner = { id: "inner", name: "Inner", path: "/work/app/svc" } as never;
+  const idle = { id: "idle", name: "Idle", path: "/work/idle" } as never;
+  const ended: string[] = [];
+  const close = watchEndings(async () => [outer, inner, idle], (p) => ended.push((p as { id: string }).id), jobs);
+  try {
+    const job = (id: string, state: string, cwd: string) => {
+      mkdirSync(join(jobs, id), { recursive: true });
+      writeFileSync(join(jobs, id, "state.json"), JSON.stringify({ state, cwd }), "utf8");
+    };
+    job("aaaa0001", "working", "/work/idle/.claude/worktrees/m-m1-t1");
+    job("aaaa0002", "done", "/elsewhere");
+    job("aaaa0003", "blocked", "/work/idle");
+    job("aaaa0004", "done", "/work/app/.claude/worktrees/m-m1-t1");
+    await until(() => ended.length > 0);
+    job("aaaa0005", "exited", "/work/app/svc");
+    await until(() => ended.includes("inner"));
+    job("aaaa0004", "done", "/work/app/.claude/worktrees/m-m1-t1");
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(ended, ["outer", "inner"], "one call per session that ends: a rewrite of a finished one is not another ending");
+    assert.deepEqual([...new Set(ended)], ["outer", "inner"], "a Wingman's worktree is its project's, the deepest project holding the cwd is the one swept, and a session still working or waiting sweeps nothing");
+  } finally {
+    close();
   }
 });

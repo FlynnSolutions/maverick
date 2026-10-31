@@ -17,13 +17,14 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, fmtTime, plural, about, reveal }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, now, fmtTime, plural, about, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
  *   post(path, body)             fetch JSON; throws with the server's error on a non-2xx
- *   act(path, body, said)        posts to actionUrl(path), sets the status line to `said` (or
- *                                the error), and lets the stream refresh every module
+ *   act(path, body, said)        posts to actionUrl(path), says `said` in a toast (or the error,
+ *                                in one that stays until closed), and lets the stream refresh
+ *                                every module
  *   actionUrl(path)              /api/missions/<id>/<path>?project=
  *   LANDS[land](base)            the sentence for where a repo's work lands
  *   projectId, missionId
@@ -32,6 +33,9 @@
  *   mountTerminal(host, id)      one of the server's terminals, live, inside `host`
  *   thread                       the Strike Lead's chat (web/mission/lead.js), owned and updated
  *                                by the shell; a module only places `thread.node`
+ *   now                          the slot at the top of the page for what is waiting on you, the
+ *                                one place outside its section a module may write: Progress puts
+ *                                the open questions there, so they are the first thing on the page
  *   fmtTime(iso)                 a clock time, or "" for none
  *   plural(n, word)              `1 note`, `2 notes`
  *   about(minutes)               an estimate: `about 35 min`, `about 2 h 15 min`
@@ -46,6 +50,7 @@ import { readableOn, recall } from "./theme.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
+import { toast } from "./toast.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -173,11 +178,11 @@ const openSession = (taskId, under) => {
   const task = allTasks().find((t) => t.id === taskId);
   const claudeId = task?.status === "reviewing" ? task.review?.claudeId : task?.claudeId ?? task?.review?.claudeId;
   if (!claudeId) {
-    setStatus(`${task?.title ?? taskId} has no session to open`, true);
+    toast(`${task?.title ?? taskId} has no session to open`, { error: true });
     return;
   }
   if (watching.has(claudeId)) {
-    setStatus(`${task.title}'s session is already open on this page`);
+    toast(`${task.title}'s session is already open on this page`);
     return;
   }
   const screen = el("div", { class: "term" });
@@ -192,11 +197,11 @@ const openSession = (taskId, under) => {
 const act = async (action, body, said) => {
   try {
     await post(actionUrl(action), body);
-    setStatus(said);
+    toast(said);
     // On the stream the server's own flush lands the change; only the 8 s fallback has to ask.
     if (!streaming) await load();
   } catch (err) {
-    setStatus(err.message, true);
+    toast(err.message, { error: true });
   }
 };
 
@@ -209,7 +214,7 @@ const LANDS = {
 
 const reveal = (key) => mounted.get("result")?.reveal?.(key);
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, fmtTime, plural, about, reveal };
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, now: $("#now"), fmtTime, plural, about, reveal };
 // One thread for the mission's whole life: in Plan before approval, placed in Progress after, never rebuilt.
 ctx.thread = leadThread(ctx);
 
@@ -226,6 +231,9 @@ const renderWord = () => {
   const open = mission.questions?.length ?? 0;
   const chip = $("#word");
   chip.className = `mv-word ${look.cls}`;
+  // The loudest thing on the page goes to what it is loud about; any other word is only a word.
+  if (open) chip.setAttribute("href", "#now");
+  else chip.removeAttribute("href");
   chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
 };
 
@@ -321,7 +329,7 @@ const renderControls = () => {
 
 /** The anchor whose section is nearest the top of the view is the one marked `on`. */
 const spy = () => {
-  const links = new Map([...document.querySelectorAll("#rail a[href^='#']")].map((a) => [a.hash.slice(1), a]));
+  const links = new Map([...document.querySelectorAll("#rail a.mv-nav")].map((a) => [a.hash.slice(1), a]));
   const mark = (id) => {
     for (const [key, a] of links) {
       a.classList.toggle("on", key === id);
@@ -340,6 +348,20 @@ const spy = () => {
 };
 
 /* ---------- the ask: the shell's own section ---------- */
+/** A brief longer than a few lines folds to them: the ask is context, and what waits on you sits above it. */
+const BRIEF_FOLD = 320;
+const briefOf = (brief) => {
+  const p = el("p", { class: "mv-ask-brief" }, brief);
+  if (brief.length <= BRIEF_FOLD) return p;
+  p.classList.add("folded");
+  const more = btn("the whole brief", () => {
+    const folded = p.classList.toggle("folded");
+    more.textContent = folded ? "the whole brief" : "fold it";
+    more.setAttribute("aria-expanded", String(!folded));
+  }, "ghost mv-more");
+  more.setAttribute("aria-expanded", "false");
+  return el("div", {}, p, more);
+};
 let askKey = "";
 const renderAsk = () => {
   const key = JSON.stringify([mission.name, mission.brief, mission.created, mission.approved, mission.planCommit]);
@@ -349,7 +371,7 @@ const renderAsk = () => {
   fill($("#ask"),
     el("h2", {}, "The ask"),
     el("h1", {}, mission.name),
-    el("p", { class: "mv-ask-brief" }, mission.brief),
+    briefOf(mission.brief),
     el("p", { class: "mv-ask-meta" }, [
       `opened ${fmtTime(mission.created)}`,
       mission.approved ? `approved ${fmtTime(mission.approved)}` : "not approved yet",
@@ -529,7 +551,7 @@ const updateModules = () => {
     try {
       handle.update(mission);
     } catch (err) {
-      setStatus(`the ${name} section did not update: ${err.message}`, true);
+      toast(`the ${name} section did not update: ${err.message}`, { error: true });
     }
   }
 };
@@ -605,18 +627,22 @@ const poll = () => {
 };
 document.addEventListener("visibilitychange", () => { if (pollTimer && !document.hidden) load().catch(() => {}); });
 
+/** A page that cannot show its mission says why in the page, with the way back, and draws none of the sections it cannot fill. */
+const cannotOpen = (why, back = "/") => {
+  $("#page").classList.add("unopened");
+  setStatus(why, true);
+  fill($("#ask"),
+    el("h1", {}, "This mission cannot be opened"),
+    el("p", { class: "mv-warn" }, why),
+    el("p", {}, el("a", { class: "button-link", href: back }, "back to the workspace"), " where its row says what it is waiting for, or open it from there again."));
+};
+
 const boot = async () => {
   void mountDevBadge();
-  if (!projectId || !missionId) {
-    setStatus("open this page from the board's rail: ?project=<id>&mission=<id>", true);
-    return;
-  }
+  if (!projectId || !missionId) return cannotOpen("the link is missing its project or its mission: open the mission from the workspace, which writes both");
   const projects = await api("/api/projects");
   const project = projects.find((p) => p.id === projectId);
-  if (!project) {
-    setStatus(`no project "${projectId}"`, true);
-    return;
-  }
+  if (!project) return cannotOpen(`there is no project "${projectId}" on this machine; it may have been removed from the registry`);
   document.title = `Mission · ${project.name} · Maverick`;
   applyTheme(project.theme);
   const workspace = `/?project=${encodeURIComponent(projectId)}&view=workspace`;
@@ -624,8 +650,14 @@ const boot = async () => {
   $("#board-link").href = workspace;
   $("#back").href = workspace;
   spy();
-  await load();
+  try {
+    await load();
+  } catch (err) {
+    return cannotOpen(err.message, workspace);
+  }
   await modulesUp;
+  // What is on the page now was there on arrival; only what lands after this rises in.
+  requestAnimationFrame(() => $("#page").classList.add("settled"));
   // The sections were empty when the browser tried the hash; now they have their height.
   const target = location.hash.slice(1);
   if (["ask", "plan", "progress", "result"].includes(target)) document.getElementById(target).scrollIntoView();
