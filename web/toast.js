@@ -33,12 +33,20 @@ export const leave = (node, then) => {
   window.setTimeout(() => { node.remove(); then?.(); }, ms);
 };
 
-const show = ({ msg, error }) => {
+const show = ({ msg, error, action }) => {
   const node = document.createElement("div");
   node.className = `toast${error ? " error" : ""}`;
   const said = document.createElement("p");
   said.textContent = msg;
   node.append(said);
+  if (action) {
+    const act = document.createElement("button");
+    act.type = "button";
+    act.className = "ghost";
+    act.textContent = action.label;
+    act.addEventListener("click", () => { leave(node, drain); action.run(); });
+    node.append(act);
+  }
   if (error) {
     const close = document.createElement("button");
     close.type = "button";
@@ -80,11 +88,14 @@ const drain = () => {
   while (queue.length && region.querySelectorAll(".toast:not(.leaving)").length < room) show(queue.shift());
 };
 
-/** toast(msg, { error }) says it in the page's live region; an error waits to be closed. */
-export const toast = (msg, { error = false } = {}) => {
+/**
+ * toast(msg, { error, action }) says it in the page's live region; an error waits to be closed.
+ * `action` ({ label, run }) is one verb on the toast, such as undo; pressing it closes the toast.
+ */
+export const toast = (msg, { error = false, action = null } = {}) => {
   // The same words twice say nothing new: one already showing or waiting stands for both.
   if (!msg || queue.some((q) => q.msg === msg) || [...region.querySelectorAll(".toast:not(.leaving) p")].some((p) => p.textContent === msg)) return;
-  queue.push({ msg, error });
+  queue.push({ msg, error, action });
   drain();
 };
 

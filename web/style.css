@@ -266,7 +266,7 @@ button {
 /* Every target is 44px at every width, 8px from the next (system.md): the floor sits on the base
    elements, so a control nobody sized still clears it. The scanner measures the box, so the size
    is the control's own, never an ::after reaching past it. */
-button, .button-link, summary, select, input[type="text"] { min-height: 44px; }
+button, .button-link, summary, select, input[type="text"], input[type="date"] { min-height: 44px; }
 button:hover { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
 button:active { transform: scale(0.97); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -341,7 +341,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .board-title h2 { font-family: var(--display); font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
 .board-title code { font-family: var(--mono); font-size: 11px; color: var(--ink-ghost); }
 
-.lanes { display: grid; gap: calc(var(--unit) * 3); transition: grid-template-columns 200ms var(--ease-out); }
+.lanes { display: grid; grid-template-columns: var(--lane-widths); gap: calc(var(--unit) * 3); transition: grid-template-columns 200ms var(--ease-out); }
 .lane { min-width: 0; }
 .lane-title {
   display: flex;
@@ -353,12 +353,13 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-faint);
-  height: 18px;
+  min-height: 44px;
   margin-bottom: 6px;
 }
 .lane-title .label { flex: 1; }
 .lane-title .count { font-family: var(--mono); font-weight: 400; color: var(--ink-ghost); }
-.lane-title .fold { height: 18px; width: 18px; padding: 0; font-size: 10px; }
+.fold .icon { transition: transform var(--dur-press) var(--ease-out); }
+.fold[aria-expanded="false"] .icon { transform: rotate(-90deg); }
 .lane.runway .lane-title { color: var(--accent-hot); text-shadow: 0 0 12px var(--accent-dim); }
 /* Collapsed: the label turns, and every collapsed lane is as tall as the longest heading so
    the row of them reads as one band rather than three ragged stubs. */
@@ -366,6 +367,9 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .lane.collapsed .lane-title .fold { writing-mode: horizontal-tb; }
 .lane.collapsed .lane-title .label { flex: 0; }
 .group-name { font-size: 11px; color: var(--ink-ghost); margin: 10px 0 4px; padding-left: 2px; }
+.quick-add { display: flex; gap: 8px; margin: 0 0 8px; }
+.quick-add input { flex: 1; min-width: 0; }
+.lane-empty { margin: 0 0 8px; padding-left: 2px; }
 .items { min-height: 32px; border-radius: var(--radius-m); transition: background 120ms var(--ease-out), box-shadow 120ms var(--ease-out); }
 .items.over { background: var(--accent-dim); box-shadow: inset 0 0 0 1px var(--accent-glow), 0 0 24px var(--accent-dim); }
 
@@ -403,8 +407,9 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .card {
   position: relative;
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "num title spawn" "num meta meta";
+  gap: 0;
   padding: 8px 10px 8px 8px;
   margin-bottom: 6px;
   background: var(--steel);
@@ -418,9 +423,10 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .card.dragging { opacity: 0.35; }
 .card.struck { box-shadow: 0 0 0 1px var(--accent-hot), 0 0 32px var(--accent-glow), 0 0 80px var(--accent-dim); }
 .card .num {
-  grid-row: 1 / span 2;
+  grid-area: num;
   align-self: start;
   min-width: 18px;
+  margin: 13px 8px 0 0;
   font-family: var(--display);
   font-size: 12px;
   font-weight: 600;
@@ -428,32 +434,23 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
   padding-top: 1px;
 }
 .runway .card .num { color: var(--accent); text-shadow: 0 0 10px var(--accent-glow); }
-.card .title {
-  font-weight: 500;
+/* The title is the card's button, dressed as its text. */
+.card .title { grid-area: title; display: flex; align-items: center; padding: 0; border: 0; background: none; box-shadow: none; color: inherit; font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
+.card .title span {
   line-height: 1.35;
   overflow-wrap: anywhere;
-  padding-right: 52px;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
 }
-.runway .card .title { -webkit-line-clamp: 4; }
-.lane.done .card .title, .card.checked .title { padding-right: 0; -webkit-line-clamp: 2; }
-.card .meta { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+.card .title:hover { background: none; color: var(--ink); }
+.runway .card .title span { -webkit-line-clamp: 4; }
+.lane.done .card .title span, .card.checked .title span { -webkit-line-clamp: 2; }
+.card .meta { grid-area: meta; display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
 .card .meta .tag { color: var(--accent); opacity: 0.8; }
-.card .spawn {
-  position: absolute;
-  right: 6px;
-  top: 6px;
-  height: 22px;
-  padding: 0 8px;
-  font-size: 11px;
-  opacity: 0;
-  transform: translateY(-2px);
-  transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
-}
-.card:hover .spawn, .card:focus-within .spawn { opacity: 1; transform: none; }
+.card .spawn { grid-area: spawn; align-self: start; margin-left: 8px; color: var(--ink-faint); }
+.card .spawn:hover, .card .spawn:focus-visible { color: var(--accent-hot); }
 .lane.done .card, .card.checked { opacity: 0.6; cursor: default; }
 .lane.done .card .num { display: none; }
 .card.checked .title { color: var(--ink-soft); }
@@ -630,10 +627,15 @@ body.dragging-strip .forms button { color: var(--ink-soft); }
   .card, .row, button, .items { transition: none !important; }
 }
 @media (max-width: 1100px) {
-  .project { grid-template-columns: 1fr; }
+  .project { grid-template-columns: minmax(0, 1fr); }
   .project::before { display: none; }
   .dispatch { position: static; max-height: none; }
-  .lanes { grid-template-columns: 1fr 1fr !important; }
+  .lanes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* A phone reads one lane at a time, top to bottom, in the order the work moves. */
+@media (max-width: 720px) {
+  .lanes { grid-template-columns: minmax(0, 1fr); }
+  .lane.collapsed .lane-title { writing-mode: horizontal-tb; min-height: 0; padding: 0; }
 }
 
 /* ---------- dialog: Maverick's own confirm and prompt (above drawers at 40, below effects at 50) ---------- */
@@ -681,6 +683,7 @@ body.ask-open { overflow: hidden; }
 }
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 .drawer-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; border-bottom: 1px solid var(--seam-soft); }
+.drawer-head h2:focus { outline: none; }
 .drawer-head h2 { flex: 1; font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: 0.04em; }
 .drawer-meta { display: flex; gap: 10px; padding: 8px 16px 0; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
 .drawer-meta .tag { color: var(--accent); }
@@ -712,7 +715,7 @@ body.ask-open { overflow: hidden; }
 }
 .drawer textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .drawer-foot { flex: none; padding: 10px 16px 14px; border-top: 1px solid var(--seam-soft); background: var(--gunmetal); }
-.drawer-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
 .drawer-actions .spacer { flex: 1; }
 
 /* ---------- session rows, explained ---------- */
@@ -723,12 +726,12 @@ body.ask-open { overflow: hidden; }
 .row .doing .k { color: var(--ink-ghost); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
 .row .age { font-family: var(--mono); font-size: 10px; color: var(--ink-ghost); }
 
-/* Session cards: compact by default, the conversation glance opens on click. */
-.row.session-live { cursor: pointer; }
-.row.session-live .doing.detail { display: none; }
-.row.session-live.expanded .doing.detail { display: block; }
-.row.session-live .name::after { content: "▸"; color: var(--ink-ghost); font-size: 10px; margin-left: 6px; }
-.row.session-live.expanded .name::after { content: "▾"; }
+/* Session cards: the last word each way, one line apiece; the title holds the rest. */
+.row.session-live .doing.detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A session waiting on you is the loudest row in the rail. */
+.row.session-live:is(.waiting, .blocked) { background: var(--caution-dim); box-shadow: inset 3px 0 0 var(--caution), 0 0 0 1px var(--seam-soft); }
+.row.session-live:is(.waiting, .blocked) .name { font-weight: 600; color: var(--ink); }
+.row.session-live:is(.waiting, .blocked) .doing > .k:first-child { color: var(--caution); }
 
 /* ---------- fields, deadlines, calendar ---------- */
 
@@ -742,9 +745,10 @@ body.ask-open { overflow: hidden; }
 .fields dd code { font-family: var(--mono); font-size: 12px; color: var(--accent-hot); }
 .fields dd.overdue { color: var(--threat); }
 .fields dd.soon { color: var(--accent-hot); }
-.due-row { display: flex; align-items: center; gap: 8px; }
+.due-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.due-row .k { min-width: 64px; }
 .due-row .k, .cal-ships .k { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
-.due-row input[type="date"], .cal-ships input[type="date"], .cal-ships select { height: 28px; padding: 0 8px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink); font-family: var(--mono); font-size: 12px; color-scheme: dark; }
+.due-row input[type="date"], .cal-ships input[type="date"], .cal-ships select { height: 44px; padding: 0 8px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink); font-family: var(--mono); font-size: 12px; color-scheme: dark; }
 .cal-ships select { font-family: inherit; }
 
 .due { font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 3px; background: var(--panel); color: var(--ink-soft); letter-spacing: 0.02em; }
@@ -762,11 +766,26 @@ body.ask-open { overflow: hidden; }
 .cal-cell.pad { background: transparent; box-shadow: none; }
 .cal-cell.today { box-shadow: 0 0 0 1px var(--accent-glow), 0 0 18px var(--accent-dim); }
 .cal-day { font-family: var(--mono); font-size: 11px; color: var(--ink-ghost); margin-bottom: 4px; }
+.cal-wd { display: none; }
+.cal-grid .cal-event { white-space: normal; overflow-wrap: anywhere; padding: 6px 8px; }
+.cal-head .month-prev .icon { transform: rotate(90deg); }
+.cal-head .month-next .icon { transform: rotate(-90deg); }
+/* A phone reads the month as a list of the days that hold something, today always among them. */
+@media (max-width: 720px) {
+  .calendar { grid-template-columns: minmax(0, 1fr); }
+  .cal-head h2 { min-width: 0; }
+  .cal-head > .muted { display: none; }
+  .cal-grid { grid-template-columns: minmax(0, 1fr); }
+  .cal-dow, .cal-cell.pad, .cal-cell:not(.today):not(:has(.cal-event)) { display: none; }
+  .cal-cell { min-height: 0; }
+  .cal-wd { display: inline; }
+}
 .cal-cell.today .cal-day { color: var(--accent-hot); }
-.cal-event { font-size: 11.5px; line-height: 1.3; padding: 3px 6px; margin-bottom: 3px; border-radius: 3px; background: var(--panel); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* An event is a button: 44px tall, the full cell wide, its words cut with the whole of them in its title. */
+.cal-event { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: 44px; font-size: 11.5px; line-height: 1.3; padding: 0 8px; margin-bottom: 8px; border: 0; border-radius: 3px; background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-event .icon, .cal-key .icon { flex: none; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .cal-event:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
-.cal-event.release { background: var(--accent-dim); color: var(--accent-hot); font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; }
-.cal-event.overdue { background: var(--threat-dim); color: var(--threat); }
+.cal-event.release, .cal-key.release { background: var(--panel); color: var(--ink); box-shadow: inset 3px 0 0 var(--info); font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; }
 .cal-event.undated { white-space: normal; background: var(--steel); }
 .cal-undated h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 8px; }
 
@@ -777,7 +796,8 @@ body.ask-open { overflow: hidden; }
 .cal-ships .spacer { flex: 1; }
 .cal-event.ship { font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; background: var(--steel); color: var(--ink-soft); box-shadow: inset 0 0 0 1px var(--seam-strong); cursor: grab; }
 .chip.ship { background: var(--steel); color: var(--ink-soft); }
-.cal-event.ship.now, .chip.ship.now { background: var(--accent-dim); color: var(--accent-hot); box-shadow: 0 0 0 1px var(--accent-glow), 0 0 14px var(--accent-dim); }
+/* Ship day today waits on the pilot to ship: a need. */
+.cal-event.ship.now, .chip.ship.now { background: var(--caution-dim); color: var(--caution); box-shadow: inset 0 0 0 1px var(--caution); }
 .cal-event.ship.shipped, .chip.ship.shipped { background: rgba(80, 200, 120, 0.16); color: var(--ok); box-shadow: none; }
 .cal-event.ship.missed, .chip.ship.missed { background: var(--threat-dim); color: var(--threat); box-shadow: none; }
 
@@ -795,7 +815,7 @@ body.ask-open { overflow: hidden; }
 .chip { font-family: var(--display); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; line-height: 1.3; }
 .chip.size { background: var(--panel); color: var(--ink-soft); }
 .chip.kind { background: var(--accent-dim); color: var(--accent-hot); }
-.chip.category { background: rgba(201, 165, 92, 0.14); color: var(--gold); }
+.chip.category { background: var(--panel); color: var(--ink-soft); }
 .chip.greensource { background: rgba(80, 200, 120, 0.16); color: var(--ok); }
 .card .meta { gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .drawer-meta { align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -832,12 +852,10 @@ body.ask-open { overflow: hidden; }
 .release-card.planned { background: var(--gunmetal); }
 .release-card .version { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); }
 .release-card.next .version { color: var(--accent-hot); }
+/* The counts are one line of words, not a row of number wells. */
+.release-card .stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; font-size: 13px; color: var(--ink-soft); }
+.release-card .stat b { font-family: var(--display); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; margin-right: 4px; }
 .release-card .state { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-left: 8px; }
-.release-card .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
-.release-card .stat { padding: 6px 8px; border-radius: var(--radius-s); background: var(--inset); }
-.release-card .stat b { display: block; font-family: var(--display); font-size: 18px; font-weight: 600; line-height: 1.1; color: var(--ink); font-variant-numeric: tabular-nums; }
-.release-card .stat span { font-family: var(--display); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
-.release-card .foot { margin-top: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-ghost); }
 .release-list h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 12px 0 6px; }
 .release-list ul { list-style: none; margin: 0; padding: 0; }
 .release-list li { padding: 6px 8px; margin-bottom: 4px; border-radius: var(--radius-s); background: var(--carbon); font-size: 12.5px; line-height: 1.4; }
@@ -854,12 +872,13 @@ body.ask-open { overflow: hidden; }
 
 /* ---------- calendar status colours ---------- */
 
-.cal-event.item.done { background: rgba(80, 200, 120, 0.16); color: var(--ok); }
-.cal-event.item.warn { background: rgba(242, 210, 91, 0.16); color: var(--warn); }
-.cal-event.item.late { background: var(--threat-dim); color: var(--threat); }
+.cal-event.item.done, .cal-key.done { background: rgba(80, 200, 120, 0.16); color: var(--ok); }
+.cal-event.item.soon, .cal-key.soon { background: var(--accent-dim); color: var(--accent-hot); }
+.cal-event.item.overdue, .cal-key.overdue { background: var(--threat-dim); color: var(--threat); }
 .cal-head { margin-top: 14px; }
 .cal-legend { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; margin: -2px 0 6px; }
-.cal-legend .cal-event { cursor: default; font-size: 10.5px; }
+.cal-key { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 3px; background: var(--panel); font-size: 11.5px; color: var(--ink-soft); }
+.cal-key.ship { box-shadow: inset 0 0 0 1px var(--seam-strong); font-family: var(--display); font-weight: 600; }
 
 /* ---------- collapsible sessions rail ---------- */
 
@@ -872,7 +891,7 @@ body.ask-open { overflow: hidden; }
 
 /* ---------- audit parents ---------- */
 
-.supervisor { appearance: none; height: 28px; padding: 0 26px 0 10px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink-soft); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.supervisor, .due-row select { appearance: none; height: 44px; padding: 0 26px 0 10px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink-soft); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .verdict { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; background: var(--panel); color: var(--ink-faint); }
 .verdict.pending, .verdict.flying, .verdict.reviewing { color: var(--accent-hot); background: var(--accent-dim); }
 .verdict.pass, .verdict.passed { color: var(--ok); background: rgba(80, 200, 120, 0.16); }
@@ -967,7 +986,9 @@ body.ask-open { overflow: hidden; }
 }
 .chip.due { text-transform: none; letter-spacing: 0.02em; font-family: var(--mono); background: var(--panel); color: var(--ink-soft); }
 .chip.due.soon { background: var(--accent-dim); color: var(--accent-hot); }
-.chip.due.overdue, .chip.unplanned { background: var(--threat-dim); color: var(--threat); }
+.chip.due.overdue { background: var(--threat-dim); color: var(--threat); }
+/* Unplanned on the roadmap waits on the pilot to plan it: a need, not a failure. */
+.chip.unplanned { background: var(--caution-dim); color: var(--caution); }
 .chip.release { text-transform: none; letter-spacing: 0.02em; }
 .card .meta { align-items: center; }
 .card .since { align-self: center; }
@@ -995,13 +1016,7 @@ body.ask-open { overflow: hidden; }
 .release-card-head { margin: 0; height: 20px; }
 .release-card .version { font-size: 15px; line-height: 20px; }
 .release-date { margin: 0; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.release-card .stats { margin: 0; height: 64px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.release-card .stat { padding: 8px 8px 6px; display: flex; flex-direction: column; justify-content: flex-start; gap: 2px; min-width: 0; }
-.release-card .stat b { font-size: 20px; line-height: 24px; }
-.release-card .stat span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 12px; }
-.release-card .foot { margin: 0; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.release-card .cta-slot { height: 28px; display: flex; align-items: center; }
-.release-card .cta-slot button { height: 28px; }
+.release-card .cta-slot { min-height: 44px; margin-top: 8px; display: flex; align-items: center; }
 .ship-cta { display: none; }
 .board-releases { margin-bottom: 20px; }
 .board-releases .strip-title, .calendar .strip-title { margin: 0 0 8px; }
@@ -1013,14 +1028,12 @@ body.ask-open { overflow: hidden; }
 .calendar { row-gap: 8px; column-gap: 16px; }
 .bar { height: 52px; }
 .dispatch { top: 68px; max-height: calc(100vh - 68px - 16px); }
-.card { padding: 8px 12px; }
-.card .title { padding-right: 56px; }
+.card { padding: 4px 8px 8px 12px; }
 .lanes { gap: 16px; }
 .lane-title { margin-bottom: 8px; }
 .row { padding: 8px 12px; margin-bottom: 8px; }
 .card { margin-bottom: 8px; }
 .release-card { border-radius: 8px; }
-.stat, .release-card .stat { border-radius: 4px; }
 
 /* ---------- HIG pass (apple-design skill, 2026-09-15): legibility floor, contrast, targets ---------- */
 
@@ -1028,28 +1041,22 @@ body.ask-open { overflow: hidden; }
 /* One shape for every token: a height only applies to an inline element once it is a box,
    which is why the version chip and the due chip sat at different heights beside each other. */
 .chip, .due, .badge, .verdict { display: inline-flex; align-items: center; font-size: 11px; height: 22px; padding: 0 8px; line-height: 1; vertical-align: middle; }
-.card .meta, .row .sub, .row .doing .k, .drawer-meta, .fields dt, .due-row .k, .ws-tile .k, .ws-table th, .cal-dow, .cal-day, .release-card .stat span, .release-date, .release-card .foot, .status, .card .since, .hovercard-hint, .muted.small, .small { font-size: 11.5px; }
+.card .meta, .row .sub, .row .doing .k, .drawer-meta, .fields dt, .due-row .k, .ws-tile .k, .ws-table th, .cal-dow, .cal-day, .release-date, .status, .card .since, .hovercard-hint, .muted.small, .small { font-size: 11.5px; }
 .lane-title, .dispatch h3, .workspace h3, .strip-title, .group-name, .release-name, .role, .ship-step-head .verdict { font-size: 11.5px; }
 .card .title { font-size: 14px; }
 .row .doing { font-size: 12.5px; }
-.cal-event { font-size: 12px; padding: 4px 8px; }
-.release-card .stat { padding: 8px 8px 6px; }
-.release-card .stat span { line-height: 14px; }
+.cal-event { font-size: 12px; }
 
 /* accessibility.md: controls sized and spaced; small row buttons come up to 24px with 8px padding. */
-.row .actions button, .ship-step-head .actions button, .card .spawn, button.ghost, .lane-title .fold, .release-name button.ghost, .release-list li button.ghost { height: 24px; padding: 0 8px; font-size: 11.5px; }
-.lane-title .fold { width: 24px; padding: 0; }
+.row .actions button, .ship-step-head .actions button, .card .spawn, button.ghost, .release-name button.ghost, .release-list li button.ghost { height: 24px; padding: 0 8px; font-size: 11.5px; }
 .row .actions { gap: 6px; }
 
 /* accessibility.md: keyboard reach. Cards are focusable and open on Enter; focus is visible. */
-.card:focus-visible, .row:focus-visible, .cal-event:focus-visible, .release-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card .title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
+.row:focus-visible, .cal-event:focus-visible, .release-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* color.md: more than colour alone. Calendar events carry a glyph; due chips say "due". */
-.cal-event.item::before { content: "•"; margin-right: 6px; opacity: 0.8; }
-.cal-event.item.done::before { content: "✓"; }
-.cal-event.item.warn::before { content: "▶"; }
-.cal-event.item.late::before { content: "!"; font-weight: 700; }
-.cal-event.release::before { content: ""; margin: 0; }
+/* color.md: more than colour alone. Done and overdue carry a drawn mark; every event's title names its state. */
 
 /* lists-and-tables.md: alternating rows in multicolumn tables; headings stay. */
 
@@ -1061,11 +1068,9 @@ body.ask-open { overflow: hidden; }
 .status:empty::before { content: ""; }
 .status.loading { color: var(--ink-soft); }
 /* accessibility.md: 4.5:1 for text people read. Ghost (3.2:1) is decoration only; readable meta moves to faint (5.3:1). */
-.card .since, .cal-day, .group-name, .release-list li .key, .ws-bar span, .hovercard-hint, .dispatch li.empty, .board-title code, .lane-title .count, .release-card .foot, .release-card .stat span, .row .age, .status { color: var(--ink-faint); }
+.card .since, .cal-day, .group-name, .release-list li .key, .ws-bar span, .hovercard-hint, .dispatch li.empty, .board-title code, .lane-title .count, .row .age, .status { color: var(--ink-faint); }
 /* Stat labels must fit at the legibility floor: wider cards, tighter tile padding, full words. */
 .release-card, .release-card.slot { flex-basis: 284px; }
-.release-card .stat { padding: 8px 6px 6px; }
-.release-card .stat span { font-size: 11px; letter-spacing: 0.04em; }
 
 /* ---------- ship wizard: scrolls, live view, runway with the jet as the marker ---------- */
 

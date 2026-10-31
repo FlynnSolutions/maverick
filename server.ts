@@ -38,7 +38,7 @@ import { readSessions, sessionsForProject, writeSession, type SessionRecord } fr
 import { addPending, createFormation, deleteFormation, listFormations, resolvePending, updateFormation } from "./src/formations.ts";
 import { readNames, setName } from "./src/names.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
-import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
+import { addGroup, applyEdit, applyMove, deleteGroup, newItem, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
 const run = promisify(execFile);
 const serverRoot = dirname(fileURLToPath(import.meta.url));
@@ -206,6 +206,19 @@ const createGroup = async (body: GroupBody): Promise<{ commit: string }> => {
   const after = addGroup(await readFile(tracker.path, "utf8"), body.heading, name);
   await writeFile(tracker.path, after, "utf8");
   return { commit: await commitFile(tracker.path, `console: add group "${name}" under ${body.heading}`) };
+};
+
+interface NewItemBody extends GroupBody {
+  title: string;
+}
+
+const createItem = async (body: NewItemBody): Promise<{ commit: string }> => {
+  const project = await projectById(body.project);
+  const tracker = project.trackers[body.tracker];
+  if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
+  const after = newItem(await readFile(tracker.path, "utf8"), body.heading, body.name, body.title);
+  await writeFile(tracker.path, after, "utf8");
+  return { commit: await commitFile(tracker.path, `console: add "${body.title.trim()}" under ${body.name ? `${body.heading} / ${body.name}` : body.heading}`) };
 };
 
 interface EditBody {
@@ -585,6 +598,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
   }
 
+  if (method === "POST" && path === "/api/items") return sendJson(res, 200, await createItem(await readJson<NewItemBody>(req)));
   if (method === "POST" && path === "/api/groups") return sendJson(res, 200, await createGroup(await readJson<GroupBody>(req)));
   if (method === "POST" && path === "/api/groups/rename") return sendJson(res, 200, await renameGroupIn(await readJson<RenameBody>(req)));
   if (method === "DELETE" && path === "/api/groups") {
