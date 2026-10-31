@@ -1382,7 +1382,7 @@ test("a task that builds cells owns its screenshots folder from approval, so its
 test("the walkthrough starts as the template, placed with its key set, and the prompt carries the plan's walk cases", async () => {
   assert.ok(existsSync(WALKTHROUGH_TEMPLATE), "the template ships beside the app");
   // Its comment names the contract too; the console reads the document, so count outside comments.
-  const template = readFileSync(WALKTHROUGH_TEMPLATE, "utf8").replace(/<!--[\s\S]*?-->/g, "");
+  const template = readFileSync(WALKTHROUGH_TEMPLATE, "utf8").split("-->").map((part) => part.split("<!--")[0]).join("");
   assert.match(template, /KEY = "[^"]+"/, "the console reads KEY");
   assert.equal((template.match(/<h2>/g) ?? []).length, 4, "one heading per pillar, four pillars");
   assert.ok((template.match(/class="tc" data-id="/g) ?? []).length >= 4, "a case per pillar to copy");
