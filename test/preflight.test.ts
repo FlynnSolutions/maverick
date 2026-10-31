@@ -47,7 +47,7 @@ test("a runtime pin is read the way a Wingman would hit it", () => {
 test("the plan's Preflight section is read, and the checks say ok, fail or yours", async () => {
   const { dir } = tempRepo("mv-preflight");
   await writeFile(join(dir, ".nvmrc"), "99\n", "utf8");
-  const plan = parsePlan("# Mission: p\n\nP.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  Build it.\n\n## Preflight\n\n- duration: 8h\n- tool: git\n- tool: no-such-tool-xyz, the plan shells out to it\n- human: the sign-up inbox\n", ["root"]);
+  const plan = parsePlan("# Mission: p\n\nP.\n\n## Milestone 1 — m\n\n_done when: d._\n_walk: it works._\n\n- [ ] **t**\n  Build it.\n\n## Preflight\n\n- duration: 8h\n- tool: git\n- tool: no-such-tool-xyz, the plan shells out to it\n- human: the sign-up inbox\n", ["root"]);
   assert.equal(plan.problems.length, 0, plan.problems.join("; "));
   assert.equal(plan.requirements.length, 4);
   const checks = await preflight({ projectPath: dir, repoPaths: [dir], requirements: [...plan.requirements, { kind: "runtime", value: "node >=99", note: "" }, { kind: "credential", value: "okta", note: "" }], rioAgent: "no-such-agent-xyz", remote: [] });
