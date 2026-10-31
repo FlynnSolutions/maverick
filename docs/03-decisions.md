@@ -815,7 +815,7 @@ rounded to the nearest 5.
 
 **The gate refuses** a milestone whose tasks all work in one repo while another milestone works
 in a different one, and a milestone none of whose tasks touches product code (judged from
-`touches`: only `deliverables/`, `docs/`, `test/` or `tests/`). It **warns** on a milestone of four
+`touches`: only `deliverables/` or `docs/` at a repo's root, and test code anywhere, by folder (`test`, `tests`, `__tests__`, `e2e`, `cypress`, `playwright`) or by name (`*.test.ts`, `*.spec.tsx`)). It **warns** on a milestone of four
 or more tasks whose longest `needs` chain is more than half of them, and names the chain.
 
 **Why:** a review of five missions (51 tasks), 2026-10-29. Missions came to Cory slice by slice
