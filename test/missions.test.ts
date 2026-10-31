@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { applyPlanState, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask } from "../src/missions.ts";
+import { applyPlanState, approveMission, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -479,7 +479,7 @@ test("contracts are named before fan-out: parsed with an owner and a shape, and 
   assert.deepEqual(plan.warnings, []);
   const bare = parsePlan(CONTRACTED.slice(0, CONTRACTED.indexOf("## Contracts")), ["root"]);
   assert.equal(bare.problems.length, 0);
-  assert.match(bare.warnings[0], /1 task\(s\) build on others and the plan names no contracts/);
+  assert.match(bare.warnings[0], /1 task builds on others and the plan names no contracts/);
   assert.ok(parsePlan(CONTRACTED.replace("(owner: m1-t1): encode", "(owner: m9-t9): encode"), ["root"]).problems.some((p) => /owned by m9-t9, which is not a task/.test(p)));
   assert.ok(parsePlan(CONTRACTED.replace(": the env flag naming the table", ""), ["root"]).problems.some((p) => /CLAIMS_TABLE" has no shape/.test(p)));
   assert.ok(parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- just a line"), ["root"]).problems.some((p) => /is not "\*\*name\*\* \(owner/.test(p)));
@@ -1123,6 +1123,14 @@ test("the sweep does not follow an edit to how a repo lands: only try landing ag
   agentsSay([{ id: "rio-frozen", state: "working" }]);
   await sweepMissions(project);
   assert.equal(recordOf("frozen-land").repos[0].land, "merge", "what was approved stands");
+});
+
+test("a second approval while the first is still running is refused, and the guard lets go once it settles", async () => {
+  const project = { id: "p-approve", name: "P", path: "/nowhere", trackers: [] } as never;
+  const first = approveMission(project, "twice");
+  await assert.rejects(() => approveMission(project, "twice"), /already being approved/);
+  await assert.rejects(() => first, /not found|no mission/i);
+  await assert.rejects(() => approveMission(project, "twice"), (err: Error) => !/already being approved/.test(err.message), "released after the first one settled");
 });
 
 /* ---------- M28: a milestone is a foundation, walked before anything builds on it ---------- */

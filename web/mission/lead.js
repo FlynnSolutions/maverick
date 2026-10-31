@@ -14,7 +14,7 @@ import { render as renderMarkdown } from "../markdown.js";
  *   and never rebuilds a round being answered, so a half-picked round survives every stream event.
  */
 export const leadThread = (ctx) => {
-  const { el, btn, post, act, actionUrl, fmtTime, plural, about, projectId } = ctx;
+  const { el, btn, post, act, actionUrl, fmtTime, plural, armed, approveWhy, failingNote, projectId } = ctx;
   let view = null;
 
   const log = el("ol", { class: "lead-log", "aria-live": "polite" });
@@ -177,11 +177,12 @@ export const leadThread = (ctx) => {
     fireKey = key;
     if (!ready) return fire.replaceChildren();
     if (refusing.length) return fire.replaceChildren(el("p", { class: "mv-warn" }, `The plan is ready, but the mission cannot run without ${refusing.map((c) => c.name).join(", ")}. The gate below says what each one needs.`));
+    // Firing is a decision, not a click: asked twice, as the gate's approve is.
     // replaceChildren would print a null as the word "null"; only what is there goes in.
     fire.replaceChildren(...[
-      btn("Fire mission", () => act("approve", {}, "fired; the first milestone is out"), "primary lead-fire-btn"),
-      failing.length ? el("p", { class: "mv-warn" }, `${plural(failing.length, "check")} failed in the gate below (${failing.map((c) => c.name).join(", ")}); read ${failing.length === 1 ? "it" : "them"} before you fire.`) : null,
-      el("p", { class: "lead-hint" }, `Writes ${doc.cost.tasks} items into the tracker and sends out the first milestone; ${doc.cost.sessions} sessions over the mission's life.${doc.estimate ? ` ${plural(doc.estimate.milestones.length, "milestone")}, ${about(doc.estimate.minutes)} of building, and you walk each one.` : ""} The briefing, the plan and its checks are in the gate below.`),
+      armed({ label: "Fire mission", cls: "lead-fire-btn", why: approveWhy(doc), yes: `yes, fire "${view.name}"`, onYes: () => act("approve", {}, "fired; the first milestone is out") }),
+      failingNote(doc.preflight, "in the gate below", "fire"),
+      el("p", { class: "lead-hint" }, "It asks once more before it fires. The briefing, the plan, its checks and what it costs are in the gate below."),
     ].filter(Boolean));
   };
 

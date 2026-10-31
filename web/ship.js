@@ -3,6 +3,7 @@
 // documents inline, notes, and the release's session reviews and audit verdicts.
 
 import { jetSvg } from "./jet.js";
+import { applyProjectTheme } from "./theme.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { WALKTHROUGH_DOC, stopWalkthrough, walkthroughPanel } from "./walkthrough.js";
 
@@ -54,10 +55,7 @@ const stepUrl = (step, action) => `/api/ships/${encodeURIComponent(version)}/ste
 /* ---------- theme, same as the board ---------- */
 const applyTheme = (theme) => {
   if (!theme) return;
-  const root = document.documentElement.style;
-  root.setProperty("--accent", theme.accent);
-  root.setProperty("--accent-hot", theme.accentHot);
-  root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
+  applyProjectTheme(document.documentElement.style, theme);
   if (theme.font !== "Chakra Petch") document.head.append(el("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
 };
 

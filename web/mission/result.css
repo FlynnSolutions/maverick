@@ -69,7 +69,7 @@
 .rs-rd { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-soft); cursor: pointer; }
 .rs-rd input { margin: 0; width: 15px; height: 15px; accent-color: var(--accent); }
 .rs-slot { display: inline-flex; justify-content: flex-end; min-width: 108px; }
-.rs-slot button { height: 28px; padding: 0 10px; font-size: 12px; }
+.rs-slot button { padding: 0 10px; font-size: 12px; }
 .rs-onlist { font-size: 12px; color: var(--ink-soft); }
 
 /* Each merged milestone's walk and proof. */
@@ -98,7 +98,7 @@
 .rs-lands .push { color: var(--caution); }
 .rs-report { margin: 10px 0 0; }
 .rs-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
-.rs-acts button { height: 34px; padding: 0 14px; font: 500 13px var(--sans); }
+.rs-acts button { padding: 0 14px; font: 500 13px var(--sans); }
 
 @media (max-width: 600px) {
   .rs-marks { margin-left: auto; }
