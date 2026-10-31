@@ -129,15 +129,22 @@ try {
 
 const renderPicker = async () => {
   $("#picker").hidden = false;
-  const projects = await api("/api/projects");
   const list = $("#project-list");
+  let projects;
+  try {
+    projects = await api("/api/projects");
+  } catch (err) {
+    // The list could not be read; importing still works, so the page says so and offers the read again.
+    list.replaceChildren(el("li", { class: "trouble" }, `Could not read your projects: ${err.message}`, btn("try again", renderPicker)));
+    return;
+  }
   list.replaceChildren(
     ...projects.map((p) =>
       el(
         "li",
         {},
         el("a", { href: `/?project=${encodeURIComponent(p.id)}` }, p.name),
-        el("div", { class: "muted mono" }, `${p.path} · ${p.trackers.length ? p.trackers.map((t) => t.label).join(", ") : "no tracker found"}`),
+        el("div", { class: "muted mono" }, `${p.path} · ${p.trackers?.length ? p.trackers.map((t) => t.label).join(", ") : "no tracker found"}`),
         el(
           "button",
           {
@@ -145,8 +152,13 @@ const renderPicker = async () => {
             class: "ghost",
             onclick: async () => {
               if (!(await ask({ title: `Forget "${p.name}"?`, body: "The directory is untouched.", confirm: "forget" }))) return;
-              await api(`/api/projects/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+              try {
+                await api(`/api/projects/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+              } catch (err) {
+                return failed(`forget "${p.name}"`, err);
+              }
               try { if (localStorage.getItem("mv.project") === p.id) localStorage.removeItem("mv.project"); } catch {}
+              toast(`Forgot "${p.name}". Its directory is untouched.`);
               renderPicker();
             },
           },
@@ -155,17 +167,19 @@ const renderPicker = async () => {
       ),
     ),
   );
-  if (!projects.length) list.append(el("li", { class: "muted" }, "No projects yet. Import one below."));
+  if (!projects.length) list.append(el("li", { class: "muted" }, "No projects yet. Import a directory below, or paste its path."));
 };
 
 $("#import").addEventListener("click", async () => {
-  setStatus("Waiting for the Finder dialog");
+  setStatus("Waiting for the Finder dialog…");
   try {
     const result = await post("/api/projects/import");
-    if (result.cancelled) return setStatus("Cancelled.");
+    if (result.cancelled) return toast("Nothing imported: the Finder dialog was cancelled.");
     location.href = `/?project=${encodeURIComponent(result.id)}`;
   } catch (err) {
-    setStatus(err.message, true);
+    failed("import the directory", err);
+  } finally {
+    setStatus("");
   }
 });
 
@@ -177,7 +191,7 @@ $("#add-path").addEventListener("submit", async (e) => {
     const p = await post("/api/projects", { path });
     location.href = `/?project=${encodeURIComponent(p.id)}`;
   } catch (err) {
-    setStatus(err.message, true);
+    failed(`add ${path}`, err);
   }
 });
 
@@ -1770,6 +1784,7 @@ const applyTheme = (theme) => {
 
 const boot = async () => {
   void mountDevBadge();
+  $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
   if (!projectId) {
     // The page is where you start: no project in the URL reopens the last one, unless the
     // picker was asked for by name.

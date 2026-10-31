@@ -3,6 +3,9 @@
 // documents inline, notes, and the release's session reviews and audit verdicts.
 
 import { jetSvg } from "./jet.js";
+import { icon } from "./icons.js";
+import { lamp } from "./lamp.js";
+import { failed, toast } from "./toast.js";
 import { applyProjectTheme } from "./theme.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { WALKTHROUGH_DOC, stopWalkthrough, walkthroughPanel } from "./walkthrough.js";
@@ -28,11 +31,6 @@ const api = async (path, init) => {
   return body;
 };
 const post = (path, body) => api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-const setStatus = (msg, isError = false) => {
-  const s = $("#status");
-  s.textContent = msg;
-  s.classList.toggle("error", isError);
-};
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (iso) => {
   const m = String(iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -128,7 +126,7 @@ const mountTerminal = (info) => {
   term.open(container);
   const tab = el("div", { class: "dock-tab" },
     el("button", { type: "button", class: "name", title: info.title, onclick: () => activate(info.id) }, el("span", { class: "lamp" }), el("span", { class: "t" }, info.title)),
-    el("button", { type: "button", class: "close", title: "close this view (the session keeps running)", "aria-label": `close ${info.title}`, onclick: () => { source.close(); term.dispose(); tab.remove(); container.remove(); dockTerminals.delete(info.id); if (!dockTerminals.size) { $("#dock").hidden = true; document.body.classList.remove("docked"); } } }, "×"));
+    el("button", { type: "button", class: "close ghost icon-btn", title: "close this view (the session keeps running)", "aria-label": `close ${info.title}`, onclick: () => { source.close(); term.dispose(); tab.remove(); container.remove(); dockTerminals.delete(info.id); if (!dockTerminals.size) { $("#dock").hidden = true; document.body.classList.remove("docked"); } } }, icon("close")));
   $("#dock-tabs").append(tab);
   const source = new EventSource(`/api/terminals/${info.id}/stream`);
   source.onmessage = (e) => term.write(Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0)));
@@ -155,14 +153,25 @@ const load = async () => {
   renderAll();
 };
 
-const stepCall = async (step, action, body) => {
+/**
+ * One write to a step. The control that asked holds still while it runs, the outcome is a
+ * toast, and a refusal names the action and the step.
+ */
+const stepCall = async (step, action, body, what, done, control = null) => {
+  if (control) { control.disabled = true; control.setAttribute("aria-busy", "true"); }
   try {
     await post(stepUrl(step, action), body);
-    setStatus(action === "run" ? `${step.title}: started` : "saved");
+    toast(done);
     await load();
   } catch (err) {
-    setStatus(err.message, true);
+    failed(`${what} "${step.title}"`, err);
+    if (control?.isConnected) { control.disabled = false; control.removeAttribute("aria-busy"); }
   }
+};
+/** A step's verb: the button passes itself, so stepCall can hold it while the write runs. */
+const verb = (label, call, cls = "") => {
+  const b = btn(label, () => call(b), cls);
+  return b;
 };
 
 
@@ -178,9 +187,9 @@ const stepWalkthrough = (step) => {
     try {
       const complete = summary.total > 0 && summary.answered >= summary.total && step.status === "finished";
       await post(stepUrl(step, ""), { walkthrough: summary, ...(complete ? { status: "done" } : {}) });
-      if (complete) { step.status = "done"; setStatus("walkthrough complete: step marked done"); }
+      if (complete) { step.status = "done"; toast("The walkthrough is complete, so the step is marked done."); }
     } catch (err) {
-      setStatus(`${err.message} (walkthrough progress will save after the server restarts)`, true);
+      failed("save the walkthrough's progress", err);
     }
   } });
 };
@@ -191,12 +200,18 @@ const jetGlyph = () => jetSvg("jet-glyph");
 const renderTop = () => {
   const done = ship.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const pct = (done / ship.steps.length) * 100;
-  $("#crumb").replaceChildren(text("Ship "), el("b", {}, `v${version}`));
+  // A failed step stops the run: the runway turns red and says which step, so it never reads as flying.
+  const failedStep = ship.steps.find((s) => s.status === "failed");
+  $("#crumb").replaceChildren(text(`${project.name} · Ship `), el("b", {}, `v${version}`));
   $("#top").replaceChildren(
-    el("div", { class: "ship-progress" }, el("div", { class: "runway", style: `--p:${pct}` }, el("div", { class: "fill" }), el("div", { class: "jet-marker" }, jetGlyph()))),
-    el("div", { class: "summary" }, el("span", {}, `${done} of ${ship.steps.length} steps`), el("span", {}, `started ${fmtDate(ship.started)}`), ship.finished ? el("span", {}, `shipped ${fmtDate(ship.finished)}`) : null),
+    el("div", { class: `ship-progress${failedStep ? " failed" : ""}` }, el("div", { class: "runway", style: `--p:${pct}` }, el("div", { class: "fill" }), el("div", { class: "jet-marker" }, jetGlyph()))),
+    el("div", { class: "summary" }, el("span", {}, `${done} of ${ship.steps.length} steps`), failedStep ? el("span", { class: "failed" }, `stopped: ${failedStep.title} failed`) : null, el("span", {}, `started ${fmtDate(ship.started)}`), ship.finished ? el("span", {}, `shipped ${fmtDate(ship.finished)}`) : null),
   );
 };
+
+/** The rail's lamps: burning while a step runs, the reticle while your part remains, green when done, cold otherwise. */
+const STEP_LAMP = { running: "running", finished: "waiting", done: "done" };
+const STATUS_WORDS = { finished: "your part" };
 
 const renderNav = () => {
   const nav = $("#nav");
@@ -207,12 +222,12 @@ const renderNav = () => {
       class: `nav-step ${step.status}${step.id === selected ? " selected" : ""}`,
       onclick: () => { selected = step.id; history.replaceState(null, "", `?project=${encodeURIComponent(projectId)}&version=${encodeURIComponent(version)}&step=${encodeURIComponent(step.id)}`); renderAll(); },
     },
-      el("span", { class: `lamp ${step.status === "running" ? "busy" : ""}` }),
+      lamp(STEP_LAMP[step.status] ?? "idle", STEP_LAMP[step.status] ? undefined : "stale"),
       el("span", { class: "n" }, String(i + 1)),
       el("span", { class: "t", title: step.title }, step.title),
-      el("span", { class: `verdict ${step.status}` }, step.status)));
+      el("span", { class: `verdict ${step.status}` }, STATUS_WORDS[step.status] ?? step.status)));
   });
-  nav.append(el("h3", {}, "Reviews"), el("button", { type: "button", class: `nav-step${selected === "__reviews" ? " selected" : ""}`, onclick: () => { selected = "__reviews"; renderAll(); } }, el("span", { class: "lamp" }), el("span", { class: "n" }, "R"), el("span", { class: "t" }, "Sessions and audits in this release"), el("span", {})));
+  nav.append(el("h3", {}, "Reviews"), el("button", { type: "button", class: `nav-step${selected === "__reviews" ? " selected" : ""}`, onclick: () => { selected = "__reviews"; renderAll(); } }, lamp("idle", "stale"), el("span", { class: "n" }, "R"), el("span", { class: "t" }, "Sessions and audits in this release"), el("span", {})));
 };
 
 const humanCheckboxes = (step) => ({
@@ -221,9 +236,9 @@ const humanCheckboxes = (step) => ({
     try {
       await post(stepUrl(step, ""), { checks: { ...(step.checks ?? {}), [key]: done ? { done: true, label, at: new Date().toISOString() } : { done: false, label } } });
       step.checks = { ...(step.checks ?? {}), [key]: { done, label } };
-      setStatus(done ? `checked: ${label.slice(0, 60)}` : `unchecked: ${label.slice(0, 60)}`);
+      toast(done ? `Checked: ${label.slice(0, 60)}` : `Unchecked: ${label.slice(0, 60)}`);
     } catch (err) {
-      setStatus(`${err.message} (the server needs a restart to save checks)`, true);
+      failed(done ? `check "${label.slice(0, 60)}"` : `uncheck "${label.slice(0, 60)}"`, err);
     }
   },
 });
@@ -235,11 +250,18 @@ const renderStep = (step) => {
     el("span", { class: `verdict ${step.status}` }, step.status === "finished" ? (step.id === "walkthrough" ? `in progress · ${step.walkthrough ? `${step.walkthrough.answered} of ${step.walkthrough.total} cases` : "your walkthrough"}` : "in progress · your part remains") : step.status),
     step.status === "running" ? el("span", { class: `agent-state ${agentStates.get(step.claudeId) ?? ""}` }, agentStates.get(step.claudeId) === "blocked" ? "waiting for your input" : agentStates.get(step.claudeId) ?? "starting") : null,
     el("span", { class: "actions" },
-      step.status === "pending" || step.status === "failed" ? btn(step.id === "audits" ? "run audits" : "run", () => stepCall(step, "run"), "primary") : null,
-      step.claudeId ? btn("open in dock", async () => { const t = tails.get(step.claudeId); mountTerminal(t?.info ?? (await terminalFor(step.claudeId, `ship ${version}: ${step.title}`))); }) : null,
-      step.status !== "done" && step.status !== "skipped" && step.status !== "pending" ? btn("mark done", () => stepCall(step, "", { status: "done" })) : null,
-      step.status === "pending" ? btn("skip", () => stepCall(step, "", { status: "skipped" }), "ghost") : null,
-      step.status === "done" || step.status === "skipped" ? btn("reopen", () => stepCall(step, "", { status: "pending" }), "ghost") : null));
+      step.status === "pending" || step.status === "failed" ? verb(step.status === "failed" ? "run it again" : step.id === "audits" ? "run audits" : "run", (b) => stepCall(step, "run", undefined, "start", `Started "${step.title}".`, b), "primary") : null,
+      step.claudeId ? btn("open in dock", async () => {
+        try {
+          const t = tails.get(step.claudeId);
+          mountTerminal(t?.info ?? (await terminalFor(step.claudeId, `ship ${version}: ${step.title}`)));
+        } catch (err) {
+          failed(`open "${step.title}" in the dock`, err);
+        }
+      }) : null,
+      step.status !== "done" && step.status !== "skipped" && step.status !== "pending" ? verb("mark done", (b) => stepCall(step, "", { status: "done" }, "mark done", `Marked "${step.title}" done.`, b)) : null,
+      step.status === "pending" ? verb("skip", (b) => stepCall(step, "", { status: "skipped" }, "skip", `Skipped "${step.title}".`, b), "ghost") : null,
+      step.status === "done" || step.status === "skipped" ? verb("reopen", (b) => stepCall(step, "", { status: "pending" }, "reopen", `Reopened "${step.title}".`, b), "ghost") : null));
   const meta = el("div", { class: "detail-meta" },
     step.started ? el("span", {}, `started ${fmtTime(step.started)}`) : null,
     step.ended ? el("span", {}, `${step.status} ${fmtTime(step.ended)}`) : null,
@@ -264,16 +286,26 @@ const renderStep = (step) => {
     for (const a of step.artifacts) {
       if (wt && WALKTHROUGH_DOC.test(a)) continue;
       const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(a)}`;
-      row.append(el("a", { href: url, target: "_blank" }, `${a} ↗`));
+      row.append(el("a", { href: url, target: "_blank", title: "opens in a new tab" }, a));
       if (a.endsWith(".html")) row.append(btn("view here", () => { frameHost.replaceChildren(el("iframe", { class: "doc-frame", src: url, title: a })); }, "ghost"));
     }
     blocks.push(el("section", { class: "panel" }, el("h2", {}, "Documents"), row, frameHost));
   }
-  const notes = el("textarea", { class: "ship-notes", rows: "3", placeholder: "notes for this step (saved as you leave the field)" });
+  const notes = el("textarea", { class: "ship-notes", rows: "3", "aria-label": `notes for ${step.title}`, placeholder: "notes for this step (saved as you leave the field)" });
   notes.value = step.notes ?? "";
-  notes.addEventListener("change", () => stepCall(step, "", { notes: notes.value }));
+  notes.addEventListener("change", () => stepCall(step, "", { notes: notes.value }, "save the notes for", `Saved the notes for "${step.title}".`));
   blocks.push(el("section", { class: "panel" }, el("h2", {}, "Notes"), notes));
   detail.replaceChildren(...blocks);
+};
+
+const review = async (path, body, what, done) => {
+  try {
+    await post(path, body);
+    toast(done);
+    await load();
+  } catch (err) {
+    failed(what, err);
+  }
 };
 
 const renderReviews = () => {
@@ -285,9 +317,9 @@ const renderReviews = () => {
     const v = r.auditView ?? { verdict: "none" };
     const item = el("div", { class: "review-item" },
       el("div", { class: "head" }, el("span", { class: "role" }, r.role), el("span", { class: "loop" }, r.loop), el("span", { class: `verdict ${v.verdict}` }, v.verdict === "none" ? "not audited" : v.verdict), v.decision ? el("span", { class: "muted small mono" }, v.decision) : null,
-        r.claudeId && v.verdict === "none" ? btn("audit now", async () => { try { await post(`/api/sessions/${r.id}/audit?project=${encodeURIComponent(projectId)}`); setStatus("audit started"); await load(); } catch (err) { setStatus(err.message, true); } }, "primary") : null,
-        v.findings ? btn(v.decision ? "change decision" : "accept", async () => { await post(`/api/sessions/${r.id}/decision`, { decision: "accepted" }); await load(); }, "ghost") : null,
-        v.findings ? btn("reject", async () => { await post(`/api/sessions/${r.id}/decision`, { decision: "rejected" }); await load(); }, "ghost danger") : null),
+        r.claudeId && v.verdict === "none" ? btn("audit now", () => review(`/api/sessions/${r.id}/audit?project=${encodeURIComponent(projectId)}`, undefined, `audit "${r.loop}"`, `Auditing "${r.loop}".`), "primary") : null,
+        v.findings ? btn(v.decision ? "change decision" : "accept", () => review(`/api/sessions/${r.id}/decision`, { decision: "accepted" }, `accept the findings on "${r.loop}"`, `Accepted the findings on "${r.loop}".`), "ghost") : null,
+        v.findings ? btn("reject", () => review(`/api/sessions/${r.id}/decision`, { decision: "rejected" }, `reject the findings on "${r.loop}"`, `Rejected the findings on "${r.loop}".`), "ghost danger") : null),
       v.findings ? renderMarkdown(v.findings.replace(/^verdict:.*\n?/i, ""), { project: projectId }) : el("div", { class: "muted small" }, r.claudeId ? "no findings yet" : "not a spawned session; nothing to audit"));
     list.append(item);
   }
@@ -307,17 +339,21 @@ const renderAll = () => {
   else renderStep(ship.steps.find((s) => s.id === selected));
 };
 
+/** A ship that cannot open says why in the page, with the way back to where ships start. */
+const cannotOpen = (why) => {
+  const back = projectId ? `/?project=${encodeURIComponent(projectId)}&view=board` : "/";
+  $("#page").replaceChildren(el("section", { class: "ship-missing" },
+    el("h1", {}, "This ship cannot open"),
+    el("p", {}, why),
+    el("a", { class: "button-link primary", href: back }, projectId ? "back to the board" : "pick a project")));
+};
+
 const boot = async () => {
-  if (!projectId || !version) {
-    setStatus("open this page from a release card: ?project=<id>&version=<x.y.z>", true);
-    return;
-  }
+  $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
+  if (!projectId || !version) return cannotOpen("A ship opens from a release on the board: its version says which one. This link names no project or no version.");
   const projects = await api("/api/projects");
   project = projects.find((p) => p.id === projectId);
-  if (!project) {
-    setStatus(`no project "${projectId}"`, true);
-    return;
-  }
+  if (!project) return cannotOpen(`No project here is called "${projectId}". It may have been forgotten in the picker.`);
   document.title = `Ship v${version} · ${project.name} · Maverick`;
   applyTheme(project.theme);
   $("#board-link").href = `/?project=${encodeURIComponent(projectId)}`;
@@ -325,4 +361,4 @@ const boot = async () => {
   await load();
   window.setInterval(() => { if (ship?.steps.some((s) => s.status === "running")) load(); }, 8000);
 };
-boot().catch((err) => setStatus(err.message, true));
+boot().catch((err) => cannotOpen(`The ship could not be read: ${err.message}`));

@@ -17,7 +17,7 @@
 .ship-nav { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 64px; }
 .nav-step {
   display: grid;
-  grid-template-columns: 12px 22px minmax(0, 1fr) auto;
+  grid-template-columns: 16px 22px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 8px 10px;
@@ -36,7 +36,7 @@
 .nav-step .n { font-family: var(--display); font-size: 11.5px; color: var(--ink-faint); }
 .nav-step.selected .n { color: var(--accent-hot); }
 .nav-step .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-step .lamp { width: 8px; height: 8px; }
+.nav-step .lamp { width: 16px; height: 16px; }
 .nav-step.done .t, .nav-step.skipped .t { color: var(--ink-soft); }
 .nav-step .verdict { height: 20px; font-size: 11px; padding: 0 6px; }
 .ship-nav h3 { font-family: var(--display); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 12px 0 2px; }
@@ -62,7 +62,30 @@
 
 .ship-notes { margin-top: 0; }
 
+/* A pending step waits its turn: plain. Your part remaining is the need. */
+.ship-page .verdict.pending { color: var(--ink-soft); background: var(--panel); }
+.ship-page .verdict.finished { color: var(--caution); background: var(--caution-dim); }
+.ship-top .summary .failed { color: var(--threat); }
+.ship-progress.failed .runway .fill { background: var(--threat); box-shadow: none; }
+.ship-progress.failed .runway .jet-marker { animation: none; }
+
+.ship-missing { grid-column: 1 / -1; max-width: 560px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 24px 0; }
+.ship-missing h1 { font-family: var(--display); font-size: 20px; font-weight: 600; margin: 0; }
+.ship-missing p { margin: 0; color: var(--ink-soft); line-height: 1.5; }
+
+/* One column: the step you are on comes first, the list of steps after it. */
 @media (max-width: 1000px) {
-  .ship-page { grid-template-columns: 1fr; }
-  .ship-nav { position: static; }
+  .ship-page { grid-template-columns: minmax(0, 1fr); }
+  .ship-top { grid-template-columns: minmax(0, 1fr); }
+  .ship-top .summary { flex-wrap: wrap; white-space: normal; }
+  .ship-detail { order: 2; }
+  .ship-nav { position: static; order: 3; }
 }
+.panel h2 .muted { font-family: var(--sans); text-transform: none; letter-spacing: 0; }
+
+/* The breakdown page borrows this frame. Its crumb is the only place the project is named, so it stays on a phone. */
+.bar .crumb.named { display: inline; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ship-page .verdict.idle { color: var(--ink-soft); background: var(--panel); }
+.ship-page .verdict.needs { color: var(--caution); background: var(--caution-dim); }
+.bd-intro { margin: 0 0 12px; max-width: var(--measure, 68ch); color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
+.mv-empty .button-link { margin-top: 12px; }

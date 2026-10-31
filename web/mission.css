@@ -49,8 +49,8 @@ input.mv-note { align-self: stretch; height: 44px; padding: 0 10px; background: 
 
 /* The answer a question wants first is the needs-you colour, wherever a question draws it:
    the answer row, a walk's row, the pointer to an interview round. */
-.mv-opts button.primary, .prog-walks button.primary, button.lead-to-round { background: var(--caution); color: var(--carbon); border-color: transparent; }
-.mv-opts button.primary:hover, .prog-walks button.primary:hover, button.lead-to-round:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
+.mv-opts button.primary, .prog-walks button.primary, button.lead-to-round, .mv-gate button.needs { background: var(--caution); color: var(--carbon); border-color: transparent; }
+.mv-opts button.primary:hover, .prog-walks button.primary:hover, button.lead-to-round:hover, .mv-gate button.needs:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
 
 /* The answer row a question draws wherever it sits (web/answers.js): the buttons in the feed's
    caution dress, then the note and the hint on a line of their own. */
@@ -173,7 +173,7 @@ html { scroll-padding-top: 70px; }
 
 /* Which repo a task lands in. A multi-repo project plans across several, and the order they
    land in is the whole point of the milestones, so the repo reads on the task and not once. */
-.mv-repo { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-soft); margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--panel); }
+.mv-repo { display: inline-block; white-space: nowrap; font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-soft); margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--panel); }
 
 /* What happens to each repo when it is done. The one that reaches a shared branch on its own
    is drawn as a caution, because it is the only thing here that acts without a second pair of
