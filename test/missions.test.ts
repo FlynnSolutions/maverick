@@ -1264,15 +1264,17 @@ test("a burst of endings is one pass, run once the burst settles", async () => {
   const project = { id: "p-soon", name: "P", path: "/p" } as never;
   const passes: number[] = [];
   const sweep = async () => { passes.push(Date.now()); };
-  const first = Date.now();
+  let last = 0;
   for (let i = 0; i < 3; i += 1) {
+    last = Date.now();
     sweepSoon(project, sweep, 100);
     await new Promise((r) => setTimeout(r, 30));
   }
   await until(() => passes.length > 0);
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(passes.length, 1, "three endings, one pass");
-  assert.ok(passes[0] - first >= 160, "after the last ending settled, not the first");
+  // Timed from the last ending: the first one's wait would have run 60 ms in, and a timer may fire a millisecond early.
+  assert.ok(passes[0] - last >= 90, "after the last ending settled, not the first");
 });
 
 test("a session under a project that reaches a finished word sweeps that project, and nothing else does", async () => {
