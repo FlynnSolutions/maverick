@@ -128,7 +128,6 @@ html { scroll-padding-top: 70px; }
 .mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: var(--measure); margin: 0 0 10px; }
 .mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: var(--measure); margin: 10px 0 0; }
 .mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
-.mv-gate .gate-actions button, .mv-gate .gate-actions .button-link, .mv-confirm button { padding: 0 14px; }
 .mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--ink); font-size: 13px; }
 .mv-problems li { margin: 2px 0; }
 .mv-problems li::marker { color: var(--threat); }
@@ -219,7 +218,7 @@ html { scroll-padding-top: 70px; }
 
 /* A page that could not open its mission draws only the reason and the way back. */
 .mv-page.unopened .mv-anchors, .mv-page.unopened #plan, .mv-page.unopened #progress, .mv-page.unopened #result { display: none; }
-.mv-page.unopened .mv-ask .button-link { height: 44px; padding: 0 14px; }
+.mv-page.unopened .mv-ask .button-link { height: 44px; }
 
 /* The slot's own order, whichever module mounted first: the reason, the questions, then what to fix or decide. */
 .mv-now { display: flex; flex-direction: column; }

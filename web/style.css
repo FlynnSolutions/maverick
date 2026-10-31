@@ -229,7 +229,7 @@ a { color: var(--accent-hot); }
 
 /* The project is identity, not a form field. */
 .pick { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; }
-.pick-btn { display: inline-flex; align-items: center; gap: 8px; padding: 0 7px 0 11px; border: 0; border-radius: 16px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam); }
+.pick-btn { display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border: 0; border-radius: var(--radius-s); background: var(--steel); box-shadow: 0 0 0 1px var(--seam); }
 .pick-btn:hover { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
 .pick-btn .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .pick-btn b { font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: 0.04em; color: var(--ink); }
@@ -246,13 +246,13 @@ a { color: var(--accent-hot); }
 
 /* Views: a drawn instrument over its name, the live one lifted out of the well. */
 .nav { display: inline-flex; gap: 8px; padding: 3px; border-radius: 10px; background: var(--inset); box-shadow: inset 0 0 0 1px var(--seam-soft); flex: 0 0 auto; }
-.nav button { display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--ink-soft); font: 500 12.5px var(--sans); }
+.nav button { display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 0; border-radius: var(--radius-s); background: transparent; box-shadow: none; color: var(--ink-soft); font: 500 12.5px var(--sans); }
 .nav button:hover { color: var(--ink-soft); background: transparent; box-shadow: none; }
 .nav button.active { background: var(--panel-lifted); color: var(--ink); box-shadow: 0 1px 2px var(--shade-soft); }
 .nav button.active .icon { stroke: var(--accent-hot); }
 
 .tools { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-button.primary#new-session { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px; border-radius: 8px; }
+button.primary#new-session { display: inline-flex; align-items: center; gap: 6px; }
 #new-session .icon { stroke-width: 1.8; }
 
 .toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-faint); font-size: 12px; cursor: pointer; }
@@ -501,7 +501,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .row .actions button { height: 22px; padding: 0 8px; font-size: 11px; }
 .row.record { background: transparent; box-shadow: none; padding-left: calc(10px + var(--depth, 0) * 12px); }
 .row.record .name { font-weight: 400; color: var(--ink-soft); }
-.role { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-right: 6px; }
+.role { font-family: var(--display); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-hot); margin-right: 6px; }
 .dispatch li.empty { padding: 6px 10px; color: var(--ink-ghost); font-size: 12px; }
 .dispatch a { text-decoration: none; }
 .dispatch a:hover { text-decoration: underline; }
@@ -586,7 +586,7 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 
 /* ---------- formations: a lead and its flight, as tabs ---------- */
 .forms { display: inline-flex; align-items: center; gap: 8px; padding: 3px; border-radius: 10px; background: var(--inset); }
-.forms button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--ink-faint); font: 500 12.5px var(--sans); }
+.forms button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; padding: 0 10px; border: 0; border-radius: var(--radius-s); background: transparent; box-shadow: none; color: var(--ink-faint); font: 500 12.5px var(--sans); }
 .forms button:hover { color: var(--ink-soft); background: transparent; box-shadow: none; }
 .forms button.on { background: var(--panel-lifted); color: var(--ink); box-shadow: 0 1px 2px var(--shade-soft); }
 .forms button b { font: 600 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-faint); }
@@ -731,7 +731,7 @@ body.ask-open { overflow: hidden; }
   resize: none;
   font: 12.5px/1.5 var(--mono);
   color: var(--ink);
-  padding: 12px;
+  padding: 9px 10px;
   background: var(--carbon);
   border: 1px solid var(--seam);
   border-radius: var(--radius-m);
@@ -788,7 +788,7 @@ body.ask-open { overflow: hidden; }
 .cal-cell.today { box-shadow: 0 0 0 1px var(--accent-glow), 0 0 18px var(--accent-dim); }
 .cal-day { font-family: var(--mono); font-size: 11px; color: var(--ink-ghost); margin-bottom: 4px; }
 .cal-wd { display: none; }
-.cal-grid .cal-event { padding: 6px 8px; }
+.cal-event { padding: 0 10px; }
 .cal-head .month-prev .icon { transform: rotate(90deg); }
 .cal-head .month-next .icon { transform: rotate(-90deg); }
 /* A phone reads the month as a list of the days that hold something, today always among them. */
@@ -884,8 +884,8 @@ body.ask-open { overflow: hidden; }
 .release-list h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 12px 0 6px; }
 .release-list ul { list-style: none; margin: 0; padding: 0; }
 .release-list li { padding: 6px 8px; margin-bottom: 8px; display: flow-root; border-radius: var(--radius-s); background: var(--carbon); font-size: 12.5px; line-height: 1.4; }
-.release-list li .kind { font-family: var(--display); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-right: 8px; color: var(--accent); }
-.release-list li .kind.fix { color: var(--ok); }
+.release-list li .kind { font-family: var(--display); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-right: 8px; color: var(--accent-hot); }
+.release-list li .kind.fix { color: var(--ok-ink); }
 .release-list li .kind.other { color: var(--ink-faint); }
 .release-list li a { color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; }
 .release-list li .when { float: right; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
@@ -916,7 +916,8 @@ body.ask-open { overflow: hidden; }
 
 /* ---------- audit parents ---------- */
 
-.supervisor, .due-row select { appearance: none; height: 44px; padding: 0 26px 0 10px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink-soft); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+/* appearance: none takes the platform arrow away, so the drawn chevron goes back in its place. */
+.supervisor, .due-row select { appearance: none; height: 44px; padding: 0 26px 0 10px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.8 6.4 L8 9.6 L11.2 6.4' fill='none' stroke='%23909ba4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center / 14px; color: var(--ink-soft); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .verdict { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; background: var(--panel); color: var(--ink-faint); }
 .verdict.pending, .verdict.flying, .verdict.reviewing { color: var(--accent-hot); background: var(--accent-dim); }
 .verdict.pass, .verdict.passed { color: var(--ok-ink); background: var(--ok-dim); }
@@ -959,7 +960,7 @@ body.ask-open { overflow: hidden; }
 .ship-report { margin-top: 8px; white-space: pre-wrap; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); }
 .ship-artifacts { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 10px; }
 .ship-artifacts a { font-family: var(--mono); font-size: 12px; color: var(--accent-hot); text-decoration: none; }
-.ship-notes { width: 100%; margin-top: 8px; resize: vertical; font: 12px/1.45 var(--sans); color: var(--ink); background: var(--gunmetal); border: 1px solid var(--seam-soft); border-radius: var(--radius-s); padding: 6px 8px; }
+.ship-notes { width: 100%; margin-top: 8px; resize: vertical; font: 12px/1.45 var(--sans); color: var(--ink); background: var(--gunmetal); border: 1px solid var(--seam-soft); border-radius: var(--radius-s); padding: 9px 10px; }
 .ship-notes:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- released and live ---------- */
@@ -1183,8 +1184,8 @@ body.ask-open { overflow: hidden; }
 .ws-tools { display: flex; align-items: center; gap: 8px; position: relative; }
 .cu-root { position: relative; }
 .cu-baby {
-  height: 34px; padding: 0 10px 0 12px; display: inline-flex; align-items: center; gap: 12px;
-  border-radius: 17px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam); color: var(--ink);
+  height: 34px; padding: 0 10px; display: inline-flex; align-items: center; gap: 12px;
+  border-radius: var(--radius-s); background: var(--steel); box-shadow: 0 0 0 1px var(--seam); color: var(--ink);
   font: 12px/1 var(--sans); cursor: pointer; border: 0;
 }
 .cu-baby:hover, .cu-baby.open { box-shadow: 0 0 0 1px var(--seam-strong); background: var(--panel); }
@@ -1338,7 +1339,6 @@ body.ask-open { overflow: hidden; }
    however wide the word is. Right-aligning the group as a whole would not; the words differ.
    These are `button.ghost` at the rack's size, so only what differs is declared here. */
 .strip-acts { display: grid; grid-template-columns: 66px 52px 64px; gap: 8px; }
-.strip-acts .act { padding: 0 4px; }
 .strip-acts .act:hover { background: var(--panel-lifted); color: var(--ink); }
 .strip-acts .act.end:hover { color: var(--threat); }
 

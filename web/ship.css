@@ -20,8 +20,8 @@
   grid-template-columns: 16px 22px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  padding: 8px 10px;
-  border-radius: var(--radius-m);
+  padding: 0 10px;
+  border-radius: var(--radius-s);
   background: var(--steel);
   box-shadow: 0 0 0 1px var(--seam-soft);
   cursor: pointer;

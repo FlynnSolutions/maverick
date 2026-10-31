@@ -101,7 +101,7 @@
 
   /* The answer: five verdicts as one group of 44px buttons, then a note that is kept with it. */
   .verdict { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  button { min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: 6px; background: var(--panel); color: var(--ink); font: 500 13px var(--sans); cursor: pointer; box-shadow: inset 0 0 0 1px var(--seam-strong); transition: background var(--dur-press) var(--ease-out), box-shadow var(--dur-press) var(--ease-out); }
+  button { min-height: 44px; min-width: 44px; padding: 0 10px; border: 0; border-radius: 4px; background: var(--panel); color: var(--ink); font: 500 13px var(--sans); cursor: pointer; box-shadow: inset 0 0 0 1px var(--seam-strong); transition: background var(--dur-press) var(--ease-out), box-shadow var(--dur-press) var(--ease-out); }
   button:hover { background: var(--panel-lifted); }
   .verdict button[aria-checked="true"] { background: color-mix(in srgb, var(--vc) 22%, var(--panel)); box-shadow: inset 0 0 0 1px var(--vc); }
   .note { display: block; width: 100%; min-height: 44px; overflow: hidden; margin-top: 8px; padding: 10px 12px; border: 0; border-radius: 6px; background: var(--carbon); color: var(--ink); font: 13px/1.5 var(--sans); resize: vertical; box-shadow: inset 0 0 0 1px var(--seam); caret-color: var(--accent); }
