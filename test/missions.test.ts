@@ -1162,7 +1162,13 @@ test("a milestone cut by repo is a problem, and a milestone spanning repos is a 
 
 test("a milestone that is only a walkthrough is a problem, judged from what its tasks touch, not from its title", () => {
   const walkOnly = parsePlan(shaped({ tasks: [task("Build it", ["touches: src/a.ts"])] }, { tasks: [task("Ship it", ["touches: deliverables/testing/x.html"]), task("Note it", ["touches: docs/03-decisions.md"])] }), ["root"]);
-  assert.deepEqual(walkOnly.problems, ["milestone 2 changes no product code (its tasks touch only deliverables, docs, test, tests): the walkthrough is never a milestone; it is how every milestone ends"]);
+  assert.deepEqual(walkOnly.problems, ["milestone 2 changes no product code (its tasks touch only documents and test code): the walkthrough is never a milestone; it is how every milestone ends"]);
+  const walkWith = (touches: string) => parsePlan(shaped({ tasks: [task("Build it", ["touches: src/a.ts"])] }, { tasks: [task("Founder walkthrough", [`touches: ${touches}`])] }), ["root"]).problems.join();
+  for (const tests of ["e2e/files.spec.ts", "apps/web/e2e", "src/__tests__/files.tsx", "cypress/e2e/files.cy.ts", "src/files/row.test.tsx"]) {
+    assert.match(walkWith(`deliverables/testing/x.html, ${tests}`), /milestone 2 changes no product code/, `a walkthrough that writes ${tests} is still a walkthrough`);
+  }
+  assert.equal(walkWith("src/pages/docs/index.tsx"), "", "a docs folder below the root is product");
+  assert.equal(walkWith("deliverables/testing/x.html, src/files/row.tsx"), "", "one product path is enough");
   const titled = parsePlan(shaped({ tasks: [task("Walkthrough", ["touches: src/walk.ts"])] }), ["root"]);
   assert.deepEqual(titled.problems, [], "a title that says walkthrough on a task that changes code is fine");
   const unsaid = parsePlan(shaped({ tasks: [task("Something")] }), ["root"]);

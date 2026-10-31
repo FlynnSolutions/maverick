@@ -500,9 +500,16 @@ const needProblems = (milestones: Milestone[]): string[] => {
   return problems;
 };
 
-/** Paths that are not product code: a task touching only these changes nothing a person uses. */
-const NOT_PRODUCT = ["deliverables", "docs", "test", "tests"];
-const isProduct = (path: string): boolean => !NOT_PRODUCT.some((dir) => underPath(path, dir));
+/**
+ * Paths that are not product code: a task touching only these changes nothing a person uses.
+ * Documents only at a repo's root (a `src/pages/docs/` is product); test code at any depth, by
+ * its folder or by its file name, since a repo puts its tests wherever its framework does.
+ */
+const NOT_PRODUCT_ROOTS = ["deliverables", "docs"];
+const TEST_DIRS = new Set(["test", "tests", "__tests__", "e2e", "cypress", "playwright"]);
+const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
+const isProduct = (path: string): boolean =>
+  !NOT_PRODUCT_ROOTS.some((dir) => underPath(path, dir)) && !path.split("/").some((part) => TEST_DIRS.has(part)) && !TEST_FILE.test(path);
 
 /**
  * A milestone is a foundation, not a layer (M28). A milestone whose tasks all work in one repo,
@@ -517,7 +524,7 @@ const shapeProblems = (milestones: Milestone[]): string[] => {
     const mine = reposOf(m);
     const problems: string[] = [];
     if (mine.size === 1 && all.size > 1) problems.push(`milestone ${m.n} works only in ${[...mine][0]} while another milestone works in ${[...all].filter((r) => !mine.has(r)).join(", ")}: a milestone is a foundation, cut by what builds on what, never by repo or layer`);
-    if (m.tasks.length && m.tasks.every((t) => t.touches?.length && !t.touches.some(isProduct))) problems.push(`milestone ${m.n} changes no product code (its tasks touch only ${NOT_PRODUCT.join(", ")}): the walkthrough is never a milestone; it is how every milestone ends`);
+    if (m.tasks.length && m.tasks.every((t) => t.touches?.length && !t.touches.some(isProduct))) problems.push(`milestone ${m.n} changes no product code (its tasks touch only documents and test code): the walkthrough is never a milestone; it is how every milestone ends`);
     return problems;
   });
 };
