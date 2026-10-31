@@ -290,7 +290,9 @@ export const mount = (host, view, ctx) => {
   };
 
   // The same thread the interview was held in, moved here by node, so "why is this one waiting?" gets an answer.
-  host.append(el("h2", { class: "prog-head" }, "Progress", count), pins, board, live, ctx.thread.node);
+  // The open questions lead the page, above the ask, not part way down Progress: what waits on you comes first.
+  ctx.now.append(pins);
+  host.append(el("h2", { class: "prog-head" }, "Progress", count), board, live, ctx.thread.node);
   // A hidden tab has no one reading the clock; it catches up on the next tick that is seen.
   setInterval(() => { if (!document.hidden) tick(); }, 1000);
   window.addEventListener("hashchange", () => { scrolledTo = ""; toHash(); });

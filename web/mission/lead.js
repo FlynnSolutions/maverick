@@ -14,7 +14,7 @@ import { render as renderMarkdown } from "../markdown.js";
  *   and never rebuilds a round being answered, so a half-picked round survives every stream event.
  */
 export const leadThread = (ctx) => {
-  const { el, btn, post, act, actionUrl, fmtTime, plural, projectId } = ctx;
+  const { el, btn, post, act, actionUrl, fmtTime, plural, about, projectId } = ctx;
   let view = null;
 
   const log = el("ol", { class: "lead-log", "aria-live": "polite" });
@@ -38,6 +38,7 @@ export const leadThread = (ctx) => {
     const text = box.value.trim();
     if (!text) return box.focus();
     send.disabled = true;
+    send.textContent = "sending";
     try {
       await say({ text });
       box.value = "";
@@ -45,6 +46,7 @@ export const leadThread = (ctx) => {
       fail(err);
     } finally {
       send.disabled = false;
+      send.textContent = "send";
     }
   } }, box, send);
   // Enter sends, as in every chat; Shift+Enter is a new line.
@@ -62,9 +64,27 @@ export const leadThread = (ctx) => {
     }
   }, "ghost lead-raw");
 
+  /* The conversation is history once it has run long: the last few entries show, the rest fold behind one line above them. */
+  const KEEP = 6;
+  let unfolded = false;
+  const earlier = btn("", () => { unfolded = !unfolded; foldLog(); }, "ghost lead-earlier");
+  const foldLog = () => {
+    const items = [...log.children];
+    const folded = unfolded ? 0 : Math.max(0, items.length - KEEP);
+    items.forEach((li, i) => {
+      li.hidden = i < folded;
+      if (li.hidden) li.dataset.folded = "";
+    });
+    earlier.hidden = items.length <= KEEP;
+    earlier.textContent = unfolded ? "fold the earlier conversation" : `the earlier conversation, ${folded} ${folded === 1 ? "entry" : "entries"}`;
+    earlier.setAttribute("aria-expanded", String(unfolded));
+  };
+  /** An ended mission's Strike Lead is stood down and the server refuses anything said to it, so nothing here offers to. */
+  const ended = el("p", { class: "lead-hint", hidden: true }, "This mission has ended, so its Strike Lead takes nothing more. Start a new mission from the workspace for anything still to do.");
+
   const node = el("section", { class: "lead" },
     el("h3", { class: "lead-head" }, "The Strike Lead"),
-    log, thinking, fire, composer, heard,
+    earlier, log, thinking, fire, composer, ended, heard,
     el("div", { class: "lead-foot" }, raw), well);
 
   /* ---------- one round of questions, answered with clicks ---------- */
@@ -113,6 +133,7 @@ export const leadThread = (ctx) => {
 
   /** Whether this entry's round is still open, as the server says it (`openRound`): it is the one the mission's questions name. */
   const isOpen = (chat, i) => Boolean(view?.questions?.some((q) => q.id === `round:${chat[i].at}`));
+  const over = () => ["closed", "abandoned"].includes(view?.status);
 
   /** Maverick's own line about the flight: a task out, passed or back, a milestone merged. One quiet line each. */
   const note = (u) => el("li", { class: `lead-note ${u.kind}` }, el("span", { class: "lead-at" }, fmtTime(u.at)), el("span", {}, u.text));
@@ -151,7 +172,7 @@ export const leadThread = (ctx) => {
     const ready = !view.approved && last?.planReady && doc.found && !doc.parsed?.problems?.length;
     const refusing = doc.preflight?.filter((c) => c.refuses) ?? [];
     const failing = doc.preflight?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
-    const key = JSON.stringify([ready, refusing.map((c) => c.name), failing.map((c) => c.name), doc.cost]);
+    const key = JSON.stringify([ready, refusing.map((c) => c.name), failing.map((c) => c.name), doc.cost, doc.estimate?.minutes]);
     if (key === fireKey) return;
     fireKey = key;
     if (!ready) return fire.replaceChildren();
@@ -160,7 +181,7 @@ export const leadThread = (ctx) => {
     fire.replaceChildren(...[
       btn("Fire mission", () => act("approve", {}, "fired; the first milestone is out"), "primary lead-fire-btn"),
       failing.length ? el("p", { class: "mv-warn" }, `${plural(failing.length, "check")} failed in the gate below (${failing.map((c) => c.name).join(", ")}); read ${failing.length === 1 ? "it" : "them"} before you fire.`) : null,
-      el("p", { class: "lead-hint" }, `Writes ${doc.cost.tasks} items into the tracker and sends out the first milestone; ${doc.cost.sessions} sessions over the mission's life. The plan and its checks are in the gate below.`),
+      el("p", { class: "lead-hint" }, `Writes ${doc.cost.tasks} items into the tracker and sends out the first milestone; ${doc.cost.sessions} sessions over the mission's life.${doc.estimate ? ` ${plural(doc.estimate.milestones.length, "milestone")}, ${about(doc.estimate.minutes)} of building, and you walk each one.` : ""} The briefing, the plan and its checks are in the gate below.`),
     ].filter(Boolean));
   };
 
@@ -181,11 +202,14 @@ export const leadThread = (ctx) => {
   const update = (next) => {
     view = next;
     paintLog(next.chat ?? [], next.updates ?? []);
+    foldLog();
+    composer.hidden = over();
+    ended.hidden = !over();
     toRound();
     // While a round waits, its "send answers" is the one primary; the free-text send steps back.
     send.classList.toggle("primary", !log.querySelector("#round"));
     thinking.hidden = !next.leadBusy;
-    raw.hidden = !next.lead || next.leadBusy;
+    raw.hidden = !next.lead || next.leadBusy || over();
     paintFire();
   };
 

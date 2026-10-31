@@ -17,13 +17,14 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, fmtTime, plural, reveal }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, now, fmtTime, plural, about, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
  *   post(path, body)             fetch JSON; throws with the server's error on a non-2xx
- *   act(path, body, said)        posts to actionUrl(path), sets the status line to `said` (or
- *                                the error), and lets the stream refresh every module
+ *   act(path, body, said)        posts to actionUrl(path), says `said` in a toast (or the error,
+ *                                in one that stays until closed), and lets the stream refresh
+ *                                every module
  *   actionUrl(path)              /api/missions/<id>/<path>?project=
  *   LANDS[land](base)            the sentence for where a repo's work lands
  *   projectId, missionId
@@ -32,8 +33,12 @@
  *   mountTerminal(host, id)      one of the server's terminals, live, inside `host`
  *   thread                       the Strike Lead's chat (web/mission/lead.js), owned and updated
  *                                by the shell; a module only places `thread.node`
+ *   now                          the slot at the top of the page for what is waiting on you, the
+ *                                one place outside its section a module may write: Progress puts
+ *                                the open questions there, so they are the first thing on the page
  *   fmtTime(iso)                 a clock time, or "" for none
  *   plural(n, word)              `1 note`, `2 notes`
+ *   about(minutes)               an estimate: `about 35 min`, `about 2 h 15 min`
  *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
  *                                Result without `reveal` on its handle makes it a no-op
  *
@@ -45,6 +50,7 @@ import { readableOn, recall } from "./theme.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
+import { toast } from "./toast.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -76,6 +82,8 @@ const setStatus = (msg, isError = false) => {
 };
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+/** The minutes, said as the estimate they are. */
+const about = (minutes) => minutes >= 60 ? `about ${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}` : `about ${minutes} min`;
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
@@ -170,11 +178,11 @@ const openSession = (taskId, under) => {
   const task = allTasks().find((t) => t.id === taskId);
   const claudeId = task?.status === "reviewing" ? task.review?.claudeId : task?.claudeId ?? task?.review?.claudeId;
   if (!claudeId) {
-    setStatus(`${task?.title ?? taskId} has no session to open`, true);
+    toast(`${task?.title ?? taskId} has no session to open`, { error: true });
     return;
   }
   if (watching.has(claudeId)) {
-    setStatus(`${task.title}'s session is already open on this page`);
+    toast(`${task.title}'s session is already open on this page`);
     return;
   }
   const screen = el("div", { class: "term" });
@@ -189,11 +197,11 @@ const openSession = (taskId, under) => {
 const act = async (action, body, said) => {
   try {
     await post(actionUrl(action), body);
-    setStatus(said);
+    toast(said);
     // On the stream the server's own flush lands the change; only the 8 s fallback has to ask.
     if (!streaming) await load();
   } catch (err) {
-    setStatus(err.message, true);
+    toast(err.message, { error: true });
   }
 };
 
@@ -206,7 +214,7 @@ const LANDS = {
 
 const reveal = (key) => mounted.get("result")?.reveal?.(key);
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, fmtTime, plural, reveal };
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, now: $("#now"), fmtTime, plural, about, reveal };
 // One thread for the mission's whole life: in Plan before approval, placed in Progress after, never rebuilt.
 ctx.thread = leadThread(ctx);
 
@@ -223,6 +231,9 @@ const renderWord = () => {
   const open = mission.questions?.length ?? 0;
   const chip = $("#word");
   chip.className = `mv-word ${look.cls}`;
+  // The loudest thing on the page goes to what it is loud about; any other word is only a word.
+  if (open) chip.setAttribute("href", "#now");
+  else chip.removeAttribute("href");
   chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
 };
 
@@ -318,7 +329,7 @@ const renderControls = () => {
 
 /** The anchor whose section is nearest the top of the view is the one marked `on`. */
 const spy = () => {
-  const links = new Map([...document.querySelectorAll("#rail a[href^='#']")].map((a) => [a.hash.slice(1), a]));
+  const links = new Map([...document.querySelectorAll("#rail a.mv-nav")].map((a) => [a.hash.slice(1), a]));
   const mark = (id) => {
     for (const [key, a] of links) {
       a.classList.toggle("on", key === id);
@@ -337,6 +348,20 @@ const spy = () => {
 };
 
 /* ---------- the ask: the shell's own section ---------- */
+/** A brief longer than a few lines folds to them: the ask is context, and what waits on you sits above it. */
+const BRIEF_FOLD = 320;
+const briefOf = (brief) => {
+  const p = el("p", { class: "mv-ask-brief" }, brief);
+  if (brief.length <= BRIEF_FOLD) return p;
+  p.classList.add("folded");
+  const more = btn("the whole brief", () => {
+    const folded = p.classList.toggle("folded");
+    more.textContent = folded ? "the whole brief" : "fold it";
+    more.setAttribute("aria-expanded", String(!folded));
+  }, "ghost mv-more");
+  more.setAttribute("aria-expanded", "false");
+  return el("div", {}, p, more);
+};
 let askKey = "";
 const renderAsk = () => {
   const key = JSON.stringify([mission.name, mission.brief, mission.created, mission.approved, mission.planCommit]);
@@ -346,7 +371,7 @@ const renderAsk = () => {
   fill($("#ask"),
     el("h2", {}, "The ask"),
     el("h1", {}, mission.name),
-    el("p", { class: "mv-ask-brief" }, mission.brief),
+    briefOf(mission.brief),
     el("p", { class: "mv-ask-meta" }, [
       `opened ${fmtTime(mission.created)}`,
       mission.approved ? `approved ${fmtTime(mission.approved)}` : "not approved yet",
@@ -382,12 +407,37 @@ const preflightBand = (checks) => {
     el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), ` ${c.detail}`))));
 };
 
-const costBand = (cost) => el("div", { class: "mv-band" },
+const costBand = (cost, estimate) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "repos"), el("span", { class: "v" }, String(cost.repos ?? 1))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "milestones"), el("span", { class: "v" }, String(cost.milestones))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "tasks"), el("span", { class: "v" }, String(cost.tasks))),
   el("div", { class: "cell" }, el("span", { class: "k" }, "sessions it spawns"), el("span", { class: "v" }, String(cost.sessions))),
-  el("div", { class: "cell" }, el("span", { class: "k" }, "you are asked"), el("span", { class: "v" }, "twice")));
+  el("div", { class: "cell" }, el("span", { class: "k" }, "you are needed"), el("span", { class: "v" }, estimate ? plural(estimate.milestones.length, "time") : "at each walk")));
+
+
+/**
+ * The briefing before the fire (M28): per milestone what it builds, the cases you walk at its
+ * end, what it builds on and roughly how long, then the totals. The minutes are Maverick's, from
+ * the plan's shape and measured history, not the Strike Lead's guess.
+ */
+const briefing = (estimate) => {
+  if (!estimate?.milestones.length) return null;
+  const { basis } = estimate;
+  return el("div", { class: "mv-brief" },
+    el("h3", { class: "k" }, "The briefing"),
+    el("ol", {}, ...estimate.milestones.map((m) => el("li", {},
+      el("p", { class: "t" }, `Milestone ${m.n}: ${m.title}`),
+      el("p", { class: "muted small" }, [
+        m.buildsOn.length ? `builds on milestone ${m.buildsOn.join(", ")}` : "builds on nothing before it",
+        `${about(m.minutes)} to build${m.chain.length > 1 ? ` (${m.chain.length} tasks in a row)` : ""}`,
+        "you walk it at the end",
+      ].join(" · ")),
+      m.walk.length ? el("ul", { class: "cases" }, ...m.walk.map((c) => el("li", {}, c))) : null))),
+    el("p", { class: "why" }, `${plural(estimate.milestones.length, "milestone")}, ${about(estimate.minutes)} of building end to end, not counting your walks; you are needed ${plural(estimate.milestones.length, "time")}, once per milestone to walk it, and the close follows the last walk.`),
+    el("p", { class: "cost-note" }, basis.measured
+      ? `Times are measured from ${plural(basis.tasks, "past task")}: ${basis.minutesPerTask} min per task (build plus review), and ${Math.round(basis.retryRate * 100)}% were sent out twice, so each milestone is its tasks in a row plus ${basis.retryRate} of a retry, times ${basis.minutesPerTask} min, to the nearest 5.`
+      : `No mission has finished here yet, so times are a default: ${basis.linkMinutes} min per task in the longest chain.`));
+};
 
 /** Approving is a decision, not a click: the first press says what it costs, the second flies. */
 const approveButton = (doc) => {
@@ -415,9 +465,10 @@ const gateBlocks = () => {
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
   } else {
     gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
+      briefing(doc.estimate),
       parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
         el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
-      costBand(doc.cost),
+      costBand(doc.cost, doc.estimate),
       reposBand(doc.repos ?? []),
       preflightBand(doc.preflight),
       doc.wingmanAgent
@@ -437,7 +488,7 @@ const gateBlocks = () => {
   if (parsed?.milestones?.length) {
     blocks.push(el("section", {}, el("h2", {}, "The plan"),
       ...parsed.milestones.map((m) => el("div", { class: "mv-milestone" },
-        el("h3", {}, el("span", {}, `Milestone ${m.n} — ${m.title}`)),
+        el("h3", {}, el("span", {}, `Milestone ${m.n}: ${m.title}`)),
         el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
         ...m.tasks.map((t) => el("div", { class: "mv-plan-task" },
           el("h4", {}, t.title, t.repo ? el("span", { class: "mv-repo" }, t.repo) : null),
@@ -500,7 +551,7 @@ const updateModules = () => {
     try {
       handle.update(mission);
     } catch (err) {
-      setStatus(`the ${name} section did not update: ${err.message}`, true);
+      toast(`the ${name} section did not update: ${err.message}`, { error: true });
     }
   }
 };
@@ -576,18 +627,22 @@ const poll = () => {
 };
 document.addEventListener("visibilitychange", () => { if (pollTimer && !document.hidden) load().catch(() => {}); });
 
+/** A page that cannot show its mission says why in the page, with the way back, and draws none of the sections it cannot fill. */
+const cannotOpen = (why, back = "/") => {
+  $("#page").classList.add("unopened");
+  setStatus(why, true);
+  fill($("#ask"),
+    el("h1", {}, "This mission cannot be opened"),
+    el("p", { class: "mv-warn" }, why),
+    el("p", {}, el("a", { class: "button-link", href: back }, "back to the workspace"), " where its row says what it is waiting for, or open it from there again."));
+};
+
 const boot = async () => {
   void mountDevBadge();
-  if (!projectId || !missionId) {
-    setStatus("open this page from the board's rail: ?project=<id>&mission=<id>", true);
-    return;
-  }
+  if (!projectId || !missionId) return cannotOpen("the link is missing its project or its mission: open the mission from the workspace, which writes both");
   const projects = await api("/api/projects");
   const project = projects.find((p) => p.id === projectId);
-  if (!project) {
-    setStatus(`no project "${projectId}"`, true);
-    return;
-  }
+  if (!project) return cannotOpen(`there is no project "${projectId}" on this machine; it may have been removed from the registry`);
   document.title = `Mission · ${project.name} · Maverick`;
   applyTheme(project.theme);
   const workspace = `/?project=${encodeURIComponent(projectId)}&view=workspace`;
@@ -595,8 +650,14 @@ const boot = async () => {
   $("#board-link").href = workspace;
   $("#back").href = workspace;
   spy();
-  await load();
+  try {
+    await load();
+  } catch (err) {
+    return cannotOpen(err.message, workspace);
+  }
   await modulesUp;
+  // What is on the page now was there on arrival; only what lands after this rises in.
+  requestAnimationFrame(() => $("#page").classList.add("settled"));
   // The sections were empty when the browser tried the hash; now they have their height.
   const target = location.hash.slice(1);
   if (["ask", "plan", "progress", "result"].includes(target)) document.getElementById(target).scrollIntoView();

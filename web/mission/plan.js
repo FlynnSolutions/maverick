@@ -9,14 +9,18 @@ import { stopWalkthrough, walkthroughPanel } from "../walkthrough.js";
 /** The task's lamp and word, the map in /mockups/mission.html; Progress draws the same lamp on its cards. `built` is between the two: the Wingman is done and its RIO is on the way. */
 export const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
 const WORD = { passed: "done", flying: "working", built: "built", reviewing: "in review", "handed-back": "waiting for you", pending: "waiting" };
-const STEP_LAMP = { done: ["done", "work"], waiting: ["blocked", "work"], proving: ["busy", "action"], working: ["busy", "work"], pending: ["idle", "stale"] };
+const STEP_LAMP = { done: ["done", "work"], walk: ["blocked", "work"], waiting: ["blocked", "work"], proving: ["busy", "action"], working: ["busy", "work"], pending: ["idle", "stale"] };
 /** The states with a session worth opening: a Wingman flying, a RIO reading, or the last of either before it was handed back. */
 const LIVE = new Set(["flying", "reviewing", "handed-back"]);
 
-/** A hold reads before a merge: a merged milestone held on its proof or its landing is waiting, and one the server has not called done is being proved. */
+/**
+ * A hold reads before a merge: a merged milestone held on its proof or its landing is waiting, and
+ * one the server has not called done is being proved. A proved one still to walk is not done: the
+ * walkthrough is the gate, so it says so instead of painting itself finished.
+ */
 const stepState = (m, view) =>
   m.hold || m.tasks.some((t) => t.status === "handed-back") ? "waiting"
-    : m.merged ? (view.proved?.includes(m.n) ? "done" : "proving")
+    : m.merged ? (!view.proved?.includes(m.n) ? "proving" : view.walk?.[m.n]?.needed ? "walk" : "done")
       : m.dispatched || m.tasks.some((t) => t.status !== "pending") ? "working"
         : "pending";
 /** A milestone started early has no dispatch stamp; its first task's start stands in. */
@@ -32,6 +36,7 @@ export const mount = (host, view, ctx) => {
     s === "done" ? `done ${fmtTime(m.merged)}`
       : s === "proving" ? `merged ${fmtTime(m.merged)}, being proved`
       : s === "waiting" ? "waiting for you"
+      : s === "walk" ? (m.walkthrough?.progress?.total ? `to walk: ${m.walkthrough.progress.answered} of ${m.walkthrough.progress.total}` : "to walk")
         : s === "working" ? (since(m) ? `working since ${fmtTime(since(m))}` : "working")
           : "not started";
   const swapLamp = (holder, [status, band]) => {
@@ -208,8 +213,10 @@ export const mount = (host, view, ctx) => {
     const s = steps.get(m.n) ?? makeStep(m);
     s.m = m;
     const state = stepState(m, current);
-    // Open unless done, decided when the step first shows and again when it becomes done; a step you opened or closed yourself stays as you left it.
-    if (state !== s.state && (s.state === "" || state === "done")) s.details.open = state !== "done";
+    // Open unless done or still to walk, decided when the step first shows and again when it becomes
+    // done; a step you opened or closed yourself stays as you left it. A step to walk waits closed,
+    // because opening it loads its walkthrough; the review question is what opens it.
+    if (state !== s.state && (s.state === "" || state === "done")) s.details.open = state !== "done" && state !== "walk";
     s.state = state;
     s.details.className = `step ${state}`;
     swapLamp(s.lamp, STEP_LAMP[state]);

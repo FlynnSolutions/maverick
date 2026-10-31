@@ -53,7 +53,7 @@ button.card-toggle:hover .card-why { color: var(--ink-soft); }
 .mv-page .chip.ship { color: var(--caution); }
 
 /* The body: the headline under the title's column, the detail under it once opened. 8px between rows. */
-.card-body { display: grid; gap: 8px; padding: 0 0 12px 26px; }
+.card-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0 0 12px 26px; }
 .card-body:not(:has(> :not([hidden]))) { display: none; }
 .card-headline { font-size: 13px; line-height: 1.5; color: var(--ink-soft); max-width: 80ch; }
 .card-detail { padding: 8px 10px; max-width: 80ch; font-size: 13px; line-height: 1.5; color: var(--ink-soft); white-space: pre-line; background: var(--inset); border-radius: var(--radius-s); }

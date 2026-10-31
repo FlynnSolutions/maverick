@@ -20,7 +20,8 @@
  */
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { watch } from "node:fs";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { landFor, missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
@@ -153,6 +154,8 @@ export interface Milestone {
   title: string;
   /** One testable line: what "done" means for this milestone. */
   done: string;
+  /** The cases Cory walks at the milestone's end, from its `_walk:_` line. Absent on records from before the line existed. */
+  walk?: string[];
   tasks: MissionTask[];
   dispatched?: string;
   merged?: string;
@@ -332,6 +335,7 @@ const PLAN_FORMAT = `# Mission: <name>
 ## Milestone 1 — <short title>
 
 _done when: <one testable line>_
+_walk: <a case Cory will walk at the end>; <the next case>; <...>_
 
 - [ ] **<task title>**
   - repo: <which repo this works in; omit it only when the project has one>
@@ -350,6 +354,7 @@ _done when: <one testable line>_
 ## Milestone 2 — <short title>
 
 _done when: <one testable line>_
+_walk: <case>; <case>_
 
 - [ ] **<task title>**
   <...>
@@ -370,6 +375,7 @@ _done when: <one testable line>_
 
 const MILESTONE_HEADING = /^Milestone\s+(\d+)\s*[—–:-]\s*(.+)$/;
 const DONE_LINE = /^_*\s*done when:\s*(.+?)\s*_*$/i;
+const WALK_LINE = /^_*\s*walk:\s*(.+?)\s*_*$/i;
 /** The section at the end of a flying plan where every transition and decision is appended. */
 const LOG_HEADING = /^Log$/i;
 /** The section where what tasks share is named before any of them starts. */
@@ -436,6 +442,46 @@ const needProblems = (milestones: Milestone[]): string[] => {
   return problems;
 };
 
+/** Paths that are not product code: a task touching only these changes nothing a person uses. */
+const NOT_PRODUCT = ["deliverables", "docs", "test", "tests"];
+const isProduct = (path: string): boolean => !NOT_PRODUCT.some((dir) => underPath(path, dir));
+
+/**
+ * A milestone is a foundation, not a layer (M28). A milestone whose tasks all work in one repo,
+ * in a plan where another works in a different one, was cut by repo; a milestone none of whose
+ * tasks touches product code is a walkthrough, which is never a milestone. Judged from
+ * `touches`: a task that says nothing about what it owns is not called a walkthrough.
+ */
+const shapeProblems = (milestones: Milestone[]): string[] => {
+  const reposOf = (m: Milestone): Set<string> => new Set(m.tasks.map((t) => t.repo).filter(Boolean));
+  const all = new Set(milestones.flatMap((m) => [...reposOf(m)]));
+  return milestones.flatMap((m) => {
+    const mine = reposOf(m);
+    const problems: string[] = [];
+    if (mine.size === 1 && all.size > 1) problems.push(`milestone ${m.n} works only in ${[...mine][0]} while another milestone works in ${[...all].filter((r) => !mine.has(r)).join(", ")}: a milestone is a foundation, cut by what builds on what, never by repo or layer`);
+    if (m.tasks.length && m.tasks.every((t) => t.touches?.length && !t.touches.some(isProduct))) problems.push(`milestone ${m.n} changes no product code (its tasks touch only ${NOT_PRODUCT.join(", ")}): the walkthrough is never a milestone; it is how every milestone ends`);
+    return problems;
+  });
+};
+
+/** The longest run of tasks inside one milestone that each need the one before, by id. A loop (already a problem) stops the walk rather than spinning it. */
+export const longestChain = (m: Pick<Milestone, "tasks">): string[] => {
+  const byId = new Map(m.tasks.map((t) => [t.id, t]));
+  const memo = new Map<string, string[]>();
+  const visiting = new Set<string>();
+  const longest = (chains: string[][]): string[] => chains.reduce((a, b) => (b.length > a.length ? b : a), []);
+  const from = (id: string): string[] => {
+    const known = memo.get(id);
+    if (known) return known;
+    visiting.add(id);
+    const best = [...longest((byId.get(id)?.needs ?? []).filter((x) => byId.has(x) && !visiting.has(x)).map(from)), id];
+    visiting.delete(id);
+    memo.set(id, best);
+    return best;
+  };
+  return longest(m.tasks.map((t) => from(t.id)));
+};
+
 /** Tasks in one milestone whose `touches` overlap: they fly in parallel, so this is a collision planned in. */
 export const overlapsIn = (milestones: Milestone[]): string[] =>
   milestones.flatMap((m) => m.tasks.flatMap((a, i) => m.tasks.slice(i + 1).flatMap((b) => {
@@ -480,8 +526,12 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
       continue;
     }
     const n = Number(m[1]);
-    const done = (lines.slice(section.start + 1, section.end).map((l) => l.trim()).find((l) => DONE_LINE.test(l))?.match(DONE_LINE)?.[1] ?? "").trim().replace(/\.$/, "");
+    const body = lines.slice(section.start + 1, section.end).map((l) => l.trim());
+    const lineOf = (re: RegExp): string => (body.find((l) => re.test(l))?.match(re)?.[1] ?? "").trim().replace(/\.$/, "");
+    const done = lineOf(DONE_LINE);
     if (!done) problems.push(`milestone ${n} has no "_done when: ..._" line`);
+    const walk = listField(lineOf(WALK_LINE), /;/);
+    if (!walk.length) problems.push(`milestone ${n} has no "_walk: <case>; <case>_" line: the cases walked at its end`);
     const only = repos.length === 1 ? repos[0] : "";
     const tasks = section.groups.flatMap((g) => g.items).map((item, i) => {
       const { status, attempt, verdict, commit, touches, needs, deploys, repo } = item.fields;
@@ -520,11 +570,11 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
       if (!t.repo) problems.push(`"${t.title}" in milestone ${n} names no repo; this project has ${repos.length}, so every task needs "- repo: <name>"`);
       else if (repos.length && !repos.includes(t.repo)) problems.push(`"${t.title}" in milestone ${n} names repo "${t.repo}", which is not one of: ${repos.join(", ")}`);
     }
-    milestones.push({ n, title: m[2].trim(), done, tasks });
+    milestones.push({ n, title: m[2].trim(), done, walk, tasks });
   }
   if (!milestones.length) problems.push("the document has no milestones");
   milestones.sort((a, b) => a.n - b.n);
-  problems.push(...needProblems(milestones));
+  problems.push(...needProblems(milestones), ...shapeProblems(milestones));
   const ids = new Set(milestones.flatMap((m) => m.tasks.map((t) => t.id)));
   // A shared environment is deployed by the merged mission branch and by nothing that flies in parallel.
   const sharedLower = shared.map((s) => s.toLowerCase());
@@ -541,6 +591,10 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   const warnings: string[] = [];
   const dependent = milestones.flatMap((m) => m.tasks).filter((t) => t.needs?.length);
   if (dependent.length && !contracts.length) warnings.push(`${dependent.length} task(s) build on others and the plan names no contracts: what they share (types, ids, codecs, env flags, functions) has no owner or shape yet`);
+  for (const m of milestones) {
+    const chain = longestChain(m);
+    if (m.tasks.length >= 4 && chain.length > m.tasks.length / 2) warnings.push(`milestone ${m.n} is mostly one chain: ${chain.join(", ")} run one after another, so at most ${m.tasks.length - chain.length + 1} of its ${m.tasks.length} tasks can fly at once`);
+  }
   return { name, intro, milestones, contracts, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
 };
 
@@ -726,6 +780,76 @@ export const costOf = (milestones: Milestone[]): Cost => {
   };
 };
 
+/** What a task has taken, measured from past missions: build plus review per task, and how often a task went out twice. */
+export interface Pace { minutesPerTask: number; retryRate: number; tasks: number }
+
+/** The fixed figure the estimate falls back on with no history: minutes per link of a `needs` chain. */
+export const DEFAULT_LINK_MINUTES = 15;
+
+/**
+ * Measured from the mission records under `config.sessionsDir/missions/`: every passed task's
+ * last attempt, its Wingman from `started` to `ended` and its RIO from `review.started` to when
+ * the RIO's findings file was last written. The retry rate is the share of those tasks that
+ * took more than one attempt. Null with nothing measured. The gate polls and the answer moves only
+ * when a task passes, so a reading is kept for a few minutes per records folder.
+ */
+const PACE_TTL_MS = 5 * 60_000;
+const paceRead = new Map<string, { at: number; pace: Promise<Pace | null> }>();
+export const measuredPace = (maxAgeMs = PACE_TTL_MS): Promise<Pace | null> => {
+  const hit = paceRead.get(config.sessionsDir);
+  if (hit && Date.now() - hit.at < maxAgeMs) return hit.pace;
+  const pace = readPace();
+  paceRead.set(config.sessionsDir, { at: Date.now(), pace });
+  return pace;
+};
+const readPace = async (): Promise<Pace | null> => {
+  const projects = await readdir(join(config.sessionsDir, "missions"), { withFileTypes: true }).catch(() => []);
+  const missions = (await Promise.all(projects.filter((d) => d.isDirectory()).map((d) => listMissions(d.name)))).flat();
+  const done = missions.flatMap((m) => m.milestones.flatMap((x) => x.tasks)).filter((t) => t.status === "passed" && t.started && t.ended && t.review?.started);
+  const took = (await Promise.all(done.map(async (t) => {
+    const reviewed = await stat(t.review!.file).then((s) => s.mtimeMs, () => null);
+    const ms = reviewed === null ? 0 : Date.parse(t.ended!) - Date.parse(t.started!) + reviewed - Date.parse(t.review!.started);
+    return ms > 0 ? [{ minutes: ms / 60_000, retried: t.attempts > 1 }] : [];
+  }))).flat();
+  if (!took.length) return null;
+  return { minutesPerTask: took.reduce((n, x) => n + x.minutes, 0) / took.length, retryRate: took.filter((x) => x.retried).length / took.length, tasks: took.length };
+};
+
+/** Minutes to the nearest 5, never under 5: an estimate, not a stopwatch. */
+const roughly = (minutes: number): number => Math.max(5, Math.round(minutes / 5) * 5);
+
+export interface Estimate {
+  milestones: Array<{ n: number; title: string; walk: string[]; buildsOn: number[]; chain: string[]; minutes: number }>;
+  /** Every milestone one after another, since each waits on the walk of the one before. Agent time; the walks are not in it. */
+  minutes: number;
+  /** Where the minutes came from: measured history, or the fixed default with none. */
+  basis: { measured: true; tasks: number; minutesPerTask: number; retryRate: number } | { measured: false; linkMinutes: number };
+}
+
+/**
+ * What the briefing says each milestone takes (M28), computed rather than guessed: the longest
+ * `needs` chain inside it times the measured minutes per task, plus the measured retry rate
+ * times those minutes. With no history, a fixed figure per chain link, said to be a default.
+ * A milestone builds on the one before it, which it waits to see walked, and on any earlier
+ * milestone a task of it names in `needs`.
+ */
+export const estimateOf = (milestones: Milestone[], pace: Pace | null): Estimate => {
+  const home = new Map(milestones.flatMap((m) => m.tasks.map((t) => [t.id, m.n] as const)));
+  const rows = milestones.map((m, i) => {
+    const chain = longestChain(m);
+    const links = Math.max(1, chain.length);
+    const needed = m.tasks.flatMap((t) => (t.needs ?? []).map((id) => home.get(id))).filter((n): n is number => n !== undefined && n !== m.n);
+    const buildsOn = [...new Set([...(i > 0 ? [milestones[i - 1].n] : []), ...needed])].sort((a, b) => a - b);
+    const raw = pace ? (links + pace.retryRate) * pace.minutesPerTask : links * DEFAULT_LINK_MINUTES;
+    return { n: m.n, title: m.title, walk: m.walk ?? [], buildsOn, chain, minutes: roughly(raw) };
+  });
+  return {
+    milestones: rows,
+    minutes: rows.reduce((n, r) => n + r.minutes, 0),
+    basis: pace ? { measured: true, tasks: pace.tasks, minutesPerTask: Math.round(pace.minutesPerTask), retryRate: Math.round(pace.retryRate * 100) / 100 } : { measured: false, linkMinutes: DEFAULT_LINK_MINUTES },
+  };
+};
+
 /* ---------- the Strike Lead's interview ---------- */
 
 /** Every repo a mission could touch, with the base branch each one lands against. */
@@ -795,7 +919,7 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
   "",
   PLAN_FORMAT,
   "",
-  "Rules for the plan. Each task is one unit of work for one session with no other context, so its body must carry everything that session needs: the files, the shape, what it must not touch, and how it proves itself. Say what each task owns (`touches`) and what it builds on (`needs`): a task starts when what it needs has passed, so a dependency inside a milestone is allowed and means after. Before any fan-out, every type, id, codec, env flag and function one task makes and another uses goes in `## Contracts` with its owner and its shape. Keep milestones small enough that a failure costs one milestone, not the mission. In `## Preflight`, say what the mission needs of the host (tools, runtimes, credentials and how long the mission runs so their lifetime can be checked, secrets by name) and what only a person can do (an inbox, a passkey, a real sign-in), with what the plan does instead; Maverick checks what a machine can before Cory approves and leaves.",
+  "Rules for the plan. Each task is one unit of work for one session with no other context, so its body must carry everything that session needs: the files, the shape, what it must not touch, and how it proves itself. Say what each task owns (`touches`) and what it builds on (`needs`): a task starts when what it needs has passed, so a dependency inside a milestone is allowed and means after. Before any fan-out, every type, id, codec, env flag and function one task makes and another uses goes in `## Contracts` with its owner and its shape. A milestone is a foundation: work that what comes after it builds on, so it is finished and walked before the next one starts. Everything that can be built at the same time belongs in one milestone: the contract first, then the backend and the frontend in parallel against it. Never cut milestones by layer or by repo, and never make the walkthrough a milestone. Most missions are one milestone; add another only when its work cannot begin until the first is built and confirmed. Every milestone ends in a walkthrough Cory can see, and work with no screen (a migration, a backfill) shows its dry run on the preview, before and after. Before the plan is fired, brief Cory on every milestone: what it builds, what he will walk through at its end (the cases), what it builds on, a rough time to build, and when he will be needed. Then give the total: how many milestones, the time end to end, and how many times he is needed. In `## Preflight`, say what the mission needs of the host (tools, runtimes, credentials and how long the mission runs so their lifetime can be checked, secrets by name) and what only a person can do (an inbox, a passkey, a real sign-in), with what the plan does instead; Maverick checks what a machine can before Cory approves and leaves.",
   "",
   repos.length > 1
     ? [
@@ -863,7 +987,7 @@ export const openLeadTerminal = async (project: Project, id: string): Promise<Te
 };
 
 /** Read the plan the Strike Lead wrote, without committing to it. This is what the gate shows. */
-export const previewPlan = async (project: Project, id: string): Promise<{ found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost; wingmanAgent?: string; repos?: Array<{ label: string; base: string; land: Landing }>; preflight?: Check[] }> => {
+export const previewPlan = async (project: Project, id: string): Promise<{ found: boolean; text?: string; parsed?: ReturnType<typeof parsePlan>; cost?: Cost; estimate?: Estimate; wingmanAgent?: string; repos?: Array<{ label: string; base: string; land: Landing }>; preflight?: Check[] }> => {
   const mission = await missionOr404(project.id, id);
   let text: string;
   try {
@@ -882,7 +1006,7 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
   }
   // Only the repos the plan names, so the gate shows what this mission will actually touch.
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
-  return { found: true, text, parsed, wingmanAgent: cfg.wingmanAgent, cost: costOf(parsed.milestones), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })), preflight: parsed.problems.length ? [] : await preflightFor(project, cfg, choices, parsed) };
+  return { found: true, text, parsed, wingmanAgent: cfg.wingmanAgent, cost: costOf(parsed.milestones), estimate: estimateOf(parsed.milestones, await measuredPace()), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })), preflight: parsed.problems.length ? [] : await preflightFor(project, cfg, choices, parsed) };
 };
 
 /* ---------- the blessing, and the tracker write ---------- */
@@ -952,7 +1076,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
 
 /* ---------- the flight ---------- */
 
-const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, shared: string[] = []): BriefContext => ({ projectPath: project.path, shared, mission, milestone: m, task, repo });
+const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, cfg: Pick<MissionConfig, "shared" | "proof">): BriefContext => ({ projectPath: project.path, shared: cfg.shared, proof: cfg.proof, mission, milestone: m, task, repo });
 
 /**
  * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:
@@ -1113,19 +1237,22 @@ const clashOn = (a: MissionTask, b: MissionTask): string[] => {
 /** The statuses of a task with an agent in the air: what a task about to start must not clash with. */
 const AIRBORNE = new Set<TaskStatus>(["flying", "built", "reviewing"]);
 
-/** A passed task is a base to build on unless its milestone is held, or merged and not yet proved. */
+/** A passed task is a base to build on unless its milestone is held, or merged and not yet proved and walked. */
 const isBase = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean => !m.hold && (!m.merged || done(mission, m));
 
 /** The first milestone before this one that is not done: what a milestone is sent, and merged, after. */
 const undoneBefore = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): Milestone | undefined =>
   mission.milestones.find((x) => x.n < m.n && !done(mission, x));
 
+/** What a milestone that is not done still owes, as the thing waited for: its merge (and proof), then its walk. */
+const holdback = (mission: Pick<Mission, "proofRequired">, m: Milestone): string => `milestone ${m.n} ${proved(mission, m) ? "is walked" : "has merged"}`;
+
 /** Whether a pending task may start, and if not, what holds it, in the terms `waitingOn` says it in. */
 type Gate =
   | { go: true }
   | { paused: true }
   | { needs: Array<{ id: string; title?: string; why: string }> }
-  | { milestone: Milestone; after?: Milestone }
+  | { milestone: Milestone; after?: string }
   | { clash: MissionTask; on: string[] };
 
 /**
@@ -1154,12 +1281,13 @@ const gates = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">
           const at = home.get(id);
           if (!at) return [{ id, why: "not in the plan" }];
           if (at.task.status !== "passed") return [{ id, title: at.task.title, why: at.task.status === "handed-back" ? "waiting for you" : at.task.status }];
-          if (!isBase(mission, at.m)) return [{ id, why: at.m.hold ? "its milestone is held" : "its milestone is still being proved" }];
+          if (!isBase(mission, at.m)) return [{ id, why: at.m.hold ? "its milestone is held" : proved(mission, at.m) ? "its milestone is not walked yet" : "its milestone is still being proved" }];
           return [];
         });
         if (needs.length) return { needs };
       } else if (!milestone.dispatched) {
-        return { milestone, after: undoneBefore(mission, milestone) };
+        const after = undoneBefore(mission, milestone);
+        return { milestone, after: after && holdback(mission, after) };
       }
       for (const other of airborne) {
         const on = clashOn(task, other);
@@ -1184,7 +1312,7 @@ const reason = (gate: Exclude<Gate, { go: true }>): string => {
     const { needs } = gate;
     return `waits for ${needs.length > 2 ? `${needs.length} tasks: ${needs.map((u) => `${u.id} (${u.why})`).join(", ")}` : needs.map((u) => `${u.id}${u.title ? ` ${u.title}` : ""} (${u.why})`).join("; ")}`;
   }
-  if ("milestone" in gate) return `starts with milestone ${gate.milestone.n}${gate.after ? `, once milestone ${gate.after.n} has merged` : ""}`;
+  if ("milestone" in gate) return `starts with milestone ${gate.milestone.n}${gate.after ? `, once ${gate.after}` : ""}`;
   return `waits for ${gate.clash.id} ${gate.clash.title} to finish: both own ${gate.on.join(", ")}`;
 };
 
@@ -1200,7 +1328,7 @@ export const waitingOn = (mission: Pick<Mission, "milestones" | "status" | "proo
     if (m.dispatched || m.merged) continue;
     const after = undoneBefore(mission, m);
     const early = m.tasks.some((t) => t.needs?.length) ? "; a task in it starts sooner, as soon as what it needs has passed" : "";
-    milestones[m.n] = mission.status === "paused" ? "the mission is paused" : after ? `sent once milestone ${after.n} has merged${early}` : "sent on the next sweep";
+    milestones[m.n] = mission.status === "paused" ? "the mission is paused" : after ? `sent once ${holdback(mission, after)}${early}` : "sent on the next sweep";
   }
   return { tasks, milestones };
 };
@@ -1221,7 +1349,7 @@ export const settle = (mission: Mission, extra: string[] = []): Mission => {
   if (!SWEPT.has(mission.status) && mission.status !== "review") return mission;
   {
     mission.status = mission.pausedFor !== undefined ? "paused"
-      : mission.milestones.length && mission.milestones.every((m) => done(mission, m)) ? "review"
+      : mission.milestones.length && mission.milestones.every((m) => proved(mission, m)) ? "review"
       : needsPerson(mission).length ? "blocked" : "flying";
     if (mission.status === "review") mission.finished ??= new Date().toISOString();
   }
@@ -1299,7 +1427,7 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     task.base = await revParse(repo.path, task.branch);
     const out = await claimed(mission,
       () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
-      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg.shared)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
       (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
       launchFailed(task.id));
     if (!out) return;
@@ -1358,9 +1486,12 @@ export const runProof = (cwd: string, command: string, timeoutMs = 30 * 60_000):
 /** Proofs in flight, keyed by mission and milestone: a standing job the pass starts and later reads, never waits on. */
 const proving = new Map<string, { result?: Awaited<ReturnType<typeof runProof>> }>();
 
-/** A milestone that is done with: merged, not held, and, where the project proves merges, proved. Nothing builds on, merges after, or lands past one that is not. */
-export const done = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean =>
+/** Merged, not held, and, where the project proves merges, proved: ready to be walked and landed, and counted for review. */
+export const proved = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean =>
   Boolean(m.merged) && !m.hold && (!mission.proofRequired || Boolean(m.proof?.ok));
+
+/** A milestone that is done with: proved, then walked or waived (M28). Nothing builds on, merges after, or is sent past one that is not. */
+export const done = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean => proved(mission, m) && !needsWalking(m);
 
 /** Milestones merge in order, and only once sent: a later one whose tasks all passed early still waits for the ones before it to be done. */
 export const mergeable = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): boolean =>
@@ -1440,7 +1571,7 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
       task.note = undefined;
       forget(task);
     },
-    () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+    () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
     (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
     launchFailed(task.id));
   if (!out) return false;
@@ -1487,6 +1618,60 @@ export const sweepMissions = async (project: Project): Promise<void> => {
   // Strike Lead that a restart or a terminal holding its session left unanswered, is answered on the next pass.
   for (const m of await listMissions(project.id)) {
     if (!over(m) && !leadBusy(m) && ((!m.lead && !m.approved) || unheard(m.chat ?? []).length)) hearLead(project, m.id);
+  }
+};
+
+/** How long a burst of endings is let settle before the one pass it earns. */
+const ENDING_SETTLE_MS = 3_000;
+const soon = new Map<string, NodeJS.Timeout>();
+
+/**
+ * A pass soon, not on the next tick: a Wingman or RIO that ended is the moment its review, its
+ * merge or its dependant can go, and waiting for the tick cost up to a minute on every link of a
+ * chain. Debounced per project, so a burst of endings is one pass. The listing is dropped at the
+ * ending and again when the pass goes, or a pass in between would read and keep the word from
+ * before it; a pass already running is waited out rather than skipped, since it may have read
+ * the listing before this ending.
+ */
+export const sweepSoon = (project: Project, sweep: (project: Project) => Promise<void> = sweepMissions, wait = ENDING_SETTLE_MS): void => {
+  agentCache.delete(project.path);
+  clearTimeout(soon.get(project.id));
+  soon.set(project.id, setTimeout(() => {
+    if (sweeping.has(project.id)) return sweepSoon(project, sweep, wait);
+    soon.delete(project.id);
+    agentCache.delete(project.path);
+    sweep(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
+  }, wait).unref());
+};
+
+/**
+ * Claude Code writes each background session's state to `<jobs>/<id>/state.json`, many times
+ * while it works. A session under a project whose state moves into a finished word calls `onEnd`
+ * with that project, once: a rewrite of a session already finished is not another ending, so it
+ * neither reads the project list again nor holds the pass back. Only a trigger: the pass still
+ * reads `claude agents` for the truth, and the server's 60 s tick stays the backstop for
+ * anything the watch misses. Returns the close.
+ */
+export const watchEndings = (projects: () => Promise<Project[]>, onEnd: (project: Project) => void, dir = config.claudeJobsDir): (() => void) => {
+  const finished = new Map<string, boolean>();
+  const seen = async (file: string): Promise<void> => {
+    const { state, cwd } = JSON.parse(await readFile(join(dir, file), "utf8")) as { state?: string; cwd?: string };
+    const now = FINISHED.test(state ?? "");
+    const was = finished.get(file);
+    finished.set(file, now);
+    if (!cwd || !now || was) return;
+    const project = (await projects()).reduce<Project | undefined>((best, p) => (underPath(cwd, p.path) && p.path.length > (best?.path.length ?? -1) ? p : best), undefined);
+    if (project) onEnd(project);
+  };
+  try {
+    const watcher = watch(dir, { recursive: true }, (_, file) => {
+      // A file caught mid-write is read again on its next write; the tick covers the last one.
+      if (file && /(^|\/)state\.json$/.test(file)) seen(file).catch(() => undefined);
+    });
+    return () => watcher.close();
+  } catch (err) {
+    console.error(`not watching ${dir} for sessions that end; the sweep runs on its tick alone:`, (err as Error).message);
+    return () => undefined;
   }
 };
 
@@ -1618,7 +1803,7 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
       const previous = reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: reviews - 1 }), "utf8").catch(() => undefined) : undefined;
       if (await claimed(mission,
         () => { task.reviews = reviews; task.status = "reviewing"; task.review = { claudeId: "", file, started: new Date().toISOString() }; },
-        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), file, previous), cfg.rioAgent, RIO_TOOLS),
+        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), file, previous), cfg.rioAgent, RIO_TOOLS),
         (on, claudeId) => { const t = taskOn(on, task.id); if (t?.review) t.review.claudeId = claudeId; },
         (on, err) => { const t = taskOn(on, task.id); if (t) { t.status = "handed-back"; t.note = `could not start the RIO: ${err.message}`; } })) {
         agentCache.delete(project.path);
@@ -1686,12 +1871,12 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
       proving.set(key, job);
       void runProof(walkRepo(mission, m)!.integration, cfg.proof).then((r) => { job.result = r; });
     }
-    if (!done(mission, m)) continue;
+    if (!proved(mission, m)) continue;
     // A repo with nothing left to do lands now rather than at the close, so an earlier repo can
     // be reviewed and merged while the later ones are still flying. A base that never received
     // the push holds the next milestone, which very often consumes what this one made. Landing
-    // is the whole branch, so it waits until every merged milestone is done, not only this one.
-    if (mission.repos.some((r) => r.land !== "merge" && !r.landed) && mission.milestones.every((x) => !x.merged || done(mission, x))) {
+    // is the whole branch, so it waits until every merged milestone is proved, not only this one.
+    if (mission.repos.some((r) => r.land !== "merge" && !r.landed) && mission.milestones.every((x) => !x.merged || proved(mission, x))) {
       await writeMission(mission);
       const { failed } = await landTheWork(mission);
       if (failed.length) { holdFor(m, "landing", `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`); continue; }
@@ -2474,7 +2659,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
   const feed = feedOf(log, mission);
-  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => done(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
+  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */

@@ -29,6 +29,12 @@ shadow only on lift (hover, popovers). Base unit 4px. Density: panels 12px 14px 
 between rows inside a panel, 16px between panels, 18px between bands, 24px between projects.
 Headings carry more space above than below.
 
+A one-column grid is written `grid-template-columns: minmax(0, 1fr)`, never a bare `display:
+grid`: the implicit `auto` column grows to its widest child, so one long `<pre>` or URL widens
+the whole stack and pushes right-aligned items off screen. The check: append a 600-character
+`<pre>` to every grid on the page and assert no grid, and not the page, grows wider. Prose that
+can carry a path or a URL (`.md`, chat text) wraps with `overflow-wrap: anywhere`, for the same reason.
+
 ## Type
 
 Display: the project's face (Chakra Petch default) at 22px/600 for a project head, 15px/600 for
@@ -325,6 +331,24 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Buttons**: primary is accent with `0 1px 2px rgba(0,0,0,.4)`, never a coloured halo. Ghost
   actions are lower-case verbs (`dock`, `close`, `stop`, `refresh`). Focus ring is
   `2px solid var(--accent)`.
+- **What waits on you is the first thing on the mission page.** The open questions, and the reason
+  behind the word, sit in the `#now` slot above The ask, not part way down Progress, and every mission that wants something
+  has one: at review that is the walkthroughs left, then the close. The ask is context: a brief
+  over 320 characters folds to four lines. The Strike Lead's conversation shows its last six
+  entries and folds the rest behind one line. A milestone merged but not walked reads `to walk`
+  in caution, never `done` in hud.
+- **An action's outcome is a toast; a condition is the bar.** `web/toast.js` says what an action
+  did in the one polite live region, bottom right (full width on a phone), over the page so
+  nothing shifts: four seconds for a line, never past ten, paused on hover, focus or a hidden
+  tab; an error stays until closed. The bar's status line is kept for what is still true (the
+  stream dropped, the stream is back). A page that cannot open its mission says why in the page,
+  with the way back, and draws none of its sections.
+- **Motion is the feedback that something landed.** Durations are tokens (`--dur-press` 140,
+  `--dur-exit` 150, `--dur-enter` 220, `--dur-land` 280) on `--ease-out`. New task cards,
+  timeline lines and chat entries rise 6px into place, the first few 40ms apart; a toast rises
+  and leaves the way it came, faster. The one authored moment is a question landing in `#now`:
+  it rises from below and its caution ring flares once. Reduced motion keeps the fades and drops
+  every movement.
 
 ## Browser surfaces
 
