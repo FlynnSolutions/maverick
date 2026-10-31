@@ -16,8 +16,9 @@ import { test } from "node:test";
 const dir = mkdtempSync(join(tmpdir(), "mv-store-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "p"), { recursive: true });
-const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, claimed, closeMission, landAgain, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask } = await import("../src/missions.ts");
+const { StaleMissionError, __writeMissionForTest, abandonMission, acceptTask, claimed, clearWalkFix, closeMission, landAgain, parsePlan, pauseMission, readMission, recordWalkthrough, releaseMilestone, resumeMission, retryTask } = await import("../src/missions.ts");
 const { needsWalking, walkthroughState } = await import("../src/questions.ts");
+const { fileWalkFix } = await import("../src/missions.ts");
 
 const file = (id: string) => join(dir, "missions", "p", `${id}.json`);
 const project = { id: "p", name: "P", path: "/tmp", trackers: [] } as never;
@@ -111,8 +112,60 @@ test("a milestone that changed nothing has nothing to walk, and progress through
   (w.milestones[0] as { walkthrough?: unknown }).walkthrough = { started: "2026-01-02T00:00:00Z", doc: "deliverables/testing/counted-m1-walkthrough.html" };
   await writeFile(file("counted"), JSON.stringify(w), "utf8");
   assert.equal(walkthroughState((await readMission("p", "counted"))!.milestones[0]), "walking");
-  await recordWalkthrough(project, "counted", 1, { progress: { total: 2, answered: 2, verdicts: { a: "pass", b: "fail" }, updatedAt: "2026-01-02T00:20:00Z" } });
-  assert.equal(walkthroughState((await readMission("p", "counted"))!.milestones[0]), "walked", "every case answered is walked, whatever the verdicts were; the verdicts are for the person");
+  await recordWalkthrough(project, "counted", 1, { progress: { total: 2, answered: 2, verdicts: { a: "pass", b: "pass" }, updatedAt: "2026-01-02T00:20:00Z" } });
+  assert.equal(walkthroughState((await readMission("p", "counted"))!.milestones[0]), "walked", "every case answered, and none failed");
+});
+
+test("a walk's failed cases become one fix task once every case is answered, and only those cases are walked again (M29)", async () => {
+  const w = await seed("fixes");
+  w.status = "review";
+  Object.assign(w.milestones[0], { merged: "2026-01-02T00:00:00Z", proof: { ok: true, at: "x", output: "" }, walkthrough: { started: "2026-01-02T00:00:00Z", doc: "deliverables/testing/fixes-m1-walkthrough.html" } });
+  Object.assign(w.milestones[0].tasks[0], { status: "passed", touches: ["src/a.ts"], commits: ["abc one"] });
+  await writeFile(file("fixes"), JSON.stringify(w), "utf8");
+  const save = (verdicts: Record<string, string>, round?: number, notes?: Record<string, string>) =>
+    recordWalkthrough(project, "fixes", 1, { progress: { total: 3, answered: Object.keys(verdicts).length, verdicts, notes, round, updatedAt: "2026-01-02T00:20:00Z" } });
+
+  await save({ a: "pass", b: "fail" });
+  assert.equal((await readMission("p", "fixes"))!.milestones[0].tasks.length, 1, "nothing is filed while a case is unanswered: the walk runs to its end first");
+
+  await save({ a: "pass", b: "fail", c: "blocked" }, 0, { b: "the button does nothing" });
+  let m = (await readMission("p", "fixes"))!;
+  const [, fix] = m.milestones[0].tasks;
+  assert.deepEqual([fix.id, fix.status, fix.repo, fix.touches], ["m1-fix1", "pending", "root", ["src/a.ts"]], "one task, owning what the milestone owned");
+  assert.match(fix.intent, /- b: fail\. the button does nothing\n- c: blocked\n/, "every failed case, with what the person wrote");
+  assert.equal(m.milestones[0].merged, undefined, "the milestone merges again once the fix passes");
+  assert.equal(m.milestones[0].proof, undefined, "and is proved again");
+  assert.equal(m.status, "flying", "a mission at review is flying again");
+  assert.equal(walkthroughState(m.milestones[0]), "fixing");
+  assert.equal(needsWalking(m.milestones[0]), true);
+
+  await save({ a: "pass", b: "fail", c: "blocked" }, 0, { b: "the button does nothing", c: "the page never loads" });
+  m = (await readMission("p", "fixes"))!;
+  assert.equal(m.milestones[0].tasks.length, 2, "a save while the round is open files nothing more");
+  assert.match(m.milestones[0].tasks[1].intent, /- c: blocked\. the page never loads/, "a note written after the last answer reaches the task before it flies");
+
+  // The fix merged and was proved: the sweep's catch-up clears the round.
+  m = (await readMission("p", "fixes"))!;
+  assert.equal(clearWalkFix(m.milestones[0]), true);
+  assert.deepEqual(m.milestones[0].walkthrough!.progress!.verdicts, { a: "pass" }, "only the failed cases lose their answers");
+  assert.equal(clearWalkFix(m.milestones[0]), false, "a round is cleared once");
+  await __writeMissionForTest(m);
+  assert.equal(walkthroughState((await readMission("p", "fixes"))!.milestones[0]), "walking");
+
+  await save({ a: "pass", b: "fail", c: "blocked" }, 0);
+  assert.deepEqual((await readMission("p", "fixes"))!.milestones[0].walkthrough!.progress!.verdicts, { a: "pass" }, "a page that has not dropped the round's answers cannot put the old failures back; its other answers are taken");
+
+  await save({ a: "pass", b: "pass", c: "fail" }, 1);
+  m = (await readMission("p", "fixes"))!;
+  assert.deepEqual(m.milestones[0].tasks.map((t) => t.id), ["m1-t1", "m1-fix1", "m1-fix2"], "a walk that fails again files the next round");
+  assert.deepEqual(m.milestones[0].walkthrough!.fixes!.at(-1)!.cases, ["c"]);
+  clearWalkFix(m.milestones[0]);
+  await __writeMissionForTest(m);
+
+  await save({ a: "pass", b: "pass", c: "pass" }, 2);
+  m = (await readMission("p", "fixes"))!;
+  assert.equal(walkthroughState(m.milestones[0]), "walked", "every case answered and none failed");
+  assert.equal(m.milestones[0].tasks.length, 3);
 });
 
 test("a person's decision is written into the plan on the mission branch and committed there", async () => {
@@ -306,4 +359,22 @@ test("a landing held because a repo cannot push recovers once the project sets t
   assert.equal(mission.repos.find((r) => r.label === "root")!.land, "merge", "the record follows the project for a repo not landed yet");
   assert.equal(mission.repos.find((r) => r.label === "backend")!.land, "pr", "a repo that landed keeps the way it did");
   assert.equal(mission.milestones[0].hold, undefined, "the landing hold is off");
+});
+
+test("a fix round reopens what landing settled, so the fix reaches the base too, and an ended mission takes none", () => {
+  const mission = (status: string) => ({
+    id: "x", status, finished: "2026-01-03T00:00:00Z", summary: { at: "x" },
+    repos: [{ label: "root", land: "push", landed: "main@abc" }, { label: "web", land: "pr", landed: "https://pr/1" }],
+    milestones: [{ n: 1, title: "m", done: "d", merged: "x", mergeShas: { root: "abc" }, resolveTried: true, proof: { ok: true, at: "x", output: "" },
+      tasks: [{ id: "m1-t1", title: "t", intent: "i", repo: "root", status: "passed", attempts: 1, commits: ["c"] }],
+      walkthrough: { doc: "w.html", progress: { total: 1, answered: 1, verdicts: { a: "fail" }, updatedAt: "x" } } }],
+  }) as never as Parameters<typeof fileWalkFix>[0];
+  const review = mission("review");
+  assert.equal(fileWalkFix(review, review.milestones[0])?.task, "m1-fix1");
+  assert.deepEqual(review.repos.map((r) => r.landed), [undefined, "https://pr/1"], "the milestone's repo lands again; a repo it never touched stays landed");
+  assert.equal(review.milestones[0].resolveTried, undefined, "a fix that collides gets its own reconcile");
+  assert.equal(review.finished, undefined);
+  assert.equal(review.summary, undefined, "the summary was of work that is changing");
+  const closed = mission("closed");
+  assert.throws(() => fileWalkFix(closed, closed.milestones[0]), /ended mission takes no more work/);
 });
