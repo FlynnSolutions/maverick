@@ -1452,7 +1452,6 @@ const renderWorkspace = async () => {
   // The project filter is rendered into the page head by the command center, so the head is
   // one row: title, what you are looking at, then the instruments.
   const filterRoot = el("div", { class: "ws-filter" });
-  const ws = await api("/api/workspace");
   wrap.append(
     el("div", { class: "ws-head" },
       el("h1", { class: "ws-title" }, "Command center"),
@@ -1460,7 +1459,6 @@ const renderWorkspace = async () => {
       el("span", { class: "ws-gap" }),
       el("div", { class: "ws-tools" },
         usageRoot,
-        ...(ws.lanUrl ? [el("button", { type: "button", class: "ghost", title: ws.lanUrl, onclick: () => { navigator.clipboard?.writeText(ws.lanUrl); setStatus("phone link copied"); } }, "phone link")] : []),
         el("button", { type: "button", class: "ghost icon-btn", "aria-label": "refresh sessions", title: "refresh sessions", onclick: () => commandCenter?.refresh() }, icon("refresh")),
       ),
     ),
