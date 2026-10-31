@@ -136,12 +136,16 @@ export const mount = (host, view, ctx) => {
     }
     const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(w.doc)}`;
     const said = el("p", { class: "plan-walk-meta", hidden: true });
-    const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, onSave: async (progress) => {
+    const cleared = w.fixes?.findLast((f) => f.cleared);
+    const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, cleared, onSave: async (progress) => {
       w.progress = progress;
       try {
-        await post(actionUrl(walkPath(m.n)), { progress: { total: progress.total, answered: progress.answered, verdicts: progress.verdicts, updatedAt: progress.updatedAt } });
+        const { key, ...kept } = progress;
+        const back = await post(actionUrl(walkPath(m.n)), { progress: kept });
+        const fix = back.milestones?.find((x) => x.n === m.n)?.walkthrough?.fixes?.find((f) => !f.cleared);
         said.classList.remove("warn");
-        said.textContent = progress.answered >= progress.total ? `milestone ${m.n} walked` : "";
+        said.textContent = fix ? `${fix.cases.length} failed: ${fix.task} fixes them all, then you walk those again`
+          : progress.answered >= progress.total ? `milestone ${m.n} walked` : "";
         said.hidden = !said.textContent;
       } catch (e) {
         said.classList.add("warn");

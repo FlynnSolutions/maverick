@@ -39,7 +39,7 @@ import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead,
 import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { needsWalking, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
+import { failingCases, lastCleared, needsWalking, openFix, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
@@ -108,7 +108,24 @@ export interface WalkthroughProgress {
   answered: number;
   /** Case id -> what the person said. The gate counts answers; the verdicts are the person's record of what they found. */
   verdicts: Record<string, string>;
+  /** Case id -> what the person wrote beside the verdict. What a fix task is told about a failed case. */
+  notes?: Record<string, string>;
+  /** Sent by the page, not kept to: the last fix round it has dropped the cleared answers for. A save that has not seen the latest round has those cases' answers stripped. */
+  round?: number;
   updatedAt: string;
+}
+
+/**
+ * One round of fixing what a walk found (M29): every case the walk failed, handed to one task.
+ * `cleared` is set once that task has merged and been proved, when the failed cases' answers are
+ * taken off so a person walks those cases again, and only those.
+ */
+export interface WalkFix {
+  round: number;
+  task: string;
+  cases: string[];
+  filed: string;
+  cleared?: string;
 }
 
 /**
@@ -128,9 +145,11 @@ export interface MilestoneWalkthrough {
   failed?: string;
   /** Cory let the milestone through without walking it, and said why. */
   waived?: { note: string; at: string };
+  /** Each round of fixing what the walk failed, oldest first. */
+  fixes?: WalkFix[];
 }
 
-export type WalkthroughState = "none" | "building" | "failed" | "walking" | "walked" | "waived";
+export type WalkthroughState = "none" | "building" | "failed" | "walking" | "fixing" | "walked" | "waived";
 
 /** What the page is told about a milestone's walkthrough, derived here so the page and the gate cannot disagree. */
 export interface WalkView { state: WalkthroughState; needed: boolean }
@@ -1185,6 +1204,91 @@ const settleWalkthroughs = async (project: Project, mission: Mission, state: Map
   return changed;
 };
 
+/** What the fix task is told: every failed case at once, by its id in the document, with what the person wrote. */
+const walkFixIntent = (m: Milestone, doc: string, progress: WalkthroughProgress, cases: string[]): string => [
+  `The walkthrough of milestone ${m.n} (${m.title}) failed ${casesWord(cases)}. Fix all of them in this one task; there is no second task for the rest.`,
+  `The document is ${doc}: each case is the \`.tc\` element with that \`data-id\`, and says what a person does and what they should see.`,
+  ...cases.map((id) => `- ${id}: ${progress.verdicts[id]}${progress.notes?.[id]?.trim() ? `. ${progress.notes[id].trim()}` : ""}`),
+  "Reproduce each one before you change anything, fix the cause rather than the symptom, and prove each fix with a test that fails without it. Then run the project's proof once over the whole set. A case you cannot reproduce or cannot fix inside this milestone's paths is said in your hand-back, not skipped quietly.",
+].join("\n");
+
+const casesWord = (cases: string[]): string => `${cases.length} case${cases.length === 1 ? "" : "s"}`;
+
+/**
+ * A merged milestone taking more work: everything its merge, proof and landing settled is
+ * unsettled, so it merges, proves and lands again through the same steps as the first time. Its
+ * walkthrough document stays. Refused on a mission that has ended.
+ */
+const reopenMilestone = (mission: Mission, m: Milestone): void => {
+  if (over(mission)) throw new Error(`${mission.name} is ${mission.status}; an ended mission takes no more work`);
+  m.merged = undefined;
+  m.proof = undefined;
+  m.resolveTried = undefined;
+  // A repo that already landed would never receive the new work: a push lands it again, a pull request is pushed to again.
+  for (const r of mission.repos) if (m.tasks.some((t) => t.repo === r.label)) r.landed = undefined;
+  mission.finished = undefined;
+  mission.summary = undefined;
+};
+
+/**
+ * A walk that comes back with failed cases opens one fix task on its milestone (M29), rather than
+ * a build and a review per bug. Filed once every case has an answer, so the walk runs to the end
+ * first, and only while no earlier round is still open. The milestone reopens: the task flies, is
+ * reviewed and merges like any other, the proof runs again, and nothing builds on the milestone
+ * until its failed cases are walked again and pass. Returns the round, if it filed one.
+ */
+export const fileWalkFix = (mission: Mission, m: Milestone): WalkFix | undefined => {
+  const w = m.walkthrough;
+  const p = w?.progress;
+  if (walkthroughState(m) !== "walking" || !w?.doc || !p || p.answered < p.total) return undefined;
+  const cases = failingCases(p);
+  if (!cases.length) return undefined;
+  const repo = walkRepo(mission, m)?.label ?? "root";
+  const round = (w.fixes?.length ?? 0) + 1;
+  const task: MissionTask = {
+    id: `m${m.n}-fix${round}`,
+    title: `fix the ${casesWord(cases)} walk ${round} of milestone ${m.n} failed`,
+    intent: walkFixIntent(m, w.doc, p, cases),
+    status: "pending",
+    attempts: 0,
+    repo,
+    touches: [...new Set(m.tasks.filter((t) => t.repo === repo).flatMap((t) => t.touches ?? []))],
+  };
+  reopenMilestone(mission, m);
+  const fix: WalkFix = { round, task: task.id, cases, filed: new Date().toISOString() };
+  m.tasks.push(task);
+  w.fixes = [...(w.fixes ?? []), fix];
+  return fix;
+};
+
+/**
+ * A note written after the last answer still reaches the fix, as long as its Wingman has not
+ * been sent: the open round's task is told again from what the walk now says.
+ */
+const retellWalkFix = (m: Milestone): void => {
+  const w = m.walkthrough;
+  const fix = openFix(w);
+  const task = fix && m.tasks.find((t) => t.id === fix.task && t.status === "pending");
+  if (task && w?.doc && w.progress) task.intent = walkFixIntent(m, w.doc, w.progress, fix.cases);
+};
+
+/**
+ * Once a round's task has merged and been proved, its failed cases lose their answers, so the
+ * walk asks for those cases again and only those. The page drops the same answers from the
+ * document when it sees the round. Returns whether it cleared anything.
+ */
+export const clearWalkFix = (m: Milestone): boolean => {
+  const w = m.walkthrough;
+  const fix = openFix(w);
+  if (!w || !fix) return false;
+  if (w.progress) {
+    const verdicts = Object.fromEntries(Object.entries(w.progress.verdicts).filter(([id]) => !fix.cases.includes(id)));
+    w.progress = { ...w.progress, verdicts, answered: Object.keys(verdicts).length };
+  }
+  fix.cleared = new Date().toISOString();
+  return true;
+};
+
 /** The summary file beside the record: `<record dir>/<id>-summary.md`. */
 const summaryFile = (mission: Mission): string => join(missionsDir(mission.project), `${mission.id}-summary.md`);
 
@@ -1900,6 +2004,7 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
       if (failed.length) { holdFor(m, "landing", `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`); continue; }
     }
     if (!m.walkthrough) await commissionWalkthrough(project, mission, m);
+    else clearWalkFix(m);
   }
   const next = mission.milestones.find((x) => !x.dispatched && !x.merged && !undoneBefore(mission, x));
   if (next) await dispatch(project, mission, next);
@@ -2442,20 +2547,31 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
 
 /** The page saving where the person has got to in a milestone's walkthrough, or waiving it. */
 export const recordWalkthrough = async (project: Project, id: string, n: number, patch: WalkthroughPatch): Promise<Mission> => {
-  const mission = await changeMission(project.id, id, (mission) => {
+  const { mission, fix } = await changeMission(project.id, id, (mission): { mission: Mission; fix?: WalkFix } => {
     const m = mission.milestones.find((x) => x.n === n);
     if (!m) throw new Error(`no milestone ${n} in ${mission.name}`);
     if (patch.waive) {
       if (!patch.waive.note.trim()) throw new Error("say why the walkthrough is being waived; it is kept on the milestone");
       m.walkthrough = { ...m.walkthrough, waived: { note: patch.waive.note.trim(), at: new Date().toISOString() } };
     } else if (patch.progress) {
-      if (!m.walkthrough?.doc) throw new Error(`milestone ${n} has no walkthrough document to record progress in`);
-      m.walkthrough.progress = patch.progress;
+      const w = m.walkthrough;
+      if (!w?.doc) throw new Error(`milestone ${n} has no walkthrough document to record progress in`);
+      // A page that has not yet dropped what a fix round cleared would put the old failures back: those answers are not taken, the rest are.
+      const cleared = lastCleared(w);
+      const stale = cleared && (patch.progress.round ?? 0) < cleared.round;
+      const verdicts = stale ? Object.fromEntries(Object.entries(patch.progress.verdicts).filter(([id]) => !cleared.cases.includes(id))) : patch.progress.verdicts;
+      w.progress = { ...patch.progress, verdicts, answered: Object.keys(verdicts).length };
+      retellWalkFix(m);
+      const fix = fileWalkFix(mission, m);
+      if (fix) settle(mission);
+      return { mission, fix };
     }
-    return mission;
+    return { mission };
   });
-  // A waiver is a decision a person made about the mission; it belongs in the ledger with the others.
-  return patch.waive ? recorded(project, mission, [`milestone ${n} walkthrough waived by Cory: ${patch.waive.note.trim()}`]) : mission;
+  // A waiver is a decision a person made about the mission; it belongs in the ledger with the others, and so does a fix round.
+  if (patch.waive) return recorded(project, mission, [`milestone ${n} walkthrough waived by Cory: ${patch.waive.note.trim()}`]);
+  if (fix) return recorded(project, mission, [`milestone ${n} walk ${fix.round} failed ${fix.cases.join(", ")}: one fix task, ${fix.task}, and those cases are walked again once it merges`]);
+  return mission;
 };
 
 /**
