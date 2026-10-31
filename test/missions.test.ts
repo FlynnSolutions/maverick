@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { INTERVIEW_PROBES, applyPlanState, approveMission, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask } from "../src/missions.ts";
+import { INTERVIEW_PROBES, applyPlanState, approveMission, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask, markReadings, WALKTHROUGH_TEMPLATE, placeWalkthrough, walkKey, walkthroughPrompt } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -855,6 +855,20 @@ test("missionView's readings are every carried and handed-back finding, keyed by
   assert.equal(view.readings[4].detail, "The Wingman called it out of scope.");
 });
 
+test("markReadings marks several read in one write, and hands read ones back to unread", async () => {
+  const { project } = readingsFixture("bulk", {});
+  const a = keyFor("m1-t1", CARRIED[3]);
+  const b = keyFor("m1-t1", CARRIED[0]);
+  await assert.rejects(() => markReadings(project, "bulk", { "m1-t1": [a, "m1-t1:00000000"] }, "read"), /no finding "m1-t1:00000000"/);
+  await assert.rejects(() => markReadings(project, "bulk", { "m9-t9": [a] }, "read"), /no task "m9-t9"/);
+  await assert.rejects(() => markReadings(project, "bulk", { "m1-t1": [a] }, "later" as never), /"read" or "unread"/);
+  await assert.rejects(() => markReadings(project, "bulk", { "m1-t1": [] }, "read"), /no findings named/);
+  const both = await markReadings(project, "bulk", { "m1-t1": [a, b] }, "read");
+  assert.deepEqual(both.milestones[0].tasks[0].readings, { [a]: "read", [b]: "read" });
+  const undone = await markReadings(project, "bulk", { "m1-t1": [b] }, "unread");
+  assert.deepEqual(undone.milestones[0].tasks[0].readings, { [a]: "read" }, "unread drops the mark rather than writing a third state");
+});
+
 test("markReading records read, and later also puts one backlog item on the mission's tracker and a decision in the ledger, once", async () => {
   const { project: bare, ledger } = readingsFixture("marked", { trackerIndex: 1 });
   const root = (bare as { path: string }).path;
@@ -1363,4 +1377,27 @@ test("a task that builds cells owns its screenshots folder from approval, so its
   ownScreenshots({ id: "mx" }, milestones);
   assert.deepEqual(milestones[0].tasks.map((t) => t.touches), [["src/files", "deliverables/screenshots/mx/m1-t1"], undefined, ["src/api"]], "a task with no touches already owns everything");
   assert.deepEqual(strays(["src/files/a.ts", "deliverables/screenshots/mx/m1-t1/cell-12-390.png"], milestones[0].tasks[0].touches), []);
+});
+
+test("the walkthrough starts as the template, placed with its key set, and the prompt carries the plan's walk cases", async () => {
+  assert.ok(existsSync(WALKTHROUGH_TEMPLATE), "the template ships beside the app");
+  // Its comment names the contract too; the console reads the document, so count outside comments.
+  const template = readFileSync(WALKTHROUGH_TEMPLATE, "utf8").split("-->").map((part) => part.split("<!--")[0]).join("");
+  assert.match(template, /KEY = "[^"]+"/, "the console reads KEY");
+  assert.equal((template.match(/<h2>/g) ?? []).length, 4, "one heading per pillar, four pillars");
+  assert.ok((template.match(/class="tc" data-id="/g) ?? []).length >= 4, "a case per pillar to copy");
+  const m = { n: 2, title: "the feed", done: "d", walk: ["a station with no feed says so", "the dry run, before and after"], tasks: [{ id: "m2-t1", title: "Read the feed" }] } as never;
+  const repo = { label: "root", path: "/p", base: "main", branch: "mission/x", integration: "/p/.claude/worktrees/x" } as never;
+  const prompt = walkthroughPrompt({ path: "/p" } as never, { id: "x", name: "X" } as never, m, repo, "deliverables/testing/x-m2-walkthrough.html");
+  assert.ok(prompt.includes("already at deliverables/testing/x-m2-walkthrough.html"), "the session fills the placed document");
+  assert.ok(!prompt.includes(WALKTHROUGH_TEMPLATE), "and never needs Maverick's install");
+  const dir = mkdtempSync(join(tmpdir(), "mv-walk-"));
+  made.push(dir);
+  await placeWalkthrough(dir, "deliverables/testing/x-m2-walkthrough.html", walkKey({ id: "x" }, { n: 2 }));
+  const placed = readFileSync(join(dir, "deliverables/testing/x-m2-walkthrough.html"), "utf8");
+  assert.match(placed, /const KEY = "x-m2";/, "the key the console will read is Maverick's");
+  assert.equal((placed.match(/const KEY = /g) ?? []).length, 1);
+  for (const pillar of ["Journeys", "Look and feel", "At scale", "Before and after"]) assert.ok(prompt.includes(pillar), pillar);
+  assert.ok(prompt.includes("  - a station with no feed says so"), "the plan's walk cases are handed on");
+  assert.doesNotMatch(prompt, /ship-test-walkthrough/, "no skill that does not exist");
 });

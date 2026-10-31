@@ -14,14 +14,14 @@
 .ship-top .ship-progress { margin: 0; }
 .ship-top .summary { display: flex; gap: 16px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; }
 
-.ship-nav { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 64px; }
+.ship-nav { display: flex; flex-direction: column; gap: 8px; position: sticky; top: 64px; }
 .nav-step {
   display: grid;
-  grid-template-columns: 12px 22px minmax(0, 1fr) auto;
+  grid-template-columns: 16px 22px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  padding: 8px 10px;
-  border-radius: var(--radius-m);
+  padding: 0 10px;
+  border-radius: var(--radius-s);
   background: var(--steel);
   box-shadow: 0 0 0 1px var(--seam-soft);
   cursor: pointer;
@@ -35,8 +35,8 @@
 .nav-step.selected { box-shadow: 0 0 0 1px var(--accent-glow), 0 0 18px var(--accent-dim); background: var(--panel); }
 .nav-step .n { font-family: var(--display); font-size: 11.5px; color: var(--ink-faint); }
 .nav-step.selected .n { color: var(--accent-hot); }
-.nav-step .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-step .lamp { width: 8px; height: 8px; }
+.nav-step .t { overflow-wrap: anywhere; }
+.nav-step .lamp { width: 16px; height: 16px; }
 .nav-step.done .t, .nav-step.skipped .t { color: var(--ink-soft); }
 .nav-step .verdict { height: 20px; font-size: 11px; padding: 0 6px; }
 .ship-nav h3 { font-family: var(--display); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 12px 0 2px; }
@@ -44,7 +44,7 @@
 .ship-detail { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .detail-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .detail-head h1 { font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: 0.02em; flex: 1 1 320px; min-width: 0; }
-.detail-head .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.detail-head .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .detail-meta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); display: flex; gap: 14px; flex-wrap: wrap; }
 
 .panel { padding: 14px 16px; border-radius: var(--radius-m); background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); }
@@ -57,12 +57,28 @@
 .artifact-row a, .artifact-row button { font-family: var(--mono); font-size: 12px; }
 
 .review-item { padding: 10px 12px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); margin-bottom: 8px; }
-.review-item .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.review-item .head .loop { font-weight: 500; flex: 1; }
+.review-item .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 6px; }
+.review-item .head .loop { margin: 0; font: 500 14px/1.35 var(--sans); flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
 
 .ship-notes { margin-top: 0; }
 
+.ship-top .summary .failed { color: var(--threat); }
+.ship-progress.failed .runway .fill { background: var(--threat); box-shadow: none; }
+.ship-progress.failed .runway .jet-marker { animation: none; }
+
+
+/* One column: the step you are on comes first, the list of steps after it. */
 @media (max-width: 1000px) {
-  .ship-page { grid-template-columns: 1fr; }
-  .ship-nav { position: static; }
+  .ship-page { grid-template-columns: minmax(0, 1fr); }
+  .ship-top { grid-template-columns: minmax(0, 1fr); }
+  .ship-top .summary { flex-wrap: wrap; white-space: normal; }
+  .ship-detail { order: 2; }
+  .ship-nav { position: static; order: 3; }
 }
+.panel h2 .muted { font-family: var(--sans); text-transform: none; letter-spacing: 0; }
+
+/* The breakdown page borrows this frame. Its crumb is the only place the project is named, so it stays on a phone. */
+.bar .crumb.named { display: inline; min-width: 0; overflow-wrap: anywhere; }
+.bd-intro { margin: 0 0 12px; max-width: var(--measure, 68ch); color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
+.mv-empty .button-link { margin-top: 12px; }
+.detail-meta a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }

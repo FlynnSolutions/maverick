@@ -16,6 +16,8 @@
 .lead-msg.you { justify-self: end; max-width: min(560px, 88%); padding: 10px 12px; background: var(--panel-lifted); border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam); }
 .lead-msg.you .lead-who { justify-content: flex-end; }
 .lead-msg.you .lead-text { white-space: pre-wrap; color: var(--ink); }
+/* The lifted surface is brighter, so the time on it comes up a step to stay readable. */
+.lead-msg.you .lead-at { color: var(--ink-soft); }
 .lead-msg.sys .lead-who { color: var(--ink-faint); }
 .lead-msg.sys .lead-text { font-size: 13px; }
 .lead-msg.error .lead-who { color: var(--threat); }
@@ -34,18 +36,19 @@
 .lead-ask { margin: 0; display: flex; gap: 10px; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--ink); }
 .lead-n { flex: none; font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--ink-soft); padding-top: 2px; font-variant-numeric: tabular-nums; }
 .lead-opts { display: flex; flex-wrap: wrap; gap: 8px; }
-.lead-opt { padding: 6px 12px; font: 500 13px var(--sans); text-align: left; background: var(--panel); color: var(--ink); border: 0; border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam-strong); cursor: pointer; }
+.lead-opt { font: 500 13px var(--sans); text-align: left; background: var(--panel); color: var(--ink); border: 0; border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam-strong); cursor: pointer; }
 .lead-opt:hover { box-shadow: 0 0 0 1px var(--ink-faint); }
 .lead-opt[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 1px var(--accent); }
+.lead-q .mv-note { height: 44px; }
 .lead-compose textarea::placeholder { color: var(--ink-faint); }
 .lead-hint { margin: 0; max-width: var(--measure); font-size: 12.5px; color: var(--ink-soft); }
 .lead-why > summary { display: inline-flex; align-items: center; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
 .lead-why > p { margin: 4px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
-.lead-round-foot { display: flex; }
-.lead-round-foot button, .lead-compose button { padding: 0 16px; font: 500 13px var(--sans); }
+.lead-round-foot { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.lead-round-foot button, .lead-compose button { font: 500 13px var(--sans); }
 
 /* An answered round, folded. */
-.lead-asked > summary { cursor: pointer; font-size: 12.5px; color: var(--ink-faint); }
+.lead-asked > summary { display: inline-flex; align-items: center; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
 .lead-asked > ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; color: var(--ink-soft); }
 
 .lead-thinking { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
@@ -54,23 +57,22 @@
 /* The one button that sends the mission out: the largest thing in the thread when it is there. */
 .lead-fire { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; justify-items: start; }
 .lead-fire:empty { display: none; }
-.lead-fire-btn { min-height: 40px; padding: 0 22px; font: 600 15px var(--sans); }
+.lead-fire-btn { font: 600 15px var(--sans); }
 
 .lead-compose { display: flex; gap: 8px; align-items: flex-end; }
-.lead-compose textarea { flex: 1; min-width: 0; min-height: 40px; max-height: 40vh; padding: 9px 10px; resize: vertical; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font: 13.5px/1.45 var(--sans); }
+.lead-compose textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 40vh; padding: 9px 10px; resize: vertical; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font: 13.5px/1.45 var(--sans); }
 .lead-heard { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
 .lead-heard:empty { display: none; }
 .lead-heard.error { color: var(--threat); }
 
 .lead-foot { display: flex; }
-.lead-raw { font-size: 12.5px; }
+button.lead-raw, .lead .mv-session-head button { padding: 0 10px; font-size: 12.5px; }
 .lead-raw[hidden] { display: none; }
 .lead .mv-session[hidden] { display: none; }
 
 .lead :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (max-width: 600px) {
-  .lead-opt, .lead-q .mv-note, .lead-round-foot button, .lead-compose button, .lead-why > summary { min-height: 44px; }
   .lead-opts { display: grid; grid-template-columns: minmax(0, 1fr); }
   .lead-msg.you { max-width: 100%; }
 }
@@ -84,3 +86,8 @@
   @starting-style { opacity: 0; transform: translateY(var(--rise)); }
 }
 @media (prefers-reduced-motion: reduce) { .mv-page.settled .lead-log > li:not([data-folded]) { transition-property: opacity; } }
+
+
+/* What waits in the thread, raised to the page's top slot: a lifted caution card, the one loud thing above the ask. */
+.lead-now { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; padding: 12px 14px; background: var(--caution-dim); border-radius: var(--radius-m); box-shadow: 0 0 0 1px var(--caution); }
+.lead-now > h2 { margin: 0; font: 600 15px var(--display); color: var(--ink); }

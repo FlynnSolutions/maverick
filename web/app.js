@@ -8,6 +8,7 @@ import { mountCommandCenter } from "./command.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
+import { attempt, failed, leave, toast } from "./toast.js";
 import * as claudeUsage from "./providers/claude.js";
 
 
@@ -54,12 +55,13 @@ const setStatus = (msg, isError = false) => {
 const ask = ({ title, body, confirm, danger = false, field = null }) =>
   new Promise((resolve) => {
     const before = document.activeElement;
-    const page = [...document.body.children];
+    // A drawer under the ask has already made the page inert; closing the ask gives back only what it took.
+    const page = [...document.body.children].filter((n) => !n.inert);
     const finish = (value) => {
       window.removeEventListener("keydown", onKey, true);
       for (const n of page) n.inert = false;
       document.body.classList.remove("ask-open");
-      backdrop.remove();
+      leave(backdrop);
       before?.focus?.();
       resolve(value);
     };
@@ -77,12 +79,13 @@ const ask = ({ title, body, confirm, danger = false, field = null }) =>
       ok.disabled = !input.value.trim();
       input.addEventListener("input", () => { ok.disabled = !input.value.trim(); });
     }
-    const form = el("form",
-      { class: "ask", role: "dialog", "aria-modal": "true", "aria-labelledby": "ask-title", ...(body ? { "aria-describedby": "ask-body" } : {}), onsubmit: (e) => { e.preventDefault(); finish(field ? input.value.trim() : true); } },
-      el("h2", { id: "ask-title" }, title),
-      body ? el("p", { id: "ask-body" }, body) : null,
-      input,
-      el("div", { class: "ask-actions" }, no, ok));
+    // The dialog is the box; the form inside it only carries Enter. A form may not take the dialog role.
+    const form = el("div", { class: "ask", role: "dialog", "aria-modal": "true", "aria-labelledby": "ask-title", ...(body ? { "aria-describedby": "ask-body" } : {}) },
+      el("form", { class: "ask-form", onsubmit: (e) => { e.preventDefault(); finish(field ? input.value.trim() : true); } },
+        el("h2", { id: "ask-title" }, title),
+        body ? el("p", { id: "ask-body" }, body) : null,
+        input,
+        el("div", { class: "ask-actions" }, no, ok)));
     const backdrop = el("div", { class: "ask-backdrop", onclick: (e) => { if (e.target === backdrop) bail(); } }, form);
     for (const n of page) n.inert = true;
     document.body.append(backdrop);
@@ -126,15 +129,22 @@ try {
 
 const renderPicker = async () => {
   $("#picker").hidden = false;
-  const projects = await api("/api/projects");
   const list = $("#project-list");
+  let projects;
+  try {
+    projects = await api("/api/projects");
+  } catch (err) {
+    // The list could not be read; importing still works, so the page says so and offers the read again.
+    list.replaceChildren(el("li", { class: "trouble" }, `Could not read your projects: ${err.message}`, btn("try again", renderPicker)));
+    return;
+  }
   list.replaceChildren(
     ...projects.map((p) =>
       el(
         "li",
         {},
         el("a", { href: `/?project=${encodeURIComponent(p.id)}` }, p.name),
-        el("div", { class: "muted mono" }, `${p.path} · ${p.trackers.length ? p.trackers.map((t) => t.label).join(", ") : "no tracker found"}`),
+        el("div", { class: "muted mono" }, `${p.path} · ${p.trackers?.length ? p.trackers.map((t) => t.label).join(", ") : "no tracker found"}`),
         el(
           "button",
           {
@@ -142,8 +152,13 @@ const renderPicker = async () => {
             class: "ghost",
             onclick: async () => {
               if (!(await ask({ title: `Forget "${p.name}"?`, body: "The directory is untouched.", confirm: "forget" }))) return;
-              await api(`/api/projects/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+              try {
+                await api(`/api/projects/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+              } catch (err) {
+                return failed(`forget "${p.name}"`, err);
+              }
               try { if (localStorage.getItem("mv.project") === p.id) localStorage.removeItem("mv.project"); } catch {}
+              toast(`Forgot "${p.name}". Its directory is untouched.`);
               renderPicker();
             },
           },
@@ -152,17 +167,19 @@ const renderPicker = async () => {
       ),
     ),
   );
-  if (!projects.length) list.append(el("li", { class: "muted" }, "No projects yet. Import one below."));
+  if (!projects.length) list.append(el("li", { class: "muted" }, "No projects yet. Import a directory below, or paste its path."));
 };
 
 $("#import").addEventListener("click", async () => {
-  setStatus("Waiting for the Finder dialog");
+  setStatus("Waiting for the Finder dialog…");
   try {
     const result = await post("/api/projects/import");
-    if (result.cancelled) return setStatus("Cancelled.");
+    if (result.cancelled) return toast("Nothing imported: the Finder dialog was cancelled.");
     location.href = `/?project=${encodeURIComponent(result.id)}`;
   } catch (err) {
-    setStatus(err.message, true);
+    failed("import the directory", err);
+  } finally {
+    setStatus("");
   }
 });
 
@@ -174,7 +191,7 @@ $("#add-path").addEventListener("submit", async (e) => {
     const p = await post("/api/projects", { path });
     location.href = `/?project=${encodeURIComponent(p.id)}`;
   } catch (err) {
-    setStatus(err.message, true);
+    failed(`add ${path}`, err);
   }
 });
 
@@ -200,16 +217,14 @@ const persistCollapsed = () => {
 
 let dragging = null;
 
+// The title is the card's button: Enter opens the drawer, where every verb lives, the move
+// included. A click anywhere else on the card opens it too; a drag moves it.
 const cardFor = (trackerIndex, item, number, draggable = true) =>
   el(
     "div",
     {
       class: `card${item.checked ? " checked" : ""}`,
       draggable: draggable ? "true" : "false",
-      tabindex: "0",
-      role: "button",
-      "aria-label": item.title,
-      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); hideHover(); openDrawer(trackerIndex, item); } },
       onmouseenter: (e) => scheduleHover(e.currentTarget, item),
       onmouseleave: hideHover,
       ondragstart: (e) => {
@@ -223,13 +238,13 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
         dragging = null;
       },
       onclick: (e) => {
-        if (e.target.closest("button")) return;
+        if (e.target.closest("button:not(.title)")) return;
         hideHover();
         openDrawer(trackerIndex, item);
       },
     },
-    el("span", { class: "num" }, number === null ? "" : String(number)),
-    el("div", { class: "title" }, item.title),
+    number === null ? null : el("span", { class: "num" }, String(number)),
+    el("button", { type: "button", class: "title", onfocus: hideHover }, el("span", {}, item.title)),
     el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), item.unplanned ? el("span", { class: "chip unplanned", title: "on the roadmap with no plan: a plan: field that names a real file" }, "unplanned") : null, createdOf(item) ? el("span", { class: "since", title: `${item.created ? "created" : "entry last changed"} ${fmtDate(createdOf(item))}` }, fmtDate(createdOf(item), true)) : null),
     item.checked
       ? null
@@ -237,7 +252,8 @@ const cardFor = (trackerIndex, item, number, draggable = true) =>
           "button",
           {
             type: "button",
-            class: "spawn primary",
+            class: "spawn ghost",
+            "aria-label": `spawn a session on ${item.title}`,
             title: "Spawn a headless Claude session on this item and open it below",
             onclick: (e) => {
               e.stopPropagation();
@@ -300,11 +316,32 @@ const withField = (body, key, value) => {
 const withDue = (body, due) => withField(body, "due", due);
 /** A document inside the project, served read-only. */
 const fileHref = (path) => `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`;
-const editItemBody = async (trackerIndex, item, newBody, label) => {
-  setStatus(label);
-  const { commit } = await post("/api/edit", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, body: newBody });
-  setStatus(commit === "no change" ? "no change" : `committed ${commit}`);
+/**
+ * One write from the board or the calendar, through `attempt`: the bar says what is under way
+ * while it runs. Resolves true when the write went through, so a drawer closes only then, without
+ * waiting for the board to repaint from the file; `repainted` is that repaint, for a caller that
+ * needs the new board.
+ */
+let repainted = Promise.resolve();
+const write = async (what, done, run, undo = null) => {
+  setStatus(`${what}…`);
+  const ok = Boolean(await attempt({ what, done, run, undo }));
+  setStatus("");
+  repainted = loadBoard();
+  return ok;
 };
+const short = (title) => (title.length > 48 ? `"${title.slice(0, 47)}…"` : `"${title}"`);
+const editItemBody = (trackerIndex, item, newBody) =>
+  post("/api/edit", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, body: newBody });
+/** The item on the repainted board that `is` picks: lines move under a write, so an undo finds its item again. */
+const findItem = (trackerIndex, is) => lastTrackers[trackerIndex]?.sections.flatMap((s) => s.groups.flatMap((g) => g.items)).find(is);
+/** An edit and its undo: the undo writes the old body back over the item that now carries the new one. */
+const editWithUndo = (trackerIndex, item, newBody, what, done) =>
+  write(what, done, () => editItemBody(trackerIndex, item, newBody), () => {
+    const now = findItem(trackerIndex, (i) => i.body === newBody);
+    if (now) write(`undo: ${what}`, `Undone: ${what}.`, () => editItemBody(trackerIndex, now, item.body));
+    else failed(`undo: ${what}`, new Error("the item changed again since"));
+  });
 const createdOf = (item) => item.created ?? item.lineDate;
 /** The source line minus the date already shown as created ("Cory, 2026-09-14." becomes "Cory"). */
 const sourceWithoutDate = (item) => {
@@ -320,13 +357,19 @@ const releaseChip = (item) => {
   return el("span", { class: "chip release", title: slot === "next" ? "planned for the next release" : "planned for the release after next" }, label);
 };
 
-/** Calendar colour: done is green; within a week (or overdue) is yellow when in progress, red when not. */
+/** Calendar state: done is green, a deadline gone by is red (it failed), within a week is lit, later is plain. */
 const eventState = (e) => {
   if (e.kind !== "item") return "";
   if (e.item.checked || e.column === "shipped") return "done";
-  const days = Math.round((new Date(e.date) - new Date(today())) / 86400000);
-  if (days > 7) return "";
-  return e.column === "in-progress" ? "warn" : "late";
+  const state = dueState(e.date, false);
+  return state === "later" ? "" : state;
+};
+const EVENT_WORDS = { done: "done", overdue: "overdue", soon: "due within a week", "": "due later" };
+const EVENT_ICONS = { done: "decision", overdue: "finding" };
+/** One thing on a day: a button, so it is reached and opened from the keyboard like anything else. */
+const calEvent = (cls, label, words, onclick) => {
+  const said = words ? `${label}, ${words}` : label;
+  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, onclick }, label);
 };
 
 const dueChip = (item) => {
@@ -368,26 +411,27 @@ const itemsList = (trackerIndex, section, group, laneId, numbered) => {
     const neighbour = visibleOthers[dropIndexIn(list, e.clientY)];
     const others = group.items.filter((v) => v.start !== item.start);
     const targetIndex = neighbour ? others.findIndex((v) => v.start === neighbour.start) : others.length;
-    setStatus(`moving "${item.title.slice(0, 50)}"`);
-    try {
-      const { commit } = await post("/api/move", {
-        project: projectId,
-        tracker: trackerIndex,
-        itemStart: item.start,
-        itemFirstLine: item.firstLine,
-        targetHeading: section.heading,
-        targetGroup: group.name,
-        targetIndex,
-      });
-      setStatus(`committed ${commit}`);
-      flares(list);
-    } catch (err) {
-      setStatus(err.message, true);
-    }
-    await loadBoard();
+    if (await moveItem(trackerIndex, item, section, group, targetIndex)) flares(list);
   });
   return list;
 };
+
+/** The one move, from a drop or from the drawer: the same write to the tracker either way. Undo moves it back. */
+const moveItem = (trackerIndex, item, section, group, targetIndex, undoing = false) => {
+  const where = group.name ? cleanGroupName(group.name) : laneName(section);
+  const run = () => post("/api/move", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, targetHeading: section.heading, targetGroup: group.name, targetIndex });
+  if (undoing) return write(`move ${short(item.title)} back`, `Moved ${short(item.title)} back.`, run);
+  // The undo keeps where it came from as plain words, not the old board's objects.
+  const from = placeOf(trackerIndex, item);
+  const back = from && { heading: from.section.heading, name: from.group.name, at: from.at };
+  const undo = () => {
+    const now = findItem(trackerIndex, (i) => i.firstLine === item.firstLine);
+    if (now && back) moveItem(trackerIndex, now, { heading: back.heading }, { name: back.name }, back.at, true);
+    else failed(`move ${short(item.title)} back`, new Error("it is no longer on the board"));
+  };
+  return write(`move ${short(item.title)}`, `Moved ${short(item.title)} to ${where}, #${targetIndex + 1}.`, run, undo);
+};
+const laneName = (section) => LANES.find(([id]) => id === section.column)?.[1] ?? section.heading;
 
 const cleanGroupName = (name) => name.replace(/\[(.*?)\]\(.*?\)/g, "$1").trim();
 
@@ -396,6 +440,33 @@ const doneElsewhere = (tracker) =>
   tracker.sections
     .filter((s) => s.column && s.column !== "shipped")
     .flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => i.checked)));
+
+const LANE_EMPTY = {
+  backlog: "Nothing waiting. Add what you would do later.",
+  priority: "Nothing on the roadmap. Add an item, or move one up from the backlog.",
+  "in-progress": "Nothing in flight. Move an item here when work starts.",
+  shipped: "Nothing done since the last deploy.",
+};
+
+const quickAdd = (tracker, section, label, key) => {
+  const input = el("input", { type: "text", placeholder: "add an item", "aria-label": `new item in ${label}`, autocomplete: "off" });
+  return el("form", {
+    class: "quick-add",
+    "data-lane": key,
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const title = input.value.trim();
+      if (!title) return;
+      const ok = await write(`add ${short(title)}`, `Added ${short(title)} to ${label}.`, () => post("/api/items", { project: projectId, tracker: tracker.index, heading: section.heading, name: "", title }));
+      await repainted;
+      // The board repainted; the lane's new field takes the focus back, and a refusal keeps the words.
+      const again = document.querySelector(`.quick-add[data-lane="${key}"] input`);
+      if (!again) return;
+      if (!ok) again.value = title;
+      again.focus();
+    },
+  }, input, el("button", { type: "submit" }, "add"));
+};
 
 const renderLane = (tracker, [laneId, label, extraClass]) => {
   const sections = tracker.sections.filter((s) => s.column === laneId);
@@ -410,26 +481,20 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
     el(
       "h3",
       { class: "lane-title" },
-      el(
-        "button",
-        {
-          type: "button",
-          class: "ghost fold",
-          title: isCollapsed ? "show" : "hide",
-          onclick: () => {
-            if (isCollapsed) collapsed.delete(key);
-            else collapsed.add(key);
-            persistCollapsed();
-            loadBoard();
-          },
-        },
-        isCollapsed ? "▸" : "▾",
-      ),
+      foldButton(!isCollapsed, label, () => {
+        if (isCollapsed) collapsed.delete(key);
+        else collapsed.add(key);
+        persistCollapsed();
+        loadBoard();
+      }),
       el("span", { class: "label" }, label),
       el("span", { class: "count" }, String(count)),
     ),
   );
   if (isCollapsed) return lane;
+  // A new item lands at the top of the lane's first section, outside any group, as one typed line.
+  if (laneId !== "shipped" && sections.length) lane.append(quickAdd(tracker, sections[0], label, key));
+  if (!count) lane.append(el("p", { class: "lane-empty muted small" }, LANE_EMPTY[laneId]));
 
   for (const section of sections) {
     if (sections.length > 1) lane.append(el("div", { class: "group-name" }, section.heading));
@@ -439,16 +504,10 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
       const block = el("div", { class: "group" });
       if (group.name) {
         const removable = group.items.length === 0;
-        block.append(el("div", { class: "group-name" }, cleanGroupName(group.name), removable ? btn("×", async () => {
+        block.append(el("div", { class: "group-name" }, cleanGroupName(group.name), removable ? el("button", { type: "button", class: "ghost icon-btn", "aria-label": `delete the empty group ${cleanGroupName(group.name)}`, title: "delete this empty group", onclick: async () => {
           if (!(await ask({ title: `Delete the empty group "${cleanGroupName(group.name)}"?`, confirm: "delete", danger: true }))) return;
-          try {
-            const { commit } = await api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) });
-            setStatus(`committed ${commit}`);
-          } catch (err) {
-            setStatus(err.message, true);
-          }
-          await loadBoard();
-        }, "ghost") : null));
+          await write(`delete the group "${cleanGroupName(group.name)}"`, `Deleted the empty group "${cleanGroupName(group.name)}".`, () => api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) }));
+        } }, icon("close")) : null));
       }
       block.append(itemsList(tracker.index, section, group, laneId, releases));
       lane.append(block);
@@ -468,7 +527,7 @@ const renderBoard = (tracker) => {
   for (const lane of LANES) lanes.append(renderLane(tracker, lane));
   // A collapsed lane is a fixed strip, not a fraction: a fraction grows with the window and
   // never actually gets out of the way.
-  lanes.style.gridTemplateColumns = LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "36px" : id === "priority" ? "1.5fr" : "1fr")).join(" ");
+  lanes.style.setProperty("--lane-widths", LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "36px" : id === "priority" ? "minmax(0, 1.5fr)" : "minmax(0, 1fr)")).join(" "));
   return el(
     "section",
     { class: "board" },
@@ -488,6 +547,9 @@ const loadBoard = async () => {
     // Every view carries the ship-day banner, so the schedule is not calendar-only.
     [ships, shipDays] = await Promise.all([api(`/api/ships?project=${encodeURIComponent(projectId)}`), api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`)]);
     $("#project").classList.toggle("workspace-view", view === "workspace");
+    // The workspace draws its own h1; the board and the calendar name themselves for a screen reader.
+    $("#page-title").hidden = view === "workspace";
+    $("#page-title").textContent = `${project.name}: ${view}`;
     $("#boards").replaceChildren(
       ...shipDayBanner(trackers),
       ...(view === "calendar"
@@ -553,35 +615,82 @@ const renderInline = (md) =>
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/~~(.+?)~~/g, "<s>$1</s>");
 
+let drawerOpener = null;
 const closeDrawer = () => {
   stopTails();
-  $("#drawer-root").replaceChildren();
+  for (const n of [...$("#drawer-root").children]) leave(n);
+  for (const n of document.body.children) n.inert = false;
   if (location.hash.startsWith("#L")) history.replaceState(null, "", location.pathname + location.search);
   document.removeEventListener("keydown", onDrawerKey);
+  if (drawerOpener?.isConnected) drawerOpener.focus();
+  drawerOpener = null;
 };
 const onDrawerKey = (e) => {
   if (e.key === "Escape") closeDrawer();
 };
 
+/**
+ * Every drawer: a modal dialog whose one close is the icon in its head. The page behind goes
+ * inert, the heading takes focus, and closing gives focus back to what opened it.
+ */
+const showDrawer = ({ title, head = [], meta = null, body, foot = [], wide = false, backdrop = closeDrawer }) => {
+  if (!$("#drawer-root .drawer:not(.leaving)")) drawerOpener = document.activeElement;
+  const h2 = el("h2", { tabindex: "-1" }, title);
+  $("#drawer-root").replaceChildren(
+    el("div", { class: "drawer-backdrop", onclick: backdrop }),
+    el("div", { class: `drawer${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": title },
+      el("div", { class: "drawer-head" }, h2, ...head, el("button", { type: "button", class: "ghost icon-btn", "aria-label": "close", title: "close (Esc)", onclick: closeDrawer }, icon("close"))),
+      meta,
+      body,
+      foot instanceof Node ? el("div", { class: "drawer-foot" }, foot) : foot.length ? el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, ...foot)) : null),
+  );
+  for (const n of document.body.children) if (n.id !== "drawer-root" && !n.classList.contains("toasts")) n.inert = true;
+  document.addEventListener("keydown", onDrawerKey);
+  h2.focus();
+};
+
+/** Where an item sits: its section, its group and its place in the group, read from the last board. */
+const placeOf = (trackerIndex, item) => {
+  for (const section of lastTrackers[trackerIndex]?.sections ?? []) {
+    for (const group of section.groups) {
+      const at = group.items.findIndex((i) => i.start === item.start);
+      if (at >= 0) return { section, group, at };
+    }
+  }
+  return null;
+};
+
+/**
+ * The move without a drag: a destination, and a step up or down the group. Each is the same
+ * write a drop makes. A new group takes the item at its end, as a drop below its last card does.
+ */
+const moveRow = (trackerIndex, item) => {
+  const here = placeOf(trackerIndex, item);
+  if (!here) return null;
+  const places = lastTrackers[trackerIndex].sections.filter((s) => s.column).flatMap((section) => section.groups.map((group) => ({ section, group })));
+  const where = el("select", { id: "drawer-move" }, ...places.map(({ section, group }, i) =>
+    el("option", { value: String(i), ...(group === here.group ? { selected: "" } : {}) }, `${laneName(section)}${group.name ? ` / ${cleanGroupName(group.name)}` : ""}`)));
+  const go = async (section, group, index) => closeIf(await moveItem(trackerIndex, item, section, group, index));
+  const up = btn("move up", () => go(here.section, here.group, here.at - 1), "ghost");
+  const down = btn("move down", () => go(here.section, here.group, here.at + 1), "ghost");
+  up.disabled = here.at === 0;
+  down.disabled = here.at === here.group.items.length - 1;
+  const move = btn("move", () => {
+    const to = places[Number(where.value)];
+    if (to.group !== here.group) go(to.section, to.group, to.group.items.length);
+  });
+  move.disabled = true;
+  where.addEventListener("change", () => { move.disabled = places[Number(where.value)].group === here.group; });
+  return el("div", { class: "due-row" }, el("label", { class: "k", for: "drawer-move" }, "lane"), where, move, up, down);
+};
+
 const openDrawer = (trackerIndex, item) => {
   let editing = false;
-  const root = $("#drawer-root");
   const body = el("div", { class: "drawer-body" });
-  const head = el("h2", {}, item.title);
   const actions = el("div", { class: "drawer-actions" });
 
   const FIELD_ORDER = ["size", "kind", "status", "owner", "mission", "milestone", "pr", "blocked-by", "links"];
-  const saveBody = async (newBody, label) => {
-    setStatus(label);
-    try {
-      const { commit } = await post("/api/edit", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, body: newBody });
-      setStatus(`committed ${commit}`);
-      closeDrawer();
-      await loadBoard();
-    } catch (err) {
-      setStatus(err.message, true);
-    }
-  };
+  const saveBody = async (newBody, what, done) => closeIf(await editWithUndo(trackerIndex, item, newBody, what, done));
   const view = () => {
     const grid = el("dl", { class: "fields" });
     const addField = (k, v, cls = "") => grid.append(el("dt", {}, k), el("dd", { class: cls }, v));
@@ -598,29 +707,30 @@ const openDrawer = (trackerIndex, item) => {
     // The plan is the one field the board checks: a link when the file exists, red when the field names nothing.
     if (item.planFile) addField("plan", el("a", { href: fileHref(item.planFile), target: "_blank" }, el("code", {}, item.fields.plan)));
     else if (item.fields.plan) addField("plan", el("code", {}, item.fields.plan), "overdue");
-    else if (!item.checked && !item.planned) addField("plan", item.unplanned ? "none; the roadmap needs one" : "none", item.unplanned ? "overdue" : "");
+    else if (!item.checked && !item.planned) addField("plan", item.unplanned ? "none; the roadmap needs one" : "none", item.unplanned ? "needs" : "");
+    const tracker = lastTrackers[trackerIndex];
     const slotsNow = planningSlots(lastTrackers);
-    const releaseSelect = el("select", { class: "supervisor" },
+    const releaseSelect = el("select", { id: "drawer-release" },
       el("option", { value: "" }, "no release"),
       el("option", { value: "next", ...(item.fields.release === "next" ? { selected: "" } : {}) }, `${slotsNow.next.label} (next)`),
       el("option", { value: "next+1", ...(item.fields.release === "next+1" ? { selected: "" } : {}) }, `${slotsNow.nextNext.label} (the one after)`));
-    releaseSelect.addEventListener("change", () => saveBody(withField(item.body, "release", releaseSelect.value), "planning release"));
-    const releaseRow = el("div", { class: "due-row" }, el("span", { class: "k" }, "release"), releaseSelect);
-    const dueInput = el("input", { type: "date", value: item.fields.due ?? "" });
+    releaseSelect.addEventListener("change", async () => closeIf(await setItemRelease(tracker, item, releaseSelect.value)));
+    const releaseRow = el("div", { class: "due-row" }, el("label", { class: "k", for: "drawer-release" }, "release"), releaseSelect);
+    const dueInput = el("input", { type: "date", id: "drawer-due", value: item.fields.due ?? "" });
     const dueRow = el(
       "div",
       { class: "due-row" },
-      el("span", { class: "k" }, "deadline"),
+      el("label", { class: "k", for: "drawer-due" }, "deadline"),
       dueInput,
-      btn("set", () => saveBody(withDue(item.body, dueInput.value), "setting deadline"), "primary"),
-      item.fields.due ? btn("clear", () => saveBody(withDue(item.body, ""), "clearing deadline"), "ghost") : null,
+      btn("set", async () => closeIf(await setDue(tracker, item, dueInput.value))),
+      item.fields.due ? btn("clear", async () => closeIf(await setDue(tracker, item, "")), "ghost") : null,
       item.fields.due ? el("span", { class: `due ${dueState(item.fields.due, item.checked)}` }, dueState(item.fields.due, item.checked) === "overdue" ? "overdue" : dueState(item.fields.due, item.checked) === "soon" ? "within a week" : "later") : null,
     );
     const prose = el("div", { class: "drawer-text" });
     prose.innerHTML = renderInline(item.description || "(no description)");
-    body.replaceChildren(grid.childElementCount ? grid : null, releaseRow, dueRow, prose);
+    body.replaceChildren(grid.childElementCount ? grid : null, releaseRow, dueRow, item.checked ? null : moveRow(trackerIndex, item), prose);
     const parents = (lastSessions ?? []).filter((r) => r.role === "audit" && r.status === "open");
-    const supervisor = el("select", { class: "supervisor", title: "audit parent: the finished session is audited under it" },
+    const supervisor = el("select", { class: "supervisor", "aria-label": "audit parent", title: "audit parent: the finished session is audited under it" },
       el("option", { value: "" }, "no audit parent"),
       ...parents.map((p) => el("option", { value: p.id }, `audit under: ${p.loop}`)),
       el("option", { value: "__new" }, "new audit parent…"));
@@ -633,38 +743,31 @@ const openDrawer = (trackerIndex, item) => {
         const created = await post("/api/audit-parents", { project: projectId, name });
         supervisor.insertBefore(el("option", { value: created.id, selected: "" }, `audit under: ${created.loop}`), supervisor.lastElementChild);
         supervisor.value = created.id;
+        toast(`Created the audit parent "${created.loop}".`);
         loadRail();
       } catch (err) {
-        setStatus(err.message, true);
+        failed("create the audit parent", err);
       }
     });
     const flipped = item.body.replace(/^- (\[( |x)\] )?/i, item.checked ? "- [ ] " : "- [x] ");
     // replaceChildren paints a null as the word "null"; el() drops them, this does not, so filter.
+    // One primary: plan an unplanned item, spawn on a planned one.
     actions.replaceChildren(...[
+      item.checked || item.planned ? null : btn("plan it", () => { closeDrawer(); planItem(trackerIndex, item); }, "primary"),
       item.checked ? null : btn("spawn", () => { const parent = supervisor.value || undefined; closeDrawer(); spawnOnItem(trackerIndex, item, null, parent); }, item.planned ? "primary" : ""),
       item.checked ? null : supervisor,
-      item.checked || item.planned ? null : btn("plan it", () => { closeDrawer(); planItem(trackerIndex, item); }, "primary"),
       el("span", { class: "spacer" }),
-      btn(item.checked ? "reopen" : "mark done", () => saveBody(flipped, item.checked ? "reopening" : "marking done"), item.checked ? "" : "primary"),
+      btn(item.checked ? "reopen" : "mark done", () => saveBody(flipped, item.checked ? `reopen ${short(item.title)}` : `mark ${short(item.title)} done`, item.checked ? `Reopened ${short(item.title)}.` : `Marked ${short(item.title)} done.`)),
       btn("remove", async () => {
         const reason = await ask({ title: "Why is this leaving the tracker?", body: "It moves to the Removed section with the date and this reason.", confirm: "remove", danger: true, field: { placeholder: "reason" } });
         if (!reason) return;
-        setStatus("removing");
-        try {
-          const { commit } = await post("/api/remove", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, reason });
-          setStatus(`committed ${commit}`);
-          closeDrawer();
-          await loadBoard();
-        } catch (err) {
-          setStatus(err.message, true);
-        }
+        if (await write(`remove ${short(item.title)}`, `Removed ${short(item.title)}. It is in the Removed section with your reason.`, () => post("/api/remove", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, reason }))) closeDrawer();
       }, "danger"),
       btn("edit markdown", () => { editing = true; edit(); }),
-      btn("close", closeDrawer),
     ].filter(Boolean));
   };
   const edit = () => {
-    const area = el("textarea", { spellcheck: "false" });
+    const area = el("textarea", { spellcheck: "false", "aria-label": `the markdown of ${item.title}` });
     area.value = item.body;
     body.replaceChildren(area);
     area.focus();
@@ -672,38 +775,17 @@ const openDrawer = (trackerIndex, item) => {
       el("span", { class: "muted small mono" }, "first line must stay a bullet · saves and commits"),
       el("span", { class: "spacer" }),
       btn("cancel", () => { editing = false; view(); }),
-      btn("save", async () => {
-        setStatus("saving");
-        try {
-          const { commit } = await post("/api/edit", {
-            project: projectId,
-            tracker: trackerIndex,
-            itemStart: item.start,
-            itemFirstLine: item.firstLine,
-            body: area.value,
-          });
-          setStatus(`committed ${commit}`);
-          closeDrawer();
-          await loadBoard();
-        } catch (err) {
-          setStatus(err.message, true);
-        }
-      }, "primary"),
+      btn("save", () => saveBody(area.value, `save ${short(item.title)}`, `Saved ${short(item.title)}.`), "primary"),
     );
   };
 
-  root.replaceChildren(
-    el("div", { class: "drawer-backdrop", onclick: () => { if (!editing) closeDrawer(); } }),
-    el(
-      "aside",
-      { class: "drawer", role: "dialog", "aria-label": item.title },
-      el("div", { class: "drawer-head" }, head, btn("×", closeDrawer, "ghost")),
-      el("div", { class: "drawer-meta" }, ...tagChips(item), dueChip(item), el("span", { class: "spacer" }), el("span", { class: "muted mono" }, `line ${item.start + 1} · ${item.checked ? "done" : "open"}`)),
-      body,
-      el("div", { class: "drawer-foot" }, actions),
-    ),
-  );
-  document.addEventListener("keydown", onDrawerKey);
+  showDrawer({
+    title: item.title,
+    meta: el("div", { class: "drawer-meta" }, ...tagChips(item), dueChip(item), el("span", { class: "spacer" }), el("span", { class: "muted mono" }, `line ${item.start + 1} · ${item.checked ? "done" : "open"}`)),
+    body,
+    foot: actions,
+    backdrop: () => { if (!editing) closeDrawer(); },
+  });
   view();
   history.replaceState(null, "", `#L${item.start + 1}`);
 };
@@ -744,12 +826,13 @@ let calDrag = null;
 
 const stripDeploy = (name) => cleanGroupName(name).replace(/\s*\(?\s*(?:deploy|ship)\s+\d{4}-\d{2}-\d{2}\s*\)?/i, "").trim();
 
-const setDeployDate = async (tracker, section, group, date) => {
+const setDeployDate = (tracker, section, group, date) => {
   const newName = date ? `${stripDeploy(group.name)} (deploy ${date})` : stripDeploy(group.name);
-  setStatus(`scheduling ${stripDeploy(group.name)}`);
-  const { commit } = await post("/api/groups/rename", { project: projectId, tracker: tracker.index, heading: section.heading, oldName: group.name, newName });
-  setStatus(`committed ${commit}`);
+  return post("/api/groups/rename", { project: projectId, tracker: tracker.index, heading: section.heading, oldName: group.name, newName });
 };
+
+const setDue = (tracker, item, date) =>
+  editWithUndo(tracker.index, item, withDue(item.body, date), date ? `set the deadline of ${short(item.title)}` : `clear the deadline of ${short(item.title)}`, date ? `${short(item.title)} is due ${fmtDate(date)}.` : `${short(item.title)} has no deadline.`);
 
 const draggable = (node, payload) => {
   node.draggable = true;
@@ -777,18 +860,14 @@ const dropZone = (node, accepts, onDrop) => {
     if (!calDrag || !accepts(calDrag)) return;
     const drag = calDrag;
     calDrag = null;
-    try {
-      await onDrop(drag);
-      flares(node);
-    } catch (err) {
-      setStatus(err.message, true);
-    }
-    await loadBoard();
+    if (await onDrop(drag)) flares(node);
   });
   return node;
 };
 
 let releasesData = null;
+/** After a write the releases depend on, the next paint reads them again (a GitHub round trip, so only then). */
+const releasesChanged = (result) => { releasesData = null; return result; };
 /** { schedule, occurrences } from /api/ship-schedule, for the calendar and the ship-day banner. */
 let shipDays = null;
 
@@ -820,8 +899,10 @@ const planningSlots = (trackers) => {
   };
 };
 
-const setItemRelease = async (tracker, item, slotKey) => {
-  await editItemBody(tracker.index, item, withField(item.body, "release", slotKey), slotKey ? `planning for ${slotKey}` : "removing from release");
+const setItemRelease = (tracker, item, slotKey) => {
+  const slots = slotKey ? planningSlots(lastTrackers) : null;
+  const slot = slotKey ? (slotKey === "next" ? slots.next : slots.nextNext).label : "";
+  return editWithUndo(tracker.index, item, withField(item.body, "release", slotKey), slot ? `plan ${short(item.title)} for ${slot}` : `take ${short(item.title)} out of its release`, slot ? `${short(item.title)} is planned for ${slot}.` : `${short(item.title)} is out of its release.`);
 };
 
 /** A slot card accepts a card dragged from the board (dragging) or from the calendar (calDrag). */
@@ -829,10 +910,10 @@ const acceptsAnyItemDrag = () => (calDrag && calDrag.type === "item") || draggin
 const draggedItem = () => (calDrag && calDrag.type === "item" ? { tracker: calDrag.tracker, item: calDrag.item } : dragging ? { tracker: lastTrackers[dragging.trackerIndex], item: dragging.item } : null);
 
 
-const stat = (n, label) => el("div", { class: "stat" }, el("b", {}, String(n)), el("span", {}, label));
+const mergedSince = () => `merged since ${releasesData?.shipped[0]?.version ?? "the last tag"}`;
+const stat = (n, one, many = `${one}s`) => el("span", { class: "stat" }, el("b", {}, String(n)), n === 1 ? one : many);
 
 const openReleaseDrawer = (release, kind, planned, live = false) => {
-  const root = $("#drawer-root");
   const list = el("div", { class: "release-list" });
   if (release && !planned) {
     const c = release.counts;
@@ -841,10 +922,10 @@ const openReleaseDrawer = (release, kind, planned, live = false) => {
       el("span", { class: "mono small muted" }, `${release.date ? fmtDate(release.date) : "undated"} · ${c.added} added · ${c.changed} changed · ${c.fixed} fixed${c.removed ? ` · ${c.removed} removed` : ""} · ${c.prs} PRs`)));
   }
   if (planned) {
-    const dateInput = el("input", { type: "date", value: planned.group.due ?? "" });
+    const dateInput = el("input", { type: "date", value: planned.group.due ?? "", "aria-label": "deploy date" });
     list.append(
       el("div", { class: "due-row" }, el("span", { class: "k" }, "deploy date"), dateInput,
-        btn("set", async () => { try { await setDeployDate(planned.tracker, planned.section, planned.group, dateInput.value); closeDrawer(); releasesData = null; await loadBoard(); } catch (err) { setStatus(err.message, true); } }, "primary")),
+        btn("set", async () => closeIf(await write(`set the deploy date of ${stripDeploy(planned.group.name)}`, dateInput.value ? `${stripDeploy(planned.group.name)} deploys ${fmtDate(dateInput.value)}.` : `${stripDeploy(planned.group.name)} has no deploy date.`, () => setDeployDate(planned.tracker, planned.section, planned.group, dateInput.value).then(releasesChanged))), "primary")),
       el("h3", {}, `${planned.items.length} planned items (drag more in from the Roadmap on the board)`),
     );
     const ul = el("ul");
@@ -876,30 +957,19 @@ const openReleaseDrawer = (release, kind, planned, live = false) => {
   if (release?.compare?.length) {
     list.prepend(el("div", { class: "compare-links" }, ...release.compare.map((c) => el("a", { href: c.url, target: "_blank" }, `${c.repo} on GitHub ↗`))));
   }
-  root.replaceChildren(
-    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
-    el(
-      "aside",
-      { class: "drawer", role: "dialog" },
-      el("div", { class: "drawer-head" }, el("h2", {}, head), btn("×", closeDrawer, "ghost")),
-      el("div", { class: "drawer-body" }, list),
-      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, el("span", { class: "spacer" }), btn("close", closeDrawer))),
-    ),
-  );
-  document.addEventListener("keydown", onDrawerKey);
+  showDrawer({ title: head, body: el("div", { class: "drawer-body" }, list) });
 };
 
 const releaseCard = (release, kind, live = false) => {
   const c = release.counts;
   return el(
     "div",
-    { class: `release-card ${kind}${live ? " live" : ""}`, tabindex: "0", role: "button", onkeydown: (ev) => { if (ev.key === "Enter") ev.currentTarget.click(); }, onclick: () => { history.replaceState(null, "", `#release-${release.version}`); openReleaseDrawer(release, kind, null, live); } },
+    { class: `release-card ${kind}${live ? " live" : ""}`, onclick: (e) => { if (e.target.closest("button:not(.version), a")) return; history.replaceState(null, "", `#release-${release.version}`); openReleaseDrawer(release, kind, null, live); } },
     el("div", { class: "release-card-head" },
-      el("span", { class: "version" }, `v${release.version}`),
+      el("button", { type: "button", class: "version", "aria-label": `v${release.version}: the changelog and PRs` }, `v${release.version}`),
       live ? el("span", { class: "badge live" }, "live in production") : el("span", { class: "badge released" }, "released")),
     el("div", { class: "release-date" }, release.date ? `released ${fmtDate(release.date)}` : "release date unknown"),
-    el("div", { class: "stats" }, stat(c.added, "features"), stat(c.fixed, "fixes"), stat(c.prs, "PRs")),
-    el("div", { class: "foot" }, `${c.changed} changes · ${c.prFeatures} feat · ${c.prFixes} fix PRs`),
+    el("p", { class: "stats" }, stat(c.added, "feature"), stat(c.fixed, "fix", "fixes"), stat(c.changed, "change"), stat(c.prs, "PR")),
     el("div", { class: "cta-slot" }, el("span", { class: "muted small" }, "click for the changelog and PRs")),
   );
 };
@@ -909,11 +979,10 @@ const slotCard = (slot, trackers) => {
   const fixCount = (slot.merged?.fixed ?? 0) + slot.items.filter(({ item }) => isBugItem(item)).length;
   const card = el(
     "div",
-    { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, tabindex: "0", role: "button", onkeydown: (ev) => { if (ev.key === "Enter" && ev.target === ev.currentTarget) ev.currentTarget.click(); }, onclick: () => { history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
-    el("div", { class: "release-card-head" }, el("span", { class: "version" }, slot.label), el("span", { class: "badge planned" }, slot.key === "next" ? "next release" : "the one after")),
+    { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, onclick: (e) => { if (e.target.closest("button:not(.version), a")) return; history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
+    el("div", { class: "release-card-head" }, el("button", { type: "button", class: "version", "aria-label": `${slot.label}: plan and deploy date` }, slot.label), el("span", { class: "badge planned" }, slot.key === "next" ? "next release" : "the one after")),
     el("div", { class: "release-date" }, slot.deploy ? `deploy ${fmtDate(slot.deploy)}` : "no deploy date yet", slot.label !== slot.computed ? el("span", { class: "muted" }, ` · computed ${slot.computed}`) : null),
-    el("div", { class: "stats" }, stat(featureCount, "features"), stat(fixCount, "fixes"), stat(slot.key === "next" ? slot.merged.prs : slot.items.length, slot.key === "next" ? "merged" : "planned")),
-    el("div", { class: "foot" }, slot.key === "next" ? `${slot.items.length} planned · ${slot.merged.prs} merged since ${releasesData?.shipped[0]?.version ?? "last tag"}` : `${slot.items.length} planned`),
+    el("p", { class: "stats" }, stat(featureCount, "feature"), stat(fixCount, "fix", "fixes"), stat(slot.items.length, "planned", "planned"), slot.key === "next" ? stat(slot.merged.prs, mergedSince(), mergedSince()) : null),
   );
   const existing = slot.key === "next" ? shipFor(slot.label.replace(/^v/, "")) : null;
   const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
@@ -927,33 +996,18 @@ const slotCard = (slot, trackers) => {
     const d = draggedItem();
     calDrag = null;
     dragging = null;
-    if (!d) return;
-    try {
-      await setItemRelease(d.tracker, d.item, slot.key);
-      flares(card);
-    } catch (err) {
-      setStatus(err.message, true);
-    }
-    await loadBoard();
+    if (d && (await setItemRelease(d.tracker, d.item, slot.key))) flares(card);
   });
   return card;
 };
 
 const openSlotDrawer = (slot, trackers) => {
-  const root = $("#drawer-root");
   const list = el("div", { class: "release-list" });
-  const nameInput = el("input", { type: "text", value: slot.label, placeholder: slot.computed, style: "width: 120px" });
-  const dateInput = el("input", { type: "date", value: slot.deploy ?? "" });
+  const nameInput = el("input", { type: "text", value: slot.label, placeholder: slot.computed, "aria-label": "version", style: "width: 120px" });
+  const dateInput = el("input", { type: "date", value: slot.deploy ?? "", "aria-label": "deploy date" });
   const save = async () => {
-    try {
-      const name = nameInput.value.trim() === slot.computed ? "" : nameInput.value.trim();
-      await post("/api/release-slots", { project: projectId, slot: slot.key, name, deploy: dateInput.value });
-      releasesData = null;
-      closeDrawer();
-      await loadBoard();
-    } catch (err) {
-      setStatus(err.message, true);
-    }
+    const name = nameInput.value.trim() === slot.computed ? "" : nameInput.value.trim();
+    closeIf(await write(`save ${slot.label}`, `Saved ${name || slot.computed}${dateInput.value ? `, deploying ${fmtDate(dateInput.value)}` : ""}.`, () => post("/api/release-slots", { project: projectId, slot: slot.key, name, deploy: dateInput.value }).then(releasesChanged)));
   };
   list.append(
     el("div", { class: "due-row" }, el("span", { class: "k" }, "version"), nameInput, el("span", { class: "muted small mono" }, `computed ${slot.computed}`)),
@@ -966,7 +1020,7 @@ const openSlotDrawer = (slot, trackers) => {
   list.append(el("h3", {}, `${slot.items.length} planned items`));
   const planned = el("ul");
   for (const { tracker, item } of slot.items) {
-    planned.append(el("li", {}, el("span", { class: `kind ${isBugItem(item) ? "fix" : isFeatureItem(item) ? "feature" : "other"}` }, isBugItem(item) ? "fix" : isFeatureItem(item) ? "feature" : "item"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openDrawer(tracker.index, item); } }, item.title), btn("remove", (e) => { e.stopPropagation(); setItemRelease(tracker, item, "").then(() => { closeDrawer(); loadBoard(); }); }, "ghost")));
+    planned.append(el("li", {}, el("span", { class: `kind ${isBugItem(item) ? "fix" : isFeatureItem(item) ? "feature" : "other"}` }, isBugItem(item) ? "fix" : isFeatureItem(item) ? "feature" : "item"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openDrawer(tracker.index, item); } }, item.title), btn("remove", async (e) => { e.stopPropagation(); if (await setItemRelease(tracker, item, "")) closeDrawer(); }, "ghost")));
   }
   if (!slot.items.length) planned.append(el("li", { class: "muted" }, "none yet: drag a card onto this release, or pick it in the card's drawer"));
   list.append(planned);
@@ -987,14 +1041,19 @@ const openSlotDrawer = (slot, trackers) => {
       list.append(ul);
     }
   }
-  root.replaceChildren(
-    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
-    el("aside", { class: "drawer", role: "dialog" },
-      el("div", { class: "drawer-head" }, el("h2", {}, `${slot.label} · ${slot.key === "next" ? "next release" : "the one after"}`), btn("×", closeDrawer, "ghost")),
-      el("div", { class: "drawer-body" }, list),
-      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, el("span", { class: "spacer" }), btn("close", closeDrawer)))),
-  );
-  document.addEventListener("keydown", onDrawerKey);
+  showDrawer({ title: `${slot.label} · ${slot.key === "next" ? "next release" : "the one after"}`, body: el("div", { class: "drawer-body" }, list) });
+};
+
+/** Every fold on the board: the drawn chevron, down when open and turned a quarter when closed. */
+const foldButton = (open, what, onclick) => {
+  const b = el("button", { type: "button", class: "ghost icon-btn fold", onclick }, icon("chevron"));
+  setFold(b, open, what);
+  return b;
+};
+const setFold = (b, open, what) => {
+  b.setAttribute("aria-expanded", String(open));
+  b.title = `${open ? "hide" : "show"} ${what.toLowerCase()}`;
+  b.setAttribute("aria-label", b.title);
 };
 
 /** The releases strip with a fold, remembered like the sessions rail. */
@@ -1002,15 +1061,13 @@ const releasesSection = (trackers) => {
   let collapsed = false;
   try { collapsed = localStorage.getItem("console.releases") === "collapsed"; } catch {}
   const section = el("section", { class: `board-releases${collapsed ? " collapsed" : ""}` });
-  const fold = btn(collapsed ? "▸" : "▾", () => {
+  const fold = foldButton(!collapsed, "releases", () => {
     collapsed = !collapsed;
     section.classList.toggle("collapsed", collapsed);
-    fold.textContent = collapsed ? "▸" : "▾";
-    fold.title = collapsed ? "show releases" : "hide releases";
+    setFold(fold, !collapsed, "releases");
     try { localStorage.setItem("console.releases", collapsed ? "collapsed" : "open"); } catch {}
-  }, "ghost fold");
-  fold.title = collapsed ? "show releases" : "hide releases";
-  section.append(el("h3", { class: "strip-title releases-fold" }, fold, text("Releases")), renderReleases(trackers));
+  });
+  section.append(el("h2", { class: "strip-title releases-fold" }, fold, text("Releases")), renderReleases(trackers));
   return section;
 };
 
@@ -1037,12 +1094,16 @@ const cadenceWords = (c) => {
   return c.everyWeeks === 1 ? `every ${weekday}` : `every ${c.everyWeeks} weeks on ${weekday}`;
 };
 
-const setShipDay = async (action, date, opts = {}) => {
-  setStatus(action === "move" ? `moving ship day to ${fmtDate(opts.to, true)}` : `${action} ship day ${fmtDate(date, true)}`);
-  await post("/api/ship-schedule/day", { project: projectId, action, date, ...opts });
-  setStatus("");
-  await loadBoard();
+const SHIP_DAY_WORDS = {
+  move: (date, o) => [`move the ship day to ${fmtDate(o.to, true)}`, `The ship day of ${fmtDate(date, true)} is now ${fmtDate(o.to, true)}.`],
+  ship: (date, o) => [`mark ${fmtDate(date, true)} shipped`, `${fmtDate(date, true)} is marked shipped${o.version ? ` as v${o.version}` : ""}.`],
+  unship: (date) => [`unmark ${fmtDate(date, true)}`, `${fmtDate(date, true)} is no longer marked shipped.`],
+  remove: (date) => [`cancel the ship day on ${fmtDate(date, true)}`, `The ship day on ${fmtDate(date, true)} is cancelled.`],
+  add: (date) => [`add a ship day on ${fmtDate(date, true)}`, `${fmtDate(date, true)} is a ship day.`],
 };
+/** Resolves true when the day changed, so the drawer that asked closes only then. */
+const setShipDay = (action, date, opts = {}) => write(...SHIP_DAY_WORDS[action](date, opts), () => post("/api/ship-schedule/day", { project: projectId, action, date, ...opts }));
+const closeIf = (ok) => { if (ok) closeDrawer(); };
 
 /** The version the next ship would carry, bare (no leading v), for the wizard and the record. */
 const nextVersionBare = (trackers) => planningSlots(trackers).next.label.replace(/^v/, "");
@@ -1053,7 +1114,6 @@ const startTheShip = (version) => {
 };
 
 const openShipDayDrawer = (occ, trackers) => {
-  const root = $("#drawer-root");
   const version = nextVersionBare(trackers);
   const list = el("div", { class: "release-list" });
   const state = shipDayState(occ);
@@ -1061,39 +1121,32 @@ const openShipDayDrawer = (occ, trackers) => {
     list.append(el("div", { class: "due-row" },
       el("span", { class: "badge released" }, "shipped"),
       el("span", { class: "muted small mono" }, `${occ.shipped.version ? `v${occ.shipped.version} · ` : ""}marked ${fmtDate(occ.shipped.at.slice(0, 10))}`),
-      btn("undo", () => setShipDay("unship", occ.origin).then(closeDrawer), "ghost")));
+      btn("undo", () => setShipDay("unship", occ.origin).then(closeIf), "ghost")));
   } else {
     list.append(el("div", { class: "due-row" },
       el("span", { class: "k" }, "this day"),
       btn(`start the ship (v${version})`, () => startTheShip(version), "primary"),
-      btn("mark shipped", () => setShipDay("ship", occ.origin, { version }).then(closeDrawer))));
+      btn("mark shipped", () => setShipDay("ship", occ.origin, { version }).then(closeIf))));
   }
   if (occ.movedFrom) {
     list.append(el("p", { class: "muted small" },
       occ.date > occ.movedFrom ? `Pushed back from ${fmtDate(occ.movedFrom)}.` : `Pulled forward from ${fmtDate(occ.movedFrom)}.`,
-      " ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); setShipDay("move", occ.origin, { to: occ.origin }).then(closeDrawer); } }, "put it back")));
+      " ", btn("put it back", () => setShipDay("move", occ.origin, { to: occ.origin }).then(closeIf), "ghost")));
   }
-  const moveTo = el("input", { type: "date", value: occ.date });
+  const moveTo = el("input", { type: "date", value: occ.date, "aria-label": "move the ship day to" });
   list.append(el("div", { class: "due-row" },
     el("span", { class: "k" }, "move it"),
     moveTo,
-    btn("move", () => { if (moveTo.value) setShipDay("move", occ.origin, { to: moveTo.value }).then(closeDrawer); })));
+    btn("move", () => { if (moveTo.value) setShipDay("move", occ.origin, { to: moveTo.value }).then(closeIf); })));
   list.append(el("div", { class: "due-row" },
     el("span", { class: "k" }, occ.source === "cadence" ? cadenceWords(shipDays?.schedule?.cadence) : "one-off"),
     btn("cancel this ship day", async () => {
       if (await ask({ title: `Cancel the ship day on ${fmtDate(occ.date)}?`, body: occ.source === "cadence" ? "The cadence keeps running; only this one comes off the calendar." : "This one-off ship day is removed.", confirm: "cancel it", danger: true })) {
-        await setShipDay("remove", occ.origin);
-        closeDrawer();
+        closeIf(await setShipDay("remove", occ.origin));
       }
     }, "ghost danger")));
-  root.replaceChildren(
-    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
-    el("aside", { class: "drawer", role: "dialog" },
-      el("div", { class: "drawer-head" }, el("h2", {}, `Ship day · ${fmtDate(occ.date)}`), state ? el("span", { class: `chip ship ${state}` }, state === "now" ? "today" : state) : null, btn("×", closeDrawer, "ghost")),
-      el("div", { class: "drawer-body" }, list),
-      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, el("span", { class: "spacer" }), btn("close", closeDrawer)))),
-  );
-  document.addEventListener("keydown", onDrawerKey);
+  // A shipped day says so in its body, with the undo beside it; the head carries only today or missed.
+  showDrawer({ title: `Ship day · ${fmtDate(occ.date)}`, head: state && state !== "shipped" ? [el("span", { class: `chip ship ${state}` }, state === "now" ? "today" : state)] : [], body: el("div", { class: "drawer-body" }, list) });
 };
 
 /**
@@ -1110,7 +1163,7 @@ const shipDayBanner = (trackers) => {
   if (!live) return [];
   const version = nextVersionBare(trackers);
   return [el("div", { class: `ship-banner${now ? "" : " missed"}` },
-    el("span", { class: "ship-banner-mark" }, now ? "🛫" : "⚠"),
+    el("span", { class: "ship-banner-mark", "aria-hidden": "true" }, now ? jetSvg("jet-glyph") : icon("finding")),
     el("strong", {}, now ? "Ship day." : `Ship day was ${fmtDate(live.date)}.`),
     el("span", { class: "muted" }, now ? `Planned for v${version}.` : "It went by without being marked."),
     el("span", { class: "spacer" }),
@@ -1123,25 +1176,19 @@ const shipDayBanner = (trackers) => {
 /** The cadence control, under the calendar head: how often this project means to ship. */
 const shipCadenceRow = () => {
   const cadence = shipDays?.schedule?.cadence ?? null;
-  const every = el("select", { class: "cadence-every" },
+  const every = el("select", { class: "cadence-every", "aria-label": "how often to ship" },
     el("option", { value: "0" }, "no cadence"),
     ...[1, 2, 3, 4, 6].map((n) => el("option", { value: String(n) }, n === 1 ? "every week" : `every ${n} weeks`)));
   every.value = cadence ? String(cadence.everyWeeks) : "0";
-  const anchor = el("input", { type: "date", value: cadence?.anchor ?? today(), title: "the first ship day; its weekday is the cadence's weekday" });
-  const apply = async () => {
+  const anchor = el("input", { type: "date", value: cadence?.anchor ?? today(), "aria-label": "first ship day", title: "the first ship day; its weekday is the cadence's weekday" });
+  const apply = () => {
     const weeks = Number(every.value);
-    try {
-      setStatus(weeks ? `ship days ${cadenceWords({ everyWeeks: weeks, anchor: anchor.value })}` : "clearing the ship cadence");
-      await post("/api/ship-schedule", { project: projectId, cadence: weeks ? { everyWeeks: weeks, anchor: anchor.value } : null });
-      setStatus("");
-      await loadBoard();
-    } catch (err) {
-      setStatus(err.message, true);
-    }
+    const cadence = weeks ? { everyWeeks: weeks, anchor: anchor.value } : null;
+    return write(cadence ? `set ship days to ${cadenceWords(cadence)}` : "clear the ship cadence", cadence ? `Ship days are ${cadenceWords(cadence)}.` : "The ship cadence is cleared.", () => post("/api/ship-schedule", { project: projectId, cadence }));
   };
   every.addEventListener("change", apply);
   anchor.addEventListener("change", () => { if (Number(every.value)) apply(); });
-  const oneOff = el("input", { type: "date", title: "a ship day on its own, outside the cadence" });
+  const oneOff = el("input", { type: "date", "aria-label": "one-off ship day", title: "a ship day on its own, outside the cadence" });
   const next = (shipDays?.occurrences ?? []).find((o) => o.date >= today());
   return el("div", { class: "cal-ships" },
     el("span", { class: "k" }, "Ship days"),
@@ -1151,7 +1198,7 @@ const shipCadenceRow = () => {
     next ? el("span", { class: "muted small mono" }, `next ${fmtDate(next.date, true)}`) : el("span", { class: "muted small" }, "none scheduled"),
     el("span", { class: "spacer" }),
     oneOff,
-    btn("add a one-off", () => { if (oneOff.value) setShipDay("add", oneOff.value).catch((err) => setStatus(err.message, true)); }, "ghost"),
+    btn("add a one-off", () => { if (oneOff.value) setShipDay("add", oneOff.value); }, "ghost"),
   );
 };
 
@@ -1176,39 +1223,38 @@ const renderCalendar = (trackers) => {
     calendarMonth = d.toISOString().slice(0, 7);
     loadBoard();
   };
+  const months = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+  const [before, current, after] = [-1, 0, 1].map((delta) => months.format(new Date(Date.UTC(y, m - 1 + delta, 1))));
   const head = el(
     "div",
     { class: "cal-head" },
-    btn("‹", () => shift(-1), "ghost"),
-    el("h2", {}, first.toLocaleString(undefined, { month: "long", year: "numeric", timeZone: "UTC" })),
-    btn("›", () => shift(1), "ghost"),
+    el("button", { type: "button", class: "ghost icon-btn month-prev", "aria-label": `previous month, ${before}`, title: before, onclick: () => shift(-1) }, icon("chevron")),
+    el("h2", {}, current),
+    el("button", { type: "button", class: "ghost icon-btn month-next", "aria-label": `next month, ${after}`, title: after, onclick: () => shift(1) }, icon("chevron")),
     btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"),
     el("span", { class: "spacer" }),
     el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, or a ship day to move it"),
   );
   const grid = el("div", { class: "cal-grid" });
-  for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) grid.append(el("div", { class: "cal-dow" }, d));
+  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  for (const d of WEEKDAYS) grid.append(el("div", { class: "cal-dow" }, d));
   for (let i = 0; i < lead; i += 1) grid.append(el("div", { class: "cal-cell pad" }));
   for (let day = 1; day <= daysInMonth; day += 1) {
     const date = `${calendarMonth}-${String(day).padStart(2, "0")}`;
-    const cell = el("div", { class: `cal-cell${date === today() ? " today" : ""}` }, el("div", { class: "cal-day" }, String(day)));
+    const weekday = WEEKDAYS[(lead + day - 1) % 7];
+    const cell = el("div", { class: `cal-cell${date === today() ? " today" : ""}` }, el("div", { class: "cal-day" }, el("span", { class: "cal-wd" }, `${weekday} `), String(day)));
     for (const occ of shipByDate.get(date) ?? []) {
       const state = shipDayState(occ);
-      cell.append(draggableShip(el("div", {
-        class: `cal-event ship ${state}`,
-        tabindex: "0",
-        role: "button",
-        title: `ship day${occ.movedFrom ? `, moved from ${fmtDate(occ.movedFrom)}` : ""}${occ.shipped ? ` · shipped${occ.shipped.version ? ` v${occ.shipped.version}` : ""}` : ""}`,
-        onclick: () => openShipDayDrawer(occ, trackers),
-        onkeydown: (ev) => { if (ev.key === "Enter") ev.currentTarget.click(); },
-      }, occ.shipped ? `🛬 shipped${occ.shipped.version ? ` v${occ.shipped.version}` : ""}` : "🛫 ship day"), occ));
+      const label = occ.shipped ? `shipped${occ.shipped.version ? ` v${occ.shipped.version}` : ""}` : "ship day";
+      const words = [state === "missed" ? "went by unmarked" : state === "now" ? "today" : "", occ.movedFrom ? `moved from ${fmtDate(occ.movedFrom)}` : ""].filter(Boolean).join(", ");
+      cell.append(draggableShip(calEvent(`ship ${state}`, label, words, () => openShipDayDrawer(occ, trackers)), occ));
     }
     for (const e of byDate.get(date) ?? []) {
-      const node = el(
-        "div",
-        { class: `cal-event ${e.kind} ${eventState(e)}`, tabindex: "0", role: "button", title: `${e.title}${e.column ? ` · ${e.column}` : ""}`, onclick: () => { if (e.item) openDrawer(e.tracker.index, e.item); else if (e.slot) openSlotDrawer(e.slot, trackers); }, onkeydown: (ev) => { if (ev.key === "Enter") ev.currentTarget.click(); } },
-        e.kind === "release" ? `⚡ ${e.title}` : e.title,
-      );
+      const state = eventState(e);
+      const node = e.kind === "release"
+        ? calEvent("release", `${e.title} deploys`, "", () => openSlotDrawer(e.slot, trackers))
+        : calEvent(`item ${state}`, e.title, EVENT_WORDS[state], () => openDrawer(e.tracker.index, e.item));
+      if (EVENT_ICONS[state]) node.prepend(icon(EVENT_ICONS[state]));
       if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
       cell.append(node);
     }
@@ -1216,23 +1262,26 @@ const renderCalendar = (trackers) => {
       cell,
       (d) => (d.type === "item" ? d.item.fields.due !== date : d.type === "ship" ? d.occ.date !== date : false),
       (d) => (d.type === "ship"
-        ? post("/api/ship-schedule/day", { project: projectId, action: "move", date: d.occ.origin, to: date })
-        : editItemBody(d.tracker.index, d.item, withDue(d.item.body, date), `deadline ${fmtDate(date)}`)),
+        ? setShipDay("move", d.occ.origin, { to: date })
+        : setDue(d.tracker, d.item, date)),
     );
     grid.append(cell);
   }
   const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && isDevItem(i)).map((i) => ({ t, i, s })))));
-  const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`), el("div", { class: "muted small" }, "drop a dated item here to clear its deadline"));
-  dropZone(side, (d) => d.type === "item" && Boolean(d.item.fields.due), (d) => editItemBody(d.tracker.index, d.item, withDue(d.item.body, ""), "clearing deadline"));
-  for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(el("div", { class: "cal-event item undated", onclick: () => openDrawer(t.index, i) }, i.title), t, i, s));
+  const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`),
+    undated.length || events.some((e) => e.kind === "item")
+      ? el("div", { class: "muted small" }, "drop a dated item here to clear its deadline")
+      : el("p", { class: "lane-empty muted small" }, "Nothing on the roadmap yet. Items are added on the ", el("a", { href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "board"), ", and dated in their drawer or by dragging them here."));
+  dropZone(side, (d) => d.type === "item" && Boolean(d.item.fields.due), (d) => setDue(d.tracker, d.item, ""));
+  for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(calEvent("item undated", i.title, "", () => openDrawer(t.index, i)), t, i, s));
+  const key = (cls, words, iconName) => el("span", { class: `cal-key ${cls}` }, iconName ? icon(iconName) : null, words);
   return el(
     "section",
     { class: "calendar" },
-    el("h3", { class: "strip-title" }, "Releases"),
-    renderReleases(trackers),
+    releasesSection(trackers),
     shipCadenceRow(),
     head,
-    el("div", { class: "cal-legend" }, el("span", { class: "cal-event item done" }, "complete"), el("span", { class: "cal-event item warn" }, "in progress, due within a week"), el("span", { class: "cal-event item late" }, "not started, due within a week"), el("span", { class: "cal-event item" }, "later"), el("span", { class: "cal-event ship" }, "🛫 ship day")),
+    el("div", { class: "cal-legend" }, key("item done", "done", "decision"), key("item overdue", "overdue", "finding"), key("item soon", "due within a week"), key("item", "due later"), key("release", "a release deploys"), key("ship", "ship day"), key("ship now", "ship day, today")),
     grid,
     side,
   );
@@ -1240,31 +1289,19 @@ const renderCalendar = (trackers) => {
 
 
 const openFindingsDrawer = (child, v) => {
-  const root = $("#drawer-root");
   const body = el("div", { class: "drawer-text" });
   body.innerHTML = renderInline(v.findings ?? "");
   const decide = async (decision) => {
-    try {
-      await post(`/api/sessions/${child.id}/decision`, { decision });
-      setStatus(`findings ${decision}`);
-      closeDrawer();
-      loadRail(true);
-    } catch (err) {
-      setStatus(err.message, true);
-    }
+    if (!(await attempt({ what: `record the findings on "${child.loop}" as ${decision}`, done: `The findings on "${child.loop}" are ${decision}.`, run: () => post(`/api/sessions/${child.id}/decision`, { decision }) }))) return;
+    closeDrawer();
+    loadRail(true);
   };
-  root.replaceChildren(
-    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
-    el(
-      "aside",
-      { class: "drawer", role: "dialog" },
-      el("div", { class: "drawer-head" }, el("h2", {}, `Audit: ${child.loop}`), btn("×", closeDrawer, "ghost")),
-      el("div", { class: "drawer-meta" }, el("span", { class: `verdict ${v.verdict}` }, v.verdict), v.decision ? el("span", { class: "muted mono" }, v.decision) : null, el("span", { class: "spacer" }), el("span", { class: "muted mono" }, child.audit?.file ?? "")),
-      el("div", { class: "drawer-body" }, body),
-      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, btn("accept findings", () => decide("accepted"), "primary"), btn("reject findings", () => decide("rejected"), "danger"), el("span", { class: "spacer" }), btn("close", closeDrawer))),
-    ),
-  );
-  document.addEventListener("keydown", onDrawerKey);
+  showDrawer({
+    title: `Audit: ${child.loop}`,
+    meta: el("div", { class: "drawer-meta" }, el("span", { class: `verdict ${v.verdict}` }, v.verdict), v.decision ? el("span", { class: "muted mono" }, v.decision) : null, el("span", { class: "spacer" }), el("span", { class: "muted mono" }, child.audit?.file ?? "")),
+    body: el("div", { class: "drawer-body" }, body),
+    foot: [btn("accept findings", () => decide("accepted"), "primary"), btn("reject findings", () => decide("rejected"), "danger")],
+  });
 };
 
 
@@ -1335,7 +1372,6 @@ const openShipWizard = async (version) => {
   let ship = await api(`/api/ships/${encodeURIComponent(bare)}?project=${encodeURIComponent(projectId)}`);
   if (!ship) ship = await post("/api/ships", { project: projectId, version: bare });
   history.replaceState(null, "", `#ship-${bare}`);
-  const root = $("#drawer-root");
   const list = el("div", { class: "ship-steps" });
 
   const refresh = async () => {
@@ -1351,12 +1387,8 @@ const openShipWizard = async (version) => {
   };
   const stepCall = async (step, action, body) => {
     if (action === "run") flyby();
-    try {
-      await post(`/api/ships/${encodeURIComponent(bare)}/steps/${encodeURIComponent(step.id)}${action ? `/${action}` : ""}?project=${encodeURIComponent(projectId)}`, body);
-      await refresh();
-    } catch (err) {
-      setStatus(err.message, true);
-    }
+    const done = action === "run" ? `Started "${step.title}".` : `Saved "${step.title}".`;
+    if (await attempt({ what: `${action === "run" ? "start" : "save"} "${step.title}"`, done, run: () => post(`/api/ships/${encodeURIComponent(bare)}/steps/${encodeURIComponent(step.id)}${action ? `/${action}` : ""}?project=${encodeURIComponent(projectId)}`, body) })) await refresh();
   };
 
   let agentStates = new Map();
@@ -1380,7 +1412,7 @@ const openShipWizard = async (version) => {
     const { done, total } = shipProgress(ship);
     const pct = (done / total) * 100;
     const runway = el("div", { class: "ship-progress" },
-      el("div", { class: "runway" }, el("div", { class: "fill", style: `width:${pct}%` }), el("div", { class: "jet-marker", style: `left:${pct}%` }, jetGlyph())),
+      el("div", { class: "runway", style: `--p:${pct}` }, el("div", { class: "fill" }), el("div", { class: "jet-marker" }, jetGlyph())),
       el("span", { class: "mono small muted" }, `${done} of ${total} steps${ship.finished ? ` · shipped ${fmtDate(ship.finished)}` : ""}`));
     list.replaceChildren(runway);
     const current = ship.steps.find((st) => st.status !== "done" && st.status !== "skipped");
@@ -1423,14 +1455,7 @@ const openShipWizard = async (version) => {
     pollStates();
   };
 
-  root.replaceChildren(
-    el("div", { class: "drawer-backdrop", onclick: closeDrawer }),
-    el("aside", { class: "drawer wide", role: "dialog" },
-      el("div", { class: "drawer-head" }, el("h2", {}, `Ship v${bare}`), el("span", { class: "muted mono small" }, `started ${fmtDate(ship.started)} · progress is saved; close and come back any time`), btn("×", closeDrawer, "ghost")),
-      el("div", { class: "drawer-body" }, list),
-      el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, btn("refresh", refresh, "ghost"), el("span", { class: "spacer" }), btn("close", closeDrawer)))),
-  );
-  document.addEventListener("keydown", onDrawerKey);
+  showDrawer({ title: `Ship v${bare}`, head: [el("span", { class: "muted mono small" }, `started ${fmtDate(ship.started)} · progress is saved; close and come back any time`)], body: el("div", { class: "drawer-body" }, list), foot: [btn("refresh", refresh, "ghost")], wide: true });
   render();
   ships = await api(`/api/ships?project=${encodeURIComponent(projectId)}`);
   const poll = window.setInterval(() => { if (!document.contains(list)) { window.clearInterval(poll); stopTails(); return; } if (ship.steps.some((st) => st.status === "running")) refresh(); }, 8000);
@@ -1450,15 +1475,13 @@ const renderWorkspace = async () => {
   // The project filter is rendered into the page head by the command center, so the head is
   // one row: title, what you are looking at, then the instruments.
   const filterRoot = el("div", { class: "ws-filter" });
-  const ws = await api("/api/workspace");
   wrap.append(
     el("div", { class: "ws-head" },
-      el("h2", { class: "ws-title" }, "Command center"),
+      el("h1", { class: "ws-title" }, "Command center"),
       filterRoot,
       el("span", { class: "ws-gap" }),
       el("div", { class: "ws-tools" },
         usageRoot,
-        ...(ws.lanUrl ? [el("button", { type: "button", class: "ghost", title: ws.lanUrl, onclick: () => { navigator.clipboard?.writeText(ws.lanUrl); setStatus("phone link copied"); } }, "phone link")] : []),
         el("button", { type: "button", class: "ghost icon-btn", "aria-label": "refresh sessions", title: "refresh sessions", onclick: () => commandCenter?.refresh() }, icon("refresh")),
       ),
     ),
@@ -1484,7 +1507,6 @@ const sessionRow = (cls, name, sub, actions, lampTitle) =>
 
 const btn = (label, onclick, cls = "") => el("button", { type: "button", class: cls, onclick }, label);
 
-const expandedSessions = new Set();
 let lastSessions = null;
 
 /**
@@ -1499,7 +1521,7 @@ const railTally = (live) => {
     ["busy", count((st) => /^(busy|running)$/.test(st)), "working"],
     ["idle", count((st) => /^(idle|shell)$/.test(st)), "parked"],
   ].filter(([, n]) => n > 0);
-  if (!groups.length) return el("div", { class: "rail-tally empty" }, el("span", { class: "muted small" }, "nothing running"));
+  if (!groups.length) return el("div", { class: "rail-tally empty" });
   return el("div", { class: "rail-tally" },
     ...groups.map(([status, n, what]) =>
       el("span", { class: "t", title: `${n} ${what}` }, lamp(status), el("b", {}, String(n)))));
@@ -1522,15 +1544,7 @@ const renderSessions = (records, live) => {
     running.append(
       el(
         "li",
-        {
-          class: `row session-live ${s.status ?? ""}${expandedSessions.has(s.sessionId) ? " expanded" : ""}`,
-          onclick: (e) => {
-            if (e.target.closest("button")) return;
-            if (expandedSessions.has(s.sessionId)) expandedSessions.delete(s.sessionId);
-            else expandedSessions.add(s.sessionId);
-            e.currentTarget.classList.toggle("expanded");
-          },
-        },
+        { class: `row session-live ${s.status ?? ""}` },
         lamp(s.status ?? "idle"),
         el("span", { class: "name", title: s.title ?? s.name ?? String(s.pid) }, s.title ?? s.name ?? String(s.pid)),
         el(
@@ -1541,16 +1555,16 @@ const renderSessions = (records, live) => {
             if (!(await askClose(s))) return;
             try {
               await post(`/api/sessions/${s.pid}/close`);
-              setStatus(`closed pid ${s.pid}`);
+              toast(`Closed "${s.title ?? s.name ?? s.pid}".`);
             } catch (err) {
-              setStatus(err.message, true);
+              failed(`close "${s.title ?? s.name ?? s.pid}"`, err);
             }
             window.setTimeout(() => loadRail(true), 1500);
           }, "danger"),
         ),
         el("span", { class: "doing" }, el("span", { class: "k" }, s.status ?? "?"), text(s.waitingFor ? `${s.waitingFor} · ` : ""), el("span", { class: "age" }, `${age(s.updatedAt)}${s.elapsed ? ` · up ${s.elapsed}` : ""}${where ? ` · ${where}` : ""}`)),
-        s.lastPrompt ? el("span", { class: "doing detail" }, el("span", { class: "k" }, "you"), text(s.lastPrompt)) : null,
-        s.lastReply ? el("span", { class: "doing detail" }, el("span", { class: "k" }, "claude"), text(s.lastReply)) : null,
+        s.lastPrompt ? el("span", { class: "doing detail", title: s.lastPrompt }, el("span", { class: "k" }, "you"), text(s.lastPrompt)) : null,
+        s.lastReply ? el("span", { class: "doing detail", title: s.lastReply }, el("span", { class: "k" }, "claude"), text(s.lastReply)) : null,
       ),
     );
   }
@@ -1568,9 +1582,10 @@ const renderSessions = (records, live) => {
             if (!(await askEnd(finished, `background session ${a.id}`))) return;
             try {
               const r = await post(`/api/agents/${a.id}/${finished ? "remove" : "stop"}`);
-              setStatus(r.output || (finished ? `removed ${a.id}` : `stopped ${a.id}`), Boolean(r.failed));
+              if (r.failed) failed(`${finished ? "remove" : "stop"} ${a.id}`, new Error(r.output));
+              else toast(finished ? `Removed ${a.id}.` : `Stopped ${a.id}.`);
             } catch (err) {
-              setStatus(err.message, true);
+              failed(`${finished ? "remove" : "stop"} ${a.id}`, err);
             }
             loadRail(true);
           }, "danger"),
@@ -1578,7 +1593,7 @@ const renderSessions = (records, live) => {
       ),
     );
   }
-  if (!running.childElementCount) running.append(el("li", { class: "empty" }, "nothing running under this project"));
+  if (!running.childElementCount) running.append(el("li", { class: "empty" }, "No session is running here. New session starts one."));
   out.append(el("h3", {}, "Running"), running);
 
   const parents = records.filter((r) => r.role === "audit");
@@ -1598,7 +1613,7 @@ const renderSessions = (records, live) => {
             [agent ? `task ${agent.state}` : c.status, c.claudeId ? `claude attach ${c.claudeId}` : null].filter(Boolean).join(" · "),
             [
               chip,
-              v.verdict === "none" && c.claudeId ? btn("audit now", async () => { try { await post(`/api/sessions/${c.id}/audit?project=${encodeURIComponent(projectId)}`); setStatus("audit started"); } catch (err) { setStatus(err.message, true); } loadRail(true); }) : null,
+              v.verdict === "none" && c.claudeId ? btn("audit now", async (e) => { await attempt({ what: `audit "${c.loop}"`, done: `Auditing "${c.loop}".`, control: e.currentTarget, run: () => post(`/api/sessions/${c.id}/audit?project=${encodeURIComponent(projectId)}`) }); loadRail(true); }) : null,
               v.findings ? btn("findings", () => openFindingsDrawer(c, v)) : null,
               c.claudeId && agent ? btn("open", () => openTerminal({ kind: "attach", id: c.claudeId, title: c.loop })) : null,
             ].filter(Boolean),
@@ -1658,7 +1673,7 @@ const renderLive = (live) => {
     if (repo.error) repos.append(el("li", { class: "empty" }, `${repo.label}: ${repo.error}`));
   }
   if (repos.childElementCount) out.append(el("h3", {}, "PRs and worktrees"), repos);
-  out.append(el("div", { class: "muted small mono" }, `signals ${new Date(live.fetchedAt).toLocaleTimeString()}`));
+  out.append(el("div", { class: "muted small mono" }, `servers and repos read at ${new Date(live.fetchedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`));
   return out;
 };
 
@@ -1708,24 +1723,24 @@ const acceptDrops = (host, onPaths) => {
       const paths = [];
       for (const f of e.dataTransfer.files) paths.push(await uploadDrop(f));
       onPaths(paths.map(quotePath));
-      setStatus(`${paths.length} file${paths.length === 1 ? "" : "s"} attached`);
+      toast(`${paths.length} file${paths.length === 1 ? "" : "s"} attached.`);
     } catch (err) {
-      setStatus(err.message, true);
+      failed("attach the dropped files", err);
     }
   });
 };
 
+/** Starting a session or a shell is an action: what it did is a toast, and a failure names it. */
 const openTerminal = async (body) => {
   const { kind, title } = body;
-  setStatus(`opening ${title ?? kind}`);
   try {
     const info = await createTerminal(body);
-    setStatus(`${info.title}: running. It appears in the rack as it registers.`);
+    toast(`${info.title}: running. It appears in the rack as it registers.`);
     if (kind === "spawn") loadRail(true);
     commandCenter?.refresh();
     return info;
   } catch (err) {
-    setStatus(err.message, true);
+    failed(`start ${title ?? kind}`, err);
   }
 };
 
@@ -1766,13 +1781,13 @@ const applyTheme = (theme) => {
   if (theme.font !== "Chakra Petch" && !document.querySelector(`link[data-font="${theme.font}"]`)) {
     document.head.append(el("link", { rel: "stylesheet", "data-font": theme.font, href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
   }
-  $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
 };
 
 /* ---------- boot ---------- */
 
 const boot = async () => {
   void mountDevBadge();
+  $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
   if (!projectId) {
     // The page is where you start: no project in the URL reopens the last one, unless the
     // picker was asked for by name.
@@ -1905,18 +1920,18 @@ const boot = async () => {
   try { railCollapsed = localStorage.getItem("console.rail") === "collapsed"; } catch {}
   const applyRail = () => {
     $("#project").classList.toggle("rail-collapsed", railCollapsed);
-    $("#rail-fold").textContent = railCollapsed ? "▸" : "▾";
-    $("#rail-fold").title = railCollapsed ? "show sessions" : "hide sessions";
+    setFold($("#rail-fold"), !railCollapsed, "sessions");
   };
   $("#rail-fold").addEventListener("click", () => {
     railCollapsed = !railCollapsed;
     try { localStorage.setItem("console.rail", railCollapsed ? "collapsed" : "open"); } catch {}
     applyRail();
   });
+  $("#rail-fold").replaceChildren(icon("chevron"));
   applyRail();
-  $("#new-session").addEventListener("click", (e) => {
-    flyby();
-    openTerminal({ kind: "new", title: `claude · ${project.name}` });
+  // The jet flies when something has happened, so it follows the session starting, not the click.
+  $("#new-session").addEventListener("click", async () => {
+    if (await openTerminal({ kind: "new", title: `claude · ${project.name}` })) flyby();
   });
 
   await Promise.all([loadBoard(), loadRail()]);
@@ -1939,7 +1954,7 @@ const boot = async () => {
   if (linked) {
     const line = Number(linked[1]) - 1;
     for (const tracker of lastTrackers) {
-      const item = tracker.sections.flatMap((sec) => sec.groups.flatMap((g) => g.items)).find((i) => i.start === line);
+      const item = findItem(tracker.index, (i) => i.start === line);
       if (item) openDrawer(tracker.index, item);
     }
   }
