@@ -547,6 +547,7 @@ const loadBoard = async () => {
     [ships, shipDays] = await Promise.all([api(`/api/ships?project=${encodeURIComponent(projectId)}`), api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`)]);
     $("#project").classList.toggle("workspace-view", view === "workspace");
     $("#boards").replaceChildren(
+      ...(view === "workspace" ? [] : [el("h1", { class: "sr-only" }, `${project.name}: ${view}`)]),
       ...shipDayBanner(trackers),
       ...(view === "calendar"
         ? [renderCalendar(trackers)]
@@ -634,7 +635,7 @@ const showDrawer = ({ title, head = [], meta = null, body, foot = [], wide = fal
   const h2 = el("h2", { tabindex: "-1" }, title);
   $("#drawer-root").replaceChildren(
     el("div", { class: "drawer-backdrop", onclick: backdrop }),
-    el("aside", { class: `drawer${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": typeof title === "string" ? title : h2.textContent },
+    el("div", { class: `drawer${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": typeof title === "string" ? title : h2.textContent },
       el("div", { class: "drawer-head" }, h2, ...head, el("button", { type: "button", class: "ghost icon-btn", "aria-label": "close", title: "close (Esc)", onclick: closeDrawer }, icon("close"))),
       meta,
       body,
@@ -763,7 +764,7 @@ const openDrawer = (trackerIndex, item) => {
     ].filter(Boolean));
   };
   const edit = () => {
-    const area = el("textarea", { spellcheck: "false" });
+    const area = el("textarea", { spellcheck: "false", "aria-label": `the markdown of ${item.title}` });
     area.value = item.body;
     body.replaceChildren(area);
     area.focus();
@@ -956,9 +957,9 @@ const releaseCard = (release, kind, live = false) => {
   const c = release.counts;
   return el(
     "div",
-    { class: `release-card ${kind}${live ? " live" : ""}`, tabindex: "0", role: "button", onkeydown: (ev) => { if (ev.key === "Enter") ev.currentTarget.click(); }, onclick: () => { history.replaceState(null, "", `#release-${release.version}`); openReleaseDrawer(release, kind, null, live); } },
+    { class: `release-card ${kind}${live ? " live" : ""}`, onclick: (e) => { if (e.target.closest("button:not(.version), a")) return; history.replaceState(null, "", `#release-${release.version}`); openReleaseDrawer(release, kind, null, live); } },
     el("div", { class: "release-card-head" },
-      el("span", { class: "version" }, `v${release.version}`),
+      el("button", { type: "button", class: "version", "aria-label": `v${release.version}: the changelog and PRs` }, `v${release.version}`),
       live ? el("span", { class: "badge live" }, "live in production") : el("span", { class: "badge released" }, "released")),
     el("div", { class: "release-date" }, release.date ? `released ${fmtDate(release.date)}` : "release date unknown"),
     el("p", { class: "stats" }, stat(c.added, "feature"), stat(c.fixed, "fix", "fixes"), stat(c.changed, "change"), stat(c.prs, "PR")),
@@ -971,8 +972,8 @@ const slotCard = (slot, trackers) => {
   const fixCount = (slot.merged?.fixed ?? 0) + slot.items.filter(({ item }) => isBugItem(item)).length;
   const card = el(
     "div",
-    { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, tabindex: "0", role: "button", onkeydown: (ev) => { if (ev.key === "Enter" && ev.target === ev.currentTarget) ev.currentTarget.click(); }, onclick: () => { history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
-    el("div", { class: "release-card-head" }, el("span", { class: "version" }, slot.label), el("span", { class: "badge planned" }, slot.key === "next" ? "next release" : "the one after")),
+    { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, onclick: (e) => { if (e.target.closest("button:not(.version), a")) return; history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
+    el("div", { class: "release-card-head" }, el("button", { type: "button", class: "version", "aria-label": `${slot.label}: plan and deploy date` }, slot.label), el("span", { class: "badge planned" }, slot.key === "next" ? "next release" : "the one after")),
     el("div", { class: "release-date" }, slot.deploy ? `deploy ${fmtDate(slot.deploy)}` : "no deploy date yet", slot.label !== slot.computed ? el("span", { class: "muted" }, ` · computed ${slot.computed}`) : null),
     el("p", { class: "stats" }, stat(featureCount, "feature"), stat(fixCount, "fix", "fixes"), stat(slot.items.length, "planned", "planned"), slot.key === "next" ? stat(slot.merged.prs, `merged since ${releasesData?.shipped[0]?.version ?? "the last tag"}`, `merged since ${releasesData?.shipped[0]?.version ?? "the last tag"}`) : null),
   );
@@ -1060,7 +1061,7 @@ const releasesSection = (trackers) => {
     setFold(fold, !collapsed, "releases");
     try { localStorage.setItem("console.releases", collapsed ? "collapsed" : "open"); } catch {}
   });
-  section.append(el("h3", { class: "strip-title releases-fold" }, fold, text("Releases")), renderReleases(trackers));
+  section.append(el("h2", { class: "strip-title releases-fold" }, fold, text("Releases")), renderReleases(trackers));
   return section;
 };
 

@@ -168,7 +168,7 @@ html { scroll-padding-top: 70px; }
 /* The plan is the thing being approved, so it is read in full: a title and its prose, not a
    row clipped to one line. A gate you cannot read the terms of is not a gate. */
 .mv-plan-task { padding: 10px 12px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); margin-bottom: 8px; }
-.mv-plan-task h4 { font-family: var(--display); font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
+.mv-plan-task :is(h3, h4) { font-family: var(--display); font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
 .mv-plan-task p { margin: 0; font-size: 13px; color: var(--ink-soft); white-space: pre-wrap; max-width: 78ch; }
 
 /* Which repo a task lands in. A multi-repo project plans across several, and the order they

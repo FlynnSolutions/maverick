@@ -316,7 +316,7 @@ const renderReviews = () => {
   for (const r of tasks) {
     const v = r.auditView ?? { verdict: "none" };
     const item = el("div", { class: "review-item" },
-      el("div", { class: "head" }, el("span", { class: "role" }, r.role), el("span", { class: "loop" }, r.loop), el("span", { class: `verdict ${v.verdict}` }, v.verdict === "none" ? "not audited" : v.verdict), v.decision ? el("span", { class: "muted small mono" }, v.decision) : null,
+      el("div", { class: "head" }, el("span", { class: "role" }, r.role), el("h3", { class: "loop" }, r.loop), el("span", { class: `verdict ${v.verdict}` }, v.verdict === "none" ? "not audited" : v.verdict), v.decision ? el("span", { class: "muted small mono" }, v.decision) : null,
         r.claudeId && v.verdict === "none" ? btn("audit now", () => review(`/api/sessions/${r.id}/audit?project=${encodeURIComponent(projectId)}`, undefined, `audit "${r.loop}"`, `Auditing "${r.loop}".`), "primary") : null,
         v.findings ? btn(v.decision ? "change decision" : "accept", () => review(`/api/sessions/${r.id}/decision`, { decision: "accepted" }, `accept the findings on "${r.loop}"`, `Accepted the findings on "${r.loop}".`), "ghost") : null,
         v.findings ? btn("reject", () => review(`/api/sessions/${r.id}/decision`, { decision: "rejected" }, `reject the findings on "${r.loop}"`, `Rejected the findings on "${r.loop}".`), "ghost danger") : null),
@@ -327,7 +327,7 @@ const renderReviews = () => {
   detail.replaceChildren(
     el("div", { class: "detail-head" }, el("h1", {}, "Sessions and audits in this release")),
     el("div", { class: "detail-meta" }, el("span", {}, `${tasks.length} task sessions · ${tasks.filter((r) => r.auditView?.verdict && r.auditView.verdict !== "none").length} audited`)),
-    el("section", { class: "panel" }, list));
+    el("section", { class: "panel" }, el("h2", {}, "Task sessions"), list));
 };
 
 const renderAll = () => {

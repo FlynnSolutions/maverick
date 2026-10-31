@@ -88,7 +88,7 @@ const renderNav = () => {
 };
 
 const itemRow = (it) => el("div", { class: "mv-plan-task" },
-  el("h4", {}, it.title, el("span", { class: "mv-repo" }, `${it.kind} · ${it.size} · ${it.call}`)),
+  el("h3", {}, it.title, el("span", { class: "mv-repo" }, `${it.kind} · ${it.size} · ${it.call}`)),
   el("p", {}, it.body));
 
 const renderOne = (b) => {
@@ -138,7 +138,8 @@ const renderAll = () => {
   const b = brainstorms.find((x) => x.file === selected);
   if (b) renderOne(b);
   else show(el("div", { class: "mv-empty" },
-    el("p", {}, "No brainstorms yet. One conversation with the CAG writes one dated document under deliverables/brainstorms/, and it shows here to break down."),
+    el("h1", {}, "No brainstorms yet"),
+    el("p", {}, "One conversation with the CAG writes one dated document under deliverables/brainstorms/, and it shows here to break down."),
     el("a", { class: "button-link primary", href: `/?project=${encodeURIComponent(projectId)}&view=workspace` }, "sit the CAG down on the workspace")));
 };
 
