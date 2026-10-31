@@ -5,6 +5,8 @@
 // locally, so the limits are what you enter once, and until then the meters read against your
 // highest window so far.
 
+import { leave } from "../toast.js";
+
 const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -387,6 +389,13 @@ export const mount = (root, ctx) => {
   const paint = () => {
     if (!data) {
       root.replaceChildren(el("span", { class: "cu-baby loading" }, "Claude usage…"));
+      return;
+    }
+    // A panel that was open and is closing plays its exit before it goes.
+    const was = root.querySelector(".cu-panel:not(.leaving)");
+    if (!open && was) {
+      root.replaceChildren(baby(), was);
+      leave(was);
       return;
     }
     root.replaceChildren(baby(), ...(open ? [panel()] : []));

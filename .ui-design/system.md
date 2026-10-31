@@ -87,12 +87,16 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Session strip** (`.strip`) — the signature. Air traffic control keeps one paper progress
   strip per flight in a rack, ordered by urgency and annotated by hand; a session is a flight.
   The line is a grid of fixed columns (`8px · name 1fr · 180px state · 148px timing · 230px
-  where · 152px actions`, 14px gaps, 40px min height), so the lamp, the state and the three
+  where · 152px actions`, 14px gaps, 52px min height), so the lamp, the state and the three
   verbs share one x down the entire page however long a title runs. Right-aligning the action
   group is not enough: `close`, `stop` and `remove` differ in width, so each verb gets its own
-  column (66 / 52 / 64px, 8px apart). Verbs are 28px tall with a `::after` extending the hit
-  area to the full 40px row rather than inflating the row to 44; extend on both axes, and keep
-  a real gap, or adjacent targets touch.
+  column (66 / 52 / 64px, 8px apart). Every verb is a real 44px target, because the audit
+  measures the box and an `::after` reaching past it does not count; the row is 52px so they
+  fit with room. A cell is read whole: a long name, state or place wraps to a second line
+  rather than being cut. A strip's name is its button (Enter, a screen reader), and a click
+  anywhere else on it still opens it. A strip in a column (open beside another, or in a
+  formation with its lead open) has no room for six columns, so it takes the phone's line:
+  the name across the top, then the state and the verbs.
 - **Three densities carry the hierarchy.** `full` (needs you, working) lifts the strip, sets the
   name 15px/600 and carries the last exchange beneath the line; `line` is the bare strip at
   13.5px/500. A rack of 40px lines under one lifted strip is the whole hierarchy: no second
@@ -112,7 +116,7 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   verbs, because it has one column of room and a confirm behind it.
 - **Icons are drawn** (`web/icons.js`): one 16px box, one 1.6 stroke, `currentColor`, an
   `aria-label` on the button. Never a unicode glyph, so an icon can sit next to the jet.
-  A 30px icon button carries a `::after` to a 40px hit area, the way the rack's verbs do.
+  An icon button is a 44px box, the glyph centred in it.
 - **The page head is one row**: title, the project filter, then the instruments. The filter had a
   row of its own that was empty but for one word at the far right. The command center renders its
   chips into a `filterRoot` the head owns, which is also why refresh survives a failed load.
@@ -387,3 +391,25 @@ listed in the audit as accepted, not fixed. Every other effect (missile, flares,
 
 Top bar wraps; the pill goes full width and drops its bars; the usage panel becomes a fixed
 sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44px.
+
+## The workspace inbox (2026-10-30)
+
+- **A mission is one strip in one group**, named by the mission, its open questions answered in
+  lines under it. Needs you is everything that asks the pilot something, a mission at review (its
+  walk and its close) and a brainstorm whose proposal waits at the gate included; Ready to review
+  is a session that replied and has something to read. Two groups saying "act here" was the
+  squint test failing.
+- **An idle session says what it is doing**: `asked you` in Needs you, `replied` in Ready to
+  review, never a bare `idle` in a group that implies otherwise.
+- **What an action did is a toast, and a failure names the action** (`failed` in web/toast.js);
+  the bar keeps only what is still true. What leaves (a toast, the ask, the session overlay, the
+  usage panel) goes through `leave`, on `--dur-exit`.
+- **The repaint waits for typing**: every ten seconds the racks are rebuilt, so a field being
+  typed in holds the clock, and arriving is decided by key, so only a strip new since the last
+  paint rises in.
+- **A menu is modal**: a scrim takes the outside click, the keyboard lands on its first row,
+  Escape gives the focus back. Every menu opens through one `openMenu`.
+- **The session list failing is not the page failing**: a red line with `try again`, and the
+  missions and brainstorms still draw, so a question stays answerable.
+- **Every target is 44px at every width on the shared base** (`button`, `.button-link`,
+  `summary`, `select`, text inputs), so a control nobody sized still clears the floor.

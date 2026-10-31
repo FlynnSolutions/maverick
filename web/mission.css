@@ -47,11 +47,6 @@ input.mv-note { align-self: stretch; height: 44px; padding: 0 10px; background: 
 .mv-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mv-note[aria-invalid="true"] { border-color: var(--caution); }
 
-/* Every target on the page is 44px at every width, 8px from the next (system.md). The scanner
-   measures the box, so the size is the control's own, never an ::after reaching past it. */
-.mv-page :is(button, summary, .button-link), .toasts button { min-height: 44px; }
-.mv-page button, .toasts button { height: auto; }
-
 /* The answer a question wants first is the needs-you colour, wherever a question draws it:
    the answer row, a walk's row, the pointer to an interview round. */
 .mv-opts button.primary, .prog-walks button.primary, button.lead-to-round { background: var(--caution); color: var(--carbon); border-color: transparent; }

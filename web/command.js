@@ -8,7 +8,8 @@ import { render as renderMd } from "./markdown.js";
 import { jetSvg } from "./jet.js";
 import { lamp } from "./lamp.js";
 import { icon } from "./icons.js";
-import { inboxRows } from "./inbox.js";
+import { questionLines } from "./inbox.js";
+import { failed, leave, toast } from "./toast.js";
 
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5 };
@@ -100,7 +101,7 @@ const assemble = (all) => {
 };
 
 export const mountCommandCenter = (root, ctx) => {
-  const { el, text, api, post, ask, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops, setStatus } = ctx;
+  const { el, text, api, post, ask, askClose, askEnd, loading, openTerminal, createTerminal, sendInput, acceptDrops } = ctx;
   let all = null;
   let model = null;
   let timer = null;
@@ -137,6 +138,16 @@ export const mountCommandCenter = (root, ctx) => {
   const dockFor = (s) => (s.kind === "background" ? { kind: "attach", id: s.claudeId, title: s.title } : { kind: "resume", sessionId: s.sessionId, title: s.title });
 
   /** `long` names the object: the rack has one column to spare, the overlay header has room. */
+  /** A strip's name is its button: Enter and a screen reader reach it as the control that opens the strip; a click anywhere else on the strip still opens it for a pointer. */
+  const stripName = (text, open) => el("button", { type: "button", class: "strip-name", onclick: (e) => { e.stopPropagation(); open(); } }, text);
+  /** A page strip's one verb, in the verbs' own column for open, so every open on the page shares one x. */
+  const openAct = (title, open) => [el("span", {}), el("button", { type: "button", class: "ghost act", title, onclick: open }, "open")];
+  /** What an empty place says, and the one thing to do about it. */
+  const emptyStart = (message, button) => el("div", { class: "cc-empty-start" }, message ? el("p", { class: "muted small" }, message) : null, button);
+  const clipboardDenied = () => toast("The browser would not give up the clipboard: allow clipboard access for this page.", { error: true });
+  /** A session between turns whose last reply ends on a question is asking you; one that does not has replied. */
+  const asksYou = (s) => /\?\s*$/.test(plain(s.lastReply));
+
   const endButton = (s, cls = "danger", long = false) =>
     s.isShell
       ? el("button", { type: "button", class: cls, title: `close the shell "${s.title}"`, onclick: async (e) => {
@@ -144,9 +155,9 @@ export const mountCommandCenter = (root, ctx) => {
           if (!(await askEnd(false, `the shell "${s.title}"`))) return;
           try {
             await api(`/api/terminals/${s.terminalId}`, { method: "DELETE" });
-            setStatus(`closed ${s.title}`);
+            toast(`closed ${s.title}`);
           } catch (err) {
-            setStatus(err.message, true);
+            failed(`close ${s.title}`, err);
           }
           window.setTimeout(load, 600);
         } }, long ? "close shell" : "close")
@@ -157,9 +168,9 @@ export const mountCommandCenter = (root, ctx) => {
           if (!(await askEnd(done, `"${s.title}"`))) return;
           try {
             const r = await post(`/api/agents/${s.claudeId}/${done ? "remove" : "stop"}`);
-            setStatus(r.output || (done ? `removed ${s.claudeId}` : `stopped ${s.claudeId}`), Boolean(r.failed));
+            toast(r.output || (done ? `removed ${s.title}` : `stopped ${s.title}`), { error: Boolean(r.failed) });
           } catch (err) {
-            setStatus(err.message, true);
+            failed(`${done ? "remove" : "stop"} ${s.title}`, err);
           }
           window.setTimeout(load, 1200);
         }, title: finished(s.status) ? `remove the record for "${s.title}"` : `stop the background agent running "${s.title}"` },
@@ -169,9 +180,9 @@ export const mountCommandCenter = (root, ctx) => {
           if (!(await askClose(s))) return;
           try {
             await post(`/api/sessions/${s.pid}/close`);
-            setStatus(`closed pid ${s.pid}`);
+            toast(`closed ${s.title}`);
           } catch (err) {
-            setStatus(err.message, true);
+            failed(`close ${s.title}`, err);
           }
           window.setTimeout(load, 1500);
         }, title: `close the Claude running "${s.title}"` }, long ? "end session" : "close");
@@ -204,11 +215,11 @@ export const mountCommandCenter = (root, ctx) => {
         nameEl.textContent = s.title;
         try {
           await post("/api/sessions/name", { sessionId: s.sessionId, name });
-          setStatus(name ? `renamed to "${name}"` : "name cleared");
+          toast(name ? `renamed to "${name}"` : "name cleared");
         } catch (err) {
           s.title = was;
           nameEl.textContent = was;
-          setStatus(err.message, true);
+          failed(`rename "${was}"`, err);
         }
       };
       input.addEventListener("keydown", (ev) => {
@@ -257,7 +268,9 @@ export const mountCommandCenter = (root, ctx) => {
 
   /** One session as a flight progress strip. `wide` carries the last exchange under the line. */
   const strip = (s, record, wide = false, band = "") => {
-    const name = el("h4", { class: "strip-name" }, s.title);
+    // The name is the strip's control: Enter and a screen reader reach it as a button, and a
+    // click anywhere else on the strip still opens it for a pointer.
+    const name = stripName(s.title, () => openIt());
     const inFormation = formations.find((x) => x.id === activeFormation) ?? null;
     // Inside a formation a strip opens where it sits, so several run at once. In the rack it
     // still goes full screen: sixteen strips have no room to hold a conversation open.
@@ -266,7 +279,7 @@ export const mountCommandCenter = (root, ctx) => {
     const openIt = () => (expandable ? toggleOpen(s.key) : openFull(s));
     const node = el("article", {
       class: `strip ${s.status}${finished(s.status) ? " finished" : ""}${wide ? " full" : ""}${isOpen ? " open" : ""}`,
-      tabindex: "0",
+      "data-key": s.key,
       title: s.title,
       // A session with no id has nothing a formation could hold on to, so it stays put.
       draggable: s.sessionId ? "true" : "false",
@@ -279,9 +292,8 @@ export const mountCommandCenter = (root, ctx) => {
       ondragend: endDrag,
       // Inside a formation the same moves the drags make are on the strip, for a pointer that
       // would rather click and for the keyboard's own menu key.
-      oncontextmenu: inFormation && s.sessionId ? (e) => { e.preventDefault(); stripMenu(inFormation, s, e.clientX, e.clientY); } : null,
+      oncontextmenu: s.sessionId ? (e) => { e.preventDefault(); if (inFormation) stripMenu(inFormation, s, e.clientX, e.clientY); else rackMenu(s, e.clientX, e.clientY); } : null,
       onclick: (e) => { if (!e.target.closest("button, input, .cc-pane")) openIt(); },
-      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openIt(); } },
     },
     stripLine({
       status: s.status,
@@ -291,7 +303,8 @@ export const mountCommandCenter = (root, ctx) => {
         ? el("button", { type: "button", class: "strip-turn", "aria-label": isOpen ? `collapse ${s.title}` : `open ${s.title} here`, "aria-expanded": String(isOpen), title: isOpen ? "collapse back to the strip" : "open this session here, beside the others", onclick: (e) => { e.stopPropagation(); openIt(); } }, icon("chevron"))
         : null,
       chips: [roleChip(record), auditChip(record)],
-      state: s.status,
+      // An idle session in Needs you asked you something; in Ready to review it replied. Say which, not just "idle".
+      state: band === "action" ? (asksYou(s) ? "asked you" : "replied") : s.status,
       note: s.waitingFor,
       when: age(s.at),
       up: s.elapsed ? `up ${s.elapsed}` : null,
@@ -320,7 +333,7 @@ export const mountCommandCenter = (root, ctx) => {
       stripLine({
         status: "stopped",
         band: "stale",
-        name: el("h4", { class: "strip-name" }, record.loop),
+        name: el("h3", { class: "strip-name" }, record.loop),
         chips: [roleChip(record), auditChip(record)],
         state: record.status,
         when: record.ended ? age(Date.parse(record.ended)) : "",
@@ -420,9 +433,9 @@ export const mountCommandCenter = (root, ctx) => {
       if (from) await leaveFormation(from, d.sessionId);
       const to = toId ? formations.find((f) => f.id === toId) : null;
       if (to) await patchFormation(to.id, { members: [...to.members, d.sessionId] });
-      setStatus(to ? `${d.title} joined ${to.name}` : `${d.title} left ${from?.name ?? "the formation"}`);
+      toast(to ? `${d.title} joined ${to.name}` : `${d.title} left ${from?.name ?? "the formation"}`);
     } catch (err) {
-      setStatus(err.message, true);
+      failed(`move ${d.title}`, err);
     }
     paint();
   };
@@ -431,9 +444,9 @@ export const mountCommandCenter = (root, ctx) => {
   const promote = async (f, sessionId) => {
     try {
       await patchFormation(f.id, { lead: sessionId, members: [...f.members.filter((m) => m !== sessionId), ...(f.lead && f.lead !== sessionId ? [f.lead] : [])] });
-      setStatus(`${f.name} has a new lead`);
+      toast(`${f.name} has a new lead`);
     } catch (err) {
-      setStatus(err.message, true);
+      failed("change the lead", err);
     }
     paint();
   };
@@ -441,9 +454,9 @@ export const mountCommandCenter = (root, ctx) => {
   const demote = async (f, sessionId) => {
     try {
       await patchFormation(f.id, { lead: null, members: [...f.members, sessionId] });
-      setStatus(`${f.name} is flying without a lead`);
+      toast(`${f.name} is flying without a lead`);
     } catch (err) {
-      setStatus(err.message, true);
+      failed("stand the lead down", err);
     }
     paint();
   };
@@ -466,16 +479,31 @@ export const mountCommandCenter = (root, ctx) => {
   };
 
   /** A little menu at the pointer: `[label, run, class]` a row. */
-  const popMenu = (label, x, y, rows) => {
-    document.querySelector(".tab-menu")?.remove();
-    const menu = el("div", { class: "menu tab-menu", role: "dialog", "aria-label": label },
-      ...rows.map(([caption, run, cls]) =>
-        el("button", { type: "button", class: `pick-row${cls ? ` ${cls}` : ""}`, onclick: () => { menu.remove(); run(); } }, el("b", {}, caption))));
-    menu.style.top = `${y + 4}px`;
-    menu.style.left = `${x}px`;
-    document.body.append(menu);
-    window.setTimeout(() => document.addEventListener("click", function once() { menu.remove(); document.removeEventListener("click", once); }), 0);
+  /**
+   * Every menu on the page opens through here. A click anywhere else closes it, so it is modal: a
+   * scrim takes that click and nothing under it is reachable while it is open. It is placed at the
+   * pointer and held inside the window, the keyboard lands on its first row, and Escape leaves it
+   * where the focus came from. `build(close)` makes the menu, with `close` for its rows to call.
+   */
+  const openMenu = (x, y, build) => {
+    document.querySelector(".menu-scrim")?.remove();
+    document.querySelector(".tab-menu, .pick-menu")?.remove();
+    const back = document.activeElement;
+    const close = () => { scrim.remove(); menu.remove(); };
+    const scrim = el("div", { class: "menu-scrim", onclick: close });
+    const menu = build(close);
+    document.body.append(scrim, menu);
+    const { width, height } = menu.getBoundingClientRect();
+    menu.style.top = `${Math.max(8, Math.min(y, innerHeight - height - 8))}px`;
+    menu.style.left = `${Math.max(8, Math.min(x, innerWidth - width - 8))}px`;
+    menu.querySelector("button")?.focus();
+    menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); back?.focus?.(); } });
   };
+  const popMenu = (label, x, y, rows) => openMenu(x, y + 4, (close) =>
+    el("div", { class: "menu tab-menu", role: "dialog", "aria-modal": "true", "aria-label": label },
+      ...rows.map(([caption, run, cls]) =>
+        el("button", { type: "button", class: `pick-row${cls ? ` ${cls}` : ""}`, onclick: () => { close(); run(); } }, el("b", {}, caption)))));
+
 
   /**
    * A formation in a window of its own, with the page's navigation left behind. Sized to a
@@ -488,7 +516,7 @@ export const mountCommandCenter = (root, ctx) => {
     u.searchParams.set("bare", "1");
     const win = window.open(u.toString(), `maverick-${f.id}`, "width=1280,height=900");
     if (win) win.focus();
-    else setStatus("the browser blocked the pop-out; allow pop-ups for localhost", true);
+    else toast("The browser blocked the pop-out: allow pop-ups for this address, then try again.", { error: true });
   };
 
   /** Right-click a formation tab. Closing a tab should not need a trip into the formation. */
@@ -500,6 +528,12 @@ export const mountCommandCenter = (root, ctx) => {
     ]);
 
   /** Right-click a strip inside a formation: the drags, for anyone who would rather click. */
+  /** A rack strip's right-click menu: the click path for the drag onto a formation tab. */
+  const rackMenu = (s, x, y) =>
+    popMenu(s.title, x, y, formations.length
+      ? formations.map((f) => [`Join ${f.name}`, () => moveTo({ sessionId: s.sessionId, from: null, title: s.title }, f.id)])
+      : [["No formation yet: make one with + beside the tabs", () => {}]]);
+
   const stripMenu = (f, s, x, y) =>
     popMenu(`${s.title} in ${f.name}`, x, y, [
       f.lead === s.sessionId
@@ -523,7 +557,8 @@ export const mountCommandCenter = (root, ctx) => {
       // The rack you came from is not somewhere to land.
       (d) => d.from !== id, (d) => moveTo(d, id));
     return el("div", { class: "forms" },
-      tab(null, "Rack", mySessions().length),
+      // With the list unreadable there is no count to give, so none is shown rather than a zero.
+      tab(null, "Rack", sessionsFailed ? null : mySessions().length),
       ...formations.map((f) => tab(f.id, f.name, slots(f), f)),
       el("button", { type: "button", class: "new shell", title: "open a shell in this project", onclick: async () => {
         try {
@@ -534,34 +569,32 @@ export const mountCommandCenter = (root, ctx) => {
           history.replaceState({}, "", u);
           opened.add(`term:${t.id}`);
           writeOpen();
-          setStatus(`${t.title} opened`);
+          toast(`${t.title} opened`);
           await load();
         } catch (err) {
-          setStatus(err.message, true);
+          failed("open a shell", err);
         }
       } }, icon("terminal")),
-      el("button", { type: "button", class: "new", title: "new formation", onclick: async () => {
-        const f = await api("/api/formations?project=" + encodeURIComponent(ctx.projectId), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-        formations = [...formations, f];
-        activeFormation = f.id;
-        paint();
+      el("button", { type: "button", class: "new", title: "new formation", "aria-label": "new formation", onclick: async () => {
+        try {
+          const f = await api("/api/formations?project=" + encodeURIComponent(ctx.projectId), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+          formations = [...formations, f];
+          activeFormation = f.id;
+          toast(`${f.name} formed`);
+          paint();
+        } catch (err) {
+          failed("make a formation", err);
+        }
       } }, icon("plus")));
   };
 
   const pickSession = (f, onPick, label) => {
     const options = addable(f);
-    if (!options.length) return setStatus("every session in this project is already in this formation");
-    const menu = el("div", { class: "menu pick-menu", role: "dialog", "aria-label": label },
+    if (!options.length) return toast("every session in this project is already in this formation");
+    openMenu(24, 96, (close) => el("div", { class: "menu pick-menu", role: "dialog", "aria-modal": "true", "aria-label": label },
       el("h4", {}, label),
-      ...options.map((s) => el("button", { type: "button", class: "pick-row", onclick: () => { menu.remove(); onPick(s); } },
-        lamp(s.status), el("b", {}, s.title), el("i", {}, s.status))));
-    menu.style.top = "96px";
-    menu.style.left = "24px";
-    document.body.append(menu);
-    window.setTimeout(() => document.addEventListener("click", function once(ev) {
-      if (!menu.isConnected) return document.removeEventListener("click", once);
-      if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener("click", once); }
-    }), 0);
+      ...options.map((s) => el("button", { type: "button", class: "pick-row", onclick: () => { close(); onPick(s); } },
+        lamp(s.status), el("b", {}, s.title), el("i", {}, s.status)))));
   };
 
   /** Everything the formation is holding: its lead, its flight, and the slots still starting. */
@@ -573,7 +606,7 @@ export const mountCommandCenter = (root, ctx) => {
       stripLine({
         status: "busy",
         band: "working",
-        name: el("h4", { class: "strip-name" }, p.title),
+        name: el("h3", { class: "strip-name" }, p.title),
         state: "starting",
         when: "",
         where: "waiting for it to register",
@@ -598,10 +631,10 @@ export const mountCommandCenter = (root, ctx) => {
       try {
         const { formation } = await post(`/api/formations/${f.id}/sessions`, { project: ctx.projectId, title, as, ...(inside ? { cwd: leader.cwd } : {}) });
         formations = formations.map((x) => (x.id === formation.id ? formation : x));
-        setStatus(`${title} is starting; it takes its slot as it registers`);
+        toast(`${title} is starting; it takes its slot as it registers`);
         paint();
       } catch (err) {
-        setStatus(err.message, true);
+        failed(`start ${title}`, err);
       }
     } }, "new session");
   };
@@ -631,7 +664,7 @@ export const mountCommandCenter = (root, ctx) => {
     return el("section", { class: `cc-project formation${leadOpen ? " with-lead" : ""}` },
       // Drop a strip on the lead slot to put it in front; the lead it replaces joins the flight.
       dropZone(el("section", { class: "rack lead-rack" },
-        el("h4", {}, jetSvg("jet-glyph band"), el("span", {}, "Oversight"),
+        el("h2", {}, jetSvg("jet-glyph band"), el("span", {}, "Oversight"),
           el("span", { class: "spacer" }),
           el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { lead: s.sessionId }), "Who is the lead?"); } }, lead ? "change lead" : "assign a lead"),
           lead || starting("lead").length ? null : newSessionButton(f, "lead")),
@@ -643,7 +676,7 @@ export const mountCommandCenter = (root, ctx) => {
         (d) => d.from === f.id && d.sessionId !== f.lead, (d) => promote(f, d.sessionId)),
       // Drop the lead back into the flight to stand it down.
       dropZone(el("section", { class: "rack" },
-        el("h4", {}, el("span", {}, "Flight"), el("span", { class: "n" }, String(flight.length)),
+        el("h2", {}, el("span", {}, "Flight"), el("span", { class: "n" }, String(flight.length)),
           el("span", { class: "spacer" }),
           el("button", { type: "button", class: "ghost", onclick: (e) => { e.stopPropagation(); pickSession(f, (s) => saveFormation(f.id, { members: [...f.members, s.sessionId] }), "Add to the flight"); } }, "add a session"),
           newSessionButton(f, "member")),
@@ -663,7 +696,7 @@ export const mountCommandCenter = (root, ctx) => {
   const rack = (name, rows, cls = "", n = rows.length) =>
     rows.length
       ? el("section", { class: `rack ${cls}` },
-          el("h4", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(n))),
+          el("h2", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(n))),
           // The same rule as a formation's flight: past one open strip the rack shares columns.
           el("div", { class: `rack-strips${rows.filter((x) => x.classList.contains("open")).length > 1 ? " grid" : ""}` }, ...rows))
       : null;
@@ -691,13 +724,13 @@ export const mountCommandCenter = (root, ctx) => {
   };
 
   /** A strip that is a link to its own page: the article shell, with click and keyboard opening it, around a strip line and whatever sits under it. */
-  const pageStrip = ({ status, title, open }, ...children) => el("article", {
+  const pageStrip = ({ status, title, open, key }, ...children) => el("article", {
     class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" || status === "blocked" ? " full" : ""}`,
-    tabindex: "0",
+    "data-key": key,
     title,
     onclick: (e) => { if (!e.target.closest("button, input")) open(); },
-    onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } },
   }, ...children);
+
 
   const missionRow = (m) => {
     const tasks = m.milestones.flatMap((x) => x.tasks);
@@ -706,48 +739,49 @@ export const mountCommandCenter = (root, ctx) => {
     const status = lampOf(m);
     const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
     const openMission = () => { location.href = href; };
-    return pageStrip({ status, title: `${m.name} · ${m.word}`, open: openMission }, stripLine({
+    return pageStrip({ status, title: `${m.name} · ${m.word}`, open: openMission, key: `mission:${m.id}` }, stripLine({
       status,
-      name: el("h4", { class: "strip-name" }, m.name),
+      name: stripName(m.name, openMission),
       state: m.word,
       note: m.escalation ? clip(m.escalation, 90) : m.trouble ? clip(m.trouble, 90) : MISSION_SAYS[m.status] ?? null,
       when: age(Date.parse(m.approved ?? m.created)),
       where: [tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "), m.diffstat].filter(Boolean).join(" · "),
-      acts: [el("button", { type: "button", class: "act", title: "open this mission", onclick: openMission }, "open")],
-    }));
+      acts: openAct("open this mission", openMission),
+    }), ...(m.questions?.length ? questionLines(m, { el, post, refresh: load, projectId: ctx.projectId }) : []));
   };
 
-  /** A mission's open questions as Needs you strips, drawn by web/inbox.js on this page's strip builders. */
-  const questionRows = (m) => inboxRows(m, { el, post, refresh: load, projectId: ctx.projectId, stripLine, pageStrip, age });
-
   /** Missions open here, because the page that lists them is this one. */
-  const missionFoot = () => el("p", { class: "muted small cc-empty" },
-    missions.length ? null : text("A mission is for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve. "),
-    el("button", { type: "button", class: "ghost", onclick: newMission }, "open a mission"));
+  const missionFoot = () => emptyStart(missions.length ? null : "A mission is for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve.",
+    el("button", { type: "button", class: "rack-verb", onclick: newMission }, "open a mission"));
 
   /* The brainstorms, and where each one stands on its way to the board. The verbs live on the breakdown page. */
+  const WAITING = "proposal waiting";
   const BRAINSTORM_SAYS = { "not broken down": "written; nothing proposed yet", proposing: "a CAG is proposing items", "proposal waiting": "a proposal is waiting at the gate", "broken down": "on the board" };
-  const brainstormsRack = () => el("section", { class: "rack brainstorms" },
-    el("h4", {}, el("span", {}, "Brainstorms"), el("span", { class: "n" }, String(brainstorms.length)),
-      el("span", { class: "spacer" }),
-      el("button", { type: "button", class: "ghost", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm")),
-    brainstorms.length
-      ? el("div", { class: "rack-strips" }, ...brainstorms.map((b) => {
-          const href = `/breakdown.html?project=${encodeURIComponent(ctx.projectId)}&file=${encodeURIComponent(b.file)}`;
-          const open = () => { location.href = href; };
-          // A proposal at the gate is waiting on the pilot, which is what the lock means; a finished one is done.
-          const status = b.state === "broken down" ? "done" : b.state === "proposing" ? "busy" : "waiting";
-          return pageStrip({ status, title: `${b.title} · ${BRAINSTORM_SAYS[b.state] ?? b.state}`, open }, stripLine({
-            status,
-            name: el("h4", { class: "strip-name" }, b.title),
-            state: BRAINSTORM_SAYS[b.state] ?? b.state,
-            note: b.parsed?.problems?.length ? clip(b.parsed.problems[0], 90) : null,
-            when: b.approved ? `approved ${b.approved}` : null,
-            where: b.parsed ? `${b.parsed.items.length} proposed · ${b.parsed.already.length} already there` : b.file.replace(/^deliverables\/brainstorms\//, ""),
-            acts: [el("button", { type: "button", class: "act", title: "open the breakdown gate", onclick: open }, b.state === "proposal waiting" ? "open the gate" : "open")],
-          }));
-        }))
-      : el("p", { class: "muted small cc-empty" }, "None yet. A brainstorm is one conversation with the CAG and one dated document; breaking it down is how its ideas reach the board."));
+  /** A brainstorm as a strip. One with a proposal at the gate is waiting on the pilot, which is what the reticle means, and it sits in Needs you; the rest are the brainstorms' own rack. */
+  const brainstormRow = (b) => {
+    const href = `/breakdown.html?project=${encodeURIComponent(ctx.projectId)}&file=${encodeURIComponent(b.file)}`;
+    const open = () => { location.href = href; };
+    const status = b.state === "broken down" ? "done" : b.state === "proposing" ? "busy" : b.state === WAITING ? "waiting" : "idle";
+    return pageStrip({ status, title: `${b.title} · ${BRAINSTORM_SAYS[b.state] ?? b.state}`, open, key: `brainstorm:${b.file}` }, stripLine({
+      status,
+      name: stripName(b.title, open),
+      state: BRAINSTORM_SAYS[b.state] ?? b.state,
+      note: b.parsed?.problems?.length ? clip(b.parsed.problems[0], 90) : null,
+      when: b.approved ? `approved ${b.approved}` : null,
+      where: b.parsed ? `${b.parsed.items.length} proposed · ${b.parsed.already.length} already there` : b.file.replace(/^deliverables\/brainstorms\//, ""),
+      acts: openAct(b.state === WAITING ? "open the breakdown gate" : "open the breakdown", open),
+    }));
+  };
+  const brainstormsRack = () => {
+    const rest = brainstorms.filter((b) => b.state !== WAITING);
+    return el("section", { class: "rack brainstorms" },
+      el("h2", {}, el("span", {}, "Brainstorms"), el("span", { class: "n" }, String(rest.length)),
+        el("span", { class: "spacer" }),
+        el("button", { type: "button", class: "rack-verb", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm")),
+      rest.length
+        ? el("div", { class: "rack-strips" }, ...rest.map(brainstormRow))
+        : el("p", { class: "muted small cc-empty" }, brainstorms.length ? "The one waiting on you is in Needs you." : "None yet. A brainstorm is one conversation with the CAG and one dated document; breaking it down is how its ideas reach the board."));
+  };
 
   /** The CAG in a terminal. It reads and writes documents and runs nothing; the tracker is not touched until a breakdown is approved. */
   const brainstorm = async () => {
@@ -765,7 +799,7 @@ export const mountCommandCenter = (root, ctx) => {
       const { mission } = await post(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`, { name, brief });
       location.href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(mission.id)}`;
     } catch (err) {
-      setStatus(err.message, true);
+      failed("open the mission", err);
     }
   };
 
@@ -792,25 +826,31 @@ export const mountCommandCenter = (root, ctx) => {
     // Between turns for under an hour is a conversation you are in the middle of; it is your move.
     const recent = idle.filter((s) => s.at && Date.now() - s.at <= HOUR);
     // Of those, the ones Claude ended on a question want an answer; the rest want reading.
-    const asking = recent.filter((s) => /\?\s*$/.test(plain(s.lastReply)));
+    const asking = recent.filter(asksYou);
     const replied = recent.filter((s) => !asking.includes(s) && s.lastReply);
     // Idle past the hour is a tab you have moved on from, which is stale here.
     const stale = idle.filter((s) => !asking.includes(s) && !replied.includes(s));
     const byLamp = (a, b) => (rank[lampOf(a)] ?? 4) - (rank[lampOf(b)] ?? 4);
     const mine = [...missions].sort(byLamp);
-    // A mission that wants you with no question to answer would otherwise have no row at all.
-    const stuck = mine.filter((m) => (m.word === "waiting for you" || m.word === "error") && !m.questions?.length && m.status !== "review");
-    const needs = [...strips(blocked, true, "needs"), ...mine.flatMap(questionRows), ...stuck.map(missionRow), ...strips(asking, true, "action")];
-    const working = [...strips(busy, true, "working"), ...formations, ...strips(shells, false, "working"), ...mine.filter((m) => m.word === "working").map(missionRow)];
-    const review = [...mine.filter((m) => m.status === "review").map(missionRow), ...strips(replied, true, "action")];
+    // A mission is one strip, in one group, its questions under it (the rack rule: a state belongs to one rack).
     const over = mine.filter((m) => m.status === "closed" || m.status === "abandoned");
+    // Needs you is everything that asks you something (a mission at review asks for its walk and
+    // its close); Ready to review is a session that replied and has something to read.
+    const wanting = mine.filter((m) => !over.includes(m) && (m.questions?.length || m.word === "waiting for you" || m.word === "error" || m.status === "review"));
+    const flying = mine.filter((m) => !over.includes(m) && !wanting.includes(m));
+    const needs = [...strips(blocked, true, "needs"), ...wanting.map(missionRow), ...brainstorms.filter((b) => b.state === WAITING).map(brainstormRow), ...strips(asking, true, "action")];
+    const working = [...strips(busy, true, "working"), ...formations, ...strips(shells, false, "working"), ...flying.map(missionRow)];
+    const review = strips(replied, true, "action");
     const ended = [...strips(done, false, "done"), ...strips(stale, false, "stale"), ...over.map(missionRow)];
     // No project heading: the bar already names the project, and every group carries its own
     // count. Four groups, always in this order, then the brainstorms and the way to open a mission.
     return el(
       "section",
       { class: "cc-project" },
-      !sessions.length && !formations.length && !closed.length && !missions.length ? el("p", { class: "muted small cc-empty" }, "No sessions in this project.") : null,
+      // With the session list unreadable, "no sessions" would be a claim the page cannot make.
+      !sessionsFailed && !sessions.length && !formations.length && !closed.length && !missions.length
+        ? emptyStart("No sessions in this project.", el("button", { type: "button", class: "primary", onclick: () => openTerminal({ kind: "new", title: `claude · ${ctx.project?.name ?? ctx.projectId}` }) }, "start a session"))
+        : null,
       rack("Needs you", needs, "needs"),
       rack("Working", working, "working"),
       rack("Ready to review", review, "review"),
@@ -818,6 +858,21 @@ export const mountCommandCenter = (root, ctx) => {
       brainstormsRack(),
       missionFoot(),
     );
+  };
+
+  /**
+   * Every paint rebuilds the racks, so arriving is decided by key, not by node: a strip whose key
+   * was not on the page last time rises into it, and nothing that was already there moves. The
+   * first paint is what the page opened on, so nothing rises then.
+   */
+  let seenKeys = null;
+  const markArrivals = (sections) => {
+    const now = new Set();
+    for (const s of sections) for (const node of s.querySelectorAll(".strip[data-key]")) {
+      now.add(node.dataset.key);
+      if (seenKeys && !seenKeys.has(node.dataset.key)) node.classList.add("arrived");
+    }
+    seenKeys = now;
   };
 
   const paint = () => {
@@ -832,7 +887,11 @@ export const mountCommandCenter = (root, ctx) => {
     const proj = all.projects.find((p) => p.id === ctx.projectId) ?? null;
     const section = active ? formationView(active) : projectSection(proj, mine);
     const sections = section ? [section] : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
-    root.replaceChildren(...sections);
+    markArrivals(sections);
+    const trouble = sessionsFailed ? el("div", { class: "cc-trouble", role: "alert" },
+      el("p", {}, `The session list could not be read: ${sessionsFailed.message}. Missions and brainstorms below are current; sessions are not shown.`),
+      el("button", { type: "button", onclick: () => load() }, "try again")) : null;
+    root.replaceChildren(...[trouble, ...sections].filter(Boolean));
     // Every open pane's head carries live state (lamp, status, timing), so they follow the model.
     for (const p of panes.values()) {
       paintHead(p);
@@ -979,7 +1038,6 @@ export const mountCommandCenter = (root, ctx) => {
     const s = (p.session = liveSession(p));
     if (s.isShell) {
       p.head.replaceChildren(
-        ...(p.inline ? [] : [el("button", { type: "button", class: "ghost back", onclick: () => closeFull() }, "← all sessions")]),
         el("span", { class: "meta" }, el("span", { class: "k" }, "shell"), el("span", {}, s.cwd.replace(/^\/Users\/[^/]+\//, "~/"))),
         el("span", { class: "spacer" }),
         endButton(s, "ghost end-long", true),
@@ -998,7 +1056,6 @@ export const mountCommandCenter = (root, ctx) => {
     const parts = p.inline
       ? [el("span", { class: "spacer" }), stick, dismiss]
       : [
-          el("button", { type: "button", class: "ghost back", onclick: () => closeFull() }, "← all sessions"),
           lamp(s.status),
           el("h2", { title: s.title }, p.title ?? s.title),
           el("span", { class: "meta" }, el("span", { class: "k" }, s.status), s.waitingFor ? el("span", {}, s.waitingFor) : null, el("span", {}, whereText(s)), el("span", { class: "mono" }, s.sessionId.slice(0, 8))),
@@ -1088,7 +1145,7 @@ export const mountCommandCenter = (root, ctx) => {
       p.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
       return;
     }
-    const area = el("textarea", { rows: "1", placeholder: peer ? `Message this session in ${s.app ?? "its terminal"}. It arrives as a peer message; Enter sends.` : "Message this session. Enter sends, Shift+Enter for a new line, drop files to attach." });
+    const area = el("textarea", { rows: "1", "aria-label": "Message this session", placeholder: "Message this session; Enter sends", title: peer ? `It arrives in ${s.app ?? "its terminal"} as a peer message.` : "It is typed into the session's terminal." });
     // One line until there is more than one line to show. Measuring beats guessing at rows:
     // reset the height first or it only ever ratchets upwards as you delete.
     const grow = () => {
@@ -1113,9 +1170,9 @@ export const mountCommandCenter = (root, ctx) => {
         }
         area.value = "";
         grow();
-        setStatus("sent");
+        toast("sent");
       } catch (err) {
-        setStatus(err.message, true);
+        failed("send it", err);
       } finally {
         area.disabled = false;
         area.focus();
@@ -1133,7 +1190,7 @@ export const mountCommandCenter = (root, ctx) => {
         el("span", {}, peer
           ? `Lives in ${s.app ?? "a terminal"}${s.tty ? ` on ${s.tty}` : ""} · sent over its session socket, so Claude reads it as a peer's request under that session's permissions`
           : `Enter sends · Shift+Enter for a new line · drop a file to attach its path${s.terminalId ? " · this session lives in one of Maverick's terminals" : ""}`),
-        peer && s.app && s.pid ? el("button", { type: "button", class: "ghost", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); setStatus(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { setStatus(err.message, true); } } }, `open in ${s.app}`) : null,
+        peer && s.app && s.pid ? el("button", { type: "button", class: "ghost", onclick: async () => { try { await post(`/api/sessions/${s.pid}/focus`); toast(`${s.app} brought to the front: look for ${s.tty ?? "the tab"}`); } catch (err) { failed(`bring ${s.app} to the front`, err); } } }, `open in ${s.app}`) : null,
         null),
     );
     grow();
@@ -1352,7 +1409,7 @@ export const mountCommandCenter = (root, ctx) => {
             try {
               await sendInput(p.stickTerm.id, `${o.key}\r`);
             } catch (err) {
-              setStatus(err.message, true);
+              failed("answer the prompt", err);
             }
             clearPrompt(p);
           },
@@ -1461,11 +1518,11 @@ export const mountCommandCenter = (root, ctx) => {
       if (!mod) return true;
       const key = e.key.toLowerCase();
       if (key === "c" && term.hasSelection()) {
-        navigator.clipboard?.writeText(term.getSelection()).catch(() => setStatus("the browser would not give up the clipboard", true));
+        navigator.clipboard?.writeText(term.getSelection()).catch(clipboardDenied);
         return false;
       }
       if (key === "v") {
-        navigator.clipboard?.readText().then((t) => t && sendInput(id, t)).catch(() => setStatus("the browser would not give up the clipboard", true));
+        navigator.clipboard?.readText().then((t) => t && sendInput(id, t)).catch(clipboardDenied);
         return false;
       }
       if (key === "f") {
@@ -1627,7 +1684,10 @@ export const mountCommandCenter = (root, ctx) => {
    * follows the drag rather than snapping once it is let go.
    */
   const resizeHandle = (p) => {
-    const bar = el("div", { class: "cc-pane-grip", role: "separator", "aria-label": "drag to resize this session", "aria-orientation": "horizontal", tabindex: "0" });
+    // A separator that takes focus is a control, so it says its value: the pane's height in pixels.
+    const bar = el("div", { class: "cc-pane-grip", role: "separator", "aria-label": "drag to resize this session", "aria-orientation": "horizontal", tabindex: "0", "aria-valuemin": String(MIN_PANE), "aria-valuemax": "4000", "aria-valuenow": String(MIN_PANE) });
+    const tell = (h) => bar.setAttribute("aria-valuenow", String(Math.round(h)));
+    requestAnimationFrame(() => tell(p.node.getBoundingClientRect().height || MIN_PANE));
     bar.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1637,6 +1697,7 @@ export const mountCommandCenter = (root, ctx) => {
       const move = (ev) => {
         const h = Math.max(MIN_PANE, startH + (ev.clientY - startY));
         p.node.style.height = `${h}px`;
+        tell(h);
         refitAll();
       };
       const up = (ev) => {
@@ -1656,6 +1717,7 @@ export const mountCommandCenter = (root, ctx) => {
       e.preventDefault();
       const h = Math.max(MIN_PANE, p.node.getBoundingClientRect().height + step);
       p.node.style.height = `${h}px`;
+      tell(h);
       rememberHeight(p.key, h);
       refitAll();
     });
@@ -1680,12 +1742,14 @@ export const mountCommandCenter = (root, ctx) => {
 
   /** Build a pane for a session. `inline` panes live in a strip; the other kind is full screen. */
   const makePane = (session, { inline }) => {
-    const head = el("header", { class: "cc-full-head" });
+    const head = el("div", { class: "cc-full-head" });
     const list = el("div", { class: "cc-conv" });
-    const scroller = el("div", { class: "cc-full-body" }, list);
+    // A scrolled conversation is reachable from the keyboard: it takes focus and the arrows scroll it.
+    const scroller = el("div", { class: "cc-full-body", tabindex: "0", "aria-label": "the conversation" }, list);
     const composer = el("div", { class: "cc-composer" });
     const body = el("div", { class: "cc-pane-body" }, scroller, composer);
-    const node = el("section", { class: `cc-pane${inline ? " inline" : " cc-full"}`, role: inline ? "group" : "dialog", "aria-label": session.title }, head, body);
+    // Full screen covers the page and locks its scroll, so it is a modal dialog; inline it is one pane among others.
+    const node = el("section", { class: `cc-pane${inline ? " inline" : " cc-full"}`, role: inline ? "group" : "dialog", ...(inline ? {} : { "aria-modal": "true" }), "aria-label": session.title }, head, body);
     const p = { key: session.key, session, inline, head, list, scroller, composer, body, node, offset: 0, events: [], first: true };
     if (inline) {
       const saved = readHeights()[p.key];
@@ -1747,46 +1811,71 @@ export const mountCommandCenter = (root, ctx) => {
   const openFull = (session, opts = {}) => {
     closeFull();
     full = makePane(session, { inline: false });
+    opener = document.activeElement;
+    openerKey = opener?.closest?.(".strip")?.dataset.key ?? null;
     document.body.append(full.node);
+    // A modal takes the focus: its dismiss, top right, so Tab starts inside it and Escape is one key away.
+    requestAnimationFrame(() => full?.node.querySelector(".dismiss")?.focus());
     document.body.classList.add("cc-full-open");
     history.pushState({ ccFull: session.key }, "", location.href);
     if (opts.stick) takeTheStick(full);
   };
 
+  let opener = null;
+  let openerKey = null;
+  /** Closing plays the exit before the pane goes, and gives the focus back to the strip that opened it. */
   const closeFull = () => {
     if (!full) return;
-    destroyPane(full);
-    document.body.classList.remove("cc-full-open");
+    const leaving = full;
     full = null;
+    document.body.classList.remove("cc-full-open");
+    leave(leaving.node, () => destroyPane(leaving));
+    // A repaint may have rebuilt the strip that opened it, so it is found again by its key.
+    const strip = opener?.isConnected ? opener : openerKey && root.querySelector(`.strip[data-key="${CSS.escape(openerKey)}"] .strip-name`);
+    strip?.focus();
+    opener = null;
   };
+
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && full) { closeFull(); history.back(); } });
   window.addEventListener("popstate", () => closeFull());
 
   /* ---------- data ---------- */
 
   let firstLoad = true;
+  let sessionsFailed = null;
   const load = async () => {
     // Rebuilding every session record takes over a second; the jet flies while it does.
     const stop = firstLoad ? loading?.() : null;
     try {
-      [all, formations, missions, brainstorms] = await Promise.all([
-        api("/api/sessions/all"),
+      // The session list failing is not the missions failing: a mission's question is still
+      // answerable while the registry cannot be read, so the page draws what it has and says what it has not.
+      let sessions;
+      [sessions, formations, missions, brainstorms] = await Promise.all([
+        api("/api/sessions/all").catch((err) => ({ failed: err })),
         api(`/api/formations?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
         // The workspace's missions carry what each asks, its status word and its merged diff.
         api(`/api/workspace?project=${encodeURIComponent(ctx.projectId)}`).then((w) => w.missions ?? []).catch(() => []),
         api(`/api/brainstorms?project=${encodeURIComponent(ctx.projectId)}`).catch(() => []),
       ]);
+      sessionsFailed = sessions.failed ?? null;
+      // A list that has never been read is drawn empty; one read before is not wiped, only flagged.
+      if (!sessionsFailed) all = sessions;
+      else all ??= { projects: [], names: {}, interactive: [], background: [], shells: [], records: [] };
       paint();
     } catch (err) {
-      // refresh lives in the page head, so it survives this.
-      root.replaceChildren(el("p", { class: "muted cc-empty" }, `sessions unavailable: ${err.message}`));
+      // A paint that throws says so where the racks would be, rather than leaving "reading sessions" up for good.
+      root.replaceChildren(el("div", { class: "cc-trouble", role: "alert" }, el("p", {}, `The workspace could not be drawn: ${err.message}`), el("button", { type: "button", onclick: () => load() }, "try again")));
+      console.error(err);
     } finally {
       firstLoad = false;
       stop?.();
     }
   };
-  root.replaceChildren(el("p", { class: "muted cc-empty" }, "reading sessions…"));
+  // The first read takes a second or more; the rack's own shape stands in for it.
+  root.replaceChildren(el("p", { class: "muted cc-empty", role: "status" }, "reading sessions…"), el("div", { class: "cc-skeleton", "aria-hidden": "true" }, el("i"), el("i"), el("i")));
   load();
-  timer = window.setInterval(() => { if (document.visibilityState === "visible" && !editing) load(); }, 10_000);
+  // A repaint rebuilds every strip, so it waits while a field on the page is being typed in: a note half-written under a question is not wiped by the clock.
+  const typing = () => root.contains(document.activeElement) && document.activeElement.matches("input, textarea");
+  timer = window.setInterval(() => { if (document.visibilityState === "visible" && !editing && !typing()) load(); }, 10_000);
   return { refresh: load, stop: () => { window.clearInterval(timer); closeFull(); } };
 };
