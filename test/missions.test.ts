@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { applyPlanState, approveMission, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask } from "../src/missions.ts";
+import { INTERVIEW_PROBES, applyPlanState, approveMission, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -1304,4 +1304,57 @@ test("a session under a project that reaches a finished word sweeps that project
   } finally {
     close();
   }
+});
+
+const COMPONENTS = (lines: string[]) => ["", "## Components", "", ...lines.map((l) => `- ${l}`), ""].join("\n");
+
+test("a plan's Components section parses each element's decision and cells, and where the mockups are", () => {
+  const plan = shaped({ tasks: [task("Files page", ["touches: src/files", "cells: 12, 14, 20-22"])] }) + COMPONENTS([
+    "mockups: deliverables/design/item-files/index.html",
+    "**file row** (owner: m1-t1): new; cells 12, 20-22; replaces AttachmentCard on this page only",
+    "`toolbar` (owner: m1-t1): restyle; cell 14",
+  ]);
+  const parsed = parsePlan(plan, ["root"]);
+  assert.deepEqual(parsed.problems, []);
+  assert.equal(parsed.mockups, "deliverables/design/item-files/index.html");
+  assert.deepEqual(parsed.components, [
+    { name: "file row", owner: "m1-t1", decision: "new", cells: [12, 20, 21, 22], note: "replaces AttachmentCard on this page only" },
+    { name: "toolbar", owner: "m1-t1", decision: "restyle", cells: [14], note: "" },
+  ]);
+  assert.deepEqual(parsed.milestones[0].tasks[0].cells, [12, 14, 20, 21, 22]);
+});
+
+test("a task that builds mockup cells no component decision covers is refused at the gate", () => {
+  const cited = shaped({ tasks: [task("Files page", ["touches: src/files", "cells: 12, 14"])] });
+  assert.deepEqual(parsePlan(cited, ["root"]).problems, [
+    '"Files page" in milestone 1 builds cells 12, 14, which no "## Components" entry decides: say per element whether it reuses, restyles or replaces an existing component',
+    'tasks build mockup cells and "## Components" has no "mockups: <path>" line saying where they are',
+  ]);
+  const half = parsePlan(cited + COMPONENTS(["mockups: d/index.html", "**file row** (owner: m1-t1): new; cells 12"]), ["root"]);
+  assert.deepEqual(half.problems, ['"Files page" in milestone 1 builds cell 14, which no "## Components" entry decides: say per element whether it reuses, restyles or replaces an existing component']);
+  const loose = parsePlan(cited + COMPONENTS(["mockups: d/index.html", "**file row** (owner: m1-t1): reuse what exists; cells 12, 14", "**toolbar** (owner: m9-t9): new; cells 12, 14"]), ["root"]);
+  assert.deepEqual(loose.problems, [
+    'component "**file row** (owner: m1-t1): reuse what exists; cells 12, 14" is not "**name** (owner: <task id>): reuse | restyle | new; cells <n, n>; <one line>"',
+    "component \"toolbar\" is owned by m9-t9, which is not a task in this plan",
+  ], "a decision is one of three words, and its owner is a task");
+  assert.deepEqual(parsePlan(shaped({ tasks: [task("Backend", ["touches: src/api"])] }), ["root"]).problems, [], "a mission that draws no UI needs no Components section");
+});
+
+test("the Strike Lead interview asks the component question per element and forbids a blanket reuse", () => {
+  assert.ok(INTERVIEW_PROBES.some((p) => /every element the mockups draw.*reused as it is.*restyled everywhere.*new one/.test(p)), "the probe, which the CAG's plan interview shares");
+  const project = { id: "p", name: "P", path: "/p", trackers: [] } as never;
+  const mission = { id: "m", brief: "redesign item files" } as never;
+  const prompt = interviewPrompt(project, mission, "/p/plan.md", [{ label: "root", base: "main", land: "merge" }], "merge");
+  assert.match(prompt, /read the mockups before you ask anything about it\. Go through every cell and list every element it draws, the chrome as much as the content: toolbars/);
+  assert.match(prompt, /reuse it as it is.*restyle the shared component.*build a new one/);
+  assert.match(prompt, /Never write "reuse existing components" or anything like it as a blanket instruction/);
+  assert.match(prompt, /## Components\n\n- mockups: /, "and the plan format carries the section");
+  assert.match(prompt, /- cells: <the approved mockup cells this task builds/);
+});
+
+test("a task that builds cells owns its screenshots folder from approval, so its brief and its strays agree", () => {
+  const { milestones } = parsePlan(shaped({ tasks: [task("Files page", ["touches: src/files", "cells: 12"]), task("Rail", ["cells: 14"]), task("Api", ["touches: src/api"])] }), ["root"]);
+  ownScreenshots({ id: "mx" }, milestones);
+  assert.deepEqual(milestones[0].tasks.map((t) => t.touches), [["src/files", "deliverables/screenshots/mx/m1-t1"], undefined, ["src/api"]], "a task with no touches already owns everything");
+  assert.deepEqual(strays(["src/files/a.ts", "deliverables/screenshots/mx/m1-t1/cell-12-390.png"], milestones[0].tasks[0].touches), []);
 });

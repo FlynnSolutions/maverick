@@ -150,3 +150,20 @@ test("on a multi-repo mission the Wingman is told where the other repos' work is
   assert.ok(brief.includes(`contracts: branch mission/x in /p/contracts, checked out at ${other.integration}`));
   assert.match(brief, /None of it has been merged to a base branch/);
 });
+
+test("a task that builds mockup cells is told the decisions over them and to commit screenshots beside each, and its RIO checks them", () => {
+  const components = [{ name: "file row", owner: "m1-t1", decision: "new" as const, cells: [12, 13], note: "not AttachmentCard" }, { name: "toolbar", owner: "m1-t2", decision: "reuse" as const, cells: [30], note: "" }];
+  const look = { ...task, cells: [12] };
+  const mission = { ...ctx.mission, components, mockups: "deliverables/design/item-files/index.html" };
+  const brief = wingmanBrief({ ...ctx, mission, task: look });
+  assert.match(brief, /builds approved mockup cells 12, in deliverables\/design\/item-files\/index\.html/);
+  assert.match(brief, /file row, a new component; the old one stays elsewhere \(cells 12, 13; not AttachmentCard\)\./);
+  assert.ok(!brief.includes("toolbar"), "only the decisions over its own cells");
+  assert.match(brief, new RegExp(`committed in deliverables/screenshots/${ctx.mission.id}/${task.id}: for each cell, the built screen at 390 and at 1280`));
+  const rio = rioBrief({ ...ctx, mission, task: look }, "/f.md");
+  assert.match(rio, /builds approved mockup cells 12/);
+  assert.match(rio, /any element that differs from its decision above is a BLOCKER, and so is a cell with no screenshot\. Run the ui-audit skill/);
+  assert.ok(!brief.includes("is a BLOCKER, and so is a cell"), "the check is the RIO's; the builder is told what it will be checked against");
+  assert.ok(!wingmanBrief({ ...ctx, mission, task }).includes("mockup cells"), "a task with no cells hears nothing of it");
+  assert.ok(!rioBrief({ ...ctx, mission, task }, "/f.md").includes("mockup cells"), "nor does its RIO");
+});

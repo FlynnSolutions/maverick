@@ -864,3 +864,33 @@ walk found was driven by hand as its own build and its own review. Nothing in th
 what a failed walk does, so each bug fell into the default unit of one task, one Wingman, one
 RIO, and the turnaround multiplied. Decided by Cory 2026-10-30: batch, and do it in Maverick
 rather than leave it to the Strike Lead's judgment.
+
+## M30: What the mockups drew is what ships, component by component ✅ built
+
+**The reuse-or-new call is made per component, by Cory, before the plan is written.** For every
+element a mockup draws, the Strike Lead names the existing component it resembles (or none,
+found in the code) and asks him one of three: **reuse** it as it is, so the mockup is drawn
+with its real look; **restyle** the shared component, so the new look replaces the old one
+everywhere and the other screens it changes are named; or build a **new** one, with the old one
+staying elsewhere. A pick already made in a `variants` round (whose inventory now asks the same
+question) is not asked again. A blanket "reuse existing components" is never written.
+
+**The plan carries it.** `## Components` holds a `mockups: <path>` line and one line per element:
+`**<component>** (owner: <task>): reuse | restyle | new; cells <n, n>; <one line>`. A task that
+builds cells says so on a `cells:` line. The gate refuses a task whose cells no component line
+decides, cells cited with no `mockups:` line, a decision that is not one of the three words, and
+an owner that is not a task.
+
+**The look is checked, not assumed.** A task with cells is told the decisions over its cells and
+is not done until it commits the built screen at 390 and 1280 beside each cell, under
+`deliverables/screenshots/<mission>/<task>/`, a folder it owns. Its RIO opens the screenshots and
+the cells; an element that differs from its decision is a blocker, and the RIO runs `ui-audit`,
+whose matches-the-brief check takes the cells. A milestone that built cells gets one "Looks like
+cell N" case per screen in its walkthrough, with the cell beside the link.
+
+**Why:** Realtime's item-files redesign, 2026-10-29/30. Cory approved mockups drawn in a fresh
+stylesheet; the plan said "reuse app components as they are"; fifteen tasks passed review and
+the walkthrough pre-screen passed 22 of 22, all on behaviour, and the screens looked nothing like
+what he approved. The opposite failure came first (2026-10-02, one-off controls that matched a
+mockup and nothing else in the app). Both had one root: the decision was never made explicitly.
+Decided by Cory 2026-10-30.

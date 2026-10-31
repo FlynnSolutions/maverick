@@ -36,7 +36,7 @@ import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { CHAT_RULES, LEAD_SCHEMA, answersText, flightRules, parseTurn, snapshot, unheard, type ChatEntry } from "./strike-lead.ts";
 import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
-import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
+import { DECISION_WORDS, RIO_TOOLS, componentsOver, planOnBranch, rioBrief, screenshotsDir, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
 import { failingCases, lastCleared, needsWalking, openFix, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
@@ -96,6 +96,8 @@ export interface MissionTask {
   verdict?: Verdict;
   /** Why this task stopped needing an agent, in words, when it did not simply pass. */
   note?: string;
+  /** The approved mockup cells this task builds, by number, from the plan's `cells:` line. A task with cells is held to them by screenshots and by its RIO. */
+  cells?: number[];
   /** NOTE-level findings the task passed with, or merged with when it ran out of retries. They ride to the result page and the report. */
   carried?: string[];
   /** What Cory did with each finding, by its key (`keyOf`): read it, or put it on the checklist for later. */
@@ -159,6 +161,20 @@ export interface WalkthroughPatch { progress?: WalkthroughProgress; waive?: { no
 /** What holds a milestone for a person: a collision nobody could reconcile, a landing that failed, a proof that failed on the merged tree. */
 export type HoldKind = "collision" | "landing" | "proof";
 export interface Hold { kind: HoldKind; reason: string; at: string }
+
+/**
+ * What a mockup element is built with, decided by Cory per component before the plan is
+ * written, never by a blanket "reuse what exists": reuse the existing component as it is,
+ * restyle the shared one everywhere, or build a new one for this feature.
+ */
+export type ComponentDecision = "reuse" | "restyle" | "new";
+export interface Component {
+  name: string;
+  owner: string;
+  decision: ComponentDecision;
+  cells: number[];
+  note: string;
+}
 
 /** A thing one task makes and another uses: a type, an id, a codec, an env flag, a function. Named before fan-out, with its owner and its shape. */
 export interface Contract {
@@ -240,6 +256,10 @@ export interface Mission {
   milestones: Milestone[];
   /** What the tasks share, from the plan's `## Contracts` section, frozen at approval. */
   contracts?: Contract[];
+  /** Every element the mockups draw and what it is built with, from the plan's `## Components` section, frozen at approval. */
+  components?: Component[];
+  /** Where the approved mockups live, relative to the project, from the `mockups:` line of `## Components`. */
+  mockups?: string;
   /** What the mission needs of the host and the person, from the plan's `## Preflight` section. */
   requirements?: Requirement[];
   /** The project sets a proof command, so a merged milestone is not done until its proof passed. Frozen at approval. */
@@ -361,6 +381,7 @@ _walk: <a case Cory will walk at the end>; <the next case>; <...>_
   - touches: <the files and directories this task owns, relative to its repo, comma separated>
   - needs: <the ids of tasks this one builds on (m1-t2), if any>
   - deploys: <a stack this task alone deploys, if any; never a shared environment, which only the merged mission branch deploys>
+  - cells: <the approved mockup cells this task builds, by number (12, 14, 20-23), if any>
   <Everything a session with no other context needs to build this: the files, the shape, what
   it must not touch, and how it proves itself. Several lines is right; one line is not.>
   <Once the mission flies, Maverick writes status, attempt, verdict and commit lines under each
@@ -383,6 +404,12 @@ _walk: <case>; <case>_
 - **<a type, an id, a codec, an env flag, a function one task makes and another uses>** (owner: m1-t1): <its signature or shape, one line>
 - **<the next one>** (owner: <task id>): <...>
 
+## Components
+
+- mockups: <where the approved mockups are, relative to the project; omit the section when the mission draws no UI>
+- **<an element the mockups draw>** (owner: m1-t2): <reuse | restyle | new>; cells <12, 14>; <one line: which existing component it is or replaces, and what differs>
+- **<the next element>** (owner: <task id>): <...>
+
 ## Preflight
 
 - duration: <how long the mission is expected to run, like 8h>
@@ -401,6 +428,18 @@ const LOG_HEADING = /^Log$/i;
 const CONTRACTS_HEADING = /^Contracts$/i;
 /** The section where the Strike Lead says what the mission needs of the host and of the person. */
 const PREFLIGHT_HEADING = /^Preflight$/i;
+const COMPONENTS_HEADING = /^Components$/i;
+const MOCKUPS_LINE = /^mockups:\s*`?([^`]+?)`?\s*$/i;
+/** What follows a component's `(owner: <task>):`, the same prefix a contract has. */
+const COMPONENT_TAIL = /^(reuse|restyle|new)\s*;\s*cells?\s+([\d\s,–-]+?)\s*(?:;\s*(.*))?$/i;
+/** Wider than any mockup round; a range past it is a typo, not a page of cells. */
+const MAX_CELL_SPAN = 500;
+
+/** `12, 14, 20-23` as the cells it names. */
+const cellsOf = (value: string): number[] => [...new Set(listField(value, /[,\s]+/).flatMap((part) => {
+  const [from, to] = part.split(/[–-]/).map(Number);
+  return to >= from && to - from <= MAX_CELL_SPAN ? Array.from({ length: to - from + 1 }, (_, i) => from + i) : [from];
+}).filter((n) => Number.isInteger(n) && n > 0))];
 const CONTRACT_LINE = /^(?:\*\*([^*]+)\*\*|`([^`]+)`|([^*`(]+?))\s*\(owner:\s*([a-z0-9-]+)\)\s*:?\s*(.*)$/i;
 const TASK_STATUSES: readonly string[] = ["pending", "flying", "built", "reviewing", "passed", "handed-back"];
 const VERDICTS: readonly string[] = ["pass", "pass with notes", "fail", "mixed"];
@@ -509,7 +548,7 @@ export const overlapsIn = (milestones: Milestone[]): string[] =>
   })));
 
 /** Parse the Strike Lead's plan document. Reuses the tracker parser, because the plan is written in its shape. */
-export const parsePlan = (text: string, repos: string[] = [], shared: string[] = []): { name: string; intro: string; milestones: Milestone[]; contracts: Contract[]; requirements: Requirement[]; log: string[]; problems: string[]; overlaps: string[]; warnings: string[] } => {
+export const parsePlan = (text: string, repos: string[] = [], shared: string[] = []): { name: string; intro: string; milestones: Milestone[]; contracts: Contract[]; components: Component[]; mockups?: string; requirements: Requirement[]; log: string[]; problems: string[]; overlaps: string[]; warnings: string[] } => {
   const lines = text.split("\n");
   const { title: name, intro } = documentHead(text, /^#\s*Mission:\s*(.+)$/m);
   const problems: string[] = [];
@@ -517,6 +556,8 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
 
   const milestones: Milestone[] = [];
   const contracts: Contract[] = [];
+  const components: Component[] = [];
+  let mockups: string | undefined;
   let requirements: Requirement[] = [];
   let log: string[] = [];
   const bulletsOf = (section: { start: number; end: number }): string[] => lines.slice(section.start + 1, section.end).filter((l) => /^[-*] /.test(l)).map((l) => l.slice(2).trim());
@@ -539,6 +580,20 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
       }
       continue;
     }
+    if (COMPONENTS_HEADING.test(section.heading)) {
+      for (const line of bulletsOf(section)) {
+        const at = line.match(MOCKUPS_LINE);
+        if (at) {
+          mockups = at[1].trim();
+          continue;
+        }
+        const named = line.match(CONTRACT_LINE);
+        const c = named?.[5].match(COMPONENT_TAIL);
+        if (named && c) components.push({ name: (named[1] ?? named[2] ?? named[3]).trim(), owner: named[4].toLowerCase(), decision: c[1].toLowerCase() as ComponentDecision, cells: cellsOf(c[2]), note: (c[3] ?? "").trim() });
+        else problems.push(`component "${line.slice(0, 60)}" is not "**name** (owner: <task id>): reuse | restyle | new; cells <n, n>; <one line>"`);
+      }
+      continue;
+    }
     const m = section.heading.match(MILESTONE_HEADING);
     if (!m) {
       problems.push(`"## ${section.heading}" is not a milestone heading ("## Milestone 1 — title")`);
@@ -553,13 +608,14 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
     if (!walk.length) problems.push(`milestone ${n} has no "_walk: <case>; <case>_" line: the cases walked at its end`);
     const only = repos.length === 1 ? repos[0] : "";
     const tasks = section.groups.flatMap((g) => g.items).map((item, i) => {
-      const { status, attempt, verdict, commit, touches, needs, deploys, repo } = item.fields;
+      const { status, attempt, verdict, commit, touches, needs, deploys, repo, cells } = item.fields;
       const okStatus = !status || TASK_STATUSES.includes(status);
       const okAttempt = !attempt || /^\d+$/.test(attempt);
       const okVerdict = !verdict || VERDICTS.includes(verdict);
       if (!okStatus) problems.push(`"${item.title}" in milestone ${n} has status "${status}", which is not one of: ${TASK_STATUSES.join(", ")}`);
       if (!okAttempt) problems.push(`"${item.title}" in milestone ${n} has attempt "${attempt}", which is not a count`);
       if (!okVerdict) problems.push(`"${item.title}" in milestone ${n} has verdict "${verdict}", which is not one of: ${VERDICTS.join(", ")}`);
+      const cellList = cells ? cellsOf(cells) : [];
       return {
         id: `m${n}-t${i + 1}`,
         title: item.title,
@@ -572,6 +628,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
         ...(touches ? { touches: listField(touches, /,/) } : {}),
         ...(needs ? { needs: listField(needs, /[,\s]+/) } : {}),
         ...(deploys ? { deploys: listField(deploys.replace(/[`*]/g, ""), /[,;]/) } : {}),
+        ...(cellList.length ? { cells: cellList } : {}),
       };
     });
     // One deployer per stack per milestone: two tasks flying together deploying one stack raced on the first mission.
@@ -600,11 +657,24 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   for (const m of milestones) for (const t of m.tasks) for (const stack of t.deploys ?? []) if (sharedLower.includes(stack.toLowerCase())) problems.push(`"${t.title}" in milestone ${m.n} deploys ${stack}, which this project lists as shared; only the merged mission branch deploys there`);
   // The same thing written in two markdown styles is the same thing, and the check exists to catch two owners for it.
   const plain = (name: string): string => name.replace(/[`*]/g, "").trim().toLowerCase();
-  for (const [i, c] of contracts.entries()) {
-    if (!ids.has(c.owner)) problems.push(`contract "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
-    if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
-    if (contracts.findIndex((x) => plain(x.name) === plain(c.name)) !== i) problems.push(`contract "${c.name}" is named twice`);
+  const owned = (kind: string, all: Array<{ name: string; owner: string }>) => all.forEach((c, i) => {
+    if (!ids.has(c.owner)) problems.push(`${kind} "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
+    if (all.findIndex((x) => plain(x.name) === plain(c.name)) !== i) problems.push(`${kind} "${c.name}" is named twice`);
+  });
+  owned("contract", contracts);
+  for (const c of contracts) if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
+  // The reuse-or-new call is made per component, by Cory, in the plan: a task that builds cells nobody decided
+  // is the item-files redesign, where approved mockups were built with the old components.
+  const decided = new Set(components.flatMap((c) => c.cells));
+  let anyCells = false;
+  for (const m of milestones) for (const t of m.tasks) {
+    anyCells ||= Boolean(t.cells?.length);
+    const open = (t.cells ?? []).filter((c) => !decided.has(c));
+    if (open.length) problems.push(`"${t.title}" in milestone ${m.n} builds ${open.length === 1 ? "cell" : "cells"} ${open.join(", ")}, which no "## Components" entry decides: say per element whether it reuses, restyles or replaces an existing component`);
   }
+  if (anyCells && !mockups) problems.push(`tasks build mockup cells and "## Components" has no "mockups: <path>" line saying where they are`);
+  owned("component", components);
+  for (const c of components) if (!c.cells.length) problems.push(`component "${c.name}" names no cells: say which mockup cells draw it`);
   // Not a refusal: a plan whose tasks build on each other and names nothing they share is the
   // plan the first mission had, where parallel Wingmen invented the shared conventions apart.
   const warnings: string[] = [];
@@ -614,7 +684,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
     const chain = longestChain(m);
     if (m.tasks.length >= 4 && chain.length > m.tasks.length / 2) warnings.push(`milestone ${m.n} is mostly one chain: ${chain.join(", ")} run one after another, so at most ${m.tasks.length - chain.length + 1} of its ${m.tasks.length} tasks can fly at once`);
   }
-  return { name, intro, milestones, contracts, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
+  return { name, intro, milestones, contracts, components, mockups, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
 };
 
 /** The preflight for a plan in this project: what a machine can check, and what is a person's. */
@@ -922,9 +992,10 @@ export const INTERVIEW_PROBES = [
   "  - which constraints are binding (the rulebook, the design contract, the decision log)",
   "  - what already exists that this grows out of, named by file",
   "  - where you disagree with his approach, said plainly before anything is planned",
+  "  - for every element the mockups draw, the existing component it resembles (or none, found by searching the code) and whether it is reused as it is, the shared component restyled everywhere, or a new one built for this; asked per element, citing the cells, for every one the mockup rounds did not already settle",
 ];
 
-const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
+export const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
   `You are the Strike Lead for a mission in the project at ${project.path}. A strike lead plans the package, briefs it and sends it; it does not fly every jet in it. Your entire job in this session is the interview and the plan.`,
   "",
   mission.from ? `This mission came out of the breakdown of ${join(project.path, mission.from)}, as the item "${mission.brief}". Read that document first; it holds the reasoning.` : `Cory opened this mission with one line: "${mission.brief}"`,
@@ -933,6 +1004,8 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
   ...INTERVIEW_PROBES,
   "",
   "This interview is where most of the value is. Do not shorten it into a formality, and do not present a plan until he has answered.",
+  "",
+  "When the mission has mockups or changes a screen, read the mockups before you ask anything about it. Go through every cell and list every element it draws, the chrome as much as the content: toolbars and the controls in them, headers, search fields, buttons, rows, panels, badges, menus, dialogs, empty and loading states. An element drawn in several cells is one question. For each element, find the component in the code it resembles, and ask him the component question in three options: reuse it as it is (what ships is the component's real look, not the mockup's), restyle the shared component (the new look replaces the old one everywhere it appears, so name those other screens), or build a new one for this feature (the old one stays elsewhere). Cite the cells. A pick recorded in the mockup round's closing rules is already settled; do not ask it again. Never write \"reuse existing components\" or anything like it as a blanket instruction: every element goes in `## Components` with his decision and its cells, and every task that builds cells names them on its `cells:` line.",
   "",
   `When you and he have agreed, write the plan to ${planPath} in exactly this shape, then stop:`,
   "",
@@ -1084,8 +1157,10 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   // human step is shown at the gate for the person to settle, and approving is their answer.
   const failing = (await preflightFor(project, cfg, choices, parsed)).filter((c) => refuses(c));
   if (failing.length) throw new Error(`preflight: ${failing.map((c) => `${c.name}: ${c.detail}`).join("; ")}`);
-  mission.milestones = parsed.milestones;
+  mission.milestones = ownScreenshots(mission, parsed.milestones);
   mission.contracts = parsed.contracts;
+  mission.components = parsed.components;
+  mission.mockups = parsed.mockups;
   mission.requirements = parsed.requirements;
   mission.proofRequired = Boolean(cfg.proof);
   mission.land = cfg.land;
@@ -1161,9 +1236,28 @@ const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, rep
   `Run the /ship-test-walkthrough skill for this milestone, treating the milestone as the batch, and write the document to ${file}. If that skill is not available to you, write the same kind of document by hand, and it must keep the contract the console reads: a \`KEY = "..."\` string that names its localStorage key, an \`<h2>\` per pillar, and one \`.tc\` element with a \`data-id\` per test case. A person walks it in the browser and answers every case; those answers are the gate.`,
   "",
   "Cases are what a person does with the real thing and what they should see, not unit tests. Fewer, sharper cases beat a long list.",
+  ...looksLike(mission, m),
   "",
   `Commit the document in ${repo.integration} with a plain lowercase subject. Do not change any other file, do not touch the trackers, do not push, do not open a pull request, do not spawn other agents. When the document is committed, stop.`,
 ].join("\n");
+
+/**
+ * A task that builds cells owns the folder its screenshots go in, added to its `touches` once at
+ * approval, so every check that reads what a task owns (its brief, its strays, its RIO) agrees.
+ * A task with no `touches` owns everything already.
+ */
+export const ownScreenshots = (mission: Pick<Mission, "id">, milestones: Milestone[]): Milestone[] => {
+  for (const t of milestones.flatMap((m) => m.tasks)) if (t.cells?.length && t.touches?.length) t.touches.push(screenshotsDir(mission, t));
+  return milestones;
+};
+
+/** A milestone that built mockup cells is walked for its look as well as its behaviour: one case per screen, the cell beside it. */
+const looksLike = (mission: Mission, m: Milestone): string[] => {
+  const cells = [...new Set(m.tasks.flatMap((t) => t.cells ?? []))].sort((a, b) => a - b);
+  if (!cells.length || !mission.mockups) return [];
+  return ["",
+    `This milestone builds approved mockup cells ${cells.join(", ")}, from ${mission.mockups}. Add a pillar of look cases: one case per screen, titled "Looks like cell N", with that cell embedded beside the link to the built screen (an <iframe> of the mockup page at the cell, by its anchor where it has one), so the person checks the look in this round and not at the end. Say in the case what to compare: the components the plan decided for it, ${componentsOver(mission.components, cells).map((c) => `${c.name}, ${DECISION_WORDS[c.decision]}`).join("; ") || "as the plan's Components section says"}.`];
+};
 
 const walkthroughFile = (mission: Mission, m: Milestone): string => join("deliverables", "testing", `${mission.id}-m${m.n}-walkthrough.html`);
 
