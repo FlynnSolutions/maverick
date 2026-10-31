@@ -502,7 +502,6 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     return sendJson(res, 200, { missions: await missionQuestions(await requireProject(url)) });
   }
   if (method === "GET" && path === "/api/workspace") {
-    const lan = lanAddress();
     // With a project it also carries that project's missions, each with what it asks and its
     // merged diff, swept first the way the mission list is.
     let missions: WorkspaceMission[] | undefined;
@@ -511,12 +510,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
       missions = await workspaceMissions(project);
     }
-    return sendJson(res, 200, {
-      host: config.host,
-      lanUrl: config.host === "127.0.0.1" || !lan ? null : `http://${lan}:${config.port}/review.html?key=${accessKey}`,
-      lanHint: config.host === "127.0.0.1" ? "start with SESSION_CONSOLE_HOST=0.0.0.0 to reach the console from your phone" : null,
-      ...(missions ? { missions } : {}),
-    });
+    return sendJson(res, 200, { ...(missions ? { missions } : {}) });
   }
   if (method === "POST" && path === "/api/remove") {
     const body = await readJson<{ project: string; tracker: number; itemStart: number; itemFirstLine: string; reason: string }>(req);
@@ -931,6 +925,6 @@ createServer((req, res) => {
   console.log(`maverick: http://localhost:${config.port}`);
   console.log(`  projects: ${config.projectsFile}`);
   const lan = lanAddress();
-  if (config.host !== "127.0.0.1" && lan) console.log(`  phone: http://${lan}:${config.port}/review.html?key=${accessKey}`);
+  if (config.host !== "127.0.0.1" && lan) console.log(`  lan: http://${lan}:${config.port}/?key=${accessKey}`);
   usage().catch((err: Error) => console.error("usage scan:", err.message));
 });
