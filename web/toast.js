@@ -40,6 +40,7 @@ const show = ({ msg, error, action }) => {
   said.textContent = msg;
   node.append(said);
   if (action) {
+    node.classList.add("acting");
     const act = document.createElement("button");
     act.type = "button";
     act.className = "ghost";
@@ -47,7 +48,8 @@ const show = ({ msg, error, action }) => {
     act.addEventListener("click", () => { leave(node, drain); action.run(); });
     node.append(act);
   }
-  if (error) {
+  // An error, and a toast with an action, stay until closed: nobody should lose an undo to a timer.
+  if (error || action) {
     const close = document.createElement("button");
     close.type = "button";
     close.className = "ghost";
@@ -90,11 +92,14 @@ const drain = () => {
 
 /**
  * toast(msg, { error, action }) says it in the page's live region; an error waits to be closed.
- * `action` ({ label, run }) is one verb on the toast, such as undo; pressing it closes the toast.
+ * `action` ({ label, run }) is one verb on the toast, such as undo; pressing it closes the toast,
+ * and the toast waits like an error until it is closed or the next toast takes its place.
  */
 export const toast = (msg, { error = false, action = null } = {}) => {
   // The same words twice say nothing new: one already showing or waiting stands for both.
   if (!msg || queue.some((q) => q.msg === msg) || [...region.querySelectorAll(".toast:not(.leaving) p")].some((p) => p.textContent === msg)) return;
+  // A toast with an action is replaced by the next toast rather than holding the queue behind it.
+  for (const held of region.querySelectorAll(".toast.acting:not(.leaving)")) leave(held, drain);
   queue.push({ msg, error, action });
   drain();
 };

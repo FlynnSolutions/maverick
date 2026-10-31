@@ -279,6 +279,12 @@ button:active { transform: scale(0.97); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 600; box-shadow: 0 1px 2px var(--shade); }
 button.primary:hover { background: var(--accent-hot); box-shadow: 0 1px 2px var(--shade), 0 0 16px var(--accent-dim); }
+/* A link that is the page's one action wears the primary, like a button would. */
+.button-link.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 600; box-shadow: 0 1px 2px var(--shade); }
+.button-link.primary:hover { background: var(--accent-hot); }
+/* A control that cannot be pressed now looks it; one holding for a write says it is working. */
+button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+button[aria-busy="true"] { cursor: progress; }
 button.ghost { padding: 0 6px; border-color: transparent; background: transparent; color: var(--ink-soft); font-size: 12px; box-shadow: none; }
 button.ghost:hover { background: var(--steel); color: var(--ink-soft); }
 button.danger:hover { border-color: var(--threat); color: var(--threat); }
@@ -532,6 +538,8 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .lamp.burn.work { --hot:#ffe0b0; --mid:#ff9a2b; --deep:#c05a12; --rim:#ffb54d; --bloom:1;   --flutter:.85s; --flick:.32s; }
 .lamp.burn.work .core, .lamp.burn.work .tooth { filter: drop-shadow(0 0 2px #ff8a1e) drop-shadow(0 0 5px rgba(255,138,30,.65)); }
 .lamp.burn.warm .core { filter: drop-shadow(0 0 1.5px rgba(216,128,46,.8)); }
+/* A step that failed: the nozzle is out and red, not cold like one that has not run. */
+.lamp.burn.failed { --hot: var(--threat); --mid: #9c3a3d; --deep: #3e1b1c; --rim: #6b2d2f; --bloom: .3; --flutter: 0s; --flick: 0s; }
 .lamp.burn.done .core { filter: drop-shadow(0 0 1.5px rgba(127,216,160,.6)); }
 /* The petals never sit still while the engine is lit. */
 .lamp .iris { animation: flutter var(--flutter, 0s) ease-in-out infinite; transform-box: view-box; transform-origin: 16px 16px; }
@@ -622,8 +630,14 @@ body.dragging-strip .forms button { color: var(--ink-soft); }
 .toast button { flex: 0 0 auto; }
 .toast.leaving { opacity: 0; transform: translateY(var(--rise)); transition-duration: var(--dur-exit); }
 @media (max-width: 600px) { .toasts { right: 16px; left: 16px; bottom: 16px; width: auto; } }
-/* While a toast shows, the page can scroll its last controls clear of it. */
+/* While a toast shows, the page can scroll its last controls clear of it. With a drawer open,
+   a desktop's toasts go to the left, over the dimmed page; a phone's drawer makes room at its foot. */
 body:has(.toasts .toast) { padding-bottom: 120px; }
+body:has(#drawer-root .drawer) .toasts { right: auto; left: 24px; }
+@media (max-width: 600px) {
+  body:has(#drawer-root .drawer) .toasts { left: 16px; }
+  body:has(.toasts .toast) .drawer-foot { padding-bottom: 120px; }
+}
 
 /* Reduce motion quiets the ambient pulses and entrances; the action effects stay. */
 @media (prefers-reduced-motion: reduce) {
@@ -687,6 +701,10 @@ body.ask-open { overflow: hidden; }
   animation: slide-in 220ms var(--ease-out);
 }
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* A drawer leaves the way it came, on the exit duration. */
+.drawer.leaving { transform: translateX(24px); opacity: 0; transition: transform var(--dur-exit) var(--ease-out), opacity var(--dur-exit) var(--ease-out); }
+.drawer-backdrop { transition: opacity var(--dur-exit) var(--ease-out); }
+.drawer-backdrop.leaving { opacity: 0; }
 .drawer-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; border-bottom: 1px solid var(--seam-soft); }
 .drawer-head h2:focus { outline: none; }
 .drawer-head h2 { flex: 1; font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: 0.04em; }
@@ -790,6 +808,7 @@ body.ask-open { overflow: hidden; }
 .cal-event:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
 .cal-event.release, .cal-key.release { background: var(--panel); color: var(--ink); box-shadow: inset 3px 0 0 var(--info); font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; }
 .cal-event.undated { white-space: normal; background: var(--steel); }
+.cal-undated .lane-empty a { color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; }
 .cal-undated h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 8px; }
 
 /* ---------- ship days ---------- */
@@ -800,7 +819,7 @@ body.ask-open { overflow: hidden; }
 .cal-event.ship { font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; background: var(--steel); color: var(--ink-soft); box-shadow: inset 0 0 0 1px var(--seam-strong); cursor: grab; }
 .chip.ship { background: var(--steel); color: var(--ink-soft); }
 /* Ship day today waits on the pilot to ship: a need. */
-.cal-event.ship.now, .chip.ship.now { background: var(--caution-dim); color: var(--caution); box-shadow: inset 0 0 0 1px var(--caution); }
+.cal-event.ship.now, .chip.ship.now, .cal-key.ship.now { background: var(--caution-dim); color: var(--caution); box-shadow: inset 0 0 0 1px var(--caution); }
 .cal-event.ship.shipped, .chip.ship.shipped { background: var(--ok-dim); color: var(--ok-ink); box-shadow: none; }
 .cal-event.ship.missed, .chip.ship.missed { background: var(--threat-dim); color: var(--threat); box-shadow: none; }
 
@@ -808,7 +827,9 @@ body.ask-open { overflow: hidden; }
    notification. */
 .ship-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 14px; border-radius: var(--radius-m); background: var(--accent-dim); box-shadow: 0 0 0 1px var(--accent-glow), 0 0 22px var(--accent-dim); }
 .ship-banner strong { font-family: var(--display); font-size: 14px; letter-spacing: 0.04em; color: var(--accent-hot); }
-.ship-banner .ship-banner-mark { font-size: 16px; }
+.ship-banner .ship-banner-mark { display: inline-flex; color: var(--caution); }
+.ship-banner-mark .jet-glyph { width: 28px; height: 28px; }
+.ship-banner-mark .icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 .ship-banner .spacer { flex: 1; }
 .ship-banner.missed { background: var(--threat-dim); box-shadow: 0 0 0 1px var(--threat); }
 .ship-banner.missed strong { color: var(--threat); }
@@ -1025,6 +1046,7 @@ body.ask-open { overflow: hidden; }
 .board-releases { margin-bottom: 20px; }
 .board-releases .strip-title, .calendar .strip-title { margin: 0 0 8px; }
 .calendar > .releases { margin-bottom: 4px; }
+.calendar > .board-releases { grid-column: 1 / -1; }
 .cal-head { margin-top: 12px; }
 
 /* ---------- 8px rhythm audit (HIG layout.md: align, group, consistent margins) ---------- */
@@ -1044,7 +1066,7 @@ body.ask-open { overflow: hidden; }
 /* typography.md: readable minimum sizes; nothing a person reads sits below 11px, meta lines 11.5px. */
 /* One shape for every token: a height only applies to an inline element once it is a box,
    which is why the version chip and the due chip sat at different heights beside each other. */
-.chip, .due, .badge, .verdict { display: inline-flex; align-items: center; font-size: 11px; height: 22px; padding: 0 8px; line-height: 1; vertical-align: middle; }
+.chip, .due, .badge, .verdict { display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; height: 22px; padding: 0 8px; line-height: 1; vertical-align: middle; }
 .card .meta, .row .sub, .row .doing .k, .drawer-meta, .fields dt, .due-row .k, .ws-tile .k, .ws-table th, .cal-dow, .cal-day, .release-date, .status, .card .since, .hovercard-hint, .muted.small, .small { font-size: 11.5px; }
 .lane-title, .dispatch h3, .workspace h3, .strip-title, .group-name, .release-name, .role, .ship-step-head .verdict { font-size: 11.5px; }
 .card .title { font-size: 14px; }
@@ -1093,7 +1115,7 @@ body.ask-open { overflow: hidden; }
   overflow-wrap: anywhere;
 }
 .agent-state { font-family: var(--display); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
-.agent-state.working { color: var(--hud); }
+.agent-state.working { color: var(--accent-hot); }
 .agent-state.blocked { color: var(--caution); }
 .ship-when { margin-top: 6px; }
 .ship-report .k { font-family: var(--display); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hud); margin-right: 8px; }

@@ -53,7 +53,8 @@ const load = async (force = false) => {
   if (!force && body === lastPayload) return;
   lastPayload = body;
   brainstorms = JSON.parse(body);
-  if (!selected || !brainstorms.some((b) => b.file === selected)) selected = brainstorms[0]?.file ?? null;
+  // With nothing chosen, open on what waits for you: a proposal at the gate, else the first.
+  if (!selected || !brainstorms.some((b) => b.file === selected)) selected = (brainstorms.find((b) => b.state === "proposal waiting") ?? brainstorms[0])?.file ?? null;
   renderAll();
 };
 
@@ -123,7 +124,7 @@ const renderOne = (b) => {
   }
   show(
     el("div", { class: "detail-head" }, el("h1", {}, b.title), el("span", { class: `verdict ${STATE_CLASS[b.state]}` }, b.state)),
-    el("div", { class: "detail-meta" }, el("span", {}, b.file), b.proposal ? el("span", {}, b.proposal) : null),
+    el("div", { class: "detail-meta" }, el("a", { href: fileHref(b.file), target: "_blank", title: "the brainstorm, in a new tab" }, b.file), b.proposal ? el("a", { href: fileHref(b.proposal), target: "_blank", title: "the proposal, in a new tab" }, b.proposal) : null),
     el("section", { class: "panel mv-gate" }, el("h2", {}, "The gate"), ...gate),
     parsed?.items?.length ? el("section", { class: "panel" }, el("h2", {}, "Proposed items"), parsed.intro ? el("p", { class: "bd-intro" }, parsed.intro) : null, ...parsed.items.map(itemRow)) : null,
     parsed?.already?.length ? el("section", { class: "panel" }, el("h2", {}, "Already on the board"), el("ul", {}, ...parsed.already.map((a) => el("li", {}, a)))) : null,
@@ -152,6 +153,14 @@ const boot = async () => {
   project = (await api("/api/projects")).find((p) => p.id === projectId) ?? null;
   applyTheme(project?.theme);
   await load(true);
-  window.setInterval(() => load().catch(() => {}), 5000);
+  // A poll that fails says so once, and once more when the page is current again.
+  let stale = false;
+  window.setInterval(() => load().then(() => {
+    if (stale) toast("The brainstorms are updating again.");
+    stale = false;
+  }, (err) => {
+    if (!stale) failed("refresh the brainstorms (trying again every 5 seconds)", err);
+    stale = true;
+  }), 5000);
 };
 boot().catch((err) => cannotOpen(`The brainstorms could not be read: ${err.message}`));

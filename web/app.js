@@ -615,7 +615,7 @@ const renderInline = (md) =>
 let drawerOpener = null;
 const closeDrawer = () => {
   stopTails();
-  $("#drawer-root").replaceChildren();
+  for (const n of [...$("#drawer-root").children]) leave(n);
   for (const n of document.body.children) n.inert = false;
   if (location.hash.startsWith("#L")) history.replaceState(null, "", location.pathname + location.search);
   document.removeEventListener("keydown", onDrawerKey);
@@ -631,7 +631,7 @@ const onDrawerKey = (e) => {
  * inert, the heading takes focus, and closing gives focus back to what opened it.
  */
 const showDrawer = ({ title, head = [], meta = null, body, foot = [], wide = false, backdrop = closeDrawer }) => {
-  if (!$("#drawer-root").childElementCount) drawerOpener = document.activeElement;
+  if (!$("#drawer-root .drawer:not(.leaving)")) drawerOpener = document.activeElement;
   const h2 = el("h2", { tabindex: "-1" }, title);
   $("#drawer-root").replaceChildren(
     el("div", { class: "drawer-backdrop", onclick: backdrop }),
@@ -1139,7 +1139,8 @@ const openShipDayDrawer = (occ, trackers) => {
         closeIf(await setShipDay("remove", occ.origin));
       }
     }, "ghost danger")));
-  showDrawer({ title: `Ship day · ${fmtDate(occ.date)}`, head: state ? [el("span", { class: `chip ship ${state}` }, state === "now" ? "today" : state)] : [], body: el("div", { class: "drawer-body" }, list) });
+  // A shipped day says so in its body, with the undo beside it; the head carries only today or missed.
+  showDrawer({ title: `Ship day · ${fmtDate(occ.date)}`, head: state && state !== "shipped" ? [el("span", { class: `chip ship ${state}` }, state === "now" ? "today" : state)] : [], body: el("div", { class: "drawer-body" }, list) });
 };
 
 /**
@@ -1156,7 +1157,7 @@ const shipDayBanner = (trackers) => {
   if (!live) return [];
   const version = nextVersionBare(trackers);
   return [el("div", { class: `ship-banner${now ? "" : " missed"}` },
-    el("span", { class: "ship-banner-mark" }, now ? "🛫" : "⚠"),
+    el("span", { class: "ship-banner-mark", "aria-hidden": "true" }, now ? jetSvg("jet-glyph") : icon("finding")),
     el("strong", {}, now ? "Ship day." : `Ship day was ${fmtDate(live.date)}.`),
     el("span", { class: "muted" }, now ? `Planned for v${version}.` : "It went by without being marked."),
     el("span", { class: "spacer" }),
@@ -1259,7 +1260,10 @@ const renderCalendar = (trackers) => {
     grid.append(cell);
   }
   const undated = trackers.flatMap((t) => t.sections.filter((s) => s.column === "priority").flatMap((s) => s.groups.flatMap((g) => g.items.filter((i) => !i.checked && !i.fields.due && isDevItem(i)).map((i) => ({ t, i, s })))));
-  const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`), el("div", { class: "muted small" }, "drop a dated item here to clear its deadline"));
+  const side = el("div", { class: "cal-undated" }, el("h3", {}, `Roadmap items without a deadline (${undated.length})`),
+    undated.length || events.some((e) => e.kind === "item")
+      ? el("div", { class: "muted small" }, "drop a dated item here to clear its deadline")
+      : el("p", { class: "lane-empty muted small" }, "Nothing on the roadmap yet. Items are added on the ", el("a", { href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "board"), ", and dated in their drawer or by dragging them here."));
   dropZone(side, (d) => d.type === "item" && Boolean(d.item.fields.due), (d) => setDue(d.tracker, d.item, ""));
   for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(calEvent("item undated", i.title, "", () => openDrawer(t.index, i)), t, i, s));
   const key = (cls, words, iconName) => el("span", { class: `cal-key ${cls}` }, iconName ? icon(iconName) : null, words);
@@ -1269,7 +1273,7 @@ const renderCalendar = (trackers) => {
     releasesSection(trackers),
     shipCadenceRow(),
     head,
-    el("div", { class: "cal-legend" }, key("item done", "done", "decision"), key("item overdue", "overdue", "finding"), key("item soon", "due within a week"), key("item", "due later"), key("release", "a release deploys"), key("ship", "ship day")),
+    el("div", { class: "cal-legend" }, key("item done", "done", "decision"), key("item overdue", "overdue", "finding"), key("item soon", "due within a week"), key("item", "due later"), key("release", "a release deploys"), key("ship", "ship day"), key("ship now", "ship day, today")),
     grid,
     side,
   );
@@ -1518,7 +1522,7 @@ const railTally = (live) => {
     ["busy", count((st) => /^(busy|running)$/.test(st)), "working"],
     ["idle", count((st) => /^(idle|shell)$/.test(st)), "parked"],
   ].filter(([, n]) => n > 0);
-  if (!groups.length) return el("div", { class: "rail-tally empty" }, el("span", { class: "muted small" }, "idle"));
+  if (!groups.length) return el("div", { class: "rail-tally empty" });
   return el("div", { class: "rail-tally" },
     ...groups.map(([status, n, what]) =>
       el("span", { class: "t", title: `${n} ${what}` }, lamp(status), el("b", {}, String(n)))));
@@ -1670,7 +1674,7 @@ const renderLive = (live) => {
     if (repo.error) repos.append(el("li", { class: "empty" }, `${repo.label}: ${repo.error}`));
   }
   if (repos.childElementCount) out.append(el("h3", {}, "PRs and worktrees"), repos);
-  out.append(el("div", { class: "muted small mono" }, `signals ${new Date(live.fetchedAt).toLocaleTimeString()}`));
+  out.append(el("div", { class: "muted small mono" }, `servers and repos read at ${new Date(live.fetchedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`));
   return out;
 };
 

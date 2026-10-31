@@ -210,7 +210,7 @@ const renderTop = () => {
 };
 
 /** The rail's lamps: burning while a step runs, the reticle while your part remains, green when done, cold otherwise. */
-const STEP_LAMP = { running: "running", finished: "waiting", done: "done" };
+const STEP_LAMP = { running: "running", finished: "waiting", done: "done", failed: "failed" };
 const STATUS_WORDS = { finished: "your part" };
 
 const renderNav = () => {
@@ -350,7 +350,7 @@ const cannotOpen = (why) => {
 
 const boot = async () => {
   $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
-  if (!projectId || !version) return cannotOpen("A ship opens from a release on the board: its version says which one. This link names no project or no version.");
+  if (!projectId || !version) return cannotOpen(`A ship opens from a release on the board: its version says which one. This link names ${projectId ? "no version" : "no project"}.`);
   const projects = await api("/api/projects");
   project = projects.find((p) => p.id === projectId);
   if (!project) return cannotOpen(`No project here is called "${projectId}". It may have been forgotten in the picker.`);
