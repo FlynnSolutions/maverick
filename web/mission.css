@@ -118,6 +118,18 @@ html { scroll-padding-top: 70px; }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--accent); }
+/* The briefing: one row per milestone, its cases under it, the totals after. */
+/* Set apart by a rule above and below rather than a panel of its own: the gate is already the surface. */
+.mv-brief { margin: 4px 0 14px; padding: 10px 0; border-block: 1px solid var(--seam); font-variant-numeric: tabular-nums; }
+.mv-brief .k { margin: 0 0 8px; font-family: var(--display); font-size: 11px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.mv-brief .why { margin-bottom: 4px; }
+.mv-brief .cost-note { margin-top: 4px; }
+.mv-brief ol { margin: 0 0 10px; padding-left: 18px; font-size: 13px; }
+.mv-brief ol > li { margin: 0 0 10px; }
+.mv-brief .t { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.mv-brief .muted { margin: 2px 0 0; max-width: 52ch; }
+.mv-brief .cases, .mv-brief .why, .mv-brief .cost-note { max-width: 56ch; }
+.mv-brief .cases { margin: 4px 0 0; padding-left: 16px; color: var(--ink-soft); overflow-wrap: anywhere; }
 .mv-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .mv-confirm .why { flex-basis: 100%; margin: 0; }
 

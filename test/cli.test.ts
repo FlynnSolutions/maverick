@@ -20,7 +20,7 @@ mkdirSync(join(dir, "deliverables", "missions"), { recursive: true });
 const plan = join(dir, "deliverables", "missions", "orbit.md");
 await writeFile(plan, [
   "# Mission: Orbit", "", "A test mission.", "",
-  "## Milestone 1 — the first", "", "_done when: it parses._", "",
+  "## Milestone 1 — the first", "", "_done when: it parses._", "_walk: it works._", "",
   "- [x] **Parse**", "  - status: passed", "  - attempt: 1", "  - verdict: pass", "  Parse the thing.", "",
   "- [ ] **Write**", "  Write the thing.", "",
   "## Log", "", "- 2026-10-09 10:00 m1-t1 Parse: reviewing to passed (RIO: pass)", "",
@@ -41,7 +41,7 @@ test("plan-check prints where every task stands and exits 0 on a flyable plan", 
 
 test("plan-check prints what each task touches and needs, and every overlap", async () => {
   const owned = join(dir, "deliverables", "missions", "owned.md");
-  await writeFile(owned, "# Mission: owned\n\nO.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **A**\n  - touches: src/a.ts, src/shared/\n  a\n\n- [ ] **B**\n  - touches: src/shared/b.ts\n  - needs: m1-t1\n  b\n", "utf8");
+  await writeFile(owned, "# Mission: owned\n\nO.\n\n## Milestone 1 — m\n\n_done when: d._\n_walk: it works._\n\n- [ ] **A**\n  - touches: src/a.ts, src/shared/\n  a\n\n- [ ] **B**\n  - touches: src/shared/b.ts\n  - needs: m1-t1\n  b\n", "utf8");
   const { status, stdout } = run("plan-check", owned);
   assert.equal(status, 0, stdout);
   assert.match(stdout, /touches src\/a\.ts, src\/shared\n/);
@@ -78,7 +78,7 @@ test("plan-check names every problem and exits 1", async () => {
 
 test("preflight prints every check and exits 1 when something the mission needs is not there", async () => {
   const needy = join(dir, "deliverables", "missions", "needy.md");
-  await writeFile(needy, "# Mission: needy\n\nN.\n\n## Milestone 1 — m\n\n_done when: d._\n\n- [ ] **t**\n  t\n\n## Preflight\n\n- tool: no-such-tool-xyz\n- human: a passkey\n", "utf8");
+  await writeFile(needy, "# Mission: needy\n\nN.\n\n## Milestone 1 — m\n\n_done when: d._\n_walk: it works._\n\n- [ ] **t**\n  t\n\n## Preflight\n\n- tool: no-such-tool-xyz\n- human: a passkey\n", "utf8");
   const { status, stdout } = run("preflight", needy);
   assert.equal(status, 1, stdout);
   assert.match(stdout, /^fail {2}no-such-tool-xyz: not on PATH/m);
