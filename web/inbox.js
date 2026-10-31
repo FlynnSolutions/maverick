@@ -5,7 +5,7 @@
 import { answerControls } from "./answers.js";
 
 /** What the state column says for each kind of question. */
-const KIND = { "handed-back": "handed back", collision: "collision", landing: "landing", proof: "proof", plan: "plan", paused: "paused", gate: "gate", walk: "walk", review: "review" };
+const KIND = { "handed-back": "handed back", collision: "collision", landing: "landing", proof: "proof", plan: "plan", paused: "paused", gate: "gate", walk: "walk", review: "review", lead: "the Strike Lead" };
 
 /**
  * One strip per open question on `mission`: the lock lamp, the question as the name, its body on

@@ -22,7 +22,7 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, answerLead, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, markReadings, missionPath, missionQuestions, missionReport, missionView, openLeadTerminal, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, resumeMission, retryTask, sayToStrikeLead, startMission, summarizeMission, sweepMissions, tidyWorktrees, workspaceMissions, type WalkthroughPatch, type WorkspaceMission } from "./src/missions.ts";
+import { abandonMission, acceptTask, answerLead, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, missionPath, missionQuestions, missionReport, missionView, openLeadTerminal, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, resumeMission, retryTask, sayToStrikeLead, startMission, summarizeMission, sweepMissions, sweepSoon, tidyWorktrees, watchEndings, workspaceMissions, type WalkthroughPatch, type WorkspaceMission, markReadings } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
@@ -922,6 +922,8 @@ const sweepAll = async (): Promise<void> => {
   }
 };
 setInterval(() => { sweepAll().catch((err: Error) => console.error("sweep:", err.message)); }, 60_000).unref();
+// A Wingman or RIO that ends sweeps its project's missions then; the tick above is the backstop.
+watchEndings(readProjects, sweepSoon);
 
 createServer((req, res) => {
   handle(req, res).catch((err: Error) => {

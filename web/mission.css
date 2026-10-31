@@ -1,3 +1,6 @@
+/* The measure every paragraph on these pages keeps: under 80 characters a line (layout L5). */
+:root { --measure: 56ch; }
+
 /* The mission page. Four fixed anchors on the left, the same four places before, during and
    after a mission, and one status word above them. This file is the shell's: the frame, the
    rail, the ask, and the gate the shell still draws until the plan is approved. Plan, Progress
@@ -120,30 +123,35 @@ html { scroll-padding-top: 70px; }
   overflow: hidden;
   box-shadow: 0 0 0 1px var(--seam-soft);
 }
-.mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.mv-band .cell { background: var(--steel); padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; gap: 2px; }
 .mv-band .k { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .mv-band .v { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
-.mv-gate { padding: 14px 16px; border-radius: var(--radius-m); background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
-/* A lifted surface is brighter, so its secondary text comes up a step to stay readable on it. */
-.mv-gate-host .mv-gate > h2 { color: var(--ink-soft); }
-.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: 70ch; margin: 0 0 10px; }
-.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: 70ch; margin: 10px 0 0; }
+/* A lifted surface is brighter, so its faint text comes up a step to stay readable on it: the
+   token is remapped here, so everything faint inside the gate follows without a rule each. */
+.mv-gate { --ink-faint: var(--ink-soft); padding: 14px 16px; border-radius: var(--radius-m); background: var(--panel-lifted); box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px var(--shade-soft); }
+.mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: var(--measure); margin: 0 0 10px; }
+.mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: var(--measure); margin: 10px 0 0; }
 .mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 .mv-gate .gate-actions button, .mv-gate .gate-actions .button-link, .mv-confirm button { padding: 0 14px; }
 .mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--ink); font-size: 13px; }
 .mv-problems li { margin: 2px 0; }
 .mv-problems li::marker { color: var(--threat); }
-.mv-overlaps { margin: 10px 0 0; padding-left: 18px; color: var(--caution); font-size: 13px; }
+.mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: var(--measure); color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
-.mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; }
-.mv-preflight li { margin: 3px 0; display: flex; gap: 8px; align-items: baseline; }
-.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; min-width: 42px; color: var(--ink-soft); }
+/* One grid for the list, each row on it, so every detail starts at the same x however long its name. */
+.mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; display: grid; grid-template-columns: 42px auto minmax(0, 1fr); gap: 3px 8px; }
+.mv-preflight li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
+.mv-preflight li strong { white-space: nowrap; }
+.mv-preflight .pf-detail { max-width: 48ch; }
+.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
 .mv-preflight .pf-human .pf-status { color: var(--ink); }
 .mv-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.mv-confirm .why { flex-basis: 100%; margin: 0; }
+.mv-confirm .why { margin: 0; }
+/* The sentence takes its own row and the buttons the next, whatever measure the sentence has. */
+.mv-confirm .mv-confirm-row { flex-basis: 100%; display: flex; gap: 8px; flex-wrap: wrap; }
 
 .mv-milestone { margin-bottom: 18px; }
 .mv-milestone > h3 { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
@@ -180,6 +188,22 @@ html { scroll-padding-top: 70px; }
 .mv-now .mv-trouble { margin: 0 0 16px; }
 .mv-now .mv-trouble .mv-warn { max-width: none; font-size: 13.5px; }
 
+@media (max-width: 600px) {
+  /* Five band cells in two columns leave a hole; the last one takes the row. */
+  .mv-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mv-band .cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  /* The repo's name over where it lands, rather than squeezing the sentence into a third of the row. */
+  .mv-land { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  /* The detail goes under the name, the same for every check, rather than wherever it wraps. */
+  .mv-preflight ul { grid-template-columns: 42px minmax(0, 1fr); }
+  .mv-preflight .pf-detail { grid-column: 2; }
+}
+
+/* A confirm whose request is running: it cannot be pressed again, and it looks it. */
+.mv-confirm button[aria-busy="true"] { cursor: progress; opacity: 0.7; }
+
+/* The gate's prose and its warnings stay under 80 characters a line (L5). */
+.mv-gate .mv-warn, .lead-fire .mv-confirm .why { max-width: var(--measure); }
 /* A long brief folds to a few lines (card.js foldable); the ask is context, not the action. */
 .mv-ask .mv-ask-brief > :first-child { margin-top: 0; }
 .mv-ask .mv-ask-brief > :last-child { margin-bottom: 0; }
@@ -199,7 +223,7 @@ html { scroll-padding-top: 70px; }
 .mv-fail { margin: 10px 0 0; padding: 8px 12px; font-size: 13px; color: var(--ink); max-width: 74ch; background: var(--threat-dim); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--threat); overflow-wrap: anywhere; }
 .mv-now .mv-trouble .mv-fail { margin: 0; max-width: none; font-size: 13.5px; }
 .mv-recover { color: var(--ink-soft); }
-.mv-fail a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.mv-fail a { color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; }
 
 /* The loading paint is the page's own shape, so nothing jumps when the mission lands. */
 .mv-skel { display: grid; gap: 10px; margin-top: 14px; }

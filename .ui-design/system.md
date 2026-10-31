@@ -344,11 +344,13 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   line, the other buckets wait closed, each shows twelve and offers the rest). Findings are marked
   read with a button that then offers `mark unread`, a bucket at once with `mark all N read`, and
   from the keyboard with `j`, `k` and `x`. Progress folds every milestone whose tasks all passed.
-- **Before approval the conversation is the question.** The record cannot see an open round of
-  interview questions or a plan ready to fire, so the thread reports what waits, the word follows
-  it, and `#now` carries a pointer to the round or the Fire button itself. A plan the Strike Lead
-  is still fixing waits on the Strike Lead and reads `working`. An ended mission says `stopped` or
-  `done`, and nothing on it is amber or live.
+- **Before approval the conversation is the question.** An open round of interview questions and
+  a plan ready to fly are both server questions (src/questions.ts), so the word, the inbox and the
+  notifications agree. `#now` carries a pointer to each: "answer them" lands on the round, "read
+  the terms and fire" lands on the gate's own verb. Firing stays under what it costs, in the gate
+  and under the ready message, asked twice, and only one confirm is armed at a time. A plan the
+  Strike Lead is still fixing waits on the Strike Lead and reads `working`. An ended mission says
+  `stopped` or `done`, and nothing on it is amber or live.
 - **Amber is a need, red is a failure.** A broken write (the report, the ledger) is `.mv-fail` in
   threat, with what still works and the way on beside it; caution stays for what waits on you.
 - **Every target is 44px at every width**, not only on a phone, 8px from the next: the scanner

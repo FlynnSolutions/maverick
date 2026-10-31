@@ -44,7 +44,7 @@ button.card-toggle:hover .card-why { color: var(--ink-soft); }
 /* Long text folded to its opening (card.js foldable), faded at the cut so it reads as more to come. */
 .fold-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; justify-items: start; }
 .fold-cut.folded { max-height: var(--fold-h); overflow: hidden; mask-image: linear-gradient(to bottom, #000 60%, transparent); }
-button.fold-toggle { min-height: 44px; height: auto; padding: 0 8px; font-size: 12.5px; color: var(--accent-ink); }
+button.fold-toggle { min-height: 44px; height: auto; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
 
 /* A linked chip is the pill inside a link a finger can hit: 44px square at the least, the pill centred in it. */
 .chip-hit { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; text-decoration: none; border-radius: var(--radius-s); }

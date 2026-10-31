@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, markReadings, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, transitions, type Mission, type MissionTask } from "../src/missions.ts";
+import { MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, watchEndings, type Mission, type MissionTask, approveMission, markReadings } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -477,7 +477,7 @@ test("contracts are named before fan-out: parsed with an owner and a shape, and 
   assert.deepEqual(plan.warnings, []);
   const bare = parsePlan(CONTRACTED.slice(0, CONTRACTED.indexOf("## Contracts")), ["root"]);
   assert.equal(bare.problems.length, 0);
-  assert.match(bare.warnings[0], /1 task\(s\) build on others and the plan names no contracts/);
+  assert.match(bare.warnings[0], /1 task builds on others and the plan names no contracts/);
   assert.ok(parsePlan(CONTRACTED.replace("(owner: m1-t1): encode", "(owner: m9-t9): encode"), ["root"]).problems.some((p) => /owned by m9-t9, which is not a task/.test(p)));
   assert.ok(parsePlan(CONTRACTED.replace(": the env flag naming the table", ""), ["root"]).problems.some((p) => /CLAIMS_TABLE" has no shape/.test(p)));
   assert.ok(parsePlan(CONTRACTED.replace("- **CLAIMS_TABLE** (owner: m1-t1): the env flag naming the table", "- just a line"), ["root"]).problems.some((p) => /is not "\*\*name\*\* \(owner/.test(p)));
@@ -1135,4 +1135,62 @@ test("the sweep does not follow an edit to how a repo lands: only try landing ag
   agentsSay([{ id: "rio-frozen", state: "working" }]);
   await sweepMissions(project);
   assert.equal(recordOf("frozen-land").repos[0].land, "merge", "what was approved stands");
+});
+
+/* ---------- the sweep runs when a session ends ---------- */
+
+const until = async (ok: () => boolean, ms = 5_000): Promise<void> => {
+  for (const start = Date.now(); !ok(); await new Promise((r) => setTimeout(r, 25))) if (Date.now() - start > ms) throw new Error(`not within ${ms} ms`);
+};
+
+test("a burst of endings is one pass, run once the burst settles", async () => {
+  const project = { id: "p-soon", name: "P", path: "/p" } as never;
+  const passes: number[] = [];
+  const sweep = async () => { passes.push(Date.now()); };
+  const first = Date.now();
+  for (let i = 0; i < 3; i += 1) {
+    sweepSoon(project, sweep, 100);
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  await until(() => passes.length > 0);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(passes.length, 1, "three endings, one pass");
+  assert.ok(passes[0] - first >= 160, "after the last ending settled, not the first");
+});
+
+test("a session under a project that reaches a finished word sweeps that project, and nothing else does", async () => {
+  const jobs = mkdtempSync(join(tmpdir(), "mv-jobs-"));
+  made.push(jobs);
+  const outer = { id: "outer", name: "Outer", path: "/work/app" } as never;
+  const inner = { id: "inner", name: "Inner", path: "/work/app/svc" } as never;
+  const idle = { id: "idle", name: "Idle", path: "/work/idle" } as never;
+  const ended: string[] = [];
+  const close = watchEndings(async () => [outer, inner, idle], (p) => ended.push((p as { id: string }).id), jobs);
+  try {
+    const job = (id: string, state: string, cwd: string) => {
+      mkdirSync(join(jobs, id), { recursive: true });
+      writeFileSync(join(jobs, id, "state.json"), JSON.stringify({ state, cwd }), "utf8");
+    };
+    job("aaaa0001", "working", "/work/idle/.claude/worktrees/m-m1-t1");
+    job("aaaa0002", "done", "/elsewhere");
+    job("aaaa0003", "blocked", "/work/idle");
+    job("aaaa0004", "done", "/work/app/.claude/worktrees/m-m1-t1");
+    await until(() => ended.length > 0);
+    job("aaaa0005", "exited", "/work/app/svc");
+    await until(() => ended.includes("inner"));
+    job("aaaa0004", "done", "/work/app/.claude/worktrees/m-m1-t1");
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(ended, ["outer", "inner"], "one call per session that ends: a rewrite of a finished one is not another ending");
+    assert.deepEqual([...new Set(ended)], ["outer", "inner"], "a Wingman's worktree is its project's, the deepest project holding the cwd is the one swept, and a session still working or waiting sweeps nothing");
+  } finally {
+    close();
+  }
+});
+
+test("a second approval while the first is still running is refused, and the guard lets go once it settles", async () => {
+  const project = { id: "p-approve", name: "P", path: "/nowhere", trackers: [] } as never;
+  const first = approveMission(project, "twice");
+  await assert.rejects(() => approveMission(project, "twice"), /already being approved/);
+  await assert.rejects(() => first, /not found|no mission/i);
+  await assert.rejects(() => approveMission(project, "twice"), (err: Error) => !/already being approved/.test(err.message), "released after the first one settled");
 });

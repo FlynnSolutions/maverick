@@ -17,7 +17,7 @@
  * `view` is the JSON of GET /api/missions/:id. `update(view)` is called on every stream event
  * and must patch in place, so an open session or a half-typed note survives it.
  *
- * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, now, fmtTime, plural, reveal }:
+ * `ctx` is { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, thread, now, fmtTime, plural, armed, approveWhy, failingNote, reveal }:
  *   el(tag, attrs, ...children)  builds an element; `on*` attrs are listeners, nulls are dropped
  *   text(s), btn(label, onclick, cls)
  *   lamp(status, band)           web/lamp.js's lamp
@@ -39,6 +39,10 @@
  *                                and Result puts what to fix or decide before the merge there at review
  *   fmtTime(iso)                 a clock time, or "" for none
  *   plural(n, word)              `1 note`, `2 notes`
+ *   armed({ label, cls, why, yes, onYes, quiet })  an irreversible action asked twice, focus on "not yet";
+ *                                `quiet` arms from a plain button, for a second way to the same act
+ *   approveWhy(doc)              what firing the mission does, in one sentence
+ *   failingNote(checks, where, verb)  the failed preflight checks, beside the button they should stop
  *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
  *                                Result without `reveal` on its handle makes it a no-op
  *
@@ -46,10 +50,10 @@
  */
 
 import { lamp } from "./lamp.js";
+import { applyProjectTheme, recall } from "./theme.js";
 import { jetSvg } from "./jet.js";
-import { inkOn, readableOn, recall } from "./theme.js";
 import { mountDevBadge } from "./dev-badge.js";
-import { render as renderMarkdown } from "./markdown.js";
+import { inline, render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
 import { atReview, isEnded } from "./mission/state.js";
 import { toast } from "./toast.js";
@@ -86,6 +90,49 @@ const setStatus = (msg, isError = false) => {
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/** A check that failed, said beside the button it should stop you pressing: in the gate and in the chat alike. */
+const failingNote = (checks, where, verb) => {
+  const failing = checks?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
+  return failing.length ? el("p", { class: "mv-warn" }, `${plural(failing.length, "check")} failed ${where} (${failing.map((c) => c.name).join(", ")}); read ${failing.length === 1 ? "it" : "them"} before you ${verb}.`) : null;
+};
+
+/** What firing does, said the same way wherever it is asked. */
+const approveWhy = (doc) => `This writes ${plural(doc.cost.tasks, "item")} into the tracker and spawns ${plural(doc.cost.sessions, "background session")} over the mission's life. After this you are asked only to walk each milestone; the close comes with the last walk.`;
+
+/**
+ * An irreversible action asked twice: the first press arms it, says what it does and moves focus
+ * to "not yet"; "not yet" puts the arm back and focuses it. Firing a mission is asked this way in
+ * the gate and in the Strike Lead's chat alike.
+ */
+let armedCount = 0;
+/** One irreversible act is armed at a time: arming one puts any other back, so the page never shows two "yes" buttons for one decision. */
+let disarmOther = null;
+const armed = ({ label, cls = "", why, yes, onYes, quiet = false }) => {
+  const box = el("div", { class: "mv-confirm" });
+  const whyId = `armed-why-${(armedCount += 1)}`;
+  const arm = btn(label, () => {
+    if (disarmOther && disarmOther.box !== box && disarmOther.box.isConnected) disarmOther.put();
+    disarmOther = { box, put: () => fill(box, arm) };
+    const back = btn("not yet", () => { fill(box, arm); arm.focus(); }, "ghost");
+    // Disabled and marked busy while the request runs, so a second press cannot send it twice.
+    const go = btn(yes, async () => {
+      go.disabled = back.disabled = true;
+      go.setAttribute("aria-busy", "true");
+      try {
+        await onYes();
+      } finally {
+        go.disabled = back.disabled = false;
+        go.removeAttribute("aria-busy");
+      }
+    }, "primary");
+    if (why) go.setAttribute("aria-describedby", whyId);
+    fill(box, why ? el("p", { class: "why", id: whyId }, why) : null, el("div", { class: "mv-confirm-row" }, go, back));
+    back.focus();
+  }, `${quiet ? "" : "primary "}${cls}`.trim());
+  box.append(arm);
+  return box;
+};
+
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
 const missionId = params.get("mission");
@@ -102,14 +149,7 @@ const applyTheme = (theme) => {
   const mode = recall("mv.theme", "");
   if (mode) document.documentElement.setAttribute("data-theme", mode);
   if (!theme || recall("mv.projectTheme", "1") === "0") return;
-  const root = document.documentElement.style;
-  root.setProperty("--accent", theme.accent);
-  root.setProperty("--accent-hot", theme.accentHot);
-  root.setProperty("--on-accent", readableOn(theme.accent));
-  // Text in the accent, measured against the darkest light surface and the lightest dark one.
-  root.setProperty("--accent-ink-light", inkOn(theme.accent, "#e4e7e9"));
-  root.setProperty("--accent-ink-dark", inkOn(theme.accentHot ?? theme.accent, "#373d43"));
-  root.setProperty("--display", `"${theme.font}", "Chakra Petch", "IBM Plex Sans", sans-serif`);
+  applyProjectTheme(document.documentElement.style, theme);
   if (theme.font !== "Chakra Petch") document.head.append(el("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
 };
 
@@ -228,7 +268,7 @@ const LANDS = {
 
 const reveal = (key) => mounted.get("result")?.reveal?.(key);
 
-const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, now: $("#now"), fmtTime, plural, reveal };
+const ctx = { el, text, btn, lamp, post, act, actionUrl, LANDS, projectId, missionId, openSession, mountTerminal, now: $("#now"), fmtTime, plural, armed, approveWhy, failingNote, reveal };
 // One thread for the mission's whole life: in Plan before approval, placed in Progress after, never rebuilt.
 ctx.thread = leadThread(ctx);
 
@@ -240,27 +280,31 @@ const WORD = {
   error: { cls: "threat", lamp: ["idle", "warm"] },
   working: { cls: "", lamp: ["busy", "work"] },
 };
-/**
- * How many things wait on the person. After approval it is the server's questions. Before it,
- * the conversation is the question, which the record cannot see: a round of the Strike Lead's
- * questions still open, or a plan ready to fire. The gate the server names is that same plan, so
- * a plan the Strike Lead is still fixing waits on the Strike Lead, not on you.
- */
-const waiting = () => (mission.approved || ended() ? mission.questions?.length ?? 0 : ctx.thread.waiting());
-/** A stopped mission is not a finished one: "done" in the good colour is for work that landed. */
-const wordOf = () => {
-  if (mission.status === "abandoned" && mission.word !== "error") return "stopped";
-  if (!mission.approved && !ended() && mission.word !== "error") return waiting() ? "waiting for you" : "working";
-  return mission.word ?? "working";
+/** `#gate` (where the lamp points before approval) lands on the gate with its verb focused, as `#round` lands on a round. */
+const toGate = () => {
+  const verb = location.hash === "#gate" ? document.querySelector("#gate .mv-confirm button") : null;
+  if (!verb) return;
+  // The verb, not the gate's top, comes into view: the gate is taller than a phone's screen.
+  requestAnimationFrame(() => {
+    verb.scrollIntoView({ block: "center" });
+    verb.focus({ preventScroll: true });
+  });
 };
+
+/** What waits on the person: the server's questions, an open interview round and the gate among them. */
+const waiting = () => mission.questions?.length ?? 0;
+/** A stopped mission is not a finished one: "done" in the good colour is for work that landed. */
+const wordOf = () => (mission.status === "abandoned" && mission.word !== "error" ? "stopped" : mission.word ?? "working");
 const renderWord = () => {
   const word = wordOf();
   const look = WORD[word] ?? WORD.working;
   const open = waiting();
   const chip = $("#word");
   chip.className = `mv-word ${look.cls}`;
-  // The loudest thing on the page goes to what it is loud about; any other word is only a word.
-  if (open) chip.setAttribute("href", "#now");
+  // The loudest thing on the page goes to what it is loud about: the first question's own place when it
+  // names one, the gate's verb before approval, the questions slot after it. Any other word is only a word.
+  const go = mission.questions?.[0]?.answers?.find((a) => a.go)?.go;
+  if (open) chip.setAttribute("href", `#${go ?? (mission.approved ? "now" : "gate")}`);
   else chip.removeAttribute("href");
   chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
   // From another tab the title is the only thing that shows, so what waits is counted there too.
@@ -433,6 +477,13 @@ const reposBand = (repos) => {
       : null);
 };
 
+/** A check's detail as the markdown sets it: a `backticked` command reads as code. */
+const pfDetail = (detail) => {
+  const span = el("span", { class: "pf-detail" });
+  span.innerHTML = inline(detail, { project: projectId });
+  return span;
+};
+
 /** What the host can and cannot give the mission, checked before the person approves and leaves. */
 const preflightBand = (checks) => {
   if (!checks?.length) return null;
@@ -440,8 +491,9 @@ const preflightBand = (checks) => {
   const warned = checks.filter((c) => c.status === "warn").length;
   const refusing = checks.some((c) => c.refuses);
   return el("div", { class: "mv-preflight" },
-    el("p", { class: failed || warned ? "mv-warn" : "muted small" }, refusing ? `${failed} thing(s) the mission cannot run without are not there; approving is refused until they are.` : failed ? `${failed} thing(s) the plan needs are not there. Settle them before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${warned} thing(s) this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
-    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), ` ${c.detail}`))));
+    // The warning itself is said once, beside the button (failingNote, or the refusal in its place); here it is the list's heading.
+    el("p", { class: failed || warned ? "cost-note" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${plural(warned, "thing")} this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
+    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), pfDetail(c.detail)))));
 };
 
 const costBand = (cost) => el("div", { class: "mv-band" },
@@ -452,18 +504,12 @@ const costBand = (cost) => el("div", { class: "mv-band" },
   el("div", { class: "cell" }, el("span", { class: "k" }, "you are asked"), el("span", { class: "v" }, "twice")));
 
 /** Approving is a decision, not a click: the first press says what it costs, the second flies. */
-const approveButton = (doc) => {
-  const box = el("div", { class: "mv-confirm" });
-  const arm = btn("approve and fly", () => {
-    fill(box,
-      el("p", { class: "why" }, `This writes ${doc.cost.tasks} items into the tracker and spawns ${doc.cost.sessions} background sessions over the mission's life. It is the last thing you are asked until the result.`),
-      btn(`yes, approve "${mission.name}"`, () => act("approve", {}, "approved; the first milestone is out"), "primary"),
-      btn("not yet", () => { fill(box, arm); arm.focus(); }, "ghost"));
-    box.querySelector("button:last-of-type")?.focus();
-  }, "primary");
-  box.append(arm);
-  return box;
-};
+const approveButton = (doc) => armed({
+  label: "approve and fly",
+  why: approveWhy(doc),
+  yes: `yes, approve "${mission.name}"`,
+  onYes: () => act("approve", {}, "approved; the first milestone is out"),
+});
 
 const gateBlocks = () => {
   const doc = mission.planDoc ?? {};
@@ -473,26 +519,28 @@ const gateBlocks = () => {
   if (ended()) {
     gate.push(el("p", { class: "why" }, `This mission ended before it was approved, so nothing flew and nothing was written to the tracker. The plan${doc.found ? ` it had reached is still at ${mission.plan}` : " was never written"}; start a new mission from the workspace to pick it up.`));
   } else if (!doc.found) {
-    gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the chat above; it will not plan off your first line.`));
+    gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done${waiting() ? "; answer its questions in the chat above, it will not plan off your first line" : ""}.`));
   } else if (parsed?.problems?.length) {
     gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. The Strike Lead is sent these to fix; tell it in the chat above if it stalls. They are the reasons a Wingman would be sent out under-briefed:"),
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));
   } else {
-    gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in each of the ${doc.cost.repos} repo(s) the plan names, and sends the first milestone out.`),
+    gate.push(el("p", { class: "why" }, `This is the one approval. Nothing has spawned: approving writes the plan into the tracker as items, cuts a branch in ${doc.cost.repos === 1 ? "the repo" : `each of the ${doc.cost.repos} repos`} the plan names, and sends the first milestone out.`),
       parsed?.overlaps?.length || parsed?.warnings?.length ? el("div", {}, el("p", { class: "why" }, "Worth a look before you approve. Tasks that fly together and own the same paths are a collision planned in; tasks that build on each other with nothing named between them will invent what they share apart:"),
         el("ul", { class: "mv-overlaps" }, ...[...(parsed.overlaps ?? []), ...(parsed.warnings ?? [])].map((o) => el("li", {}, o)))) : null,
       costBand(doc.cost),
+      // The verb sits under what it costs; where each repo lands, the host checks and the notes follow as the fine print.
+      el("div", { class: "gate-actions" },
+        doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
+        el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")),
+      failingNote(doc.preflight, "below", "approve"),
       reposBand(doc.repos ?? []),
       preflightBand(doc.preflight),
       doc.wingmanAgent
         ? el("p", { class: "cost-note" }, `Each Wingman runs as the ${doc.wingmanAgent} agent, which carries its standing orders: own one task, do not widen it, never push or merge, never grade its own work.`)
-        : el("p", { class: "mv-warn" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
-      el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."),
-      el("div", { class: "gate-actions" },
-        doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
-        el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")));
+        : el("p", { class: "cost-note" }, "Each Wingman gets the mission's prompt and nothing standing behind it. Name a wingmanAgent in this project's maverick.json and every Wingman carries the same orders about staying inside its one task, rather than each mission prompt having to say it again."),
+      el("p", { class: "cost-note" }, doc.cost.reference, " Those are Factory's numbers for the equivalent feature, not measured here; they are the reason this gate exists."));
   }
-  blocks.push(el("section", { class: "mv-gate" }, el("h2", {}, "The gate"), ...gate));
+  blocks.push(el("section", { class: "mv-gate", id: "gate" }, el("h2", {}, "The gate"), ...gate));
 
   if (parsed?.contracts?.length) {
     blocks.push(el("section", {}, el("h2", {}, "Contracts"), el("p", { class: "muted small" }, "What the tasks share, named before any of them starts: the owner writes it first, everyone else reads it from the owner's branch."),
@@ -678,6 +726,10 @@ const boot = async () => {
   // The sections were empty when the browser tried the hash; now they have their height.
   const target = location.hash.slice(1);
   if (["ask", "plan", "progress", "result"].includes(target)) document.getElementById(target).scrollIntoView();
+  toGate();
+  window.addEventListener("hashchange", toGate);
+  // A second press on the lamp names the hash already there, which fires nothing; it should land again.
+  $("#word").addEventListener("click", () => { if ($("#word").getAttribute("href") === location.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); });
   listen();
 };
 boot().catch((err) => setStatus(err.message, true));

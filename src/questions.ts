@@ -6,10 +6,11 @@
 import { findingsOf } from "./audits.ts";
 import { parseFinding } from "./findings.ts";
 import type { Milestone, Mission, MissionTask, WalkthroughState } from "./missions.ts";
+import type { ChatEntry } from "./strike-lead.ts";
 
 export interface Question {
   id: string;
-  kind: "handed-back" | "collision" | "landing" | "proof" | "plan" | "paused" | "gate" | "walk" | "review";
+  kind: "handed-back" | "collision" | "landing" | "proof" | "plan" | "paused" | "gate" | "walk" | "review" | "lead";
   title: string;
   body: string;
   at: string;
@@ -126,6 +127,32 @@ const closeQuestion = (mission: Mission): Question => ({
   answers: [{ label: "close", go: "close", primary: true }],
 });
 
+/**
+ * The Strike Lead waiting on its own round of questions: its last word asked them and nothing has
+ * been said since, the same rule the chat uses to keep a round open. It is answered in the chat,
+ * so the answer goes there rather than posting anything. Cory's call, 2026-10-30: a round waiting
+ * on him is waiting for him, in the inbox and on the lamp, like anything else.
+ */
+/** The Strike Lead's round still waiting for answers: its last word, when that word asked something. The one definition; the chat answers it and the page reads it off the questions. */
+export const openRound = (chat: ChatEntry[] | undefined): (ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) | undefined => {
+  const last = chat?.at(-1);
+  return last?.who === "Strike Lead" && last.questions?.length ? (last as ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) : undefined;
+};
+
+const leadRound = (mission: Mission): Question | undefined => {
+  const last = openRound(mission.chat);
+  if (!last) return undefined;
+  const n = last.questions.length;
+  return {
+    id: `round:${last.at}`,
+    kind: "lead",
+    title: `the Strike Lead is asking ${n === 1 ? "a question" : `${n} questions`}`,
+    body: last.questions.map((q) => q.question).join(" "),
+    at: last.at,
+    answers: [{ label: "answer in the chat", go: "round", primary: true }],
+  };
+};
+
 /** The first blocker's headline: the one sentence, not the line with its kind and evidence. */
 const blockerOf = (findings: string | undefined): string | undefined => {
   const line = findings ? findingsOf(findings).blockers[0] : undefined;
@@ -205,13 +232,19 @@ export const questionsOf = (mission: Mission & { findings?: Record<string, strin
     at: mission.created,
     answers: [{ label: "resume", method: "POST", path: "resume", primary: true }],
   });
-  if (mission.status === "planned") out.push({
+  const round = leadRound(mission);
+  if (round) out.push(round);
+  // The gate asks only once the plan can fly: the Strike Lead's last word says it is ready, which
+  // the server writes only for a plan with no problems. A plan it is still fixing waits on it, not
+  // on the person. The answer opens the gate, where approving is asked twice under what it costs.
+  const lastLead = mission.chat?.findLast((c) => c.who === "Strike Lead");
+  if (mission.status === "planned" && lastLead?.planReady) out.push({
     id: "gate",
     kind: "gate",
-    title: "the plan is waiting for approval",
+    title: "the plan is ready to fly",
     body: mission.brief,
-    at: mission.created,
-    answers: [{ label: "approve", method: "POST", path: "approve", primary: true }],
+    at: lastLead.at,
+    answers: [{ label: "read the terms and fire", go: "gate", primary: true }],
   });
   const left = toWalk(mission);
   if (left.length) out.push(walkQuestion(mission, left));

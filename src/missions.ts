@@ -20,6 +20,7 @@
  */
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { watch } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
@@ -38,7 +39,7 @@ import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead,
 import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { needsWalking, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
+import { needsWalking, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
@@ -540,7 +541,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   // plan the first mission had, where parallel Wingmen invented the shared conventions apart.
   const warnings: string[] = [];
   const dependent = milestones.flatMap((m) => m.tasks).filter((t) => t.needs?.length);
-  if (dependent.length && !contracts.length) warnings.push(`${dependent.length} task(s) build on others and the plan names no contracts: what they share (types, ids, codecs, env flags, functions) has no owner or shape yet`);
+  if (dependent.length && !contracts.length) warnings.push(`${dependent.length} ${dependent.length === 1 ? "task builds" : "tasks build"} on others and the plan names no contracts: what they share (types, ids, codecs, env flags, functions) has no owner or shape yet`);
   return { name, intro, milestones, contracts, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
 };
 
@@ -909,7 +910,25 @@ const writePlanToTracker = async (project: Project, mission: Mission, intro: str
  * Cory's one blessing. Everything that spawns, spawns after this: the plan becomes tracker
  * items, the mission gets a branch and a formation, and the first milestone goes out.
  */
+const approving = new Set<string>();
+
+/**
+ * One approval at a time per mission. `approved` is only written once the tracker, the branches,
+ * the worktrees and the formation exist, which takes seconds, so a second press in that window
+ * (the gate's and the chat's both fire) would otherwise go through the whole thing again.
+ */
 export const approveMission = async (project: Project, id: string): Promise<Mission> => {
+  const key = `${project.id}/${id}`;
+  if (approving.has(key)) throw new Error("this mission is already being approved");
+  approving.add(key);
+  try {
+    return await approveOnce(project, id);
+  } finally {
+    approving.delete(key);
+  }
+};
+
+const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   const mission = await missionOr404(project.id, id);
   if (mission.approved) throw new Error(`${mission.name} was already approved at ${mission.approved}`);
   const text = await readFile(join(project.path, mission.plan), "utf8").catch(() => {
@@ -952,7 +971,7 @@ export const approveMission = async (project: Project, id: string): Promise<Miss
 
 /* ---------- the flight ---------- */
 
-const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, shared: string[] = []): BriefContext => ({ projectPath: project.path, shared, mission, milestone: m, task, repo });
+const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, cfg: Pick<MissionConfig, "shared" | "proof">): BriefContext => ({ projectPath: project.path, shared: cfg.shared, proof: cfg.proof, mission, milestone: m, task, repo });
 
 /**
  * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:
@@ -1299,7 +1318,7 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     task.base = await revParse(repo.path, task.branch);
     const out = await claimed(mission,
       () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
-      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg.shared)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
       (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
       launchFailed(task.id));
     if (!out) return;
@@ -1440,7 +1459,7 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
       task.note = undefined;
       forget(task);
     },
-    () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+    () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
     (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
     launchFailed(task.id));
   if (!out) return false;
@@ -1487,6 +1506,60 @@ export const sweepMissions = async (project: Project): Promise<void> => {
   // Strike Lead that a restart or a terminal holding its session left unanswered, is answered on the next pass.
   for (const m of await listMissions(project.id)) {
     if (!over(m) && !leadBusy(m) && ((!m.lead && !m.approved) || unheard(m.chat ?? []).length)) hearLead(project, m.id);
+  }
+};
+
+/** How long a burst of endings is let settle before the one pass it earns. */
+const ENDING_SETTLE_MS = 3_000;
+const soon = new Map<string, NodeJS.Timeout>();
+
+/**
+ * A pass soon, not on the next tick: a Wingman or RIO that ended is the moment its review, its
+ * merge or its dependant can go, and waiting for the tick cost up to a minute on every link of a
+ * chain. Debounced per project, so a burst of endings is one pass. The listing is dropped at the
+ * ending and again when the pass goes, or a pass in between would read and keep the word from
+ * before it; a pass already running is waited out rather than skipped, since it may have read
+ * the listing before this ending.
+ */
+export const sweepSoon = (project: Project, sweep: (project: Project) => Promise<void> = sweepMissions, wait = ENDING_SETTLE_MS): void => {
+  agentCache.delete(project.path);
+  clearTimeout(soon.get(project.id));
+  soon.set(project.id, setTimeout(() => {
+    if (sweeping.has(project.id)) return sweepSoon(project, sweep, wait);
+    soon.delete(project.id);
+    agentCache.delete(project.path);
+    sweep(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
+  }, wait).unref());
+};
+
+/**
+ * Claude Code writes each background session's state to `<jobs>/<id>/state.json`, many times
+ * while it works. A session under a project whose state moves into a finished word calls `onEnd`
+ * with that project, once: a rewrite of a session already finished is not another ending, so it
+ * neither reads the project list again nor holds the pass back. Only a trigger: the pass still
+ * reads `claude agents` for the truth, and the server's 60 s tick stays the backstop for
+ * anything the watch misses. Returns the close.
+ */
+export const watchEndings = (projects: () => Promise<Project[]>, onEnd: (project: Project) => void, dir = config.claudeJobsDir): (() => void) => {
+  const finished = new Map<string, boolean>();
+  const seen = async (file: string): Promise<void> => {
+    const { state, cwd } = JSON.parse(await readFile(join(dir, file), "utf8")) as { state?: string; cwd?: string };
+    const now = FINISHED.test(state ?? "");
+    const was = finished.get(file);
+    finished.set(file, now);
+    if (!cwd || !now || was) return;
+    const project = (await projects()).reduce<Project | undefined>((best, p) => (underPath(cwd, p.path) && p.path.length > (best?.path.length ?? -1) ? p : best), undefined);
+    if (project) onEnd(project);
+  };
+  try {
+    const watcher = watch(dir, { recursive: true }, (_, file) => {
+      // A file caught mid-write is read again on its next write; the tick covers the last one.
+      if (file && /(^|\/)state\.json$/.test(file)) seen(file).catch(() => undefined);
+    });
+    return () => watcher.close();
+  } catch (err) {
+    console.error(`not watching ${dir} for sessions that end; the sweep runs on its tick alone:`, (err as Error).message);
+    return () => undefined;
   }
 };
 
@@ -1618,7 +1691,7 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
       const previous = reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: reviews - 1 }), "utf8").catch(() => undefined) : undefined;
       if (await claimed(mission,
         () => { task.reviews = reviews; task.status = "reviewing"; task.review = { claudeId: "", file, started: new Date().toISOString() }; },
-        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg.shared), file, previous), cfg.rioAgent, RIO_TOOLS),
+        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), file, previous), cfg.rioAgent, RIO_TOOLS),
         (on, claudeId) => { const t = taskOn(on, task.id); if (t?.review) t.review.claudeId = claudeId; },
         (on, err) => { const t = taskOn(on, task.id); if (t) { t.status = "handed-back"; t.note = `could not start the RIO: ${err.message}`; } })) {
         agentCache.delete(project.path);
@@ -1973,8 +2046,8 @@ export const sayToStrikeLead = async (project: Project, id: string, text: string
 
 /** A round of the Strike Lead's questions answered with clicks: said to it as one message, numbered as it asked. */
 export const answerLead = async (project: Project, id: string, picked: Record<string, { options?: string[]; other?: string }>): Promise<{ ok: true }> => {
-  const last = (await missionOr404(project.id, id)).chat?.at(-1);
-  if (last?.who !== "Strike Lead" || !last.questions?.length) throw new Error("there is no round of questions waiting for answers; it may have been answered already");
+  const last = openRound((await missionOr404(project.id, id)).chat);
+  if (!last) throw new Error("there is no round of questions waiting for answers; it may have been answered already");
   return sayToStrikeLead(project, id, answersText(last.questions, picked));
 };
 

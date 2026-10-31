@@ -5,7 +5,7 @@
 .mv-result h2 { font: 600 13px var(--sans); letter-spacing: 0.02em; color: var(--ink-faint); margin: 18px 0 10px; display: flex; gap: 10px; align-items: baseline; }
 .mv-result > h2:first-child { margin-top: 0; }
 .mv-result h2 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; }
-.mv-result a { color: var(--accent-ink); text-decoration: none; }
+.mv-result a { color: var(--accent-hot); text-decoration: none; }
 .mv-result a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .mv-result a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-s); }
 
@@ -118,7 +118,7 @@
 /* The tools over the findings: hide what is read, mark a bucket read, and the keys. */
 .rs-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 8px 0; }
 .rs-tools:has(> button[hidden]:only-child) { display: none; }
-.rs-tools button.rs-tool { padding: 0 12px; font-size: 12.5px; color: var(--accent-ink); }
+.rs-tools button.rs-tool { padding: 0 12px; font-size: 12.5px; color: var(--accent-hot); }
 .rs-tools button.rs-tool[aria-pressed="true"] { color: var(--ink); background: var(--steel); }
 .rs-hide-read .rs-seen { display: none; }
 
