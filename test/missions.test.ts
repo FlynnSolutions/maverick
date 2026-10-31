@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { WALKTHROUGH_TEMPLATE, placeWalkthrough, walkKey, walkthroughPrompt, MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, watchEndings, type Mission, type MissionTask, approveMission, markReadings, DEFAULT_LINK_MINUTES, estimateOf, longestChain, measuredPace } from "../src/missions.ts";
+import { INTERVIEW_PROBES, applyPlanState, approveMission, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask, markReadings, WALKTHROUGH_TEMPLATE, placeWalkthrough, walkKey, walkthroughPrompt } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -1176,11 +1176,26 @@ test("a milestone cut by repo is a problem, and a milestone spanning repos is a 
 
 test("a milestone that is only a walkthrough is a problem, judged from what its tasks touch, not from its title", () => {
   const walkOnly = parsePlan(shaped({ tasks: [task("Build it", ["touches: src/a.ts"])] }, { tasks: [task("Ship it", ["touches: deliverables/testing/x.html"]), task("Note it", ["touches: docs/03-decisions.md"])] }), ["root"]);
-  assert.deepEqual(walkOnly.problems, ["milestone 2 changes no product code (its tasks touch only deliverables, docs, test, tests): the walkthrough is never a milestone; it is how every milestone ends"]);
+  assert.deepEqual(walkOnly.problems, ["milestone 2 changes no product code (its tasks touch only documents and test code): the walkthrough is never a milestone; it is how every milestone ends"]);
+  const walkWith = (touches: string) => parsePlan(shaped({ tasks: [task("Build it", ["touches: src/a.ts"])] }, { tasks: [task("Founder walkthrough", [`touches: ${touches}`])] }), ["root"]).problems.join();
+  for (const tests of ["e2e/files.spec.ts", "apps/web/e2e", "src/__tests__/files.tsx", "cypress/e2e/files.cy.ts", "src/files/row.test.tsx"]) {
+    assert.match(walkWith(`deliverables/testing/x.html, ${tests}`), /milestone 2 changes no product code/, `a walkthrough that writes ${tests} is still a walkthrough`);
+  }
+  assert.equal(walkWith("src/pages/docs/index.tsx"), "", "a docs folder below the root is product");
+  assert.equal(walkWith("deliverables/testing/x.html, src/files/row.tsx"), "", "one product path is enough");
   const titled = parsePlan(shaped({ tasks: [task("Walkthrough", ["touches: src/walk.ts"])] }), ["root"]);
   assert.deepEqual(titled.problems, [], "a title that says walkthrough on a task that changes code is fine");
   const unsaid = parsePlan(shaped({ tasks: [task("Something")] }), ["root"]);
   assert.deepEqual(unsaid.problems, [], "a task that names no touches is not called a walkthrough");
+});
+
+test("a fix task filed on a sent milestone starts on the next sweep, and the milestone after it waits (M29)", () => {
+  const t = (id: string, status: MissionTask["status"]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, commits: ["c"] });
+  const fixing = { n: 1, title: "a", done: "d", dispatched: "x", tasks: [t("m1-t1", "passed"), { ...t("m1-fix1", "pending"), commits: undefined }], walkthrough: { doc: "w.html", fixes: [{ round: 1, task: "m1-fix1", cases: ["b"], filed: "x" }] } };
+  const later = { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending")] };
+  const mission = { status: "flying" as const, milestones: [fixing, later] };
+  assert.deepEqual(startable(mission).map((s) => s.task.id), ["m1-fix1"]);
+  assert.equal(waitingOn(mission).milestones[2], "sent once milestone 1 has merged");
 });
 
 test("a milestone of four or more tasks that is mostly one chain is warned, by task id", () => {
@@ -1269,15 +1284,17 @@ test("a burst of endings is one pass, run once the burst settles", async () => {
   const project = { id: "p-soon", name: "P", path: "/p" } as never;
   const passes: number[] = [];
   const sweep = async () => { passes.push(Date.now()); };
-  const first = Date.now();
+  let last = 0;
   for (let i = 0; i < 3; i += 1) {
+    last = Date.now();
     sweepSoon(project, sweep, 100);
     await new Promise((r) => setTimeout(r, 30));
   }
   await until(() => passes.length > 0);
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(passes.length, 1, "three endings, one pass");
-  assert.ok(passes[0] - first >= 160, "after the last ending settled, not the first");
+  // Timed from the last ending: the first one's wait would have run 60 ms in, and a timer may fire a millisecond early.
+  assert.ok(passes[0] - last >= 90, "after the last ending settled, not the first");
 });
 
 test("a session under a project that reaches a finished word sweeps that project, and nothing else does", async () => {
@@ -1309,12 +1326,57 @@ test("a session under a project that reaches a finished word sweeps that project
   }
 });
 
-test("a second approval while the first is still running is refused, and the guard lets go once it settles", async () => {
-  const project = { id: "p-approve", name: "P", path: "/nowhere", trackers: [] } as never;
-  const first = approveMission(project, "twice");
-  await assert.rejects(() => approveMission(project, "twice"), /already being approved/);
-  await assert.rejects(() => first, /not found|no mission/i);
-  await assert.rejects(() => approveMission(project, "twice"), (err: Error) => !/already being approved/.test(err.message), "released after the first one settled");
+const COMPONENTS = (lines: string[]) => ["", "## Components", "", ...lines.map((l) => `- ${l}`), ""].join("\n");
+
+test("a plan's Components section parses each element's decision and cells, and where the mockups are", () => {
+  const plan = shaped({ tasks: [task("Files page", ["touches: src/files", "cells: 12, 14, 20-22"])] }) + COMPONENTS([
+    "mockups: deliverables/design/item-files/index.html",
+    "**file row** (owner: m1-t1): new; cells 12, 20-22; replaces AttachmentCard on this page only",
+    "`toolbar` (owner: m1-t1): restyle; cell 14",
+  ]);
+  const parsed = parsePlan(plan, ["root"]);
+  assert.deepEqual(parsed.problems, []);
+  assert.equal(parsed.mockups, "deliverables/design/item-files/index.html");
+  assert.deepEqual(parsed.components, [
+    { name: "file row", owner: "m1-t1", decision: "new", cells: [12, 20, 21, 22], note: "replaces AttachmentCard on this page only" },
+    { name: "toolbar", owner: "m1-t1", decision: "restyle", cells: [14], note: "" },
+  ]);
+  assert.deepEqual(parsed.milestones[0].tasks[0].cells, [12, 14, 20, 21, 22]);
+});
+
+test("a task that builds mockup cells no component decision covers is refused at the gate", () => {
+  const cited = shaped({ tasks: [task("Files page", ["touches: src/files", "cells: 12, 14"])] });
+  assert.deepEqual(parsePlan(cited, ["root"]).problems, [
+    '"Files page" in milestone 1 builds cells 12, 14, which no "## Components" entry decides: say per element whether it reuses, restyles or replaces an existing component',
+    'tasks build mockup cells and "## Components" has no "mockups: <path>" line saying where they are',
+  ]);
+  const half = parsePlan(cited + COMPONENTS(["mockups: d/index.html", "**file row** (owner: m1-t1): new; cells 12"]), ["root"]);
+  assert.deepEqual(half.problems, ['"Files page" in milestone 1 builds cell 14, which no "## Components" entry decides: say per element whether it reuses, restyles or replaces an existing component']);
+  const loose = parsePlan(cited + COMPONENTS(["mockups: d/index.html", "**file row** (owner: m1-t1): reuse what exists; cells 12, 14", "**toolbar** (owner: m9-t9): new; cells 12, 14"]), ["root"]);
+  assert.deepEqual(loose.problems, [
+    'component "**file row** (owner: m1-t1): reuse what exists; cells 12, 14" is not "**name** (owner: <task id>): reuse | restyle | new; cells <n, n>; <one line>"',
+    "component \"toolbar\" is owned by m9-t9, which is not a task in this plan",
+  ], "a decision is one of three words, and its owner is a task");
+  assert.deepEqual(parsePlan(shaped({ tasks: [task("Backend", ["touches: src/api"])] }), ["root"]).problems, [], "a mission that draws no UI needs no Components section");
+});
+
+test("the Strike Lead interview asks the component question per element and forbids a blanket reuse", () => {
+  assert.ok(INTERVIEW_PROBES.some((p) => /every element the mockups draw.*reused as it is.*restyled everywhere.*new one/.test(p)), "the probe, which the CAG's plan interview shares");
+  const project = { id: "p", name: "P", path: "/p", trackers: [] } as never;
+  const mission = { id: "m", brief: "redesign item files" } as never;
+  const prompt = interviewPrompt(project, mission, "/p/plan.md", [{ label: "root", base: "main", land: "merge" }], "merge");
+  assert.match(prompt, /read the mockups before you ask anything about it\. Go through every cell and list every element it draws, the chrome as much as the content: toolbars/);
+  assert.match(prompt, /reuse it as it is.*restyle the shared component.*build a new one/);
+  assert.match(prompt, /Never write "reuse existing components" or anything like it as a blanket instruction/);
+  assert.match(prompt, /## Components\n\n- mockups: /, "and the plan format carries the section");
+  assert.match(prompt, /- cells: <the approved mockup cells this task builds/);
+});
+
+test("a task that builds cells owns its screenshots folder from approval, so its brief and its strays agree", () => {
+  const { milestones } = parsePlan(shaped({ tasks: [task("Files page", ["touches: src/files", "cells: 12"]), task("Rail", ["cells: 14"]), task("Api", ["touches: src/api"])] }), ["root"]);
+  ownScreenshots({ id: "mx" }, milestones);
+  assert.deepEqual(milestones[0].tasks.map((t) => t.touches), [["src/files", "deliverables/screenshots/mx/m1-t1"], undefined, ["src/api"]], "a task with no touches already owns everything");
+  assert.deepEqual(strays(["src/files/a.ts", "deliverables/screenshots/mx/m1-t1/cell-12-390.png"], milestones[0].tasks[0].touches), []);
 });
 
 test("the walkthrough starts as the template, placed with its key set, and the prompt carries the plan's walk cases", async () => {

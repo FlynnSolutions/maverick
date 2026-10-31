@@ -37,10 +37,10 @@ import { WALKTHROUGH_DOC, documentsSince } from "./ships.ts";
 import { listTerminals, openTerminal, type TerminalInfo } from "./terminal.ts";
 import { CHAT_RULES, LEAD_SCHEMA, answersText, flightRules, parseTurn, snapshot, unheard, type ChatEntry } from "./strike-lead.ts";
 import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead, itemBlock, parseTracker, placeInGroup, setChecked, today } from "./trackers.ts";
-import { RIO_TOOLS, planOnBranch, rioBrief, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
+import { DECISION_WORDS, RIO_TOOLS, componentsOver, planOnBranch, rioBrief, screenshotsDir, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { needsWalking, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
+import { failingCases, lastCleared, needsWalking, openFix, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
@@ -97,6 +97,8 @@ export interface MissionTask {
   verdict?: Verdict;
   /** Why this task stopped needing an agent, in words, when it did not simply pass. */
   note?: string;
+  /** The approved mockup cells this task builds, by number, from the plan's `cells:` line. A task with cells is held to them by screenshots and by its RIO. */
+  cells?: number[];
   /** NOTE-level findings the task passed with, or merged with when it ran out of retries. They ride to the result page and the report. */
   carried?: string[];
   /** What Cory did with each finding, by its key (`keyOf`): read it, or put it on the checklist for later. */
@@ -109,9 +111,24 @@ export interface WalkthroughProgress {
   answered: number;
   /** Case id -> what the person said. The gate counts answers; the verdicts are the person's record of what they found. */
   verdicts: Record<string, string>;
-  /** Case id -> what the person wrote about it, kept with the verdicts so a note survives another browser. */
+  /** Case id -> what the person wrote beside the verdict: kept with the verdicts so a note survives another browser, and what a fix task is told about a failed case. */
   notes?: Record<string, string>;
+  /** Sent by the page, not kept to: the last fix round it has dropped the cleared answers for. A save that has not seen the latest round has those cases' answers stripped. */
+  round?: number;
   updatedAt: string;
+}
+
+/**
+ * One round of fixing what a walk found (M29): every case the walk failed, handed to one task.
+ * `cleared` is set once that task has merged and been proved, when the failed cases' answers are
+ * taken off so a person walks those cases again, and only those.
+ */
+export interface WalkFix {
+  round: number;
+  task: string;
+  cases: string[];
+  filed: string;
+  cleared?: string;
 }
 
 /**
@@ -131,9 +148,11 @@ export interface MilestoneWalkthrough {
   failed?: string;
   /** Cory let the milestone through without walking it, and said why. */
   waived?: { note: string; at: string };
+  /** Each round of fixing what the walk failed, oldest first. */
+  fixes?: WalkFix[];
 }
 
-export type WalkthroughState = "none" | "building" | "failed" | "walking" | "walked" | "waived";
+export type WalkthroughState = "none" | "building" | "failed" | "walking" | "fixing" | "walked" | "waived";
 
 /** What the page is told about a milestone's walkthrough, derived here so the page and the gate cannot disagree. */
 export interface WalkView { state: WalkthroughState; needed: boolean }
@@ -143,6 +162,20 @@ export interface WalkthroughPatch { progress?: WalkthroughProgress; waive?: { no
 /** What holds a milestone for a person: a collision nobody could reconcile, a landing that failed, a proof that failed on the merged tree. */
 export type HoldKind = "collision" | "landing" | "proof";
 export interface Hold { kind: HoldKind; reason: string; at: string }
+
+/**
+ * What a mockup element is built with, decided by Cory per component before the plan is
+ * written, never by a blanket "reuse what exists": reuse the existing component as it is,
+ * restyle the shared one everywhere, or build a new one for this feature.
+ */
+export type ComponentDecision = "reuse" | "restyle" | "new";
+export interface Component {
+  name: string;
+  owner: string;
+  decision: ComponentDecision;
+  cells: number[];
+  note: string;
+}
 
 /** A thing one task makes and another uses: a type, an id, a codec, an env flag, a function. Named before fan-out, with its owner and its shape. */
 export interface Contract {
@@ -224,6 +257,10 @@ export interface Mission {
   milestones: Milestone[];
   /** What the tasks share, from the plan's `## Contracts` section, frozen at approval. */
   contracts?: Contract[];
+  /** Every element the mockups draw and what it is built with, from the plan's `## Components` section, frozen at approval. */
+  components?: Component[];
+  /** Where the approved mockups live, relative to the project, from the `mockups:` line of `## Components`. */
+  mockups?: string;
   /** What the mission needs of the host and the person, from the plan's `## Preflight` section. */
   requirements?: Requirement[];
   /** The project sets a proof command, so a merged milestone is not done until its proof passed. Frozen at approval. */
@@ -345,6 +382,7 @@ _walk: <a case Cory will walk at the end>; <the next case>; <...>_
   - touches: <the files and directories this task owns, relative to its repo, comma separated>
   - needs: <the ids of tasks this one builds on (m1-t2), if any>
   - deploys: <a stack this task alone deploys, if any; never a shared environment, which only the merged mission branch deploys>
+  - cells: <the approved mockup cells this task builds, by number (12, 14, 20-23), if any>
   <Everything a session with no other context needs to build this: the files, the shape, what
   it must not touch, and how it proves itself. Several lines is right; one line is not.>
   <Once the mission flies, Maverick writes status, attempt, verdict and commit lines under each
@@ -367,6 +405,12 @@ _walk: <case>; <case>_
 - **<a type, an id, a codec, an env flag, a function one task makes and another uses>** (owner: m1-t1): <its signature or shape, one line>
 - **<the next one>** (owner: <task id>): <...>
 
+## Components
+
+- mockups: <where the approved mockups are, relative to the project; omit the section when the mission draws no UI>
+- **<an element the mockups draw>** (owner: m1-t2): <reuse | restyle | new>; cells <12, 14>; <one line: which existing component it is or replaces, and what differs>
+- **<the next element>** (owner: <task id>): <...>
+
 ## Preflight
 
 - duration: <how long the mission is expected to run, like 8h>
@@ -385,6 +429,18 @@ const LOG_HEADING = /^Log$/i;
 const CONTRACTS_HEADING = /^Contracts$/i;
 /** The section where the Strike Lead says what the mission needs of the host and of the person. */
 const PREFLIGHT_HEADING = /^Preflight$/i;
+const COMPONENTS_HEADING = /^Components$/i;
+const MOCKUPS_LINE = /^mockups:\s*`?([^`]+?)`?\s*$/i;
+/** What follows a component's `(owner: <task>):`, the same prefix a contract has. */
+const COMPONENT_TAIL = /^(reuse|restyle|new)\s*;\s*cells?\s+([\d\s,–-]+?)\s*(?:;\s*(.*))?$/i;
+/** Wider than any mockup round; a range past it is a typo, not a page of cells. */
+const MAX_CELL_SPAN = 500;
+
+/** `12, 14, 20-23` as the cells it names. */
+const cellsOf = (value: string): number[] => [...new Set(listField(value, /[,\s]+/).flatMap((part) => {
+  const [from, to] = part.split(/[–-]/).map(Number);
+  return to >= from && to - from <= MAX_CELL_SPAN ? Array.from({ length: to - from + 1 }, (_, i) => from + i) : [from];
+}).filter((n) => Number.isInteger(n) && n > 0))];
 const CONTRACT_LINE = /^(?:\*\*([^*]+)\*\*|`([^`]+)`|([^*`(]+?))\s*\(owner:\s*([a-z0-9-]+)\)\s*:?\s*(.*)$/i;
 const TASK_STATUSES: readonly string[] = ["pending", "flying", "built", "reviewing", "passed", "handed-back"];
 const VERDICTS: readonly string[] = ["pass", "pass with notes", "fail", "mixed"];
@@ -445,9 +501,16 @@ const needProblems = (milestones: Milestone[]): string[] => {
   return problems;
 };
 
-/** Paths that are not product code: a task touching only these changes nothing a person uses. */
-const NOT_PRODUCT = ["deliverables", "docs", "test", "tests"];
-const isProduct = (path: string): boolean => !NOT_PRODUCT.some((dir) => underPath(path, dir));
+/**
+ * Paths that are not product code: a task touching only these changes nothing a person uses.
+ * Documents only at a repo's root (a `src/pages/docs/` is product); test code at any depth, by
+ * its folder or by its file name, since a repo puts its tests wherever its framework does.
+ */
+const NOT_PRODUCT_ROOTS = ["deliverables", "docs"];
+const TEST_DIRS = new Set(["test", "tests", "__tests__", "e2e", "cypress", "playwright"]);
+const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
+const isProduct = (path: string): boolean =>
+  !NOT_PRODUCT_ROOTS.some((dir) => underPath(path, dir)) && !path.split("/").some((part) => TEST_DIRS.has(part)) && !TEST_FILE.test(path);
 
 /**
  * A milestone is a foundation, not a layer (M28). A milestone whose tasks all work in one repo,
@@ -462,7 +525,7 @@ const shapeProblems = (milestones: Milestone[]): string[] => {
     const mine = reposOf(m);
     const problems: string[] = [];
     if (mine.size === 1 && all.size > 1) problems.push(`milestone ${m.n} works only in ${[...mine][0]} while another milestone works in ${[...all].filter((r) => !mine.has(r)).join(", ")}: a milestone is a foundation, cut by what builds on what, never by repo or layer`);
-    if (m.tasks.length && m.tasks.every((t) => t.touches?.length && !t.touches.some(isProduct))) problems.push(`milestone ${m.n} changes no product code (its tasks touch only ${NOT_PRODUCT.join(", ")}): the walkthrough is never a milestone; it is how every milestone ends`);
+    if (m.tasks.length && m.tasks.every((t) => t.touches?.length && !t.touches.some(isProduct))) problems.push(`milestone ${m.n} changes no product code (its tasks touch only documents and test code): the walkthrough is never a milestone; it is how every milestone ends`);
     return problems;
   });
 };
@@ -493,7 +556,7 @@ export const overlapsIn = (milestones: Milestone[]): string[] =>
   })));
 
 /** Parse the Strike Lead's plan document. Reuses the tracker parser, because the plan is written in its shape. */
-export const parsePlan = (text: string, repos: string[] = [], shared: string[] = []): { name: string; intro: string; milestones: Milestone[]; contracts: Contract[]; requirements: Requirement[]; log: string[]; problems: string[]; overlaps: string[]; warnings: string[] } => {
+export const parsePlan = (text: string, repos: string[] = [], shared: string[] = []): { name: string; intro: string; milestones: Milestone[]; contracts: Contract[]; components: Component[]; mockups?: string; requirements: Requirement[]; log: string[]; problems: string[]; overlaps: string[]; warnings: string[] } => {
   const lines = text.split("\n");
   const { title: name, intro } = documentHead(text, /^#\s*Mission:\s*(.+)$/m);
   const problems: string[] = [];
@@ -501,6 +564,8 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
 
   const milestones: Milestone[] = [];
   const contracts: Contract[] = [];
+  const components: Component[] = [];
+  let mockups: string | undefined;
   let requirements: Requirement[] = [];
   let log: string[] = [];
   const bulletsOf = (section: { start: number; end: number }): string[] => lines.slice(section.start + 1, section.end).filter((l) => /^[-*] /.test(l)).map((l) => l.slice(2).trim());
@@ -523,6 +588,20 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
       }
       continue;
     }
+    if (COMPONENTS_HEADING.test(section.heading)) {
+      for (const line of bulletsOf(section)) {
+        const at = line.match(MOCKUPS_LINE);
+        if (at) {
+          mockups = at[1].trim();
+          continue;
+        }
+        const named = line.match(CONTRACT_LINE);
+        const c = named?.[5].match(COMPONENT_TAIL);
+        if (named && c) components.push({ name: (named[1] ?? named[2] ?? named[3]).trim(), owner: named[4].toLowerCase(), decision: c[1].toLowerCase() as ComponentDecision, cells: cellsOf(c[2]), note: (c[3] ?? "").trim() });
+        else problems.push(`component "${line.slice(0, 60)}" is not "**name** (owner: <task id>): reuse | restyle | new; cells <n, n>; <one line>"`);
+      }
+      continue;
+    }
     const m = section.heading.match(MILESTONE_HEADING);
     if (!m) {
       problems.push(`"## ${section.heading}" is not a milestone heading ("## Milestone 1 — title")`);
@@ -537,13 +616,14 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
     if (!walk.length) problems.push(`milestone ${n} has no "_walk: <case>; <case>_" line: the cases walked at its end`);
     const only = repos.length === 1 ? repos[0] : "";
     const tasks = section.groups.flatMap((g) => g.items).map((item, i) => {
-      const { status, attempt, verdict, commit, touches, needs, deploys, repo } = item.fields;
+      const { status, attempt, verdict, commit, touches, needs, deploys, repo, cells } = item.fields;
       const okStatus = !status || TASK_STATUSES.includes(status);
       const okAttempt = !attempt || /^\d+$/.test(attempt);
       const okVerdict = !verdict || VERDICTS.includes(verdict);
       if (!okStatus) problems.push(`"${item.title}" in milestone ${n} has status "${status}", which is not one of: ${TASK_STATUSES.join(", ")}`);
       if (!okAttempt) problems.push(`"${item.title}" in milestone ${n} has attempt "${attempt}", which is not a count`);
       if (!okVerdict) problems.push(`"${item.title}" in milestone ${n} has verdict "${verdict}", which is not one of: ${VERDICTS.join(", ")}`);
+      const cellList = cells ? cellsOf(cells) : [];
       return {
         id: `m${n}-t${i + 1}`,
         title: item.title,
@@ -556,6 +636,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
         ...(touches ? { touches: listField(touches, /,/) } : {}),
         ...(needs ? { needs: listField(needs, /[,\s]+/) } : {}),
         ...(deploys ? { deploys: listField(deploys.replace(/[`*]/g, ""), /[,;]/) } : {}),
+        ...(cellList.length ? { cells: cellList } : {}),
       };
     });
     // One deployer per stack per milestone: two tasks flying together deploying one stack raced on the first mission.
@@ -584,11 +665,24 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   for (const m of milestones) for (const t of m.tasks) for (const stack of t.deploys ?? []) if (sharedLower.includes(stack.toLowerCase())) problems.push(`"${t.title}" in milestone ${m.n} deploys ${stack}, which this project lists as shared; only the merged mission branch deploys there`);
   // The same thing written in two markdown styles is the same thing, and the check exists to catch two owners for it.
   const plain = (name: string): string => name.replace(/[`*]/g, "").trim().toLowerCase();
-  for (const [i, c] of contracts.entries()) {
-    if (!ids.has(c.owner)) problems.push(`contract "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
-    if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
-    if (contracts.findIndex((x) => plain(x.name) === plain(c.name)) !== i) problems.push(`contract "${c.name}" is named twice`);
+  const owned = (kind: string, all: Array<{ name: string; owner: string }>) => all.forEach((c, i) => {
+    if (!ids.has(c.owner)) problems.push(`${kind} "${c.name}" is owned by ${c.owner}, which is not a task in this plan`);
+    if (all.findIndex((x) => plain(x.name) === plain(c.name)) !== i) problems.push(`${kind} "${c.name}" is named twice`);
+  });
+  owned("contract", contracts);
+  for (const c of contracts) if (!c.shape) problems.push(`contract "${c.name}" has no shape: say what it looks like, in one line`);
+  // The reuse-or-new call is made per component, by Cory, in the plan: a task that builds cells nobody decided
+  // is the item-files redesign, where approved mockups were built with the old components.
+  const decided = new Set(components.flatMap((c) => c.cells));
+  let anyCells = false;
+  for (const m of milestones) for (const t of m.tasks) {
+    anyCells ||= Boolean(t.cells?.length);
+    const open = (t.cells ?? []).filter((c) => !decided.has(c));
+    if (open.length) problems.push(`"${t.title}" in milestone ${m.n} builds ${open.length === 1 ? "cell" : "cells"} ${open.join(", ")}, which no "## Components" entry decides: say per element whether it reuses, restyles or replaces an existing component`);
   }
+  if (anyCells && !mockups) problems.push(`tasks build mockup cells and "## Components" has no "mockups: <path>" line saying where they are`);
+  owned("component", components);
+  for (const c of components) if (!c.cells.length) problems.push(`component "${c.name}" names no cells: say which mockup cells draw it`);
   // Not a refusal: a plan whose tasks build on each other and names nothing they share is the
   // plan the first mission had, where parallel Wingmen invented the shared conventions apart.
   const warnings: string[] = [];
@@ -598,7 +692,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
     const chain = longestChain(m);
     if (m.tasks.length >= 4 && chain.length > m.tasks.length / 2) warnings.push(`milestone ${m.n} is mostly one chain: ${chain.join(", ")} run one after another, so at most ${m.tasks.length - chain.length + 1} of its ${m.tasks.length} tasks can fly at once`);
   }
-  return { name, intro, milestones, contracts, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
+  return { name, intro, milestones, contracts, components, mockups, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
 };
 
 /** The preflight for a plan in this project: what a machine can check, and what is a person's. */
@@ -906,9 +1000,10 @@ export const INTERVIEW_PROBES = [
   "  - which constraints are binding (the rulebook, the design contract, the decision log)",
   "  - what already exists that this grows out of, named by file",
   "  - where you disagree with his approach, said plainly before anything is planned",
+  "  - for every element the mockups draw, the existing component it resembles (or none, found by searching the code) and whether it is reused as it is, the shared component restyled everywhere, or a new one built for this; asked per element, citing the cells, for every one the mockup rounds did not already settle",
 ];
 
-const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
+export const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
   `You are the Strike Lead for a mission in the project at ${project.path}. A strike lead plans the package, briefs it and sends it; it does not fly every jet in it. Your entire job in this session is the interview and the plan.`,
   "",
   mission.from ? `This mission came out of the breakdown of ${join(project.path, mission.from)}, as the item "${mission.brief}". Read that document first; it holds the reasoning.` : `Cory opened this mission with one line: "${mission.brief}"`,
@@ -917,6 +1012,8 @@ const interviewPrompt = (project: Project, mission: Mission, planPath: string, r
   ...INTERVIEW_PROBES,
   "",
   "This interview is where most of the value is. Do not shorten it into a formality, and do not present a plan until he has answered.",
+  "",
+  "When the mission has mockups or changes a screen, read the mockups before you ask anything about it. Go through every cell and list every element it draws, the chrome as much as the content: toolbars and the controls in them, headers, search fields, buttons, rows, panels, badges, menus, dialogs, empty and loading states. An element drawn in several cells is one question. For each element, find the component in the code it resembles, and ask him the component question in three options: reuse it as it is (what ships is the component's real look, not the mockup's), restyle the shared component (the new look replaces the old one everywhere it appears, so name those other screens), or build a new one for this feature (the old one stays elsewhere). Cite the cells. A pick recorded in the mockup round's closing rules is already settled; do not ask it again. Never write \"reuse existing components\" or anything like it as a blanket instruction: every element goes in `## Components` with his decision and its cells, and every task that builds cells names them on its `cells:` line.",
   "",
   `When you and he have agreed, write the plan to ${planPath} in exactly this shape, then stop:`,
   "",
@@ -1068,8 +1165,10 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   // human step is shown at the gate for the person to settle, and approving is their answer.
   const failing = (await preflightFor(project, cfg, choices, parsed)).filter((c) => refuses(c));
   if (failing.length) throw new Error(`preflight: ${failing.map((c) => `${c.name}: ${c.detail}`).join("; ")}`);
-  mission.milestones = parsed.milestones;
+  mission.milestones = ownScreenshots(mission, parsed.milestones);
   mission.contracts = parsed.contracts;
+  mission.components = parsed.components;
+  mission.mockups = parsed.mockups;
   mission.requirements = parsed.requirements;
   mission.proofRequired = Boolean(cfg.proof);
   mission.land = cfg.land;
@@ -1167,9 +1266,28 @@ export const walkthroughPrompt = (project: Project, mission: Mission, m: Milesto
   ...(m.walk?.length ? ["", "The plan named the cases walked at this milestone's end; each must be a case in the document:", ...m.walk.map((c) => `  - ${c}`)] : []),
   "",
   "Cases are what a person does with the real thing and what they should see, not unit tests. Fewer, sharper cases beat a long list.",
+  ...looksLike(mission, m),
   "",
   `Commit the document in ${repo.integration} with a plain lowercase subject, with the seed script if you wrote one. Do not change any other file, do not touch the trackers, do not push, do not open a pull request, do not spawn other agents. When the document is committed, stop.`,
 ].join("\n");
+
+/**
+ * A task that builds cells owns the folder its screenshots go in, added to its `touches` once at
+ * approval, so every check that reads what a task owns (its brief, its strays, its RIO) agrees.
+ * A task with no `touches` owns everything already.
+ */
+export const ownScreenshots = (mission: Pick<Mission, "id">, milestones: Milestone[]): Milestone[] => {
+  for (const t of milestones.flatMap((m) => m.tasks)) if (t.cells?.length && t.touches?.length) t.touches.push(screenshotsDir(mission, t));
+  return milestones;
+};
+
+/** A milestone that built mockup cells is walked for its look as well as its behaviour: one case per screen, the cell beside it. */
+const looksLike = (mission: Mission, m: Milestone): string[] => {
+  const cells = [...new Set(m.tasks.flatMap((t) => t.cells ?? []))].sort((a, b) => a - b);
+  if (!cells.length || !mission.mockups) return [];
+  return ["",
+    `This milestone builds approved mockup cells ${cells.join(", ")}, from ${mission.mockups}. In the look and feel pillar, add one case per screen, titled "Looks like cell N", with that cell embedded beside the link to the built screen (an <iframe> of the mockup page at the cell, by its anchor where it has one), so the person checks the look in this round and not at the end. Say in the case what to compare: the components the plan decided for it, ${componentsOver(mission.components, cells).map((c) => `${c.name}, ${DECISION_WORDS[c.decision]}`).join("; ") || "as the plan's Components section says"}.`];
+};
 
 const walkthroughFile = (mission: Mission, m: Milestone): string => join("deliverables", "testing", `${mission.id}-m${m.n}-walkthrough.html`);
 
@@ -1211,6 +1329,91 @@ const settleWalkthroughs = async (project: Project, mission: Mission, state: Map
     changed = true;
   }
   return changed;
+};
+
+/** What the fix task is told: every failed case at once, by its id in the document, with what the person wrote. */
+const walkFixIntent = (m: Milestone, doc: string, progress: WalkthroughProgress, cases: string[]): string => [
+  `The walkthrough of milestone ${m.n} (${m.title}) failed ${casesWord(cases)}. Fix all of them in this one task; there is no second task for the rest.`,
+  `The document is ${doc}: each case is the \`.tc\` element with that \`data-id\`, and says what a person does and what they should see.`,
+  ...cases.map((id) => `- ${id}: ${progress.verdicts[id]}${progress.notes?.[id]?.trim() ? `. ${progress.notes[id].trim()}` : ""}`),
+  "Reproduce each one before you change anything, fix the cause rather than the symptom, and prove each fix with a test that fails without it. Then run the project's proof once over the whole set. A case you cannot reproduce or cannot fix inside this milestone's paths is said in your hand-back, not skipped quietly.",
+].join("\n");
+
+const casesWord = (cases: string[]): string => `${cases.length} case${cases.length === 1 ? "" : "s"}`;
+
+/**
+ * A merged milestone taking more work: everything its merge, proof and landing settled is
+ * unsettled, so it merges, proves and lands again through the same steps as the first time. Its
+ * walkthrough document stays. Refused on a mission that has ended.
+ */
+const reopenMilestone = (mission: Mission, m: Milestone): void => {
+  if (over(mission)) throw new Error(`${mission.name} is ${mission.status}; an ended mission takes no more work`);
+  m.merged = undefined;
+  m.proof = undefined;
+  m.resolveTried = undefined;
+  // A repo that already landed would never receive the new work: a push lands it again, a pull request is pushed to again.
+  for (const r of mission.repos) if (m.tasks.some((t) => t.repo === r.label)) r.landed = undefined;
+  mission.finished = undefined;
+  mission.summary = undefined;
+};
+
+/**
+ * A walk that comes back with failed cases opens one fix task on its milestone (M29), rather than
+ * a build and a review per bug. Filed once every case has an answer, so the walk runs to the end
+ * first, and only while no earlier round is still open. The milestone reopens: the task flies, is
+ * reviewed and merges like any other, the proof runs again, and nothing builds on the milestone
+ * until its failed cases are walked again and pass. Returns the round, if it filed one.
+ */
+export const fileWalkFix = (mission: Mission, m: Milestone): WalkFix | undefined => {
+  const w = m.walkthrough;
+  const p = w?.progress;
+  if (walkthroughState(m) !== "walking" || !w?.doc || !p || p.answered < p.total) return undefined;
+  const cases = failingCases(p);
+  if (!cases.length) return undefined;
+  const repo = walkRepo(mission, m)?.label ?? "root";
+  const round = (w.fixes?.length ?? 0) + 1;
+  const task: MissionTask = {
+    id: `m${m.n}-fix${round}`,
+    title: `fix the ${casesWord(cases)} walk ${round} of milestone ${m.n} failed`,
+    intent: walkFixIntent(m, w.doc, p, cases),
+    status: "pending",
+    attempts: 0,
+    repo,
+    touches: [...new Set(m.tasks.filter((t) => t.repo === repo).flatMap((t) => t.touches ?? []))],
+  };
+  reopenMilestone(mission, m);
+  const fix: WalkFix = { round, task: task.id, cases, filed: new Date().toISOString() };
+  m.tasks.push(task);
+  w.fixes = [...(w.fixes ?? []), fix];
+  return fix;
+};
+
+/**
+ * A note written after the last answer still reaches the fix, as long as its Wingman has not
+ * been sent: the open round's task is told again from what the walk now says.
+ */
+const retellWalkFix = (m: Milestone): void => {
+  const w = m.walkthrough;
+  const fix = openFix(w);
+  const task = fix && m.tasks.find((t) => t.id === fix.task && t.status === "pending");
+  if (task && w?.doc && w.progress) task.intent = walkFixIntent(m, w.doc, w.progress, fix.cases);
+};
+
+/**
+ * Once a round's task has merged and been proved, its failed cases lose their answers, so the
+ * walk asks for those cases again and only those. The page drops the same answers from the
+ * document when it sees the round. Returns whether it cleared anything.
+ */
+export const clearWalkFix = (m: Milestone): boolean => {
+  const w = m.walkthrough;
+  const fix = openFix(w);
+  if (!w || !fix) return false;
+  if (w.progress) {
+    const verdicts = Object.fromEntries(Object.entries(w.progress.verdicts).filter(([id]) => !fix.cases.includes(id)));
+    w.progress = { ...w.progress, verdicts, answered: Object.keys(verdicts).length };
+  }
+  fix.cleared = new Date().toISOString();
+  return true;
 };
 
 /** The summary file beside the record: `<record dir>/<id>-summary.md`. */
@@ -1928,6 +2131,7 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
       if (failed.length) { holdFor(m, "landing", `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`); continue; }
     }
     if (!m.walkthrough) await commissionWalkthrough(project, mission, m);
+    else clearWalkFix(m);
   }
   const next = mission.milestones.find((x) => !x.dispatched && !x.merged && !undoneBefore(mission, x));
   if (next) await dispatch(project, mission, next);
@@ -2470,20 +2674,31 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
 
 /** The page saving where the person has got to in a milestone's walkthrough, or waiving it. */
 export const recordWalkthrough = async (project: Project, id: string, n: number, patch: WalkthroughPatch): Promise<Mission> => {
-  const mission = await changeMission(project.id, id, (mission) => {
+  const { mission, fix } = await changeMission(project.id, id, (mission): { mission: Mission; fix?: WalkFix } => {
     const m = mission.milestones.find((x) => x.n === n);
     if (!m) throw new Error(`no milestone ${n} in ${mission.name}`);
     if (patch.waive) {
       if (!patch.waive.note.trim()) throw new Error("say why the walkthrough is being waived; it is kept on the milestone");
       m.walkthrough = { ...m.walkthrough, waived: { note: patch.waive.note.trim(), at: new Date().toISOString() } };
     } else if (patch.progress) {
-      if (!m.walkthrough?.doc) throw new Error(`milestone ${n} has no walkthrough document to record progress in`);
-      m.walkthrough.progress = patch.progress;
+      const w = m.walkthrough;
+      if (!w?.doc) throw new Error(`milestone ${n} has no walkthrough document to record progress in`);
+      // A page that has not yet dropped what a fix round cleared would put the old failures back: those answers are not taken, the rest are.
+      const cleared = lastCleared(w);
+      const stale = cleared && (patch.progress.round ?? 0) < cleared.round;
+      const verdicts = stale ? Object.fromEntries(Object.entries(patch.progress.verdicts).filter(([id]) => !cleared.cases.includes(id))) : patch.progress.verdicts;
+      w.progress = { ...patch.progress, verdicts, answered: Object.keys(verdicts).length };
+      retellWalkFix(m);
+      const fix = fileWalkFix(mission, m);
+      if (fix) settle(mission);
+      return { mission, fix };
     }
-    return mission;
+    return { mission };
   });
-  // A waiver is a decision a person made about the mission; it belongs in the ledger with the others.
-  return patch.waive ? recorded(project, mission, [`milestone ${n} walkthrough waived by Cory: ${patch.waive.note.trim()}`]) : mission;
+  // A waiver is a decision a person made about the mission; it belongs in the ledger with the others, and so does a fix round.
+  if (patch.waive) return recorded(project, mission, [`milestone ${n} walkthrough waived by Cory: ${patch.waive.note.trim()}`]);
+  if (fix) return recorded(project, mission, [`milestone ${n} walk ${fix.round} failed ${fix.cases.join(", ")}: one fix task, ${fix.task}, and those cases are walked again once it merges`]);
+  return mission;
 };
 
 /**
