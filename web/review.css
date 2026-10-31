@@ -61,3 +61,10 @@
 .match textarea { width: 100%; font: 15px/1.45 var(--sans); color: var(--ink); background: var(--gunmetal); border: 1px solid var(--seam-strong); border-radius: var(--radius-m); padding: 12px; resize: none; }
 .match-actions { display: flex; gap: 10px; justify-content: center; margin-top: 12px; }
 .match-actions button { height: 40px; padding: 0 16px; font-size: 14px; }
+
+/* Reduced motion: the swipe and the match land where they end, without the travel. */
+@media (prefers-reduced-motion: reduce) {
+  .swipe-card.settle, .swipe-card.fly { transition: opacity 150ms; }
+  .swipe-card.fly { transform: none !important; }
+  .match h1 { animation: none; }
+}

@@ -8,6 +8,7 @@ import { mountCommandCenter } from "./command.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
+import { failed, leave, toast } from "./toast.js";
 import * as claudeUsage from "./providers/claude.js";
 
 
@@ -59,7 +60,7 @@ const ask = ({ title, body, confirm, danger = false, field = null }) =>
       window.removeEventListener("keydown", onKey, true);
       for (const n of page) n.inert = false;
       document.body.classList.remove("ask-open");
-      backdrop.remove();
+      leave(backdrop);
       before?.focus?.();
       resolve(value);
     };
@@ -77,12 +78,13 @@ const ask = ({ title, body, confirm, danger = false, field = null }) =>
       ok.disabled = !input.value.trim();
       input.addEventListener("input", () => { ok.disabled = !input.value.trim(); });
     }
-    const form = el("form",
-      { class: "ask", role: "dialog", "aria-modal": "true", "aria-labelledby": "ask-title", ...(body ? { "aria-describedby": "ask-body" } : {}), onsubmit: (e) => { e.preventDefault(); finish(field ? input.value.trim() : true); } },
-      el("h2", { id: "ask-title" }, title),
-      body ? el("p", { id: "ask-body" }, body) : null,
-      input,
-      el("div", { class: "ask-actions" }, no, ok));
+    // The dialog is the box; the form inside it only carries Enter. A form may not take the dialog role.
+    const form = el("div", { class: "ask", role: "dialog", "aria-modal": "true", "aria-labelledby": "ask-title", ...(body ? { "aria-describedby": "ask-body" } : {}) },
+      el("form", { class: "ask-form", onsubmit: (e) => { e.preventDefault(); finish(field ? input.value.trim() : true); } },
+        el("h2", { id: "ask-title" }, title),
+        body ? el("p", { id: "ask-body" }, body) : null,
+        input,
+        el("div", { class: "ask-actions" }, no, ok)));
     const backdrop = el("div", { class: "ask-backdrop", onclick: (e) => { if (e.target === backdrop) bail(); } }, form);
     for (const n of page) n.inert = true;
     document.body.append(backdrop);
@@ -1380,7 +1382,7 @@ const openShipWizard = async (version) => {
     const { done, total } = shipProgress(ship);
     const pct = (done / total) * 100;
     const runway = el("div", { class: "ship-progress" },
-      el("div", { class: "runway" }, el("div", { class: "fill", style: `width:${pct}%` }), el("div", { class: "jet-marker", style: `left:${pct}%` }, jetGlyph())),
+      el("div", { class: "runway", style: `--p:${pct}` }, el("div", { class: "fill" }), el("div", { class: "jet-marker" }, jetGlyph())),
       el("span", { class: "mono small muted" }, `${done} of ${total} steps${ship.finished ? ` · shipped ${fmtDate(ship.finished)}` : ""}`));
     list.replaceChildren(runway);
     const current = ship.steps.find((st) => st.status !== "done" && st.status !== "skipped");
@@ -1453,7 +1455,7 @@ const renderWorkspace = async () => {
   const ws = await api("/api/workspace");
   wrap.append(
     el("div", { class: "ws-head" },
-      el("h2", { class: "ws-title" }, "Command center"),
+      el("h1", { class: "ws-title" }, "Command center"),
       filterRoot,
       el("span", { class: "ws-gap" }),
       el("div", { class: "ws-tools" },
@@ -1715,17 +1717,17 @@ const acceptDrops = (host, onPaths) => {
   });
 };
 
+/** Starting a session or a shell is an action: what it did is a toast, and a failure names it. */
 const openTerminal = async (body) => {
   const { kind, title } = body;
-  setStatus(`opening ${title ?? kind}`);
   try {
     const info = await createTerminal(body);
-    setStatus(`${info.title}: running. It appears in the rack as it registers.`);
+    toast(`${info.title}: running. It appears in the rack as it registers.`);
     if (kind === "spawn") loadRail(true);
     commandCenter?.refresh();
     return info;
   } catch (err) {
-    setStatus(err.message, true);
+    failed(`start ${title ?? kind}`, err);
   }
 };
 
@@ -1914,9 +1916,9 @@ const boot = async () => {
     applyRail();
   });
   applyRail();
-  $("#new-session").addEventListener("click", (e) => {
-    flyby();
-    openTerminal({ kind: "new", title: `claude · ${project.name}` });
+  // The jet flies when something has happened, so it follows the session starting, not the click.
+  $("#new-session").addEventListener("click", async () => {
+    if (await openTerminal({ kind: "new", title: `claude · ${project.name}` })) flyby();
   });
 
   await Promise.all([loadBoard(), loadRail()]);

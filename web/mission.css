@@ -10,8 +10,8 @@
 .mv-page { display: grid; grid-template-columns: 200px minmax(0, 760px); gap: 40px; max-width: 1040px; margin: 0 auto; padding: 24px 24px 96px; }
 
 /* The rail. It never moves, so it is the one place the status and the way back to each section always are. */
-.mv-rail { position: sticky; top: 70px; align-self: start; display: flex; flex-direction: column; gap: 8px; }
-.mv-word { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 10px; border-radius: 5px; font: 600 13px var(--sans); color: var(--ink); background: var(--steel); }
+.mv-rail { position: sticky; top: 70px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.mv-word { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 0 0 14px; padding: 0 10px; border-radius: 5px; font: 600 13px var(--sans); color: var(--ink); background: var(--steel); }
 .mv-word:empty { visibility: hidden; }
 a.mv-word { text-decoration: none; }
 a.mv-word[href] { cursor: pointer; transition: transform var(--dur-press) var(--ease-out); }
@@ -22,12 +22,15 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 .mv-word.caution { background: var(--caution-dim); color: var(--caution); }
 .mv-word.hud { background: var(--hud-dim); color: var(--hud); }
 .mv-word.threat { background: var(--threat-dim); color: var(--threat); }
-.mv-rail a.mv-nav { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
+/* Each anchor is a full 44px target, 8px from the next. */
+.mv-anchors { display: flex; flex-direction: column; gap: 8px; }
+.mv-rail a.mv-nav { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 44px; padding: 0 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
 .mv-rail a.mv-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mv-rail a.mv-nav:hover { background: var(--steel); color: var(--ink); }
 .mv-rail a.mv-nav.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam-strong); }
 .mv-rail a.mv-nav .n { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 .mv-rail a.mv-nav .n.needs { color: var(--caution); }
+.mv-rail a.mv-nav.on .n { color: var(--ink-soft); }
 /* The reason behind the word, when there is one: an error has to say what broke, on the page. */
 .mv-trouble { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: -6px 0 14px; }
 .mv-trouble:empty { display: none; }
@@ -37,18 +40,22 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 .mv-controls p { margin: 0; }
 .mv-controls .mv-warn { margin: 0; padding: 8px 10px; }
 .mv-controls-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.mv-controls button { padding: 0 12px; font-size: 13px; }
 .mv-controls .danger { color: var(--threat); }
-.mv-note { align-self: stretch; height: 30px; padding: 0 10px; background: var(--carbon); border: 1px solid var(--seam); border-radius: var(--radius-s); color: var(--ink); font: 13px var(--sans); min-width: 0; }
+input.mv-note { align-self: stretch; height: 44px; padding: 0 10px; background: var(--carbon); border: 1px solid var(--seam); border-radius: var(--radius-s); color: var(--ink); font: 13px var(--sans); min-width: 0; }
 .mv-note::placeholder { color: var(--ink-faint); }
 .mv-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mv-note[aria-invalid="true"] { border-color: var(--caution); }
+
+/* The answer a question wants first is the needs-you colour, wherever a question draws it:
+   the answer row, a walk's row, the pointer to an interview round. */
+.mv-opts button.primary, .prog-walks button.primary, button.lead-to-round { background: var(--caution); color: var(--carbon); border-color: transparent; }
+.mv-opts button.primary:hover, .prog-walks button.primary:hover, button.lead-to-round:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
 
 /* The answer row a question draws wherever it sits (web/answers.js): the buttons in the feed's
    caution dress, then the note and the hint on a line of their own. */
 .mv-opts { display: flex; flex-wrap: wrap; gap: 8px; }
 .mv-opts button { padding: 0 12px; font: 500 13px var(--sans); }
-.mv-opts button.primary { background: var(--caution); color: var(--carbon); border-color: transparent; }
-.mv-opts button.primary:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
 .mv-opts button:disabled { opacity: 0.6; cursor: progress; }
 .mv-note-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .mv-note-row .mv-note { flex: 1; min-width: 200px; }
@@ -74,20 +81,30 @@ html { scroll-padding-top: 70px; }
 .mv-gate-host { display: flex; flex-direction: column; gap: 32px; margin-top: 32px; }
 /* The eyebrow heading on a headed block: the gate's, the Strike Lead's and the walkthrough's (web/walkthrough.js,
    shared with the ship page and drawn here without its panel) under a merged milestone. */
-.mv-gate-host > section > h2, .lead-head, .walkthrough-panel h2 { font-family: var(--display); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mv-gate-host > section > h2, .walkthrough-panel h2 { font-family: var(--display); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .walkthrough-panel h2 .spacer { flex: 1; }
+.walkthrough-panel h2 a { display: inline-flex; align-items: center; min-height: 44px; text-transform: none; letter-spacing: 0; }
+/* The Strike Lead's heading is a quiet sub-head under the section's, not a second eyebrow stacked on it. */
+.lead-head { margin: 0; font: 600 13.5px var(--sans); color: var(--ink-soft); }
 
 /* A session opened from a module's row: the shell's well, under whatever the module passed. */
 .mv-session { margin-top: 8px; background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
 .mv-session-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 0 6px; }
+.mv-session-head button { padding: 0 10px; }
 .mv-session .term { height: 34vh; min-height: 260px; }
 
+/* One column below 900px, and the order is the page's question, not the markup's: the word, then
+   what waits on you, then the anchors, the sections, and the brakes last, so the red verb is
+   never the first thing under a thumb. The rail and the content give up their boxes for it. */
 @media (max-width: 900px) {
-  .mv-page { grid-template-columns: minmax(0, 1fr); }
-  .mv-rail { position: static; flex-direction: row; flex-wrap: wrap; }
-  .mv-word { margin: 0 8px 0 0; }
-  .mv-trouble { flex-basis: 100%; margin: 8px 0; }
-  .mv-controls { flex-basis: 100%; margin-top: 8px; padding: 0; }
+  .mv-page { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .mv-rail, .mv-content { display: contents; }
+  .mv-word { order: 1; margin: 0 0 12px; justify-self: start; }
+  .mv-now { order: 2; }
+  .mv-anchors { order: 3; flex-direction: row; flex-wrap: wrap; margin: 0 0 24px; }
+  .mv-rail a.mv-nav { flex: 1 1 140px; background: var(--steel); }
+  .mv-content > section { order: 4; }
+  .mv-controls { order: 5; margin: 8px 0 0; padding: 0; }
 }
 
 /* The gate. One surface, lifted, and the cost above the verb rather than beneath it. It has to be
@@ -111,8 +128,10 @@ html { scroll-padding-top: 70px; }
 .mv-gate .why { color: var(--ink-soft); font-size: 13px; max-width: var(--measure); margin: 0 0 10px; }
 .mv-gate .cost-note { font-size: 12.5px; color: var(--ink-soft); max-width: var(--measure); margin: 10px 0 0; }
 .mv-gate .gate-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
-.mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--threat); font-size: 13px; }
+.mv-gate .gate-actions button, .mv-gate .gate-actions .button-link, .mv-confirm button { padding: 0 14px; }
+.mv-problems { margin: 10px 0 0; padding-left: 18px; color: var(--ink); font-size: 13px; }
 .mv-problems li { margin: 2px 0; }
+.mv-problems li::marker { color: var(--threat); }
 .mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: var(--measure); color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
 /* One grid for the list, each row on it, so every detail starts at the same x however long its name. */
@@ -120,10 +139,10 @@ html { scroll-padding-top: 70px; }
 .mv-preflight li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
 .mv-preflight li strong { white-space: nowrap; }
 .mv-preflight .pf-detail { max-width: 48ch; }
-.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
-.mv-preflight .pf-human .pf-status { color: var(--accent); }
+.mv-preflight .pf-human .pf-status { color: var(--ink); }
 /* The briefing: one row per milestone, its cases under it, the totals after. */
 /* Set apart by a rule above and below rather than a panel of its own: the gate is already the surface. */
 .mv-brief { margin: 4px 0 14px; padding: 10px 0; border-block: 1px solid var(--seam); font-variant-numeric: tabular-nums; }
@@ -154,7 +173,7 @@ html { scroll-padding-top: 70px; }
 
 /* Which repo a task lands in. A multi-repo project plans across several, and the order they
    land in is the whole point of the milestones, so the repo reads on the task and not once. */
-.mv-repo { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-faint); margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--panel); }
+.mv-repo { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-soft); margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--panel); }
 
 /* What happens to each repo when it is done. The one that reaches a shared branch on its own
    is drawn as a caution, because it is the only thing here that acts without a second pair of
@@ -176,14 +195,6 @@ html { scroll-padding-top: 70px; }
 .mv-now .mv-trouble { margin: 0 0 16px; }
 .mv-now .mv-trouble .mv-warn { max-width: none; font-size: 13.5px; }
 
-/* A long brief folds to four lines; the ask is context, not the action. */
-.mv-ask .mv-ask-brief.folded { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
-.mv-ask .mv-more { margin: 0 0 8px; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
-
-/* A page that could not open its mission draws only the reason and the way back. */
-.mv-page.unopened .mv-nav, .mv-page.unopened #plan, .mv-page.unopened #progress, .mv-page.unopened #result { display: none; }
-.mv-page.unopened .mv-ask .button-link { padding: 0 14px; }
-
 @media (max-width: 600px) {
   /* Five band cells in two columns leave a hole; the last one takes the row. */
   .mv-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -200,3 +211,38 @@ html { scroll-padding-top: 70px; }
 
 /* The gate's prose and its warnings stay under 80 characters a line (L5). */
 .mv-gate .mv-warn, .lead-fire .mv-confirm .why { max-width: var(--measure); }
+/* A long brief folds to a few lines (card.js foldable); the ask is context, not the action. */
+.mv-ask .mv-ask-brief > :first-child { margin-top: 0; }
+.mv-ask .mv-ask-brief > :last-child { margin-bottom: 0; }
+.mv-ask h1.mv-loading { margin: 0; font: 500 13.5px var(--sans); color: var(--ink-soft); }
+
+/* A page that could not open its mission draws only the reason and the way back. */
+.mv-page.unopened .mv-anchors, .mv-page.unopened #plan, .mv-page.unopened #progress, .mv-page.unopened #result { display: none; }
+.mv-page.unopened .mv-ask .button-link { height: 44px; padding: 0 14px; }
+
+/* The slot's own order, whichever module mounted first: the reason, the questions, then what to fix or decide. */
+.mv-now { display: flex; flex-direction: column; }
+.mv-now > .prog-pins, .mv-now > .lead-now { order: 1; }
+.mv-now > .rs-now { order: 2; }
+.mv-now:has(.lead-now:not([hidden])) { margin: 0 0 32px; }
+
+/* A failure is threat, never caution: it is not waiting on you, it broke. It says what still works beside what did not. */
+.mv-fail { margin: 10px 0 0; padding: 8px 12px; font-size: 13px; color: var(--ink); max-width: 74ch; background: var(--threat-dim); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--threat); overflow-wrap: anywhere; }
+.mv-now .mv-trouble .mv-fail { margin: 0; max-width: none; font-size: 13.5px; }
+.mv-recover { color: var(--ink-soft); }
+.mv-fail a { color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; }
+
+/* The loading paint is the page's own shape, so nothing jumps when the mission lands. */
+.mv-skel { display: grid; gap: 10px; margin-top: 14px; }
+.mv-skel i { display: block; height: 12px; border-radius: 3px; background: var(--steel); }
+.mv-skel i:nth-child(2) { width: 92%; }
+.mv-skel i:nth-child(3) { width: 64%; }
+.mv-skel-block { height: 88px; margin-top: 32px; border-radius: var(--radius-m); background: var(--steel); }
+
+/* On a phone the bar is one line: the jet and the way back. The mission's name is the page's own heading right under it. */
+@media (max-width: 600px) {
+  .bar .crumb { display: none; }
+  /* A phone has no height to give a bar that follows the page; the word and #now are right under it. */
+  .bar { position: static; }
+  html { scroll-padding-top: 8px; }
+}

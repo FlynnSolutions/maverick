@@ -87,12 +87,16 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **Session strip** (`.strip`) — the signature. Air traffic control keeps one paper progress
   strip per flight in a rack, ordered by urgency and annotated by hand; a session is a flight.
   The line is a grid of fixed columns (`8px · name 1fr · 180px state · 148px timing · 230px
-  where · 152px actions`, 14px gaps, 40px min height), so the lamp, the state and the three
+  where · 152px actions`, 14px gaps, 52px min height), so the lamp, the state and the three
   verbs share one x down the entire page however long a title runs. Right-aligning the action
   group is not enough: `close`, `stop` and `remove` differ in width, so each verb gets its own
-  column (66 / 52 / 64px, 8px apart). Verbs are 28px tall with a `::after` extending the hit
-  area to the full 40px row rather than inflating the row to 44; extend on both axes, and keep
-  a real gap, or adjacent targets touch.
+  column (66 / 52 / 64px, 8px apart). Every verb is a real 44px target, because the audit
+  measures the box and an `::after` reaching past it does not count; the row is 52px so they
+  fit with room. A cell is read whole: a long name, state or place wraps to a second line
+  rather than being cut. A strip's name is its button (Enter, a screen reader), and a click
+  anywhere else on it still opens it. A strip in a column (open beside another, or in a
+  formation with its lead open) has no room for six columns, so it takes the phone's line:
+  the name across the top, then the state and the verbs.
 - **Three densities carry the hierarchy.** `full` (needs you, working) lifts the strip, sets the
   name 15px/600 and carries the last exchange beneath the line; `line` is the bare strip at
   13.5px/500. A rack of 40px lines under one lifted strip is the whole hierarchy: no second
@@ -112,7 +116,7 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   verbs, because it has one column of room and a confirm behind it.
 - **Icons are drawn** (`web/icons.js`): one 16px box, one 1.6 stroke, `currentColor`, an
   `aria-label` on the button. Never a unicode glyph, so an icon can sit next to the jet.
-  A 30px icon button carries a `::after` to a 40px hit area, the way the rack's verbs do.
+  An icon button is a 44px box, the glyph centred in it.
 - **The page head is one row**: title, the project filter, then the instruments. The filter had a
   row of its own that was empty but for one word at the far right. The command center renders its
   chips into a `filterRoot` the head owns, which is also why refresh survives a failed load.
@@ -334,9 +338,28 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **What waits on you is the first thing on the mission page.** The open questions, and the reason
   behind the word, sit in the `#now` slot above The ask, not part way down Progress, and every mission that wants something
   has one: at review that is the walkthroughs left, then the close. The ask is context: a brief
-  over 320 characters folds to four lines. The Strike Lead's conversation shows its last six
-  entries and folds the rest behind one line. A milestone merged but not walked reads `to walk`
-  in caution, never `done` in hud.
+  over 320 characters folds to a few lines, and is read as the markdown it was written in. The
+  Strike Lead's conversation shows its last six entries and folds the rest behind one line, and at
+  review and after, all of it folds. A milestone merged but not walked reads `to walk`, never `done`
+  in hud, and in plain ink: the walk is asked once, in `#now`, one row per milestone with its own
+  button, and nowhere else wears its amber.
+- **At review the result is the action.** The summary's bullets and the `Fix before merge` bucket
+  move into `#now` under the walk and the close; Result keeps the evidence (the files fold under one
+  line, the other buckets wait closed, each shows twelve and offers the rest). Findings are marked
+  read with a button that then offers `mark unread`, a bucket at once with `mark all N read`, and
+  from the keyboard with `j`, `k` and `x`. Progress folds every milestone whose tasks all passed.
+- **Before approval the conversation is the question.** An open round of interview questions and
+  a plan ready to fly are both server questions (src/questions.ts), so the word, the inbox and the
+  notifications agree. `#now` carries a pointer to each: "answer them" lands on the round, "read
+  the terms and fire" lands on the gate's own verb. Firing stays under what it costs, in the gate
+  and under the ready message, asked twice, and only one confirm is armed at a time. A plan the
+  Strike Lead is still fixing waits on the Strike Lead and reads `working`. An ended mission says
+  `stopped` or `done`, and nothing on it is amber or live.
+- **Amber is a need, red is a failure.** A broken write (the report, the ledger) is `.mv-fail` in
+  threat, with what still works and the way on beside it; caution stays for what waits on you.
+- **Every target is 44px at every width**, not only on a phone, 8px from the next: the scanner
+  measures the box, so a `::after` extension does not count. A linked chip is the pill inside a
+  44px `.chip-hit` link. Phone order is the word, `#now`, the anchors, the sections, then the brakes.
 - **An action's outcome is a toast; a condition is the bar.** `web/toast.js` says what an action
   did in the one polite live region, bottom right (full width on a phone), over the page so
   nothing shifts: four seconds for a line, never past ten, paused on hover, focus or a hidden
@@ -356,7 +379,37 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 markdown links; `prefers-reduced-motion` silences lamps, panel entrances and meter transitions
 (the jet flyby is the one authored moment that stays).
 
+**The flyby is a named exception to MO-6** (no UI animation over 500 ms), decided by Cory on
+2026-10-30. The flyby and the loading pass run 1.4 to 2.2 s because a pass shorter than that reads
+as a dart, not a jet. They live in `web/fx.css`, which only the workspace links, so no page that
+never plays them carries them; on the workspace the motion lint's four MO-6 lines for them are
+listed in the audit as accepted, not fixed. Every other effect (missile, flares, impact) holds to
+500 ms and stands down under reduced motion. Progress bars and meters move by `transform` on a
+`--p` share, never by `width` or `left`.
+
 ## Phone width (≤600px)
 
 Top bar wraps; the pill goes full width and drops its bars; the usage panel becomes a fixed
 sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44px.
+
+## The workspace inbox (2026-10-30)
+
+- **A mission is one strip in one group**, named by the mission, its open questions answered in
+  lines under it. Needs you is everything that asks the pilot something, a mission at review (its
+  walk and its close) and a brainstorm whose proposal waits at the gate included; Ready to review
+  is a session that replied and has something to read. Two groups saying "act here" was the
+  squint test failing.
+- **An idle session says what it is doing**: `asked you` in Needs you, `replied` in Ready to
+  review, never a bare `idle` in a group that implies otherwise.
+- **What an action did is a toast, and a failure names the action** (`failed` in web/toast.js);
+  the bar keeps only what is still true. What leaves (a toast, the ask, the session overlay, the
+  usage panel) goes through `leave`, on `--dur-exit`.
+- **The repaint waits for typing**: every ten seconds the racks are rebuilt, so a field being
+  typed in holds the clock, and arriving is decided by key, so only a strip new since the last
+  paint rises in.
+- **A menu is modal**: a scrim takes the outside click, the keyboard lands on its first row,
+  Escape gives the focus back. Every menu opens through one `openMenu`.
+- **The session list failing is not the page failing**: a red line with `try again`, and the
+  missions and brainstorms still draw, so a question stays answerable.
+- **Every target is 44px at every width on the shared base** (`button`, `.button-link`,
+  `summary`, `select`, text inputs), so a control nobody sized still clears the floor.
