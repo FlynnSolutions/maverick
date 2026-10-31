@@ -49,8 +49,8 @@ input.mv-note { align-self: stretch; height: 44px; padding: 0 10px; background: 
 
 /* The answer a question wants first is the needs-you colour, wherever a question draws it:
    the answer row, a walk's row, the pointer to an interview round. */
-.mv-opts button.primary, .prog-walks button.primary, button.lead-to-round, .mv-gate button.needs { background: var(--caution); color: var(--carbon); border-color: transparent; }
-.mv-opts button.primary:hover, .prog-walks button.primary:hover, button.lead-to-round:hover, .mv-gate button.needs:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
+.mv-opts button.primary, .prog-walks button.primary, button.lead-to-round { background: var(--caution); color: var(--carbon); border-color: transparent; }
+.mv-opts button.primary:hover, .prog-walks button.primary:hover, button.lead-to-round:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
 
 /* The answer row a question draws wherever it sits (web/answers.js): the buttons in the feed's
    caution dress, then the note and the hint on a line of their own. */

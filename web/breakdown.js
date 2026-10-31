@@ -5,7 +5,8 @@
 import { applyProjectTheme, recall } from "./theme.js";
 import { jetSvg } from "./jet.js";
 import { lamp } from "./lamp.js";
-import { failed, toast } from "./toast.js";
+import { attempt, failed, toast } from "./toast.js";
+import { cannotOpen as cannotOpenPage } from "./page.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -58,27 +59,13 @@ const load = async (force = false) => {
   renderAll();
 };
 
-/** One write: the control holds still while it runs, the outcome is a toast, a refusal names the action. */
+/** One write from the gate, then the page reads the brainstorms again. */
 const act = async (control, what, body, doing, done) => {
-  control.disabled = true;
-  control.setAttribute("aria-busy", "true");
-  try {
-    const result = await post(`/api/brainstorms/${what}`, { project: projectId, ...body });
-    toast(typeof done === "function" ? done(result) : done);
-    await load(true);
-    return result;
-  } catch (err) {
-    failed(doing, err);
-    if (control.isConnected) { control.disabled = false; control.removeAttribute("aria-busy"); }
-    return null;
-  }
+  if (await attempt({ what: doing, done, control, run: () => post(`/api/brainstorms/${what}`, { project: projectId, ...body }) })) await load(true);
 };
-/** A gate verb: the button hands itself to act, so it holds while the write runs. */
-const verb = (label, run, cls = "") => {
-  const b = btn(label, () => run(b), cls);
-  return b;
-};
-const propose = (b, again) => verb(again ? "propose again" : "propose items", (control) => act(control, "propose", { file: b.file }, `start a CAG on "${b.title}"`, "A CAG is reading the brainstorm. The proposal shows here when it is written."), again === "ghost" ? "ghost" : "primary");
+const propose = (b, label, cls = "primary") => btn(label, (e) => act(e.currentTarget, "propose", { file: b.file }, `start a CAG on "${b.title}"`, "A CAG is reading the brainstorm. The proposal shows here when it is written."), cls);
+/** A document of the project, in a new tab. */
+const docLink = (path, label) => el("a", { class: "button-link", target: "_blank", title: "opens in a new tab", href: fileHref(path) }, label);
 
 const renderNav = () => {
   $("#nav").replaceChildren(...brainstorms.map((b, i) => el("button", {
@@ -98,13 +85,13 @@ const renderOne = (b) => {
   const gate = [];
   if (b.state === "not broken down") {
     gate.push(el("p", { class: "why" }, "Nothing has been proposed from this brainstorm. A CAG reads it and the board and writes a proposal: items with a kind, a size, and a call of now, backlog or mission. It reads and writes one file; it runs nothing."),
-      el("div", { class: "gate-actions" }, propose(b, false), el("a", { class: "button-link", target: "_blank", title: "opens in a new tab", href: fileHref(b.file) }, "read the brainstorm")));
+      el("div", { class: "gate-actions" }, propose(b, "propose items"), docLink(b.file, "read the brainstorm")));
   } else if (b.state === "proposing") {
     gate.push(el("p", { class: "why" }, "A CAG is reading the brainstorm and the board now, in one of Maverick's terminals on the workspace. The proposal shows here when it has written it; this page polls. Nothing can be approved until it is done."));
   } else if (parsed?.problems?.length) {
     gate.push(el("p", { class: "why" }, "There is a proposal, but it cannot be written to the board as it stands:"),
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))),
-      el("div", { class: "gate-actions" }, propose(b, true), el("a", { class: "button-link", target: "_blank", title: "opens in a new tab", href: fileHref(b.proposal) }, "read the proposal")));
+      el("div", { class: "gate-actions" }, propose(b, "propose again"), docLink(b.proposal, "read the proposal")));
   } else if (b.state === "proposal waiting") {
     gate.push(el("p", { class: "why" }, `This is the one approval. Approving writes ${count("now")} item${count("now") === 1 ? "" : "s"} onto the roadmap and ${count("backlog")} into the backlog, both under a group named after this brainstorm, in one commit.${count("mission") ? ` ${count("mission")} mission-sized item${count("mission") === 1 ? "" : "s"} open${count("mission") === 1 ? "s" : ""} a Strike Lead interview instead of being written here.` : ""}`),
       el("div", { class: "mv-band" },
@@ -114,13 +101,13 @@ const renderOne = (b) => {
         el("div", { class: "cell" }, el("span", { class: "k" }, "already on the board"), el("span", { class: "v" }, String(parsed.already.length)))),
       count("now") ? el("p", { class: "cost-note" }, "Roadmap items arrive unplanned, on purpose: no plan file exists yet, and the rule at the door is a field that names a real file. They wear the badge, and \"plan it\" is their next verb.") : null,
       el("div", { class: "gate-actions" },
-        verb("approve and write the board", (control) => act(control, "approve", { file: b.file }, `write "${b.title}" to the board`,
+        btn("approve and write the board", (e) => act(e.currentTarget, "approve", { file: b.file }, `write "${b.title}" to the board`,
           (result) => `Wrote "${b.title}" to the board.${result.missions.length ? ` ${result.missions.length} mission interview${result.missions.length === 1 ? "" : "s"} opened on the workspace.` : ""}`), "needs"),
-        propose(b, "ghost"),
-        el("a", { class: "button-link", target: "_blank", title: "opens in a new tab", href: fileHref(b.proposal) }, "read the proposal")));
+        propose(b, "propose again", "ghost"),
+        docLink(b.proposal, "read the proposal")));
   } else {
     gate.push(el("p", { class: "why" }, `Broken down on ${b.approved}, committed as ${b.commit}. The proposal below is the frozen artifact of that approval.`),
-      el("div", { class: "gate-actions" }, el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "see it on the board"), el("a", { class: "button-link", target: "_blank", title: "opens in a new tab", href: fileHref(b.proposal) }, "read the proposal")));
+      el("div", { class: "gate-actions" }, el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "see it on the board"), docLink(b.proposal, "read the proposal")));
   }
   show(
     el("div", { class: "detail-head" }, el("h1", {}, b.title), el("span", { class: `verdict ${STATE_CLASS[b.state]}` }, b.state)),
@@ -145,7 +132,7 @@ const renderAll = () => {
 };
 
 /** A page that cannot open says why in the page, with the way to a project. */
-const cannotOpen = (why) => $("#page").replaceChildren(el("section", { class: "ship-missing" }, el("h1", {}, "The brainstorms cannot open"), el("p", {}, why), el("a", { class: "button-link primary", href: "/?pick=1" }, "pick a project")));
+const cannotOpen = (why) => cannotOpenPage($("#page"), "The brainstorms cannot open", why, "/?pick=1", "pick a project");
 
 const boot = async () => {
   $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));

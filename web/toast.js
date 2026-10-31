@@ -106,3 +106,23 @@ export const toast = (msg, { error = false, action = null } = {}) => {
 
 /** A failed action, named: "Could not <what>: <why>", in an error toast that stays until it is closed. */
 export const failed = (what, err) => toast(`Could not ${what}: ${err.message}`, { error: true });
+
+/**
+ * Every write on every page, said the same way. The control that asked (if any) holds still and
+ * says it is working while `run` goes; the outcome is a toast (`done` is the words, or a function
+ * of the result), with `undo` as its action when there is one; a refusal names `what` and gives
+ * the control back. Resolves the result, or null when it was refused.
+ */
+export const attempt = async ({ what, done, run, control = null, undo = null }) => {
+  control?.setAttribute("aria-busy", "true");
+  if (control) control.disabled = true;
+  try {
+    const result = await run();
+    toast(typeof done === "function" ? done(result) : done, undo ? { action: { label: "undo", run: undo } } : {});
+    return result ?? true;
+  } catch (err) {
+    failed(what, err);
+    if (control?.isConnected) { control.disabled = false; control.removeAttribute("aria-busy"); }
+    return null;
+  }
+};

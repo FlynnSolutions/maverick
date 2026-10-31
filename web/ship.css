@@ -62,16 +62,10 @@
 
 .ship-notes { margin-top: 0; }
 
-/* A pending step waits its turn: plain. Your part remaining is the need. */
-.ship-page .verdict.pending { color: var(--ink-soft); background: var(--panel); }
-.ship-page .verdict.finished { color: var(--caution); background: var(--caution-dim); }
 .ship-top .summary .failed { color: var(--threat); }
 .ship-progress.failed .runway .fill { background: var(--threat); box-shadow: none; }
 .ship-progress.failed .runway .jet-marker { animation: none; }
 
-.ship-missing { grid-column: 1 / -1; max-width: 560px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 24px 0; }
-.ship-missing h1 { font-family: var(--display); font-size: 20px; font-weight: 600; margin: 0; }
-.ship-missing p { margin: 0; color: var(--ink-soft); line-height: 1.5; }
 
 /* One column: the step you are on comes first, the list of steps after it. */
 @media (max-width: 1000px) {
@@ -85,8 +79,6 @@
 
 /* The breakdown page borrows this frame. Its crumb is the only place the project is named, so it stays on a phone. */
 .bar .crumb.named { display: inline; min-width: 0; overflow-wrap: anywhere; }
-.ship-page .verdict.idle { color: var(--ink-soft); background: var(--panel); }
-.ship-page .verdict.needs { color: var(--caution); background: var(--caution-dim); }
 .bd-intro { margin: 0 0 12px; max-width: var(--measure, 68ch); color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
 .mv-empty .button-link { margin-top: 12px; }
 .detail-meta a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }

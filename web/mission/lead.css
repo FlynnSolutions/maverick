@@ -36,7 +36,7 @@
 .lead-ask { margin: 0; display: flex; gap: 10px; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--ink); }
 .lead-n { flex: none; font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--ink-soft); padding-top: 2px; font-variant-numeric: tabular-nums; }
 .lead-opts { display: flex; flex-wrap: wrap; gap: 8px; }
-.lead-opt { padding: 0 10px; font: 500 13px var(--sans); text-align: left; background: var(--panel); color: var(--ink); border: 0; border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam-strong); cursor: pointer; }
+.lead-opt { font: 500 13px var(--sans); text-align: left; background: var(--panel); color: var(--ink); border: 0; border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam-strong); cursor: pointer; }
 .lead-opt:hover { box-shadow: 0 0 0 1px var(--ink-faint); }
 .lead-opt[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 1px var(--accent); }
 .lead-q .mv-note { height: 44px; }

@@ -5,7 +5,8 @@
 import { jetSvg } from "./jet.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
-import { failed, toast } from "./toast.js";
+import { attempt, failed, toast } from "./toast.js";
+import { cannotOpen as cannotOpenPage } from "./page.js";
 import { applyProjectTheme } from "./theme.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { WALKTHROUGH_DOC, stopWalkthrough, walkthroughPanel } from "./walkthrough.js";
@@ -153,26 +154,11 @@ const load = async () => {
   renderAll();
 };
 
-/**
- * One write to a step. The control that asked holds still while it runs, the outcome is a
- * toast, and a refusal names the action and the step.
- */
-const stepCall = async (step, action, body, what, done, control = null) => {
-  if (control) { control.disabled = true; control.setAttribute("aria-busy", "true"); }
-  try {
-    await post(stepUrl(step, action), body);
-    toast(done);
-    await load();
-  } catch (err) {
-    failed(`${what} "${step.title}"`, err);
-    if (control?.isConnected) { control.disabled = false; control.removeAttribute("aria-busy"); }
-  }
+/** One write, then the page reads the ship again. */
+const call = async (path, body, what, done, control = null) => {
+  if (await attempt({ what, done, control, run: () => post(path, body) })) await load();
 };
-/** A step's verb: the button passes itself, so stepCall can hold it while the write runs. */
-const verb = (label, call, cls = "") => {
-  const b = btn(label, () => call(b), cls);
-  return b;
-};
+const stepCall = (step, action, body, what, done, control) => call(stepUrl(step, action), body, `${what} "${step.title}"`, done, control);
 
 
 /* ---------- the walkthrough step hosts its document; the step is done when the person is through it ---------- */
@@ -250,7 +236,7 @@ const renderStep = (step) => {
     el("span", { class: `verdict ${step.status}` }, step.status === "finished" ? (step.id === "walkthrough" ? `in progress · ${step.walkthrough ? `${step.walkthrough.answered} of ${step.walkthrough.total} cases` : "your walkthrough"}` : "in progress · your part remains") : step.status),
     step.status === "running" ? el("span", { class: `agent-state ${agentStates.get(step.claudeId) ?? ""}` }, agentStates.get(step.claudeId) === "blocked" ? "waiting for your input" : agentStates.get(step.claudeId) ?? "starting") : null,
     el("span", { class: "actions" },
-      step.status === "pending" || step.status === "failed" ? verb(step.status === "failed" ? "run it again" : step.id === "audits" ? "run audits" : "run", (b) => stepCall(step, "run", undefined, "start", `Started "${step.title}".`, b), "primary") : null,
+      step.status === "pending" || step.status === "failed" ? btn(step.status === "failed" ? "run it again" : step.id === "audits" ? "run audits" : "run", (e) => stepCall(step, "run", undefined, "start", `Started "${step.title}".`, e.currentTarget), "primary") : null,
       step.claudeId ? btn("open in dock", async () => {
         try {
           const t = tails.get(step.claudeId);
@@ -259,9 +245,9 @@ const renderStep = (step) => {
           failed(`open "${step.title}" in the dock`, err);
         }
       }) : null,
-      step.status !== "done" && step.status !== "skipped" && step.status !== "pending" ? verb("mark done", (b) => stepCall(step, "", { status: "done" }, "mark done", `Marked "${step.title}" done.`, b)) : null,
-      step.status === "pending" ? verb("skip", (b) => stepCall(step, "", { status: "skipped" }, "skip", `Skipped "${step.title}".`, b), "ghost") : null,
-      step.status === "done" || step.status === "skipped" ? verb("reopen", (b) => stepCall(step, "", { status: "pending" }, "reopen", `Reopened "${step.title}".`, b), "ghost") : null));
+      step.status !== "done" && step.status !== "skipped" && step.status !== "pending" ? btn("mark done", (e) => stepCall(step, "", { status: "done" }, "mark done", `Marked "${step.title}" done.`, e.currentTarget)) : null,
+      step.status === "pending" ? btn("skip", (e) => stepCall(step, "", { status: "skipped" }, "skip", `Skipped "${step.title}".`, e.currentTarget), "ghost") : null,
+      step.status === "done" || step.status === "skipped" ? btn("reopen", (e) => stepCall(step, "", { status: "pending" }, "reopen", `Reopened "${step.title}".`, e.currentTarget), "ghost") : null));
   const meta = el("div", { class: "detail-meta" },
     step.started ? el("span", {}, `started ${fmtTime(step.started)}`) : null,
     step.ended ? el("span", {}, `${step.status} ${fmtTime(step.ended)}`) : null,
@@ -298,16 +284,6 @@ const renderStep = (step) => {
   detail.replaceChildren(...blocks);
 };
 
-const review = async (path, body, what, done) => {
-  try {
-    await post(path, body);
-    toast(done);
-    await load();
-  } catch (err) {
-    failed(what, err);
-  }
-};
-
 const renderReviews = () => {
   const detail = $("#detail");
   const since = ship.started;
@@ -317,9 +293,9 @@ const renderReviews = () => {
     const v = r.auditView ?? { verdict: "none" };
     const item = el("div", { class: "review-item" },
       el("div", { class: "head" }, el("span", { class: "role" }, r.role), el("h3", { class: "loop" }, r.loop), el("span", { class: `verdict ${v.verdict}` }, v.verdict === "none" ? "not audited" : v.verdict), v.decision ? el("span", { class: "muted small mono" }, v.decision) : null,
-        r.claudeId && v.verdict === "none" ? btn("audit now", () => review(`/api/sessions/${r.id}/audit?project=${encodeURIComponent(projectId)}`, undefined, `audit "${r.loop}"`, `Auditing "${r.loop}".`), "primary") : null,
-        v.findings ? btn(v.decision ? "change decision" : "accept", () => review(`/api/sessions/${r.id}/decision`, { decision: "accepted" }, `accept the findings on "${r.loop}"`, `Accepted the findings on "${r.loop}".`), "ghost") : null,
-        v.findings ? btn("reject", () => review(`/api/sessions/${r.id}/decision`, { decision: "rejected" }, `reject the findings on "${r.loop}"`, `Rejected the findings on "${r.loop}".`), "ghost danger") : null),
+        r.claudeId && v.verdict === "none" ? btn("audit now", (e) => call(`/api/sessions/${r.id}/audit?project=${encodeURIComponent(projectId)}`, undefined, `audit "${r.loop}"`, `Auditing "${r.loop}".`, e.currentTarget), "primary") : null,
+        v.findings ? btn(v.decision ? "change decision" : "accept", (e) => call(`/api/sessions/${r.id}/decision`, { decision: "accepted" }, `accept the findings on "${r.loop}"`, `Accepted the findings on "${r.loop}".`, e.currentTarget), "ghost") : null,
+        v.findings ? btn("reject", (e) => call(`/api/sessions/${r.id}/decision`, { decision: "rejected" }, `reject the findings on "${r.loop}"`, `Rejected the findings on "${r.loop}".`, e.currentTarget), "ghost danger") : null),
       v.findings ? renderMarkdown(v.findings.replace(/^verdict:.*\n?/i, ""), { project: projectId }) : el("div", { class: "muted small" }, r.claudeId ? "no findings yet" : "not a spawned session; nothing to audit"));
     list.append(item);
   }
@@ -339,14 +315,9 @@ const renderAll = () => {
   else renderStep(ship.steps.find((s) => s.id === selected));
 };
 
-/** A ship that cannot open says why in the page, with the way back to where ships start. */
-const cannotOpen = (why) => {
-  const back = projectId ? `/?project=${encodeURIComponent(projectId)}&view=board` : "/";
-  $("#page").replaceChildren(el("section", { class: "ship-missing" },
-    el("h1", {}, "This ship cannot open"),
-    el("p", {}, why),
-    el("a", { class: "button-link primary", href: back }, projectId ? "back to the board" : "pick a project")));
-};
+/** A ship that cannot open says why, with the way back to where ships start. */
+const cannotOpen = (why) => cannotOpenPage($("#page"), "This ship cannot open", why,
+  projectId ? `/?project=${encodeURIComponent(projectId)}&view=board` : "/?pick=1", projectId ? "back to the board" : "pick a project");
 
 const boot = async () => {
   $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));

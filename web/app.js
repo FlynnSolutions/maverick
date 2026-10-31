@@ -8,7 +8,7 @@ import { mountCommandCenter } from "./command.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
-import { failed, leave, toast } from "./toast.js";
+import { attempt, failed, leave, toast } from "./toast.js";
 import * as claudeUsage from "./providers/claude.js";
 
 
@@ -317,23 +317,18 @@ const withDue = (body, due) => withField(body, "due", due);
 /** A document inside the project, served read-only. */
 const fileHref = (path) => `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`;
 /**
- * One write from the board or the calendar. The bar says what is under way while it runs; the
- * outcome is a toast, and a refusal names the action. The board repaints from the file either
- * way. Resolves true when the write went through, so a drawer closes only then.
+ * One write from the board or the calendar, through `attempt`: the bar says what is under way
+ * while it runs. Resolves true when the write went through, so a drawer closes only then, without
+ * waiting for the board to repaint from the file; `repainted` is that repaint, for a caller that
+ * needs the new board.
  */
+let repainted = Promise.resolve();
 const write = async (what, done, run, undo = null) => {
   setStatus(`${what}…`);
-  try {
-    await run();
-    toast(done, undo ? { action: { label: "undo", run: undo } } : {});
-    return true;
-  } catch (err) {
-    failed(what, err);
-    return false;
-  } finally {
-    setStatus("");
-    await loadBoard();
-  }
+  const ok = Boolean(await attempt({ what, done, run, undo }));
+  setStatus("");
+  repainted = loadBoard();
+  return ok;
 };
 const short = (title) => (title.length > 48 ? `"${title.slice(0, 47)}…"` : `"${title}"`);
 const editItemBody = (trackerIndex, item, newBody) =>
@@ -366,14 +361,16 @@ const releaseChip = (item) => {
 const eventState = (e) => {
   if (e.kind !== "item") return "";
   if (e.item.checked || e.column === "shipped") return "done";
-  const days = Math.round((new Date(e.date) - new Date(today())) / 86400000);
-  return days < 0 ? "overdue" : days <= 7 ? "soon" : "";
+  const state = dueState(e.date, false);
+  return state === "later" ? "" : state;
 };
 const EVENT_WORDS = { done: "done", overdue: "overdue", soon: "due within a week", "": "due later" };
 const EVENT_ICONS = { done: "decision", overdue: "finding" };
 /** One thing on a day: a button, so it is reached and opened from the keyboard like anything else. */
-const calEvent = (cls, label, words, onclick) =>
-  el("button", { type: "button", class: `cal-event ${cls}`, title: `${label}${words ? `, ${words}` : ""}`, "aria-label": `${label}${words ? `, ${words}` : ""}`, onclick }, label);
+const calEvent = (cls, label, words, onclick) => {
+  const said = words ? `${label}, ${words}` : label;
+  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, onclick }, label);
+};
 
 const dueChip = (item) => {
   const due = item.fields?.due;
@@ -422,14 +419,17 @@ const itemsList = (trackerIndex, section, group, laneId, numbered) => {
 /** The one move, from a drop or from the drawer: the same write to the tracker either way. Undo moves it back. */
 const moveItem = (trackerIndex, item, section, group, targetIndex, undoing = false) => {
   const where = group.name ? cleanGroupName(group.name) : laneName(section);
-  const from = placeOf(trackerIndex, item);
   const run = () => post("/api/move", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, targetHeading: section.heading, targetGroup: group.name, targetIndex });
-  const back = () => {
+  if (undoing) return write(`move ${short(item.title)} back`, `Moved ${short(item.title)} back.`, run);
+  // The undo keeps where it came from as plain words, not the old board's objects.
+  const from = placeOf(trackerIndex, item);
+  const back = from && { heading: from.section.heading, name: from.group.name, at: from.at };
+  const undo = () => {
     const now = findItem(trackerIndex, (i) => i.firstLine === item.firstLine);
-    if (now && from) moveItem(trackerIndex, now, from.section, from.group, from.at, true);
+    if (now && back) moveItem(trackerIndex, now, { heading: back.heading }, { name: back.name }, back.at, true);
     else failed(`move ${short(item.title)} back`, new Error("it is no longer on the board"));
   };
-  return write(`move ${short(item.title)}${undoing ? " back" : ""}`, undoing ? `Moved ${short(item.title)} back.` : `Moved ${short(item.title)} to ${where}, #${targetIndex + 1}.`, run, undoing ? null : back);
+  return write(`move ${short(item.title)}`, `Moved ${short(item.title)} to ${where}, #${targetIndex + 1}.`, run, undo);
 };
 const laneName = (section) => LANES.find(([id]) => id === section.column)?.[1] ?? section.heading;
 
@@ -458,6 +458,7 @@ const quickAdd = (tracker, section, label, key) => {
       const title = input.value.trim();
       if (!title) return;
       const ok = await write(`add ${short(title)}`, `Added ${short(title)} to ${label}.`, () => post("/api/items", { project: projectId, tracker: tracker.index, heading: section.heading, name: "", title }));
+      await repainted;
       // The board repainted; the lane's new field takes the focus back, and a refusal keeps the words.
       const again = document.querySelector(`.quick-add[data-lane="${key}"] input`);
       if (!again) return;
@@ -546,8 +547,10 @@ const loadBoard = async () => {
     // Every view carries the ship-day banner, so the schedule is not calendar-only.
     [ships, shipDays] = await Promise.all([api(`/api/ships?project=${encodeURIComponent(projectId)}`), api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`)]);
     $("#project").classList.toggle("workspace-view", view === "workspace");
+    // The workspace draws its own h1; the board and the calendar name themselves for a screen reader.
+    $("#page-title").hidden = view === "workspace";
+    $("#page-title").textContent = `${project.name}: ${view}`;
     $("#boards").replaceChildren(
-      ...(view === "workspace" ? [] : [el("h1", { class: "sr-only" }, `${project.name}: ${view}`)]),
       ...shipDayBanner(trackers),
       ...(view === "calendar"
         ? [renderCalendar(trackers)]
@@ -635,11 +638,11 @@ const showDrawer = ({ title, head = [], meta = null, body, foot = [], wide = fal
   const h2 = el("h2", { tabindex: "-1" }, title);
   $("#drawer-root").replaceChildren(
     el("div", { class: "drawer-backdrop", onclick: backdrop }),
-    el("div", { class: `drawer${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": typeof title === "string" ? title : h2.textContent },
+    el("div", { class: `drawer${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": title },
       el("div", { class: "drawer-head" }, h2, ...head, el("button", { type: "button", class: "ghost icon-btn", "aria-label": "close", title: "close (Esc)", onclick: closeDrawer }, icon("close"))),
       meta,
       body,
-      foot.length ? el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, ...foot)) : null),
+      foot instanceof Node ? el("div", { class: "drawer-foot" }, foot) : foot.length ? el("div", { class: "drawer-foot" }, el("div", { class: "drawer-actions" }, ...foot)) : null),
   );
   for (const n of document.body.children) if (n.id !== "drawer-root" && !n.classList.contains("toasts")) n.inert = true;
   document.addEventListener("keydown", onDrawerKey);
@@ -780,9 +783,9 @@ const openDrawer = (trackerIndex, item) => {
     title: item.title,
     meta: el("div", { class: "drawer-meta" }, ...tagChips(item), dueChip(item), el("span", { class: "spacer" }), el("span", { class: "muted mono" }, `line ${item.start + 1} · ${item.checked ? "done" : "open"}`)),
     body,
+    foot: actions,
     backdrop: () => { if (!editing) closeDrawer(); },
   });
-  $("#drawer-root .drawer").append(el("div", { class: "drawer-foot" }, actions));
   view();
   history.replaceState(null, "", `#L${item.start + 1}`);
 };
@@ -863,6 +866,8 @@ const dropZone = (node, accepts, onDrop) => {
 };
 
 let releasesData = null;
+/** After a write the releases depend on, the next paint reads them again (a GitHub round trip, so only then). */
+const releasesChanged = (result) => { releasesData = null; return result; };
 /** { schedule, occurrences } from /api/ship-schedule, for the calendar and the ship-day banner. */
 let shipDays = null;
 
@@ -895,7 +900,8 @@ const planningSlots = (trackers) => {
 };
 
 const setItemRelease = (tracker, item, slotKey) => {
-  const slot = slotKey ? (slotKey === "next" ? planningSlots(lastTrackers).next : planningSlots(lastTrackers).nextNext).label : "";
+  const slots = slotKey ? planningSlots(lastTrackers) : null;
+  const slot = slotKey ? (slotKey === "next" ? slots.next : slots.nextNext).label : "";
   return editWithUndo(tracker.index, item, withField(item.body, "release", slotKey), slot ? `plan ${short(item.title)} for ${slot}` : `take ${short(item.title)} out of its release`, slot ? `${short(item.title)} is planned for ${slot}.` : `${short(item.title)} is out of its release.`);
 };
 
@@ -904,6 +910,7 @@ const acceptsAnyItemDrag = () => (calDrag && calDrag.type === "item") || draggin
 const draggedItem = () => (calDrag && calDrag.type === "item" ? { tracker: calDrag.tracker, item: calDrag.item } : dragging ? { tracker: lastTrackers[dragging.trackerIndex], item: dragging.item } : null);
 
 
+const mergedSince = () => `merged since ${releasesData?.shipped[0]?.version ?? "the last tag"}`;
 const stat = (n, one, many = `${one}s`) => el("span", { class: "stat" }, el("b", {}, String(n)), n === 1 ? one : many);
 
 const openReleaseDrawer = (release, kind, planned, live = false) => {
@@ -918,7 +925,7 @@ const openReleaseDrawer = (release, kind, planned, live = false) => {
     const dateInput = el("input", { type: "date", value: planned.group.due ?? "", "aria-label": "deploy date" });
     list.append(
       el("div", { class: "due-row" }, el("span", { class: "k" }, "deploy date"), dateInput,
-        btn("set", async () => { releasesData = null; if (await write(`set the deploy date of ${stripDeploy(planned.group.name)}`, dateInput.value ? `${stripDeploy(planned.group.name)} deploys ${fmtDate(dateInput.value)}.` : `${stripDeploy(planned.group.name)} has no deploy date.`, () => setDeployDate(planned.tracker, planned.section, planned.group, dateInput.value))) closeDrawer(); }, "primary")),
+        btn("set", async () => closeIf(await write(`set the deploy date of ${stripDeploy(planned.group.name)}`, dateInput.value ? `${stripDeploy(planned.group.name)} deploys ${fmtDate(dateInput.value)}.` : `${stripDeploy(planned.group.name)} has no deploy date.`, () => setDeployDate(planned.tracker, planned.section, planned.group, dateInput.value).then(releasesChanged))), "primary")),
       el("h3", {}, `${planned.items.length} planned items (drag more in from the Roadmap on the board)`),
     );
     const ul = el("ul");
@@ -975,7 +982,7 @@ const slotCard = (slot, trackers) => {
     { class: `release-card slot ${slot.key === "next" ? "next" : "next-next"}`, onclick: (e) => { if (e.target.closest("button:not(.version), a")) return; history.replaceState(null, "", `#release-${slot.key}`); openSlotDrawer(slot, trackers); } },
     el("div", { class: "release-card-head" }, el("button", { type: "button", class: "version", "aria-label": `${slot.label}: plan and deploy date` }, slot.label), el("span", { class: "badge planned" }, slot.key === "next" ? "next release" : "the one after")),
     el("div", { class: "release-date" }, slot.deploy ? `deploy ${fmtDate(slot.deploy)}` : "no deploy date yet", slot.label !== slot.computed ? el("span", { class: "muted" }, ` · computed ${slot.computed}`) : null),
-    el("p", { class: "stats" }, stat(featureCount, "feature"), stat(fixCount, "fix", "fixes"), stat(slot.items.length, "planned", "planned"), slot.key === "next" ? stat(slot.merged.prs, `merged since ${releasesData?.shipped[0]?.version ?? "the last tag"}`, `merged since ${releasesData?.shipped[0]?.version ?? "the last tag"}`) : null),
+    el("p", { class: "stats" }, stat(featureCount, "feature"), stat(fixCount, "fix", "fixes"), stat(slot.items.length, "planned", "planned"), slot.key === "next" ? stat(slot.merged.prs, mergedSince(), mergedSince()) : null),
   );
   const existing = slot.key === "next" ? shipFor(slot.label.replace(/^v/, "")) : null;
   const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
@@ -1000,8 +1007,7 @@ const openSlotDrawer = (slot, trackers) => {
   const dateInput = el("input", { type: "date", value: slot.deploy ?? "", "aria-label": "deploy date" });
   const save = async () => {
     const name = nameInput.value.trim() === slot.computed ? "" : nameInput.value.trim();
-    releasesData = null;
-    if (await write(`save ${slot.label}`, `Saved ${name || slot.computed}${dateInput.value ? `, deploying ${fmtDate(dateInput.value)}` : ""}.`, () => post("/api/release-slots", { project: projectId, slot: slot.key, name, deploy: dateInput.value }))) closeDrawer();
+    closeIf(await write(`save ${slot.label}`, `Saved ${name || slot.computed}${dateInput.value ? `, deploying ${fmtDate(dateInput.value)}` : ""}.`, () => post("/api/release-slots", { project: projectId, slot: slot.key, name, deploy: dateInput.value }).then(releasesChanged)));
   };
   list.append(
     el("div", { class: "due-row" }, el("span", { class: "k" }, "version"), nameInput, el("span", { class: "muted small mono" }, `computed ${slot.computed}`)),
@@ -1046,8 +1052,8 @@ const foldButton = (open, what, onclick) => {
 };
 const setFold = (b, open, what) => {
   b.setAttribute("aria-expanded", String(open));
-  b.setAttribute("aria-label", `${open ? "hide" : "show"} ${what.toLowerCase()}`);
   b.title = `${open ? "hide" : "show"} ${what.toLowerCase()}`;
+  b.setAttribute("aria-label", b.title);
 };
 
 /** The releases strip with a fold, remembered like the sessions rail. */
@@ -1217,23 +1223,25 @@ const renderCalendar = (trackers) => {
     calendarMonth = d.toISOString().slice(0, 7);
     loadBoard();
   };
-  const monthName = (delta) => new Date(Date.UTC(y, m - 1 + delta, 1)).toLocaleString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+  const months = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+  const [before, current, after] = [-1, 0, 1].map((delta) => months.format(new Date(Date.UTC(y, m - 1 + delta, 1))));
   const head = el(
     "div",
     { class: "cal-head" },
-    el("button", { type: "button", class: "ghost icon-btn month-prev", "aria-label": `previous month, ${monthName(-1)}`, title: monthName(-1), onclick: () => shift(-1) }, icon("chevron")),
-    el("h2", {}, monthName(0)),
-    el("button", { type: "button", class: "ghost icon-btn month-next", "aria-label": `next month, ${monthName(1)}`, title: monthName(1), onclick: () => shift(1) }, icon("chevron")),
+    el("button", { type: "button", class: "ghost icon-btn month-prev", "aria-label": `previous month, ${before}`, title: before, onclick: () => shift(-1) }, icon("chevron")),
+    el("h2", {}, current),
+    el("button", { type: "button", class: "ghost icon-btn month-next", "aria-label": `next month, ${after}`, title: after, onclick: () => shift(1) }, icon("chevron")),
     btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"),
     el("span", { class: "spacer" }),
     el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, or a ship day to move it"),
   );
   const grid = el("div", { class: "cal-grid" });
-  for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) grid.append(el("div", { class: "cal-dow" }, d));
+  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  for (const d of WEEKDAYS) grid.append(el("div", { class: "cal-dow" }, d));
   for (let i = 0; i < lead; i += 1) grid.append(el("div", { class: "cal-cell pad" }));
   for (let day = 1; day <= daysInMonth; day += 1) {
     const date = `${calendarMonth}-${String(day).padStart(2, "0")}`;
-    const weekday = new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+    const weekday = WEEKDAYS[(lead + day - 1) % 7];
     const cell = el("div", { class: `cal-cell${date === today() ? " today" : ""}` }, el("div", { class: "cal-day" }, el("span", { class: "cal-wd" }, `${weekday} `), String(day)));
     for (const occ of shipByDate.get(date) ?? []) {
       const state = shipDayState(occ);
@@ -1284,14 +1292,9 @@ const openFindingsDrawer = (child, v) => {
   const body = el("div", { class: "drawer-text" });
   body.innerHTML = renderInline(v.findings ?? "");
   const decide = async (decision) => {
-    try {
-      await post(`/api/sessions/${child.id}/decision`, { decision });
-      setStatus(`findings ${decision}`);
-      closeDrawer();
-      loadRail(true);
-    } catch (err) {
-      setStatus(err.message, true);
-    }
+    if (!(await attempt({ what: `record the findings on "${child.loop}" as ${decision}`, done: `The findings on "${child.loop}" are ${decision}.`, run: () => post(`/api/sessions/${child.id}/decision`, { decision }) }))) return;
+    closeDrawer();
+    loadRail(true);
   };
   showDrawer({
     title: `Audit: ${child.loop}`,
@@ -1384,12 +1387,8 @@ const openShipWizard = async (version) => {
   };
   const stepCall = async (step, action, body) => {
     if (action === "run") flyby();
-    try {
-      await post(`/api/ships/${encodeURIComponent(bare)}/steps/${encodeURIComponent(step.id)}${action ? `/${action}` : ""}?project=${encodeURIComponent(projectId)}`, body);
-      await refresh();
-    } catch (err) {
-      setStatus(err.message, true);
-    }
+    const done = action === "run" ? `Started "${step.title}".` : `Saved "${step.title}".`;
+    if (await attempt({ what: `${action === "run" ? "start" : "save"} "${step.title}"`, done, run: () => post(`/api/ships/${encodeURIComponent(bare)}/steps/${encodeURIComponent(step.id)}${action ? `/${action}` : ""}?project=${encodeURIComponent(projectId)}`, body) })) await refresh();
   };
 
   let agentStates = new Map();
@@ -1614,7 +1613,7 @@ const renderSessions = (records, live) => {
             [agent ? `task ${agent.state}` : c.status, c.claudeId ? `claude attach ${c.claudeId}` : null].filter(Boolean).join(" · "),
             [
               chip,
-              v.verdict === "none" && c.claudeId ? btn("audit now", async () => { try { await post(`/api/sessions/${c.id}/audit?project=${encodeURIComponent(projectId)}`); setStatus("audit started"); } catch (err) { setStatus(err.message, true); } loadRail(true); }) : null,
+              v.verdict === "none" && c.claudeId ? btn("audit now", async (e) => { await attempt({ what: `audit "${c.loop}"`, done: `Auditing "${c.loop}".`, control: e.currentTarget, run: () => post(`/api/sessions/${c.id}/audit?project=${encodeURIComponent(projectId)}`) }); loadRail(true); }) : null,
               v.findings ? btn("findings", () => openFindingsDrawer(c, v)) : null,
               c.claudeId && agent ? btn("open", () => openTerminal({ kind: "attach", id: c.claudeId, title: c.loop })) : null,
             ].filter(Boolean),
@@ -1724,9 +1723,9 @@ const acceptDrops = (host, onPaths) => {
       const paths = [];
       for (const f of e.dataTransfer.files) paths.push(await uploadDrop(f));
       onPaths(paths.map(quotePath));
-      setStatus(`${paths.length} file${paths.length === 1 ? "" : "s"} attached`);
+      toast(`${paths.length} file${paths.length === 1 ? "" : "s"} attached.`);
     } catch (err) {
-      setStatus(err.message, true);
+      failed("attach the dropped files", err);
     }
   });
 };
@@ -1782,7 +1781,6 @@ const applyTheme = (theme) => {
   if (theme.font !== "Chakra Petch" && !document.querySelector(`link[data-font="${theme.font}"]`)) {
     document.head.append(el("link", { rel: "stylesheet", "data-font": theme.font, href: `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font).replace(/%20/g, "+")}:wght@500;600;700&display=swap` }));
   }
-  $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
 };
 
 /* ---------- boot ---------- */
@@ -1930,7 +1928,6 @@ const boot = async () => {
     applyRail();
   });
   $("#rail-fold").replaceChildren(icon("chevron"));
-  $("#rail-fold").classList.add("icon-btn");
   applyRail();
   // The jet flies when something has happened, so it follows the session starting, not the click.
   $("#new-session").addEventListener("click", async () => {
@@ -1957,7 +1954,7 @@ const boot = async () => {
   if (linked) {
     const line = Number(linked[1]) - 1;
     for (const tracker of lastTrackers) {
-      const item = tracker.sections.flatMap((sec) => sec.groups.flatMap((g) => g.items)).find((i) => i.start === line);
+      const item = findItem(tracker.index, (i) => i.start === line);
       if (item) openDrawer(tracker.index, item);
     }
   }
