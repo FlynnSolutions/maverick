@@ -1169,6 +1169,15 @@ test("a milestone that is only a walkthrough is a problem, judged from what its 
   assert.deepEqual(unsaid.problems, [], "a task that names no touches is not called a walkthrough");
 });
 
+test("a fix task filed on a sent milestone starts on the next sweep, and the milestone after it waits (M29)", () => {
+  const t = (id: string, status: MissionTask["status"]) => ({ id, title: id, intent: "i", repo: "root", status, attempts: 1, commits: ["c"] });
+  const fixing = { n: 1, title: "a", done: "d", dispatched: "x", tasks: [t("m1-t1", "passed"), { ...t("m1-fix1", "pending"), commits: undefined }], walkthrough: { doc: "w.html", fixes: [{ round: 1, task: "m1-fix1", cases: ["b"], filed: "x" }] } };
+  const later = { n: 2, title: "b", done: "d", tasks: [t("m2-t1", "pending")] };
+  const mission = { status: "flying" as const, milestones: [fixing, later] };
+  assert.deepEqual(startable(mission).map((s) => s.task.id), ["m1-fix1"]);
+  assert.equal(waitingOn(mission).milestones[2], "sent once milestone 1 has merged");
+});
+
 test("a milestone of four or more tasks that is mostly one chain is warned, by task id", () => {
   const chain = parsePlan(shaped({ tasks: [task("A"), task("B", ["needs: m1-t1"]), task("C", ["needs: m1-t2"]), task("D")] }), ["root"]);
   assert.deepEqual(chain.problems, []);
@@ -1255,15 +1264,17 @@ test("a burst of endings is one pass, run once the burst settles", async () => {
   const project = { id: "p-soon", name: "P", path: "/p" } as never;
   const passes: number[] = [];
   const sweep = async () => { passes.push(Date.now()); };
-  const first = Date.now();
+  let last = 0;
   for (let i = 0; i < 3; i += 1) {
+    last = Date.now();
     sweepSoon(project, sweep, 100);
     await new Promise((r) => setTimeout(r, 30));
   }
   await until(() => passes.length > 0);
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(passes.length, 1, "three endings, one pass");
-  assert.ok(passes[0] - first >= 160, "after the last ending settled, not the first");
+  // Timed from the last ending: the first one's wait would have run 60 ms in, and a timer may fire a millisecond early.
+  assert.ok(passes[0] - last >= 90, "after the last ending settled, not the first");
 });
 
 test("a session under a project that reaches a finished word sweeps that project, and nothing else does", async () => {
