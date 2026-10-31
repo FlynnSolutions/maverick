@@ -141,8 +141,10 @@ export const mount = (host, view, ctx) => {
     const said = el("p", { class: "plan-walk-meta", hidden: true });
     const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, onSave: async (progress) => {
       w.progress = progress;
+      // Everything the panel reports is the record's, except the storage key it read it from.
+      const { key: _key, ...rest } = progress;
       try {
-        await post(actionUrl(walkPath(m.n)), { progress: { total: progress.total, answered: progress.answered, verdicts: progress.verdicts, updatedAt: progress.updatedAt } });
+        await post(actionUrl(walkPath(m.n)), { progress: rest });
         said.classList.remove("warn");
         said.textContent = progress.answered >= progress.total ? `milestone ${m.n} walked` : "";
         said.hidden = !said.textContent;

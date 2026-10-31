@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, watchEndings, type Mission, type MissionTask, approveMission, markReadings, DEFAULT_LINK_MINUTES, estimateOf, longestChain, measuredPace } from "../src/missions.ts";
+import { WALKTHROUGH_TEMPLATE, placeWalkthrough, walkKey, walkthroughPrompt, MAX_ATTEMPTS, applyPlanState, costOf, endFinished, markReading, leadBusy, missionView, movesOf, parsePlan, mergeable, needsPerson, runProof, sayToStrikeLead, settle, settleReview, startable, waitingOn, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, watchEndings, type Mission, type MissionTask, approveMission, markReadings, DEFAULT_LINK_MINUTES, estimateOf, longestChain, measuredPace } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -1315,4 +1315,27 @@ test("a second approval while the first is still running is refused, and the gua
   await assert.rejects(() => approveMission(project, "twice"), /already being approved/);
   await assert.rejects(() => first, /not found|no mission/i);
   await assert.rejects(() => approveMission(project, "twice"), (err: Error) => !/already being approved/.test(err.message), "released after the first one settled");
+});
+
+test("the walkthrough starts as the template, placed with its key set, and the prompt carries the plan's walk cases", async () => {
+  assert.ok(existsSync(WALKTHROUGH_TEMPLATE), "the template ships beside the app");
+  // Its comment names the contract too; the console reads the document, so count outside comments.
+  const template = readFileSync(WALKTHROUGH_TEMPLATE, "utf8").replace(/<!--[\s\S]*?-->/g, "");
+  assert.match(template, /KEY = "[^"]+"/, "the console reads KEY");
+  assert.equal((template.match(/<h2>/g) ?? []).length, 4, "one heading per pillar, four pillars");
+  assert.ok((template.match(/class="tc" data-id="/g) ?? []).length >= 4, "a case per pillar to copy");
+  const m = { n: 2, title: "the feed", done: "d", walk: ["a station with no feed says so", "the dry run, before and after"], tasks: [{ id: "m2-t1", title: "Read the feed" }] } as never;
+  const repo = { label: "root", path: "/p", base: "main", branch: "mission/x", integration: "/p/.claude/worktrees/x" } as never;
+  const prompt = walkthroughPrompt({ path: "/p" } as never, { id: "x", name: "X" } as never, m, repo, "deliverables/testing/x-m2-walkthrough.html");
+  assert.ok(prompt.includes("already at deliverables/testing/x-m2-walkthrough.html"), "the session fills the placed document");
+  assert.ok(!prompt.includes(WALKTHROUGH_TEMPLATE), "and never needs Maverick's install");
+  const dir = mkdtempSync(join(tmpdir(), "mv-walk-"));
+  made.push(dir);
+  await placeWalkthrough(dir, "deliverables/testing/x-m2-walkthrough.html", walkKey({ id: "x" }, { n: 2 }));
+  const placed = readFileSync(join(dir, "deliverables/testing/x-m2-walkthrough.html"), "utf8");
+  assert.match(placed, /const KEY = "x-m2";/, "the key the console will read is Maverick's");
+  assert.equal((placed.match(/const KEY = /g) ?? []).length, 1);
+  for (const pillar of ["Journeys", "Look and feel", "At scale", "Before and after"]) assert.ok(prompt.includes(pillar), pillar);
+  assert.ok(prompt.includes("  - a station with no feed says so"), "the plan's walk cases are handed on");
+  assert.doesNotMatch(prompt, /ship-test-walkthrough/, "no skill that does not exist");
 });

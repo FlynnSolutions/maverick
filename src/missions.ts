@@ -18,6 +18,7 @@
  * RIO said, which gates opened — at `~/.claude/console-sessions/missions/<project>/<id>.json`,
  * the same named exception `ships/` already uses.
  */
+import { fileURLToPath } from "node:url";
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
@@ -108,6 +109,8 @@ export interface WalkthroughProgress {
   answered: number;
   /** Case id -> what the person said. The gate counts answers; the verdicts are the person's record of what they found. */
   verdicts: Record<string, string>;
+  /** Case id -> what the person wrote about it, kept with the verdicts so a note survives another browser. */
+  notes?: Record<string, string>;
   updatedAt: string;
 }
 
@@ -1124,12 +1127,27 @@ const resolvePrompt = (project: Project, mission: Mission, m: Milestone, repo: M
   "When the merge is committed, or when you have aborted it, stop.",
 ].join("\n");
 
+/** The document every walkthrough starts from: the console's contract, its four pillars and the design system, in one file (web/walkthrough-template.html). */
+export const WALKTHROUGH_TEMPLATE = fileURLToPath(new URL("../web/walkthrough-template.html", import.meta.url));
+
+/**
+ * The template, placed where the milestone's document goes with its key already set, before the
+ * session that fills it starts: the session never needs to reach Maverick's install, and the key the
+ * console reads is the one Maverick chose, not one a session had to type correctly.
+ */
+export const placeWalkthrough = async (dir: string, file: string, key: string): Promise<void> => {
+  const template = await readFile(WALKTHROUGH_TEMPLATE, "utf8");
+  await mkdir(dirname(join(dir, file)), { recursive: true });
+  await writeFile(join(dir, file), template.replace(/const KEY = "[^"]*";/, `const KEY = ${JSON.stringify(key)};`), "utf8");
+};
+export const walkKey = (mission: Pick<Mission, "id">, m: Pick<Milestone, "n">): string => `${mission.id}-m${m.n}`;
+
 /**
  * The walkthrough builder works where the milestone's work has been merged together, so the
  * document describes what a person will actually find on the mission branch. It commits the
  * document there and nothing else.
  */
-const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, repo: MissionRepo, file: string): string => [
+export const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, repo: MissionRepo, file: string): string => [
   `You are writing the test walkthrough for milestone ${m.n} of the mission "${mission.name}" in the project at ${project.path}.`,
   "",
   `The milestone's work is merged on branch ${repo.branch} of the ${repo.label} repo, checked out at ${repo.integration}. Work there and only there. Read what the milestone changed (\`git -C ${repo.integration} log ${repo.base}..HEAD --stat\`) before you write a word.`,
@@ -1139,11 +1157,18 @@ const walkthroughPrompt = (project: Project, mission: Mission, m: Milestone, rep
   "The tasks that went into it:",
   ...m.tasks.map((t) => `  - ${t.title}`),
   "",
-  `Run the /ship-test-walkthrough skill for this milestone, treating the milestone as the batch, and write the document to ${file}. If that skill is not available to you, write the same kind of document by hand, and it must keep the contract the console reads: a \`KEY = "..."\` string that names its localStorage key, an \`<h2>\` per pillar, and one \`.tc\` element with a \`data-id\` per test case. A person walks it in the browser and answers every case; those answers are the gate.`,
+  `The document is already at ${file}: Maverick's walkthrough template, with its key set. Fill it in. Do not touch its <script> or <style>; keep one <h2> per pillar and one \`.tc\` with a unique \`data-id\` per case. Replace every element marked \`data-example\` (the title, the meta line, the lede, the run command and the example cases) with this milestone's own, and drop the attribute. Cases use the template's markup: a \`.tc-title\`, then Setup, Steps and Expected, and a \`.cmd\` block for anything to run.`,
+  "",
+  "The four pillars, in the template's order. A pillar with nothing to walk keeps its heading and says why in one `.tc-none` line; it is never dropped.",
+  "  1. Journeys: what a person does across the whole stack, start to end (a screen, what the server does, what is stored, and the screen again). One case per journey.",
+  "  2. Look and feel: every screen the milestone touched, at 390 and 1280, light and dark, named by what to look at.",
+  "  3. At scale: the same screens under a large data set. Give the command that seeds it from invented data (never client data) and the one that clears it; write that seed script into the repo if none exists.",
+  "  4. Before and after: work with no screen (a migration, a backfill, a script) shown as its dry run before the change and after it, both outputs pasted into the case's `.ba` pair from real runs.",
+  ...(m.walk?.length ? ["", "The plan named the cases walked at this milestone's end; each must be a case in the document:", ...m.walk.map((c) => `  - ${c}`)] : []),
   "",
   "Cases are what a person does with the real thing and what they should see, not unit tests. Fewer, sharper cases beat a long list.",
   "",
-  `Commit the document in ${repo.integration} with a plain lowercase subject. Do not change any other file, do not touch the trackers, do not push, do not open a pull request, do not spawn other agents. When the document is committed, stop.`,
+  `Commit the document in ${repo.integration} with a plain lowercase subject, with the seed script if you wrote one. Do not change any other file, do not touch the trackers, do not push, do not open a pull request, do not spawn other agents. When the document is committed, stop.`,
 ].join("\n");
 
 const walkthroughFile = (mission: Mission, m: Milestone): string => join("deliverables", "testing", `${mission.id}-m${m.n}-walkthrough.html`);
@@ -1165,7 +1190,10 @@ const commissionWalkthrough = async (project: Project, mission: Mission, m: Mile
   const on = (x: Mission) => x.milestones.find((y) => y.n === m.n);
   if (await claimed(mission,
     () => { m.walkthrough = { claudeId: "", started }; },
-    () => spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m))),
+    async () => {
+      await placeWalkthrough(repo.integration, walkthroughFile(mission, m), walkKey(mission, m));
+      return spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m)));
+    },
     (x, claudeId) => { const w = on(x)?.walkthrough; if (w) w.claudeId = claudeId; },
     (x, err) => { const y = on(x); if (y) y.walkthrough = { started, failed: `could not start the walkthrough builder: ${err.message}` }; })) agentCache.delete(project.path);
 };

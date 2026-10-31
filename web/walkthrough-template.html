@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en" data-walkthrough="2">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Walkthrough · milestone</title>
+<!--
+  Maverick's walkthrough template. A session copies this file to the milestone's walkthrough path,
+  sets KEY, the head and the cases, and commits it; the console hosts it in an iframe under the
+  milestone and reads it as it is walked.
+
+  The contract the console reads, which must not change:
+    - the KEY constant in the script below names the localStorage key the answers live under
+      (Maverick sets it when it places the copy; nothing else in the script or styles changes);
+    - one <h2> per pillar;
+    - one `.tc` element with a unique `data-id` per case;
+    - answers stored as { [data-id]: { v: "pass" | "partial" | "fail" | "blocked" | "defer", n: "note" } }.
+
+  Four pillars, in this order. A pillar with nothing to walk keeps its heading and says why in one
+  `.tc-none` line; it is never dropped silently.
+    1. Journeys: what a person does across the whole stack (a screen, the server, what is stored,
+       and the screen again), start to end, one case per journey.
+    2. Look and feel: the screens this milestone touched, at 390 and 1280, light and dark.
+    3. At scale: the same screens under a seeded large data set, made by a command you give.
+    4. Before and after: work with no screen (a migration, a backfill, a script) shown as its dry
+       run before the change and after it, side by side.
+  Everything inside <main> marked data-example is an example to replace, not to keep.
+  data-walkthrough on <html> tells the console this document counts its own pillars.
+-->
+<style>
+  :root {
+    --carbon: #14171a; --steel: #24282c; --panel: #2d3237; --panel-lifted: #373d43;
+    --seam: rgba(170, 186, 204, 0.11); --seam-strong: rgba(170, 186, 204, 0.22);
+    --ink: #e9ecee; --ink-soft: #aeb6bc; --ink-faint: #8d98a1;
+    --accent: #7fa6e8;
+    --hud: #7fd8a0; --threat: #ec666a; --info: #8ab4f8;
+    --dur-press: 140ms; --dur-enter: 220ms; --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    --display: "Chakra Petch", "IBM Plex Sans", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --carbon: #e4e7e9; --steel: #f2f4f5; --panel: #f8f9fa; --panel-lifted: #ffffff; --seam: rgba(24, 32, 42, 0.14); --seam-strong: rgba(24, 32, 42, 0.24); --ink: #1a2026; --ink-soft: #48525b; --ink-faint: #59636d; --accent: #1e3a6e; --hud: #2f7d51; --threat: #b0272c; --info: #1f5fa8; color-scheme: light; } }
+  :root[data-theme="light"] { --carbon: #e4e7e9; --steel: #f2f4f5; --panel: #f8f9fa; --panel-lifted: #ffffff; --seam: rgba(24, 32, 42, 0.14); --seam-strong: rgba(24, 32, 42, 0.24); --ink: #1a2026; --ink-soft: #48525b; --ink-faint: #59636d; --accent: #1e3a6e; --hud: #2f7d51; --threat: #b0272c; --info: #1f5fa8; color-scheme: light; }
+
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: 16px; scrollbar-color: var(--ink-faint) transparent; }
+  body { margin: 0; background: var(--carbon); color: var(--ink); font: 14px/1.55 var(--sans); }
+  ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  main { max-width: 820px; margin: 0 auto; padding: 24px 16px 64px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  code, pre { font-family: var(--mono); font-size: 12.5px; }
+  p { margin: 0; }
+
+  /* The head: what this milestone is, how to get it running, and how far the walk has got. */
+  .wt-meta { margin: 0 0 10px; font: 12px var(--mono); color: var(--ink-faint); }
+  h1 { margin: 0 0 4px; font: 600 22px/1.3 var(--display); letter-spacing: 0.01em; overflow-wrap: anywhere; }
+  .wt-lede { max-width: 66ch; color: var(--ink-soft); }
+  .wt-run { margin-top: 14px; }
+  .wt-progress { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 0; background: var(--carbon); box-shadow: 0 1px 0 var(--seam); }
+  /* Hosted, the console sizes the frame to the document, so the bar would stick to nothing. */
+  .framed .wt-progress { position: static; }
+  .wt-count { font: 500 13px var(--sans); font-variant-numeric: tabular-nums; }
+  .wt-tally { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 12px var(--mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .wt-left { margin-left: auto; }
+
+  /* A pillar: its heading, why it is there, its cases. */
+  /* The count sits beside the heading, not in it: the console reads the heading's text as the pillar's name. */
+  .phead { display: flex; gap: 10px; align-items: baseline; margin: 0 0 4px; }
+  .phead h2 { margin: 0; font: 600 15px var(--display); letter-spacing: 0.02em; }
+  .phead .pc { font: 400 12px var(--mono); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .pillar > .why { margin: 0 0 12px; max-width: 66ch; font-size: 13px; color: var(--ink-soft); }
+  .tc-none { padding: 10px 12px; border-radius: 6px; background: var(--steel); color: var(--ink-soft); font-size: 13px; }
+
+  /* A case: the one surface on the page. Steps on the left of a reader's attention, the verdict under them. */
+  /* Each verdict has one colour (--vc), set once and used by both the case's edge and its chosen button:
+     pass green, fail red, blocked red and dashed (it could not be tried), partial info, later soft ink.
+     Amber is kept for what needs you. */
+  [data-v="pass"] { --vc: var(--hud); }
+  [data-v="partial"] { --vc: var(--info); }
+  [data-v="fail"], [data-v="blocked"] { --vc: var(--threat); }
+  [data-v="defer"] { --vc: var(--ink-soft); }
+  .tc { margin: 0 0 12px; padding: 12px 14px; border-radius: 8px; background: var(--steel); box-shadow: 0 0 0 1px var(--seam); transition: box-shadow var(--dur-enter) var(--ease-out); }
+  .tc[data-v]:not([data-v=""]) { box-shadow: 0 0 0 1px var(--vc); }
+  .tc[data-v="blocked"], .verdict button[aria-checked="true"][data-v="blocked"] { box-shadow: none; outline: 1px dashed var(--vc); outline-offset: -1px; }
+  .tc-title { margin: 0 0 8px; font: 600 14.5px/1.4 var(--sans); overflow-wrap: anywhere; }
+  .tc-title .id { margin-right: 8px; font: 400 11.5px var(--mono); color: var(--ink-faint); }
+  .lbl { margin: 10px 0 2px; font: 600 11px var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+  .tc ol, .tc ul { margin: 0; padding-left: 20px; max-width: 70ch; overflow-wrap: anywhere; }
+  .tc li { margin: 2px 0; }
+  .tc ul li::marker { color: var(--ink-faint); }
+
+  /* A command to run: on its own line, copied with one press. */
+  .cmd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin: 4px 0; padding: 4px 4px 4px 12px; border-radius: 6px; background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam); }
+  /* A command wraps rather than scrolling sideways: a scroller is one more thing a keyboard has to reach. */
+  .cmd code { white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px 0; }
+  /* The dry run before and after, side by side where there is room, one over the other where there is not. */
+  .ba { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+  .ba figure { margin: 0; min-width: 0; }
+  .ba figcaption { font: 600 11px var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 4px; }
+  .ba pre { margin: 0; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 6px; background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam); color: var(--ink-soft); }
+
+  /* The answer: five verdicts as one group of 44px buttons, then a note that is kept with it. */
+  .verdict { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  button { min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: 6px; background: var(--panel); color: var(--ink); font: 500 13px var(--sans); cursor: pointer; box-shadow: inset 0 0 0 1px var(--seam-strong); transition: background var(--dur-press) var(--ease-out), box-shadow var(--dur-press) var(--ease-out); }
+  button:hover { background: var(--panel-lifted); }
+  .verdict button[aria-checked="true"] { background: color-mix(in srgb, var(--vc) 22%, var(--panel)); box-shadow: inset 0 0 0 1px var(--vc); }
+  .note { display: block; width: 100%; min-height: 44px; overflow: hidden; margin-top: 8px; padding: 10px 12px; border: 0; border-radius: 6px; background: var(--carbon); color: var(--ink); font: 13px/1.5 var(--sans); resize: vertical; box-shadow: inset 0 0 0 1px var(--seam); caret-color: var(--accent); }
+  .note::placeholder { color: var(--ink-faint); }
+  .saved { min-height: 18px; margin-top: 4px; font: 12px var(--mono); color: var(--ink-faint); }
+  /* "Only what is left" keeps the case you just answered until you move on, so its note can still be written. */
+  .filtered .tc[data-v]:not([data-v=""]):not([data-kept]) { display: none; }
+  .wt-left[aria-pressed="true"] { background: var(--panel-lifted); box-shadow: inset 0 0 0 1px var(--accent); }
+  .wt-done { display: none; padding: 12px 14px; border-radius: 8px; background: var(--steel); color: var(--ink-soft); }
+  .filtered .wt-done.all { display: block; }
+
+  @media (prefers-reduced-motion: reduce) { .tc, button { transition: none; } }
+  @media (max-width: 600px) {
+    main { padding-top: 16px; gap: 24px; }
+    .ba { grid-template-columns: minmax(0, 1fr); }
+    .wt-left { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<main id="walk">
+  <header>
+    <h1 data-example>The tide table reads the station feed</h1>
+    <p class="wt-meta" data-example>Harbor · milestone 2 of 3 · built on mission/harbor-feed</p>
+    <p class="wt-lede" data-example>What this milestone builds, in one or two sentences a person can walk against: the chart and the table read one parsed feed per station, cached for an hour, and a station with no feed falls back to the nightly export and says so.</p>
+    <div class="wt-run">
+      <div class="lbl">Get it running</div>
+      <div class="cmd" data-example><code>git switch mission/harbor-feed &amp;&amp; npm start</code><button type="button" class="copy">copy</button></div>
+    </div>
+  </header>
+
+  <div class="wt-progress" role="status" aria-live="polite">
+    <span class="wt-count" id="count">0 of 0 answered</span>
+    <span class="wt-tally" id="tally"></span>
+    <button type="button" class="wt-left" id="left" aria-pressed="false">show only what is left</button>
+  </div>
+
+  <p class="wt-done">Every case is answered. Turn off "show only what is left" to read them again.</p>
+
+  <section class="pillar" id="journeys">
+    <div class="phead"><h2>Journeys</h2><span class="pc"></span></div>
+    <p class="why">What a person does across the whole stack, start to end: a screen, what the server does with it, what is stored, and the screen again.</p>
+    <div class="tc" data-id="j1" data-example>
+      <p class="tc-title"><span class="id">j1</span>Picking a station shows its tides from the feed, and they survive a reload</p>
+      <div class="lbl">Steps</div>
+      <ol><li>Open the app and pick the station "Pier 7".</li><li>Read the next high tide on the chart and in the table.</li><li>Reload the page.</li></ol>
+      <div class="lbl">Expected</div>
+      <ul><li>The chart and the table show the same next high tide, to the minute.</li><li>The table header names the datum it uses.</li><li>After the reload the same station and the same times show, without a second fetch (the network panel shows none).</li></ul>
+    </div>
+  </section>
+
+  <section class="pillar" id="look">
+    <div class="phead"><h2>Look and feel</h2><span class="pc"></span></div>
+    <p class="why">The screens this milestone touched, at a phone's width (390) and a desktop's (1280), in light and in dark.</p>
+    <div class="tc" data-id="l1" data-example>
+      <p class="tc-title"><span class="id">l1</span>The station page at 390 and 1280, light and dark</p>
+      <div class="lbl">Steps</div>
+      <ol><li>Open "Pier 7" at 1280 wide, then narrow the window to 390.</li><li>Switch the theme and look again at both widths.</li></ol>
+      <div class="lbl">Expected</div>
+      <ul><li>Nothing scrolls sideways at 390; the table becomes a list.</li><li>Every label reads clearly in both themes.</li><li>Nothing is cut off with an ellipsis that hides a time.</li></ul>
+    </div>
+  </section>
+
+  <section class="pillar" id="scale">
+    <div class="phead"><h2>At scale</h2><span class="pc"></span></div>
+    <p class="why">The same screens under a large data set. The command makes it from invented data and takes it away again.</p>
+    <div class="tc" data-id="s1" data-example>
+      <p class="tc-title"><span class="id">s1</span>Five thousand stations: the picker stays quick and the chart still draws</p>
+      <div class="lbl">Setup</div>
+      <div class="cmd"><code>node tools/seed.mjs --stations 5000 --days 30</code><button type="button" class="copy">copy</button></div>
+      <div class="lbl">Steps</div>
+      <ol><li>Open the station picker and type "pier".</li><li>Pick the last station in the list and open its chart.</li></ol>
+      <div class="lbl">Expected</div>
+      <ul><li>The list narrows as you type, with no pause you can feel.</li><li>The chart draws all 30 days without the page freezing.</li></ul>
+      <div class="lbl">Afterwards</div>
+      <div class="cmd"><code>node tools/seed.mjs --clear</code><button type="button" class="copy">copy</button></div>
+    </div>
+  </section>
+
+  <section class="pillar" id="before-after">
+    <div class="phead"><h2>Before and after</h2><span class="pc"></span></div>
+    <p class="why">Work with no screen, shown as its dry run before the change and after it. Read the two side by side.</p>
+    <div class="tc" data-id="b1" data-example>
+      <p class="tc-title"><span class="id">b1</span>The offsets backfill fills every station's datum and touches nothing else</p>
+      <div class="lbl">Run it dry</div>
+      <div class="cmd"><code>node tools/backfill-offsets.mjs --dry-run</code><button type="button" class="copy">copy</button></div>
+      <div class="ba">
+        <figure><figcaption>Before</figcaption><pre>stations: 214
+with a datum offset: 0
+would write: 214 rows</pre></figure>
+        <figure><figcaption>After</figcaption><pre>stations: 214
+with a datum offset: 214
+would write: 0 rows</pre></figure>
+      </div>
+      <div class="lbl">Expected</div>
+      <ul><li>Before, no station has an offset and the run would write one row per station.</li><li>After, every station has one and a second run would write nothing.</li></ul>
+    </div>
+  </section>
+</main>
+
+<script>
+const KEY = "harbor-feed-m2";
+(() => {
+  const VERDICTS = [["pass", "pass"], ["partial", "partial"], ["fail", "fail"], ["blocked", "blocked"], ["defer", "later"]];
+  const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch { return {}; } };
+  let state = read();
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); return true; } catch { return false; } };
+
+  // Hosted in Maverick, the page wears the console's theme, and follows it when it changes; opened on its own, the system's.
+  if (window.parent !== window) {
+    document.documentElement.classList.add("framed");
+    try {
+      const host = window.parent.document.documentElement;
+      const follow = () => { const t = host.dataset.theme; if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
+      follow();
+      // Watching the console's root from in here; let it go when this document does, or a reload leaves one behind.
+      const watch = new MutationObserver(follow);
+      watch.observe(host, { attributes: true, attributeFilter: ["data-theme"] });
+      window.addEventListener("pagehide", () => watch.disconnect());
+    } catch { /* another origin: the system's theme */ }
+  }
+
+  const cases = [...document.querySelectorAll(".tc[data-id]")];
+  const allDone = document.querySelector(".wt-done");
+  const count = document.getElementById("count");
+  const tally = document.getElementById("tally");
+
+  /** The counts, each pillar's own, and the "every case is answered" line, from one pass over the answers. */
+  const refresh = () => {
+    const answered = cases.filter((c) => state[c.dataset.id]?.v);
+    allDone.classList.toggle("all", answered.length === cases.length);
+    count.textContent = `${answered.length} of ${cases.length} answered`;
+    const by = {};
+    for (const c of answered) by[state[c.dataset.id].v] = (by[state[c.dataset.id].v] ?? 0) + 1;
+    tally.textContent = VERDICTS.filter(([v]) => by[v]).map(([v, label]) => `${label} ${by[v]}`).join(" · ");
+    for (const p of document.querySelectorAll(".pillar")) {
+      const mine = [...p.querySelectorAll(".tc[data-id]")];
+      const answeredHere = mine.filter((c) => state[c.dataset.id]?.v).length;
+      p.querySelector(".phead .pc").textContent = mine.length ? `${answeredHere}/${mine.length}` : "";
+    }
+  };
+
+  const grow = (note) => { note.style.height = "auto"; note.style.height = `${note.scrollHeight}px`; };
+  /** Each case's own painter, so an answer from another tab paints it exactly as a press here does. */
+  const painters = new Map();
+  for (const c of cases) {
+    const id = c.dataset.id;
+    const title = c.querySelector(".tc-title")?.textContent.trim() ?? id;
+    const group = document.createElement("div");
+    group.className = "verdict";
+    group.setAttribute("role", "radiogroup");
+    group.setAttribute("aria-label", `Verdict for ${title}`);
+    const saved = document.createElement("p");
+    saved.className = "saved";
+    const note = document.createElement("textarea");
+    note.className = "note";
+    note.rows = 1;
+    note.placeholder = "what you saw, if it is not what was expected";
+    note.setAttribute("aria-label", `Note for ${title}`);
+    note.value = state[id]?.n ?? "";
+    const said = (ok) => { saved.textContent = ok ? "kept" : "this browser will not keep it: storage is blocked, so copy the note somewhere before you leave"; };
+    // One stop on the Tab path per case, the checked verdict (or the first); the arrows move between them, as a radio group does.
+    const paint = () => {
+      const v = state[id]?.v ?? "";
+      c.dataset.v = v;
+      for (const b of group.children) {
+        b.setAttribute("aria-checked", String(b.dataset.v === v));
+        b.tabIndex = b.dataset.v === (v || "pass") ? 0 : -1;
+      }
+    };
+    group.addEventListener("keydown", (e) => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!step) return;
+      e.preventDefault();
+      const all = [...group.children];
+      const next = all[(all.indexOf(document.activeElement) + step + all.length) % all.length];
+      next.focus();
+      next.click();
+    });
+    for (const [v, label] of VERDICTS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.v = v;
+      b.textContent = label;
+      b.setAttribute("role", "radio");
+      b.addEventListener("click", () => {
+        const was = state[id]?.v;
+        state[id] = { ...state[id], v: was === v ? "" : v };
+        said(save());
+        c.toggleAttribute("data-kept", document.getElementById("walk").classList.contains("filtered"));
+        paint();
+        refresh();
+      });
+      group.append(b);
+    }
+    note.addEventListener("input", () => { state[id] = { ...state[id], n: note.value }; said(save()); grow(note); });
+    painters.set(id, paint);
+    c.append(group, note, saved);
+    requestAnimationFrame(() => grow(note));
+    paint();
+  }
+
+  // Copy a command with one press; say it was copied, or that the browser would not.
+  for (const b of document.querySelectorAll("button.copy")) {
+    b.setAttribute("aria-label", `copy: ${b.previousElementSibling?.textContent ?? ""}`);
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.previousElementSibling.textContent); b.textContent = "copied"; }
+      catch { b.textContent = "select it"; }
+      setTimeout(() => { b.textContent = "copy"; }, 1600);
+    });
+  }
+
+  const left = document.getElementById("left");
+  left.addEventListener("click", () => {
+    const on = document.getElementById("walk").classList.toggle("filtered");
+    left.setAttribute("aria-pressed", String(on));
+    for (const c of cases) c.removeAttribute("data-kept");
+    refresh();
+  });
+
+  // Answers given in another tab of the same document arrive here too.
+  window.addEventListener("storage", (e) => {
+    if (e.key !== KEY) return;
+    state = read();
+    for (const c of cases) {
+      painters.get(c.dataset.id)();
+      // A note written in the other tab arrives too, unless this one is being typed in right now.
+      const note = c.querySelector(".note");
+      if (document.activeElement !== note) { note.value = state[c.dataset.id]?.n ?? ""; grow(note); }
+    }
+    refresh();
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>
