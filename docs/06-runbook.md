@@ -228,6 +228,13 @@ it answers, so while the app is open each project's missions are swept every 15 
 the server's own sweep every 60 s; that is Cory's call (M20). A project with nothing in the air
 only has its mission list read.
 
+A session that ends does not wait for either. The server watches Claude Code's background
+sessions (`~/.claude/jobs/<id>/state.json`), and a session under a project that reaches `done`,
+`exited` or `stopped` sweeps that project's missions about 3 s later, one pass for a burst of
+endings (`watchEndings` and `sweepSoon` in `src/missions.ts`). The 60 s sweep stays as the
+backstop. If the folder cannot be watched, the server logs `not watching ... for sessions that
+end` once at start and missions move on the tick alone.
+
 ## Check its agent readiness
 
 ```bash

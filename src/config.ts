@@ -33,6 +33,8 @@ export const config = {
   claudeStateFile: join(process.env.CLAUDE_CONFIG_DIR ?? home, ".claude.json"),
   /** Claude Code's own live-session registry. Read-only; the CLI owns it. */
   claudeSessionsDir: join(home, ".claude", "sessions"),
+  /** Claude Code's background sessions, one folder each with its `state.json`. Read-only; watched so a session that ends sweeps its project at once. */
+  claudeJobsDir: join(home, ".claude", "jobs"),
   /** Live signals (gh, git, claude agents) are refreshed at most this often, per project. */
   liveCacheMs: 60_000,
 };
