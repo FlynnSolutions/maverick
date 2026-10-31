@@ -76,7 +76,8 @@ const drain = () => {
 
 /** toast(msg, { error }) says it in the page's live region; an error waits to be closed. */
 export const toast = (msg, { error = false } = {}) => {
-  if (!msg) return;
+  // The same words twice say nothing new: one already showing or waiting stands for both.
+  if (!msg || queue.some((q) => q.msg === msg) || [...region.querySelectorAll(".toast:not(.leaving) p")].some((p) => p.textContent === msg)) return;
   queue.push({ msg, error });
   drain();
 };
