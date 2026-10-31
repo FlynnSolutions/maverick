@@ -15,10 +15,12 @@
   --seam-strong: rgba(170, 186, 204, 0.22);
   --ink: #e9ecee;
   --ink-soft: #aeb6bc;
-  --ink-faint: #8d98a1;
+  --ink-faint: #909ba4;
   --ink-ghost: #69737b;
   --accent: #7fa6e8;
-  --accent-hot: #a8c4f0;
+  /* A project's palette sets --project-hot for the dark deck and --project-hot-light, the same
+     colour taken until it reads on the light bar (theme.js applyProjectTheme). */
+  --accent-hot: var(--project-hot, #a8c4f0);
   --accent-core: #ffffff;
   --accent-dim: color-mix(in srgb, var(--accent) 18%, transparent);
   --accent-glow: color-mix(in srgb, var(--accent) 45%, transparent);
@@ -30,8 +32,8 @@
      only 3.49:1 on the lifted surface it was most often drawn on. */
   --caution: #efb254;
   --caution-dim: rgba(239, 178, 84, 0.18);
-  --threat: #ec666a;
-  --threat-dim: rgba(236, 102, 106, 0.18);
+  --threat: #f78a8d;
+  --threat-dim: rgba(247, 138, 141, 0.18);
   --cold: #545c62;
   --silver: #9ba2a8;
   --unit: 4px;
@@ -90,10 +92,10 @@
   --ink-faint: #59636d;
   --ink-ghost: #8a939b;
   --accent: #1e3a6e;
-  --accent-hot: #2b5296;
+  --accent-hot: var(--project-hot-light, #2b5296);
   --hud: #2f7d51;
-  --caution: #8a5a00;
-  --caution-dim: rgba(138, 90, 0, 0.14);
+  --caution: #7d5200;
+  --caution-dim: rgba(125, 82, 0, 0.14);
   --threat: #b0272c;
   --threat-dim: rgba(176, 39, 44, 0.14);
   --cold: #9ba2a8;
@@ -131,10 +133,10 @@
     --ink-faint: #59636d;
     --ink-ghost: #8a939b;
     --accent: #1e3a6e;
-    --accent-hot: #2b5296;
+    --accent-hot: var(--project-hot-light, #2b5296);
     --hud: #2f7d51;
-    --caution: #8a5a00;
-    --caution-dim: rgba(138, 90, 0, 0.14);
+    --caution: #7d5200;
+    --caution-dim: rgba(125, 82, 0, 0.14);
     --threat: #b0272c;
     --threat-dim: rgba(176, 39, 44, 0.14);
     --cold: #9ba2a8;
@@ -1133,6 +1135,7 @@ body.ask-open { overflow: hidden; }
 .crumb b { color: var(--accent-hot); font-weight: 600; }
 .button-link { height: 28px; padding: 0 10px; display: inline-flex; align-items: center; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--steel); color: var(--ink); text-decoration: none; font-size: 13px; transition: transform var(--dur-press) var(--ease-out); }
 .button-link:active { transform: scale(0.97); }
+.button-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .walkthrough-panel h2 a { color: var(--accent-hot); text-decoration: none; }
 .wt-progress { margin: 0 0 10px; }
 .wt-progress .runway.small { height: 8px; }

@@ -541,7 +541,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   // plan the first mission had, where parallel Wingmen invented the shared conventions apart.
   const warnings: string[] = [];
   const dependent = milestones.flatMap((m) => m.tasks).filter((t) => t.needs?.length);
-  if (dependent.length && !contracts.length) warnings.push(`${dependent.length} task(s) build on others and the plan names no contracts: what they share (types, ids, codecs, env flags, functions) has no owner or shape yet`);
+  if (dependent.length && !contracts.length) warnings.push(`${dependent.length} ${dependent.length === 1 ? "task builds" : "tasks build"} on others and the plan names no contracts: what they share (types, ids, codecs, env flags, functions) has no owner or shape yet`);
   return { name, intro, milestones, contracts, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
 };
 
@@ -910,7 +910,25 @@ const writePlanToTracker = async (project: Project, mission: Mission, intro: str
  * Cory's one blessing. Everything that spawns, spawns after this: the plan becomes tracker
  * items, the mission gets a branch and a formation, and the first milestone goes out.
  */
+const approving = new Set<string>();
+
+/**
+ * One approval at a time per mission. `approved` is only written once the tracker, the branches,
+ * the worktrees and the formation exist, which takes seconds, so a second press in that window
+ * (the gate's and the chat's both fire) would otherwise go through the whole thing again.
+ */
 export const approveMission = async (project: Project, id: string): Promise<Mission> => {
+  const key = `${project.id}/${id}`;
+  if (approving.has(key)) throw new Error("this mission is already being approved");
+  approving.add(key);
+  try {
+    return await approveOnce(project, id);
+  } finally {
+    approving.delete(key);
+  }
+};
+
+const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   const mission = await missionOr404(project.id, id);
   if (mission.approved) throw new Error(`${mission.name} was already approved at ${mission.approved}`);
   const text = await readFile(join(project.path, mission.plan), "utf8").catch(() => {
