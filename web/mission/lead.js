@@ -118,7 +118,7 @@ export const leadThread = (ctx) => {
         other,
         q.context ? el("details", { class: "lead-why" }, el("summary", {}, "more context"), el("p", {}, q.context)) : null);
     });
-    return el("div", { class: "lead-round" }, el("ol", { class: "lead-qs" }, ...cards), el("div", { class: "lead-round-foot" }, sendRound));
+    return el("div", { class: "lead-round", id: "round" }, el("ol", { class: "lead-qs" }, ...cards), el("div", { class: "lead-round-foot" }, sendRound));
   };
 
   /** A round already answered: its questions folded, so the thread reads as the conversation it was. */
@@ -131,8 +131,8 @@ export const leadThread = (ctx) => {
     entry.who === "you" ? el("p", { class: "lead-text" }, entry.text) : el("div", { class: "lead-text" }, renderMarkdown(entry.text, { project: projectId })),
     entry.questions?.length ? (open ? round(entry) : asked(entry)) : null);
 
-  /** The last entry is the only one whose round is still open, and only while nothing has been said after it. */
-  const isOpen = (chat, i) => !over() && i === chat.length - 1 && chat[i].who === "Strike Lead" && Boolean(chat[i].questions?.length);
+  /** Whether this entry's round is still open, as the server says it (`openRound`): it is the one the mission's questions name. */
+  const isOpen = (chat, i) => Boolean(view?.questions?.some((q) => q.id === `round:${chat[i].at}`));
   const over = () => ["closed", "abandoned"].includes(view?.status);
 
   /** Maverick's own line about the flight: a task out, passed or back, a milestone merged. One quiet line each. */
@@ -186,12 +186,29 @@ export const leadThread = (ctx) => {
     ].filter(Boolean));
   };
 
+  /* ---------- where links land ---------- */
+  /** A question's "answer in the chat" names `#round`: the open round comes into view with its first option focused, on a load as on a jump. */
+  let scrolledTo = "";
+  const toRound = () => {
+    const first = location.hash === "#round" ? log.querySelector("#round .lead-opt") : null;
+    if (!first || scrolledTo === location.hash) return;
+    scrolledTo = location.hash;
+    requestAnimationFrame(() => {
+      first.closest("#round").scrollIntoView({ block: "start" });
+      first.focus({ preventScroll: true });
+    });
+  };
+  window.addEventListener("hashchange", () => { scrolledTo = ""; toRound(); });
+
   const update = (next) => {
     view = next;
     paintLog(next.chat ?? [], next.updates ?? []);
     foldLog();
     composer.hidden = over();
     ended.hidden = !over();
+    toRound();
+    // While a round waits, its "send answers" is the one primary; the free-text send steps back.
+    send.classList.toggle("primary", !log.querySelector("#round"));
     thinking.hidden = !next.leadBusy;
     raw.hidden = !next.lead || next.leadBusy || over();
     paintFire();
