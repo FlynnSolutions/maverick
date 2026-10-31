@@ -10,10 +10,12 @@ export const WALKTHROUGH_DOC = /deliverables\/testing\/.*walkthrough.*\.html$/;
 let timer = null;
 let onStorage = null;
 let sizing = null;
+let settling = null;
 
 /** A page repainting must stop the previous panel's clock and its storage listener, or two of them save over each other. */
 export const stopWalkthrough = () => {
   window.clearInterval(timer);
+  window.clearTimeout(settling);
   timer = null;
   if (onStorage) window.removeEventListener("storage", onStorage);
   onStorage = null;
@@ -23,9 +25,11 @@ export const stopWalkthrough = () => {
 
 /**
  * `el` is the page's own element helper; every page carries one and this module has none.
- * `onSave(summary)` is called with { total, answered, verdicts, notes, key } whenever the answers change.
+ * `onSave(summary)` is called with { total, answered, verdicts, notes, round, key } whenever the answers change.
+ * `cleared` is the last fix round whose failed cases must be walked again, `{ round, cases }`: their
+ * answers are dropped from the document once, and every save after says which round it has seen.
  */
-export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, onSave }) => {
+export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, cleared, onSave }) => {
   const bar = el("div", { class: "runway small", style: "--p:0" }, el("div", { class: "fill" }));
   const count = el("span", { class: "mono small muted" }, "reading the document…");
   const pillars = el("div", { class: "pillars" });
@@ -56,6 +60,17 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, onSave }) => {
     const notes = Object.fromEntries(cases.filter((c) => state[c.id]?.n?.trim()).map((c) => [c.id, state[c.id].n]));
     return { answered: answered.length, verdicts: Object.fromEntries(answered.map((c) => [c.id, state[c.id].v])), notes };
   };
+  const roundKey = () => `${key}:round`;
+  const seenRound = () => Number(localStorage.getItem(roundKey()) ?? 0);
+  /** Drops the answers a fix round cleared, once per round; the notes stay so the person sees what they said last time. */
+  const dropCleared = () => {
+    if (!key || !cleared || seenRound() >= cleared.round) return false;
+    const state = readState();
+    for (const id of cleared.cases) if (state[id]) state[id] = { ...state[id], v: "" };
+    localStorage.setItem(key, JSON.stringify(state));
+    localStorage.setItem(roundKey(), String(cleared.round));
+    return true;
+  };
   // What the server already has is not news: only a change from it is saved.
   let lastSaved = saved?.verdicts ? JSON.stringify([saved.verdicts, saved.notes ?? {}]) : "";
   /**
@@ -70,10 +85,12 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, onSave }) => {
     seeded = true;
     const state = readState();
     // Each answer the record has and this browser lacks, verdict and note alike; what this browser has stays.
+    // A case a fix round cleared is walked again: the record's verdict from before the round does not come back.
+    const redo = cleared && (saved.round ?? 0) < cleared.round ? new Set(cleared.cases) : new Set();
     let filled = false;
     for (const [field, from] of [["v", saved.verdicts], ["n", saved.notes ?? {}]]) {
       for (const [id, value] of Object.entries(from)) {
-        if (!value || state[id]?.[field]) continue;
+        if (!value || state[id]?.[field] || (field === "v" && redo.has(id))) continue;
         state[id] = { ...state[id], [field]: value };
         filled = true;
       }
@@ -96,7 +113,7 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, onSave }) => {
     const fingerprint = JSON.stringify([verdicts, notes]);
     if (fingerprint === lastSaved) return;
     lastSaved = fingerprint;
-    await onSave({ key, total: cases.length, answered, verdicts, notes, updatedAt: new Date().toISOString() });
+    await onSave({ key, total: cases.length, answered, verdicts, notes, round: seenRound(), updatedAt: new Date().toISOString() });
   };
   frame.addEventListener("load", () => {
     try {
@@ -123,6 +140,8 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, onSave }) => {
         if (node.tagName === "H2") pillar = node.textContent.trim();
         else cases.push({ id: node.dataset.id, pillar });
       }
+      // The document read its answers as it loaded, so it is loaded again to show the cleared ones empty.
+      if (dropCleared()) return frame.contentWindow.location.reload();
       if (seed()) return;
       save();
     } catch (err) {
@@ -130,7 +149,11 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, onSave }) => {
     }
   });
   stopWalkthrough();
-  onStorage = save;
+  // The document writes its storage on every keystroke in a note; a second of quiet is one save, not one per letter.
+  onStorage = () => {
+    window.clearTimeout(settling);
+    settling = window.setTimeout(save, 1000);
+  };
   window.addEventListener("storage", onStorage);
   timer = window.setInterval(save, 4000);
 

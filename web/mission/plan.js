@@ -139,14 +139,17 @@ export const mount = (host, view, ctx) => {
     }
     const url = `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(w.doc)}`;
     const said = el("p", { class: "plan-walk-meta", hidden: true });
-    const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, onSave: async (progress) => {
+    const cleared = w.fixes?.findLast((f) => f.cleared);
+    const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, cleared, onSave: async (progress) => {
       w.progress = progress;
       // Everything the panel reports is the record's, except the storage key it read it from.
       const { key: _key, ...rest } = progress;
       try {
-        await post(actionUrl(walkPath(m.n)), { progress: rest });
+        const back = await post(actionUrl(walkPath(m.n)), { progress: rest });
+        const fix = back.milestones?.find((x) => x.n === m.n)?.walkthrough?.fixes?.find((f) => !f.cleared);
         said.classList.remove("warn");
-        said.textContent = progress.answered >= progress.total ? `milestone ${m.n} walked` : "";
+        said.textContent = fix ? `${fix.cases.length} failed: ${fix.task} fixes them all, then you walk those again`
+          : progress.answered >= progress.total ? `milestone ${m.n} walked` : "";
         said.hidden = !said.textContent;
       } catch (e) {
         said.classList.add("warn");
