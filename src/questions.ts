@@ -5,7 +5,7 @@
  */
 import { findingsOf } from "./audits.ts";
 import { parseFinding } from "./findings.ts";
-import type { Milestone, Mission, MissionTask, WalkthroughState } from "./missions.ts";
+import type { Milestone, MilestoneWalkthrough, Mission, MissionTask, WalkFix, WalkthroughProgress, WalkthroughState } from "./missions.ts";
 import type { ChatEntry } from "./strike-lead.ts";
 
 export interface Question {
@@ -56,8 +56,22 @@ export const walkthroughState = (m: Milestone): WalkthroughState => {
   if (w.waived) return "waived";
   if (w.failed) return "failed";
   if (!w.doc) return "building";
-  return w.progress && w.progress.total > 0 && w.progress.answered >= w.progress.total ? "walked" : "walking";
+  if (openFix(w)) return "fixing";
+  return w.progress && w.progress.total > 0 && w.progress.answered >= w.progress.total && !failingCases(w.progress).length ? "walked" : "walking";
 };
+
+/** The verdicts a walkthrough document offers that say the case does not work yet. `defer` is a person putting a case off, not a failure. */
+export const FAILING: readonly string[] = ["fail", "partial", "blocked"];
+
+/** The cases a walk answered with a failing verdict, in the order the document gave them. */
+export const failingCases = (progress: Pick<WalkthroughProgress, "verdicts">): string[] =>
+  Object.entries(progress.verdicts).filter(([, v]) => FAILING.includes(v)).map(([id]) => id);
+
+/** The fix round still open on a walk (M29): filed, and its failed cases not yet cleared for walking again. */
+export const openFix = (w: Pick<MilestoneWalkthrough, "fixes"> | undefined): WalkFix | undefined => w?.fixes?.find((f) => !f.cleared);
+
+/** The last fix round whose failed cases were cleared: what a save must have seen. */
+export const lastCleared = (w: Pick<MilestoneWalkthrough, "fixes"> | undefined): WalkFix | undefined => w?.fixes?.findLast((f) => f.cleared);
 
 /** A milestone that changed nothing has nothing to walk; every other one is walked or waived before the mission lands. */
 export const needsWalking = (m: Milestone): boolean =>
@@ -77,7 +91,7 @@ const walkLeft = (m: Milestone): string => {
   if (!p?.total) return "not opened yet";
   const said = Object.values(p.verdicts);
   const n = (v: string) => said.filter((x) => x === v).length;
-  return [`${p.answered} of ${p.total} answered`, n("fail") && `${n("fail")} failed`, n("blocked") && `${n("blocked")} blocked`].filter(Boolean).join(", ");
+  return [`${p.answered} of ${p.total} answered`, ...FAILING.map((v) => n(v) && `${n(v)} ${v === "fail" ? "failed" : v}`)].filter(Boolean).join(", ");
 };
 
 /**

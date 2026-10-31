@@ -72,7 +72,7 @@ export const CHAT_RULES = [
 export const flightRules = (planPath: string, ledgerPath: string | undefined): string => [
   "The mission is approved and Maverick is flying it. You are still Cory's Strike Lead, in the same chat: he asks, you answer.",
   `The plan is ${planPath}${ledgerPath ? `; the plan as it flies, with its ledger, is ${ledgerPath}` : ""}. Each of his messages arrives with a snapshot of the mission's state from Maverick.`,
-  "How it flies: a milestone's tasks start when what they need has passed and nothing running owns the same paths; the next milestone starts only when the one before it has merged and been walked. A Wingman builds each task in its own worktree, a RIO reviews it, and a task that fails review is sent back once before it comes to Cory.",
+  "How it flies: a milestone's tasks start when what they need has passed and nothing running owns the same paths; the next milestone starts only when the one before it has merged and been walked. A Wingman builds each task in its own worktree, a RIO reviews it, and a task that fails review is sent back once before it comes to Cory. A walk runs to its last case first: whatever it failed becomes one fix task on that milestone, built and reviewed once, and only the failed cases are walked again. Never propose a build and a review per bug.",
   "You may read anything and run anything read-only, such as `git log` in a worktree or `claude logs <id>` for an agent's screen. You do not change the mission: you cannot launch, retry, pause, release or land anything. When he wants one of those, name the control on the mission page that does it.",
   "Lead with the answer. `questions` is for when you need him to choose; most replies need none. `planReady` stays false.",
 ].join("\n");

@@ -5,7 +5,7 @@
  * hand and the same miss happened six times in five hours; this file is the fix for that class.
  */
 import { join, relative } from "node:path";
-import type { Milestone, Mission, MissionRepo, MissionTask, Reading } from "./missions.ts";
+import type { Component, ComponentDecision, Milestone, Mission, MissionRepo, MissionTask, Reading } from "./missions.ts";
 
 /** The tools a RIO runs with: no Edit, no Write. Passed at spawn, so the fence holds whether or not `rio.md` is installed. */
 export const RIO_TOOLS = "Bash,Read,Grep,Glob";
@@ -16,7 +16,7 @@ export interface BriefContext {
   shared?: string[];
   /** The project's proof command, from its maverick.json, which the Wingman runs before it stops. */
   proof?: string;
-  mission: Pick<Mission, "id" | "name" | "plan" | "repos" | "milestones" | "contracts">;
+  mission: Pick<Mission, "id" | "name" | "plan" | "repos" | "milestones" | "contracts" | "components" | "mockups">;
   milestone: Pick<Milestone, "n" | "title" | "done" | "tasks">;
   task: MissionTask;
   repo: MissionRepo;
@@ -90,6 +90,33 @@ export const RIO_CHECKLIST: readonly string[] = [
 
 const list = (lines: readonly string[]): string[] => lines.map((l) => `- ${l}`);
 
+/** Where a task that builds mockup cells commits its screenshots, inside its own worktree; the task owns it. */
+export const screenshotsDir = (mission: Pick<BriefContext["mission"], "id">, task: Pick<BriefContext["task"], "id">): string => `deliverables/screenshots/${mission.id}/${task.id}`;
+
+/** Each decision, said as what the builder does. */
+export const DECISION_WORDS: Record<ComponentDecision, string> = {
+  reuse: "reuse the existing component as it is",
+  restyle: "restyle the shared component, everywhere it appears",
+  new: "a new component; the old one stays elsewhere",
+};
+
+/** The component decisions that cover any of these cells. */
+export const componentsOver = (components: Component[] | undefined, cells: number[]): Component[] =>
+  (components ?? []).filter((c) => c.cells.some((n) => cells.includes(n)));
+
+/** The cells a task builds, the decisions over them, where its screenshots go, and for its RIO how they are checked. */
+const lookOf = (ctx: BriefContext, rio = false): string[] => {
+  const { mission, task } = ctx;
+  const cells = task.cells ?? [];
+  if (!cells.length) return [];
+  const decided = componentsOver(mission.components, cells);
+  return ["",
+    `This task builds approved mockup cells ${cells.join(", ")}${mission.mockups ? `, in ${mission.mockups}` : ""}. What was approved is what ships: build to the cells, not to a fresh reading of them.`,
+    ...(decided.length ? [`The components over those cells, as Cory decided them: ${decided.map((c) => `${c.name}, ${DECISION_WORDS[c.decision]} (cells ${c.cells.join(", ")}${c.note ? `; ${c.note}` : ""})`).join("; ")}.`] : []),
+    `The task is not done until its screenshots are committed in ${screenshotsDir(mission, task)}: for each cell, the built screen at 390 and at 1280 wide, named \`cell-<n>-390.png\` and \`cell-<n>-1280.png\`. That folder is the task's own.`,
+    ...(rio ? ["Open each screenshot beside its cell: any element that differs from its decision above is a BLOCKER, and so is a cell with no screenshot. Run the ui-audit skill on those screens (its matches-the-brief check takes the cells); its grade is part of your verdict."] : [])];
+};
+
 /** What the task owns and what it builds on, as the plan declared them. */
 const ownership = (ctx: BriefContext): string[] => {
   const { task, milestone: m, repo } = ctx;
@@ -142,6 +169,7 @@ export const wingmanBrief = (ctx: BriefContext, findings?: string): string => {
     "",
     task.intent,
     ...ownership(ctx),
+    ...lookOf(ctx),
     "",
     ...(findings ? [
       `A RIO who did not write this code rejected your predecessor's attempt. Its findings, verbatim:\n\n${findings}\n\nStart from the code that is already on your branch. Fix every finding marked BLOCKER. Fix a NOTE when it is cheap; otherwise leave it and say why in your final message. Everything the RIO did not flag passed, and must still pass: re-run the repo's tests and the checks the RIO ran before you stop, because a retry that fixes the list and breaks what the list did not mention costs another full round. Do not argue with the RIO in the code; where you believe a finding is wrong, say so in your commit message and leave the evidence.`,
@@ -179,6 +207,7 @@ export const rioBrief = (ctx: BriefContext, file: string, previous?: string): st
     task.intent,
     "",
     `The milestone it belongs to is done when: ${m.done}`,
+    ...lookOf(ctx, true),
     "",
     `The Wingman was told to run this task's proof${ctx.proof ? ` and the project's, \`${ctx.proof}\`,` : ""} before its last commit and to put each command with its result in that commit's message. Run each of those commands yourself. Where your result differs from what it claims, that is a finding; so is a proof it should have run and did not report.`,
     ...ownership(ctx),
