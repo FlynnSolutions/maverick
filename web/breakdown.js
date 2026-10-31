@@ -102,7 +102,7 @@ const renderOne = (b) => {
       count("now") ? el("p", { class: "cost-note" }, "Roadmap items arrive unplanned, on purpose: no plan file exists yet, and the rule at the door is a field that names a real file. They wear the badge, and \"plan it\" is their next verb.") : null,
       el("div", { class: "gate-actions" },
         btn("approve and write the board", (e) => act(e.currentTarget, "approve", { file: b.file }, `write "${b.title}" to the board`,
-          (result) => `Wrote "${b.title}" to the board.${result.missions.length ? ` ${result.missions.length} mission interview${result.missions.length === 1 ? "" : "s"} opened on the workspace.` : ""}`), "needs"),
+          (result) => `Wrote "${b.title}" to the board.${result.missions.length ? ` ${result.missions.length} mission interview${result.missions.length === 1 ? "" : "s"} opened on the workspace.` : ""}`), "primary needs"),
         propose(b, "propose again", "ghost"),
         docLink(b.proposal, "read the proposal")));
   } else {

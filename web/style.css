@@ -280,8 +280,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 600; box-shadow: 0 1px 2px var(--shade); }
 button.primary:hover { background: var(--accent-hot); box-shadow: 0 1px 2px var(--shade), 0 0 16px var(--accent-dim); }
 /* The primary that answers the pilot's need wears the need's colour. */
-button.needs { background: var(--caution); color: var(--carbon); border-color: transparent; font-weight: 600; }
-button.needs:hover { background: var(--caution); filter: brightness(1.08); }
+button.primary.needs { background: var(--caution); color: var(--carbon); border-color: transparent; font-weight: 600; }
+button.primary.needs:hover { background: var(--caution); filter: brightness(1.08); }
 /* A link that is the page's one action wears the primary, like a button would. */
 .button-link.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 600; box-shadow: 0 1px 2px var(--shade); }
 .button-link.primary:hover { background: var(--accent-hot); }
@@ -773,7 +773,7 @@ body.ask-open { overflow: hidden; }
 .due-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .due-row .k { min-width: 64px; }
 .due-row .k, .cal-ships .k { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
-.due-row input[type="date"], .cal-ships input[type="date"], .cal-ships select { padding: 0 8px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink); font-family: var(--mono); font-size: 12px; color-scheme: dark; }
+.due-row input[type="date"], .cal-ships input[type="date"] { padding: 0 8px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon); color: var(--ink); font-family: var(--mono); font-size: 12px; color-scheme: dark; }
 .cal-ships select { font-family: inherit; }
 
 .due { font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 3px; background: var(--panel); color: var(--ink-soft); letter-spacing: 0.02em; }
@@ -919,7 +919,7 @@ body.ask-open { overflow: hidden; }
 /* ---------- audit parents ---------- */
 
 /* appearance: none takes the platform arrow away, so the drawn chevron goes back in its place. */
-.supervisor, .due-row select { appearance: none; padding: 0 26px 0 10px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.8 6.4 L8 9.6 L11.2 6.4' fill='none' stroke='%23909ba4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center / 14px; color: var(--ink-soft); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.supervisor, .due-row select, .cal-ships select { appearance: none; padding: 0 26px 0 10px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--carbon) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.8 6.4 L8 9.6 L11.2 6.4' fill='none' stroke='%23909ba4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center / 14px; color: var(--ink-soft); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .verdict { font-family: var(--display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; background: var(--panel); color: var(--ink-faint); }
 /* One palette for every step and audit state: waiting its turn is plain, moving is lit, waiting on the pilot is the need. */
 .verdict.pending, .verdict.idle { color: var(--ink-soft); background: var(--panel); }
@@ -1715,7 +1715,7 @@ button.strip-name:active { transform: none; }
 .ask-actions button { min-width: 88px; font-size: 13px; }
 @media (max-width: 600px) {
   /* The meter wraps its cells rather than cutting the last limit off. */
-  .cu-baby { flex-wrap: wrap; height: auto; padding: 6px 12px; white-space: normal; overflow: visible; row-gap: 4px; }
+  .cu-baby { flex-wrap: wrap; height: auto; white-space: normal; overflow: visible; row-gap: 4px; }
 }
 
 /* A menu's rows are targets like any other: 8px between them. */
