@@ -39,7 +39,8 @@
  *                                and Result puts what to fix or decide before the merge there at review
  *   fmtTime(iso)                 a clock time, or "" for none
  *   plural(n, word)              `1 note`, `2 notes`
- *   armed({ label, cls, why, yes, onYes })  an irreversible action asked twice, focus on "not yet"
+ *   armed({ label, cls, why, yes, onYes, quiet })  an irreversible action asked twice, focus on "not yet";
+ *                                `quiet` arms from a plain button, for a second way to the same act
  *   approveWhy(doc)              what firing the mission does, in one sentence
  *   failingNote(checks, where, verb)  the failed preflight checks, beside the button they should stop
  *   reveal(key)                  asks the Result module to unfold and focus a finding's card; a
@@ -104,10 +105,14 @@ const approveWhy = (doc) => `This writes ${plural(doc.cost.tasks, "item")} into 
  * the gate and in the Strike Lead's chat alike.
  */
 let armedCount = 0;
-const armed = ({ label, cls = "", why, yes, onYes }) => {
+/** One irreversible act is armed at a time: arming one puts any other back, so the page never shows two "yes" buttons for one decision. */
+let disarmOther = null;
+const armed = ({ label, cls = "", why, yes, onYes, quiet = false }) => {
   const box = el("div", { class: "mv-confirm" });
   const whyId = `armed-why-${(armedCount += 1)}`;
   const arm = btn(label, () => {
+    if (disarmOther && disarmOther.box !== box && disarmOther.box.isConnected) disarmOther.put();
+    disarmOther = { box, put: () => fill(box, arm) };
     const back = btn("not yet", () => { fill(box, arm); arm.focus(); }, "ghost");
     // Disabled and marked busy while the request runs, so a second press cannot send it twice.
     const go = btn(yes, async () => {
@@ -123,7 +128,7 @@ const armed = ({ label, cls = "", why, yes, onYes }) => {
     if (why) go.setAttribute("aria-describedby", whyId);
     fill(box, why ? el("p", { class: "why", id: whyId }, why) : null, el("div", { class: "mv-confirm-row" }, go, back));
     back.focus();
-  }, `primary ${cls}`.trim());
+  }, `${quiet ? "" : "primary "}${cls}`.trim());
   box.append(arm);
   return box;
 };
@@ -514,7 +519,7 @@ const gateBlocks = () => {
   if (ended()) {
     gate.push(el("p", { class: "why" }, `This mission ended before it was approved, so nothing flew and nothing was written to the tracker. The plan${doc.found ? ` it had reached is still at ${mission.plan}` : " was never written"}; start a new mission from the workspace to pick it up.`));
   } else if (!doc.found) {
-    gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done. Answer it in the chat above; it will not plan off your first line.`));
+    gate.push(el("p", { class: "why" }, `The Strike Lead has not written a plan yet. It goes to ${mission.plan} when the interview is done${waiting() ? "; answer its questions in the chat above, it will not plan off your first line" : ""}.`));
   } else if (parsed?.problems?.length) {
     gate.push(el("p", { class: "why" }, "There is a plan, but it cannot be flown as written. The Strike Lead is sent these to fix; tell it in the chat above if it stalls. They are the reasons a Wingman would be sent out under-briefed:"),
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))));

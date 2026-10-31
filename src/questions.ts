@@ -234,13 +234,17 @@ export const questionsOf = (mission: Mission & { findings?: Record<string, strin
   });
   const round = leadRound(mission);
   if (round) out.push(round);
-  if (mission.status === "planned") out.push({
+  // The gate asks only once the plan can fly: the Strike Lead's last word says it is ready, which
+  // the server writes only for a plan with no problems. A plan it is still fixing waits on it, not
+  // on the person. The answer opens the gate, where approving is asked twice under what it costs.
+  const lastLead = mission.chat?.findLast((c) => c.who === "Strike Lead");
+  if (mission.status === "planned" && lastLead?.planReady) out.push({
     id: "gate",
     kind: "gate",
-    title: "the plan is waiting for approval",
+    title: "the plan is ready to fly",
     body: mission.brief,
-    at: mission.created,
-    answers: [{ label: "approve", method: "POST", path: "approve", primary: true }],
+    at: lastLead.at,
+    answers: [{ label: "read the terms and fire", go: "gate", primary: true }],
   });
   const left = toWalk(mission);
   if (left.length) out.push(walkQuestion(mission, left));

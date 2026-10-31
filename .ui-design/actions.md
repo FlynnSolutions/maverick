@@ -14,6 +14,7 @@ the Strike Lead, and the plan document stays the source.
 |---|---|---|---|---|---|
 | Plan | Approve and fly | "approve and fly" in the gate, then "yes, approve" | First press says what it writes and spawns and moves focus to "not yet"; the second fires and the status line says the first milestone is out | None; the confirm replaces the button in place | GitHub merge confirm, Vercel promote |
 | Plan | Fire from the chat | "Fire mission" under the Strike Lead's ready message, then "yes, fire" | Same two presses as the gate, same message | None | (same action as above, at the other place it is read) |
+| Plan | Go to it from the top | "read the terms and fire" in `#now` while the plan is ready; "answer them" while a round is open | The gate's verb, or the round's first option, takes focus | Scrolls into view | Linear inbox |
 | Plan | Back out of firing | "not yet" | The arm button returns and takes focus | None | GitHub, Vercel |
 | Plan | Read the whole document | "read the plan document" | Opens the file in Files, in a new tab | None | GitHub "view file" |
 | Plan | Change it | Write to the Strike Lead (box, Enter or "send") | The message lands in the thread; "the Strike Lead is reading and writing back" while it works; the gate redraws when the plan changes | New messages are placed in time order, nothing else moves | Linear AI, Copilot chat |

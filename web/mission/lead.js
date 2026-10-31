@@ -35,7 +35,12 @@ export const leadThread = (ctx) => {
     if (location.hash === "#round") window.dispatchEvent(new HashChangeEvent("hashchange"));
     else location.hash = "round";
   }, "primary lead-to-round");
-  const nowBox = el("section", { class: "lead-now", hidden: true, "aria-label": "Waiting on you" }, nowHead, nowWhy, roundButton);
+  // The gate's own verb takes the focus there (mission.js toGate), so the pointer lands on what fires it.
+  const gateButton = btn("read the terms and fire", () => {
+    if (location.hash === "#gate") window.dispatchEvent(new HashChangeEvent("hashchange"));
+    else location.hash = "gate";
+  }, "primary lead-to-round");
+  const nowBox = el("section", { class: "lead-now", hidden: true, "aria-label": "Waiting on you" }, nowHead, nowWhy, roundButton, gateButton);
   ctx.now.append(nowBox);
   const heard = el("p", { class: "lead-heard", role: "status" });
 
@@ -215,7 +220,8 @@ export const leadThread = (ctx) => {
     // Firing is a decision, not a click: asked twice, as the gate's approve is.
     // replaceChildren would print a null as the word "null"; only what is there goes in.
     fire.replaceChildren(...[
-      armed({ label: "Fire mission", cls: "lead-fire-btn", why: approveWhy(doc), yes: `yes, fire "${view.name}"`, onYes: () => act("approve", {}, "fired; the first milestone is out") }),
+      // The gate's approve is the primary way to fire, under what it costs; this is the second way, so it is not filled.
+      armed({ label: "Fire mission", cls: "lead-fire-btn", quiet: true, why: approveWhy(doc), yes: `yes, fire "${view.name}"`, onYes: () => act("approve", {}, "fired; the first milestone is out") }),
       failingNote(doc.preflight, "in the gate below", "fire"),
       el("p", { class: "lead-hint" }, "It asks once more before it fires. The plan, its checks and what it costs are in the gate below."),
     ].filter(Boolean));
@@ -239,16 +245,23 @@ export const leadThread = (ctx) => {
     const chat = view?.chat ?? [];
     return chat.length && isOpen(chat, chat.length - 1) ? chat.at(-1).questions.length : 0;
   };
+  /**
+   * Before approval what waits on you is in this thread: a round of questions, or a plan ready to
+   * fly. The thread raises a pointer to it into the page's top slot; the round is answered where it
+   * was asked, and firing stays under its costs, in the gate and under the ready message.
+   */
   const paintNow = () => {
     const roundOpen = openRound();
-    const fireReady = Boolean(fire.querySelector(".lead-fire-btn"));
+    const fireReady = Boolean(fire.querySelector(".lead-fire-btn, .mv-confirm"));
     nowBox.hidden = !roundOpen && !fireReady;
-    if (fireReady && fire.parentElement !== nowBox) nowBox.append(fire);
-    if (!fireReady && fire.parentElement !== node) composer.before(fire);
     roundButton.hidden = !roundOpen;
+    gateButton.hidden = roundOpen || !fireReady;
     nowHead.textContent = roundOpen ? `The Strike Lead is asking you ${plural(roundOpen, "question")}` : "The plan is ready to fly";
-    nowWhy.hidden = !roundOpen;
+    nowWhy.textContent = roundOpen ? "They are in the conversation below, with what led to them. It plans nothing until they are answered." : "What it writes, spawns and costs is in the gate below, with the button that fires it.";
+    // One primary at a time: while a plan waits to fly, the composer's send steps back too.
+    send.classList.toggle("primary", !roundOpen && !fireReady);
   };
+
 
   const update = (next) => {
     view = next;
@@ -257,8 +270,6 @@ export const leadThread = (ctx) => {
     composer.hidden = over();
     ended.hidden = !over();
     toRound();
-    // While a round waits, its "send answers" is the one primary; the free-text send steps back.
-    send.classList.toggle("primary", !log.querySelector("#round"));
     thinking.hidden = !next.leadBusy;
     raw.hidden = !next.lead || next.leadBusy || over();
     paintFire();
