@@ -815,7 +815,7 @@ rounded to the nearest 5.
 
 **The gate refuses** a milestone whose tasks all work in one repo while another milestone works
 in a different one, and a milestone none of whose tasks touches product code (judged from
-`touches`: only `deliverables/`, `docs/`, `test/` or `tests/`). It **warns** on a milestone of four
+`touches`: only `deliverables/` or `docs/` at a repo's root, and test code anywhere, by folder (`test`, `tests`, `__tests__`, `e2e`, `cypress`, `playwright`) or by name (`*.test.ts`, `*.spec.tsx`)). It **warns** on a milestone of four
 or more tasks whose longest `needs` chain is more than half of them, and names the chain.
 
 **Why:** a review of five missions (51 tasks), 2026-10-29. Missions came to Cory slice by slice
@@ -836,3 +836,61 @@ as "no user-facing screen", and the files redesign's backend walkthrough asked C
 
 Wall clock is approval to last review; build and review count the final attempt only. Decided by
 Cory 2026-10-29.
+
+## M29: A walk runs to its last case, and what it failed is fixed in one task ✅ built
+
+**A walk is answered in full before anything is fixed.** Nothing is filed while cases are still
+unanswered, so one walk finds everything it is going to find before a single fix starts.
+
+**Everything the walk failed goes to one fix task on that milestone.** The verdicts `fail`,
+`partial` and `blocked` are failures; `defer` is a person putting a case off, not one. When the
+last case is answered and any failed, Maverick adds `m<n>-fix<round>` to the milestone with every
+failed case in its intent (the case id, the verdict, and the note the person wrote), owning the
+paths the milestone's tasks owned. The milestone is no longer merged: the task flies, its RIO
+reviews it once, the milestone merges and its proof runs again, as for any task. A mission at
+review is flying again until then.
+
+**Only the failed cases are walked again.** Once the fix has merged and been proved, those cases
+lose their answers on the record and in the document, and the walk asks for them and nothing
+else. The milestone is walked when every case is answered and none failed; a walk that fails again
+files the next round. A save from a page that has not yet dropped a round's answers is not taken,
+so it cannot put the old failures back. A person can still waive the walk, with a reason.
+
+**A walk with failed cases is not walked.** Before this, answering every case counted, whatever
+the answers were, so a failed walk let the next milestone start.
+
+**Why:** Concept Build, 2026-10-30. Its rehearsal walk passed 16 of 17 cards, and every bug any
+walk found was driven by hand as its own build and its own review. Nothing in the protocol said
+what a failed walk does, so each bug fell into the default unit of one task, one Wingman, one
+RIO, and the turnaround multiplied. Decided by Cory 2026-10-30: batch, and do it in Maverick
+rather than leave it to the Strike Lead's judgment.
+
+## M30: What the mockups drew is what ships, component by component ✅ built
+
+**The reuse-or-new call is made per component, by Cory, before the plan is written.** For every
+element a mockup draws, the Strike Lead names the existing component it resembles (or none,
+found in the code) and asks him one of three: **reuse** it as it is, so the mockup is drawn
+with its real look; **restyle** the shared component, so the new look replaces the old one
+everywhere and the other screens it changes are named; or build a **new** one, with the old one
+staying elsewhere. A pick already made in a `variants` round (whose inventory now asks the same
+question) is not asked again. A blanket "reuse existing components" is never written.
+
+**The plan carries it.** `## Components` holds a `mockups: <path>` line and one line per element:
+`**<component>** (owner: <task>): reuse | restyle | new; cells <n, n>; <one line>`. A task that
+builds cells says so on a `cells:` line. The gate refuses a task whose cells no component line
+decides, cells cited with no `mockups:` line, a decision that is not one of the three words, and
+an owner that is not a task.
+
+**The look is checked, not assumed.** A task with cells is told the decisions over its cells and
+is not done until it commits the built screen at 390 and 1280 beside each cell, under
+`deliverables/screenshots/<mission>/<task>/`, a folder it owns. Its RIO opens the screenshots and
+the cells; an element that differs from its decision is a blocker, and the RIO runs `ui-audit`,
+whose matches-the-brief check takes the cells. A milestone that built cells gets one "Looks like
+cell N" case per screen in its walkthrough, with the cell beside the link.
+
+**Why:** Realtime's item-files redesign, 2026-10-29/30. Cory approved mockups drawn in a fresh
+stylesheet; the plan said "reuse app components as they are"; fifteen tasks passed review and
+the walkthrough pre-screen passed 22 of 22, all on behaviour, and the screens looked nothing like
+what he approved. The opposite failure came first (2026-10-02, one-off controls that matched a
+mockup and nothing else in the app). Both had one root: the decision was never made explicitly.
+Decided by Cory 2026-10-30.
