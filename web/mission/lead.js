@@ -212,7 +212,7 @@ export const leadThread = (ctx) => {
     const ready = !view.approved && last?.planReady && doc.found && !doc.parsed?.problems?.length;
     const refusing = doc.preflight?.filter((c) => c.refuses) ?? [];
     const failing = doc.preflight?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
-    const key = JSON.stringify([ready, refusing.map((c) => c.name), failing.map((c) => c.name), doc.cost]);
+    const key = JSON.stringify([ready, refusing.map((c) => c.name), failing.map((c) => c.name), doc.cost, doc.estimate?.minutes]);
     if (key === fireKey) return;
     fireKey = key;
     if (!ready) return fire.replaceChildren();
@@ -223,7 +223,7 @@ export const leadThread = (ctx) => {
       // The gate's approve is the primary way to fire, under what it costs; this is the second way, so it is not filled.
       armed({ label: "Fire mission", cls: "lead-fire-btn", quiet: true, why: approveWhy(doc), yes: `yes, fire "${view.name}"`, onYes: () => act("approve", {}, "fired; the first milestone is out") }),
       failingNote(doc.preflight, "in the gate below", "fire"),
-      el("p", { class: "lead-hint" }, "It asks once more before it fires. The plan, its checks and what it costs are in the gate below."),
+      el("p", { class: "lead-hint" }, "It asks once more before it fires. The briefing, the plan, its checks and what it costs are in the gate below."),
     ].filter(Boolean));
   };
 
