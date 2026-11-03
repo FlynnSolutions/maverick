@@ -444,6 +444,17 @@ format: checklist
   rule alone. It needs Write for the plan, and `--tools` cannot fence by path, so the choices are a
   hook that refuses writes outside `deliverables/missions/`, or accepting it and saying so in M28.
 
+- [ ] `[ENG]` `[M]` **A walk's fix task is in the ledger's log but not its items**
+  - created: 2026-11-03
+  - source: /simplify altitude pass on the review fixes, 2026-11-03
+  - kind: chore
+  Medium, worked around, not fixed at the root: plan ids are positional (`m<n>-t<i>`), so a fix task
+  `m<n>-fix<r>` filed after approval never becomes an item in the ledger document, and its state
+  lives only in log lines (`transitions` now reads its prior from them, which stopped the duplicate
+  line on every write). M18 says a Strike Lead that lost its context resumes from the file. Root
+  change: `applyPlanState` appends the fix task as an item carrying an `id:` field, `parsePlan`
+  honours an explicit id outside the positional count, and the log fallback goes.
+
 - [ ] `[ENG]` `[S]` **watchEndings remembers every session it ever saw**
   - created: 2026-11-03
   - source: /code-review high over v0.3.1..main, 2026-11-03

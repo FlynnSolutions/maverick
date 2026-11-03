@@ -1406,11 +1406,11 @@ test("the walkthrough starts as the template, placed with its key set, and the p
 
 test("a walk's fix task, which the document does not list, is logged when it moves and not again on every write", () => {
   const plan = parsePlan(`${shaped({ tasks: [task("Build it", ["touches: src/a.ts"])] })}\n## Log\n\n- 2026-11-03 10:00 m1-fix1 fix the 1 case walk 1 of milestone 1 failed: new to pending\n`, ["root"]);
-  const fix = { id: "m1-fix1", title: "fix the 1 case walk 1 of milestone 1 failed", intent: "i", repo: "root", status: "pending" as const, attempts: 0 };
+  const fix: MissionTask = { id: "m1-fix1", title: "fix the 1 case walk 1 of milestone 1 failed", intent: "i", repo: "root", status: "pending", attempts: 0 };
   const built = { id: "m1-t1", title: "Build it", intent: "i", repo: "root", status: "pending" as const, attempts: 0 };
   const mission = { milestones: [{ n: 1, title: "m1", done: "d", tasks: [built, fix] }] } as unknown as Mission;
   assert.deepEqual(transitions(plan, mission, "2026-11-03 10:05"), [], "nothing moved, so nothing is written");
-  fix.status = "flying" as never;
+  fix.status = "flying";
   assert.deepEqual(transitions(plan, mission, "2026-11-03 10:06"), ["2026-11-03 10:06 m1-fix1 fix the 1 case walk 1 of milestone 1 failed: pending to flying"]);
   assert.equal(feedOf(["2026-11-03 10:06 m1-fix1 fix the 1 case walk 1 of milestone 1 failed: pending to flying"]).length, 1, "and the feed reads the line");
 });
@@ -1464,12 +1464,25 @@ test("a retry of a task whose launch never made its worktree makes it, and sends
 test("a first turn that failed is not tried again by the sweep until the person writes", async () => {
   const { project } = summaryFixture("first-fails", { status: "interviewing", approved: undefined, milestones: [], chat: [] } as never);
   scriptTurn(null);
-  await sweepMissions(project);
-  await leadSettled("first-fails", "p-m3-t1");
-  await sweepMissions(project);
-  await leadSettled("first-fails", "p-m3-t1");
-  await sweepMissions(project);
-  await leadSettled("first-fails", "p-m3-t1");
+  for (let i = 0; i < 3; i += 1) {
+    await sweepMissions(project);
+    await leadSettled("first-fails", "p-m3-t1");
+  }
   assert.equal(readFileSync(join(fakeClaude, "turns.log"), "utf8").split("=====").length - 1, 1, "one turn across three sweeps");
   assert.equal(recordOf("first-fails").chat?.filter((e) => e.error).length, 1, "and one error in the chat");
+});
+
+test("a builder that filled the template and kept its comment has written the walkthrough", async () => {
+  const { project, root } = summaryFixture("filled", { status: "flying", milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-14T07:30:00Z", merged: "2026-10-14T09:00:00Z", mergeShas: { root: "abc" }, walkthrough: { claudeId: "wb-2", started: "2026-11-03T09:00:00Z" }, tasks: [
+    { id: "m1-t1", title: "The worker", intent: "Build the worker.", repo: "root", status: "passed", attempts: 1, commits: ["c"] }] }] as never });
+  execFileSync("git", ["-C", root, "checkout", "-q", "-b", "mission/filled"]);
+  const file = "deliverables/testing/filled-m1-walkthrough.html";
+  await placeWalkthrough(root, file, "filled-m1");
+  // What the brief asks for: every example element's attribute dropped; the head comment that names it stays.
+  writeFileSync(join(root, file), readFileSync(join(root, file), "utf8").replace(/\sdata-example\b/g, (m, at, text: string) => (text.lastIndexOf("<!--", at) > text.lastIndexOf("-->", at) ? m : "")), "utf8");
+  agentsSay([{ id: "wb-2", state: "done" }]);
+  await sweepMissions(project);
+  const w = recordOf("filled").milestones[0].walkthrough!;
+  assert.equal(w.failed, undefined);
+  assert.equal(w.doc, join(root, file).slice(project.path.length + 1));
 });
