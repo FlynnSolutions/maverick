@@ -3,6 +3,10 @@
 // a document a CAG wrote, parsed into what it would do to the board, and one approve.
 
 import { applyProjectTheme, recall } from "./theme.js";
+import { jetSvg } from "./jet.js";
+import { lamp } from "./lamp.js";
+import { attempt, failed, toast } from "./toast.js";
+import { cannotOpen as cannotOpenPage } from "./page.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -24,11 +28,6 @@ const api = async (path, init) => {
   return body;
 };
 const post = (path, body) => api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-const setStatus = (msg, isError = false) => {
-  const s = $("#status");
-  s.textContent = msg;
-  s.classList.toggle("error", isError);
-};
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
@@ -45,7 +44,9 @@ const applyTheme = (theme) => {
 };
 
 const fileHref = (path) => `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`;
-const STATE_CLASS = { "not broken down": "pending", proposing: "flying", "proposal waiting": "review", "broken down": "passed" };
+// The state that waits on you is the loud one; the others say where the brainstorm is.
+const STATE_CLASS = { "not broken down": "idle", proposing: "flying", "proposal waiting": "needs", "broken down": "passed" };
+const STATE_LAMP = { proposing: "running", "proposal waiting": "waiting", "broken down": "done" };
 
 let lastPayload = "";
 const load = async (force = false) => {
@@ -53,32 +54,29 @@ const load = async (force = false) => {
   if (!force && body === lastPayload) return;
   lastPayload = body;
   brainstorms = JSON.parse(body);
-  if (!selected || !brainstorms.some((b) => b.file === selected)) selected = brainstorms[0]?.file ?? null;
+  // With nothing chosen, open on what waits for you: a proposal at the gate, else the first.
+  if (!selected || !brainstorms.some((b) => b.file === selected)) selected = (brainstorms.find((b) => b.state === "proposal waiting") ?? brainstorms[0])?.file ?? null;
   renderAll();
 };
 
-const act = async (what, body, said) => {
-  try {
-    setStatus(said);
-    const result = await post(`/api/brainstorms/${what}`, { project: projectId, ...body });
-    await load(true);
-    return result;
-  } catch (err) {
-    setStatus(err.message, true);
-    return null;
-  }
+/** One write from the gate, then the page reads the brainstorms again. */
+const act = async (control, what, body, doing, done) => {
+  if (await attempt({ what: doing, done, control, run: () => post(`/api/brainstorms/${what}`, { project: projectId, ...body }) })) await load(true);
 };
+const propose = (b, label, cls = "primary") => btn(label, (e) => act(e.currentTarget, "propose", { file: b.file }, `start a CAG on "${b.title}"`, "A CAG is reading the brainstorm. The proposal shows here when it is written."), cls);
+/** A document of the project, in a new tab. */
+const docLink = (path, label) => el("a", { class: "button-link", target: "_blank", title: "opens in a new tab", href: fileHref(path) }, label);
 
 const renderNav = () => {
   $("#nav").replaceChildren(...brainstorms.map((b, i) => el("button", {
     type: "button",
     class: `nav-step ${STATE_CLASS[b.state]}${b.file === selected ? " selected" : ""}`,
     onclick: () => { selected = b.file; history.replaceState(null, "", `?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(b.file)}`); renderAll(); },
-  }, el("span", { class: "lamp" }), el("span", { class: "n" }, String(i + 1)), el("span", { class: "t", title: b.title }, b.title), el("span", { class: `verdict ${STATE_CLASS[b.state]}` }, b.state))));
+  }, lamp(STATE_LAMP[b.state] ?? "idle", STATE_LAMP[b.state] ? undefined : "stale"), el("span", { class: "n" }, String(i + 1)), el("span", { class: "t", title: b.title }, b.title), el("span", { class: `verdict ${STATE_CLASS[b.state]}` }, b.state))));
 };
 
 const itemRow = (it) => el("div", { class: "mv-plan-task" },
-  el("h4", {}, it.title, el("span", { class: "mv-repo" }, `${it.kind} · ${it.size} · ${it.call}`)),
+  el("h3", {}, it.title, el("span", { class: "mv-repo" }, `${it.kind} · ${it.size} · ${it.call}`)),
   el("p", {}, it.body));
 
 const renderOne = (b) => {
@@ -87,13 +85,13 @@ const renderOne = (b) => {
   const gate = [];
   if (b.state === "not broken down") {
     gate.push(el("p", { class: "why" }, "Nothing has been proposed from this brainstorm. A CAG reads it and the board and writes a proposal: items with a kind, a size, and a call of now, backlog or mission. It reads and writes one file; it runs nothing."),
-      el("div", { class: "gate-actions" }, btn("propose items", () => act("propose", { file: b.file }, "a CAG is reading the brainstorm"), "primary"), el("a", { class: "button-link", target: "_blank", href: fileHref(b.file) }, "read the brainstorm ↗")));
+      el("div", { class: "gate-actions" }, propose(b, "propose items"), docLink(b.file, "read the brainstorm")));
   } else if (b.state === "proposing") {
     gate.push(el("p", { class: "why" }, "A CAG is reading the brainstorm and the board now, in one of Maverick's terminals on the workspace. The proposal shows here when it has written it; this page polls. Nothing can be approved until it is done."));
   } else if (parsed?.problems?.length) {
     gate.push(el("p", { class: "why" }, "There is a proposal, but it cannot be written to the board as it stands:"),
       el("ul", { class: "mv-problems" }, ...parsed.problems.map((p) => el("li", {}, p))),
-      el("div", { class: "gate-actions" }, btn("propose again", () => act("propose", { file: b.file }, "a CAG is reading the brainstorm again"), "primary"), el("a", { class: "button-link", target: "_blank", href: fileHref(b.proposal) }, "read the proposal ↗")));
+      el("div", { class: "gate-actions" }, propose(b, "propose again"), docLink(b.proposal, "read the proposal")));
   } else if (b.state === "proposal waiting") {
     gate.push(el("p", { class: "why" }, `This is the one approval. Approving writes ${count("now")} item${count("now") === 1 ? "" : "s"} onto the roadmap and ${count("backlog")} into the backlog, both under a group named after this brainstorm, in one commit.${count("mission") ? ` ${count("mission")} mission-sized item${count("mission") === 1 ? "" : "s"} open${count("mission") === 1 ? "s" : ""} a Strike Lead interview instead of being written here.` : ""}`),
       el("div", { class: "mv-band" },
@@ -103,21 +101,19 @@ const renderOne = (b) => {
         el("div", { class: "cell" }, el("span", { class: "k" }, "already on the board"), el("span", { class: "v" }, String(parsed.already.length)))),
       count("now") ? el("p", { class: "cost-note" }, "Roadmap items arrive unplanned, on purpose: no plan file exists yet, and the rule at the door is a field that names a real file. They wear the badge, and \"plan it\" is their next verb.") : null,
       el("div", { class: "gate-actions" },
-        btn("approve and write the board", async () => {
-          const result = await act("approve", { file: b.file }, "writing the board");
-          if (result) setStatus(`committed ${result.commit}${result.missions.length ? ` · ${result.missions.length} mission interview(s) opened on the workspace` : ""}`);
-        }, "primary"),
-        btn("propose again", () => act("propose", { file: b.file }, "a CAG is reading the brainstorm again"), "ghost"),
-        el("a", { class: "button-link", target: "_blank", href: fileHref(b.proposal) }, "read the proposal ↗")));
+        btn("approve and write the board", (e) => act(e.currentTarget, "approve", { file: b.file }, `write "${b.title}" to the board`,
+          (result) => `Wrote "${b.title}" to the board.${result.missions.length ? ` ${result.missions.length} mission interview${result.missions.length === 1 ? "" : "s"} opened on the workspace.` : ""}`), "primary needs"),
+        propose(b, "propose again", "ghost"),
+        docLink(b.proposal, "read the proposal")));
   } else {
     gate.push(el("p", { class: "why" }, `Broken down on ${b.approved}, committed as ${b.commit}. The proposal below is the frozen artifact of that approval.`),
-      el("div", { class: "gate-actions" }, el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "see it on the board"), el("a", { class: "button-link", target: "_blank", href: fileHref(b.proposal) }, "read the proposal ↗")));
+      el("div", { class: "gate-actions" }, el("a", { class: "button-link", href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "see it on the board"), docLink(b.proposal, "read the proposal")));
   }
   show(
     el("div", { class: "detail-head" }, el("h1", {}, b.title), el("span", { class: `verdict ${STATE_CLASS[b.state]}` }, b.state)),
-    el("div", { class: "detail-meta" }, el("span", {}, b.file), b.proposal ? el("span", {}, b.proposal) : null),
+    el("div", { class: "detail-meta" }, el("a", { href: fileHref(b.file), target: "_blank", title: "the brainstorm, in a new tab" }, b.file), b.proposal ? el("a", { href: fileHref(b.proposal), target: "_blank", title: "the proposal, in a new tab" }, b.proposal) : null),
     el("section", { class: "panel mv-gate" }, el("h2", {}, "The gate"), ...gate),
-    parsed?.items?.length ? el("section", { class: "panel" }, el("h2", {}, "Proposed items", el("span", { class: "spacer" }), el("span", { class: "muted small" }, parsed.intro)), ...parsed.items.map(itemRow)) : null,
+    parsed?.items?.length ? el("section", { class: "panel" }, el("h2", {}, "Proposed items"), parsed.intro ? el("p", { class: "bd-intro" }, parsed.intro) : null, ...parsed.items.map(itemRow)) : null,
     parsed?.already?.length ? el("section", { class: "panel" }, el("h2", {}, "Already on the board"), el("ul", {}, ...parsed.already.map((a) => el("li", {}, a)))) : null,
   );
 };
@@ -129,14 +125,29 @@ const renderAll = () => {
   renderNav();
   const b = brainstorms.find((x) => x.file === selected);
   if (b) renderOne(b);
-  else show(el("p", { class: "mv-empty" }, "No brainstorms yet. Sit the CAG down from the Missions rack on the workspace; one conversation writes one dated document under deliverables/brainstorms/."));
+  else show(el("div", { class: "mv-empty" },
+    el("h1", {}, "No brainstorms yet"),
+    el("p", {}, "One conversation with the CAG writes one dated document under deliverables/brainstorms/, and it shows here to break down."),
+    el("a", { class: "button-link primary", href: `/?project=${encodeURIComponent(projectId)}&view=workspace` }, "sit the CAG down on the workspace")));
 };
 
+/** A page that cannot open says why in the page, with the way to a project. */
+const cannotOpen = (why) => cannotOpenPage($("#page"), "The brainstorms cannot open", why, "/?pick=1", "pick a project");
+
 const boot = async () => {
-  if (!projectId) { setStatus("no project in the url", true); return; }
+  $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
+  if (!projectId) return cannotOpen("This link names no project, and brainstorms belong to one.");
   project = (await api("/api/projects")).find((p) => p.id === projectId) ?? null;
   applyTheme(project?.theme);
   await load(true);
-  window.setInterval(() => load().catch(() => {}), 5000);
+  // A poll that fails says so once, and once more when the page is current again.
+  let stale = false;
+  window.setInterval(() => load().then(() => {
+    if (stale) toast("The brainstorms are updating again.");
+    stale = false;
+  }, (err) => {
+    if (!stale) failed("refresh the brainstorms (trying again every 5 seconds)", err);
+    stale = true;
+  }), 5000);
 };
-boot().catch((err) => setStatus(err.message, true));
+boot().catch((err) => cannotOpen(`The brainstorms could not be read: ${err.message}`));

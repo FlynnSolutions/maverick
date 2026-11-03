@@ -137,3 +137,104 @@ mission. Its question: did this milestone do what it said, seen with your own ey
 - **Bulk verdicts**: a walk is a person checking each case with their own eyes; marking ten at once is the thing it exists to prevent.
 - **Undo**: pressing the chosen verdict again clears it, and any verdict can be changed until the milestone is closed.
 - **Search and filter on text**: a walk is a dozen cases at most; `show only what is left` is the one filter it needs.
+
+## The board (`web/index.html?view=board`, `web/app.js`)
+
+The project's checklist as four lanes: backlog, roadmap, in progress, done and awaiting deploy.
+Its question: what is next, in what order, and what is it waiting on. Every write is one commit
+to the tracker file, the same write whichever control made it.
+
+| Object | Action | Trigger | Feedback | Motion | Seen in |
+|---|---|---|---|---|---|
+| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words | The new card settles in | Linear quick add, Trello add a card |
+| Item | Open | Its title (a button), Enter or a click anywhere on the card | The drawer opens with its heading focused; Escape or the close icon gives focus back | The drawer slides in | Linear issue peek |
+| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move` | Toast with `undo`; the board repaints from the file | The list it landed in flares | Trello, Linear |
+| Item | Reorder in its group (the runway) | Drag; or the drawer's `move up` and `move down` | Toast with `undo` | as above | Trello, Jira rank |
+| Item | Plan for a release | Drag onto a release card; or the drawer's `release` select | Toast with `undo` | The card flares | Linear cycles |
+| Item | Set or clear a deadline | The drawer's date and `set` or `clear`; or drag onto a calendar day | Toast with `undo` | none | Linear due date |
+| Item | Mark done, reopen | The drawer's `mark done` or `reopen` | Toast with `undo` | none | Linear status |
+| Item | Edit its markdown | `edit markdown`, then `save` or `cancel` | Toast with `undo` | none | GitHub edit file |
+| Item | Remove | `remove`, with the reason asked for | Toast; it moves to the tracker's Removed section with the date and reason | none | Linear archive with reason |
+| Item | Plan it, spawn on it | `plan it` (the primary on an unplanned item), `spawn` (the primary on a planned one, or on the card) | The session opens in the workspace | none | Linear "start working" |
+| Lane | Fold or unfold | The chevron beside its name; remembered | The chevron turns | The chevron turns | GitHub projects |
+| Group | Delete when empty | The close icon beside an empty group's name, then confirm | Toast | none | Trello archive list |
+| Board | Loading, failing, empty | A lane with nothing in it says what goes there; a board that cannot be read says why in the bar | n/a | none | Linear empty states |
+
+### Floor rows left out, and why
+
+- **Bulk select and act**: the board is a runway of a few dozen items moved one at a time; the tracker file is where bulk edits are made.
+- **Search and filter**: the lanes are the filter, and the tracker is a file the person's editor already searches.
+- **Undo for remove**: remove asks for a reason first and keeps the item in the Removed section, where it can be moved back.
+
+## The calendar (`web/index.html?view=calendar`, `web/app.js`)
+
+The same items by deadline, with the ship days and the releases. Its question: what is due when, and when do we ship.
+
+| Object | Action | Trigger | Feedback | Motion | Seen in |
+|---|---|---|---|---|---|
+| Month | Go to another, or today | The chevrons either side of the month, `today` | The grid redraws | none | Google Calendar |
+| Item | Open | Its event on the day (a button) | The item drawer | The drawer slides in | Google Calendar |
+| Item | Set or clear a deadline | Drag onto a day, or onto "without a deadline"; or the drawer | Toast with `undo` | The day flares | Linear due date |
+| Ship day | Open, move, mark shipped, undo, cancel | Its event opens its drawer: `mark shipped`, a date and `move`, `put it back`, `cancel this ship day` (confirmed) | Toast naming the day; the drawer closes only when the write went through | none | Google Calendar event |
+| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast | none | Google Calendar repeat |
+| Release | Open its slot | Its deploy event | The release drawer | The drawer slides in | Linear cycle |
+| Calendar | On a phone | The days that hold something, as a list, today always among them | n/a | none | Google Calendar schedule view |
+
+### Floor rows left out, and why
+
+- **Create an item here**: items are added on the board, in the lane they belong to; the calendar dates them.
+- **Bulk, search, filter**: a month holds a handful of dated items.
+
+## The project picker (`web/index.html?pick=1`)
+
+| Object | Action | Trigger | Feedback | Motion | Seen in |
+|---|---|---|---|---|---|
+| Project | Open | Its name | The board or workspace | none | VS Code recent folders |
+| Project | Add | `Import a directory from Finder`, or a pasted path and `Add` | Opens it; a refusal is a toast naming the path | none | VS Code open folder |
+| Project | Forget | `forget`, confirmed; the directory is untouched | Toast | none | VS Code remove from recent |
+| Picker | Failing, empty | A list that cannot be read says why with `try again`; an empty one says how to add | n/a | none | n/a |
+
+### Floor rows left out, and why
+
+- **Rename, reorder, undo forget**: a project's name is its folder's, and forgetting one only drops it from this list; adding it back is one paste.
+
+## The ship page (`web/ship.html`)
+
+One shipment of one version, step by step. Its question: where is this release, and what is waiting on me.
+
+| Object | Action | Trigger | Feedback | Motion | Seen in |
+|---|---|---|---|---|---|
+| Step | Choose | Its row in the steps list | The step's detail; on a phone the detail comes first | none | GitHub Actions jobs |
+| Step | Run, run it again | `run` on a pending step, `run it again` on a failed one | The button holds while it starts; toast | The runway's jet taxis to the new share | GitHub re-run |
+| Step | Mark done, skip, reopen | The step's verbs | Toast; a refusal names the step | as above | Buildkite unblock |
+| Step | Watch it run | The live panel, `open in dock` | The session's screen | none | Buildkite live log |
+| Step | Check off your items | The checkboxes in its report | Toast | none | GitHub task list |
+| Step | Take notes | The notes field, saved on leaving it | Toast | none | n/a |
+| Step | Walk the walkthrough | The hosted walkthrough, when the step has one | As the walkthrough | none | n/a |
+| Ship | See where it stands | The runway and "N of M steps"; a failed step turns the runway red and names itself | n/a | none | GitHub Actions summary |
+| Reviews | Audit, accept, reject | The verbs on each session in Reviews | Toast | none | GitHub review |
+| Ship | Cannot open | Says why, with the way back to the board | n/a | none | n/a |
+
+### Floor rows left out, and why
+
+- **Create, delete, reorder steps**: the steps are the ship process's own; a step that does not apply is skipped.
+- **Undo**: every step can be reopened, and a run is a session with its own record.
+- **Bulk, search**: eleven steps.
+
+## The breakdowns (`web/breakdown.html`)
+
+Every brainstorm and where it stands, and the one approval that writes a proposal to the board.
+
+| Object | Action | Trigger | Feedback | Motion | Seen in |
+|---|---|---|---|---|---|
+| Brainstorm | Choose | Its row; the one whose proposal waits on you wears the need | Its gate | none | n/a |
+| Brainstorm | Propose items | `propose items`, or `propose again` | The button holds; toast; the page shows "proposing" until the CAG writes | none | n/a |
+| Proposal | Approve and write the board | `approve and write the board` (the needs-you primary) | Toast naming what it wrote and any interviews opened | none | GitHub merge |
+| Proposal | Read it, or the brainstorm | The links under the gate (new tab) | n/a | none | GitHub view file |
+| Breakdowns | Empty, cannot open | Says what a brainstorm is and links to the workspace to start one | n/a | none | n/a |
+
+### Floor rows left out, and why
+
+- **Edit a proposal here**: the proposal is the CAG's document; `propose again` or editing the file is how it changes.
+- **Undo an approval**: it is one commit to the tracker, reverted there; the items it wrote are ordinary items on the board.
+- **Bulk, search**: a project has a handful of brainstorms.

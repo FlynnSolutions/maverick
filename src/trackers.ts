@@ -359,6 +359,13 @@ export const addItem = (text: string, heading: string, group: string, block: str
   return spliceBlock(out, insertAt, body, false);
 };
 
+/** A new open item typed on the board: one line becomes its title, dated today, last in its group. */
+export const newItem = (text: string, heading: string, group: string, title: string): string => {
+  const line = title.trim();
+  if (!line || line.includes("\n")) throw new Error("an item title is one non-empty line");
+  return addItem(text, heading, group, itemBlock(line, { created: today() }, []));
+};
+
 /**
  * Move an item to the tracker's `## 🗑️ Removed` section (created at the end when absent) with
  * a `removed:` field carrying the date and the reason. Nothing is deleted; the Removed

@@ -36,7 +36,7 @@
 .prog-walks .d { min-width: 0; font-size: 13.5px; color: var(--ink); overflow-wrap: anywhere; }
 .prog-walks .d b { font-weight: 600; margin-right: 4px; }
 .prog-walks .p { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
-.prog-walks button { padding: 0 14px; font: 500 13px var(--sans); }
+.prog-walks button { font: 500 13px var(--sans); }
 
 /* The fold of every move, and the raw rows inside it as the ledger wrote them. */
 .prog-moves { margin-top: 12px; }

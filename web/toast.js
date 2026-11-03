@@ -33,13 +33,23 @@ export const leave = (node, then) => {
   window.setTimeout(() => { node.remove(); then?.(); }, ms);
 };
 
-const show = ({ msg, error }) => {
+const show = ({ msg, error, action }) => {
   const node = document.createElement("div");
   node.className = `toast${error ? " error" : ""}`;
   const said = document.createElement("p");
   said.textContent = msg;
   node.append(said);
-  if (error) {
+  if (action) {
+    node.classList.add("acting");
+    const act = document.createElement("button");
+    act.type = "button";
+    act.className = "ghost";
+    act.textContent = action.label;
+    act.addEventListener("click", () => { leave(node, drain); action.run(); });
+    node.append(act);
+  }
+  // An error, and a toast with an action, stay until closed: nobody should lose an undo to a timer.
+  if (error || action) {
     const close = document.createElement("button");
     close.type = "button";
     close.className = "ghost";
@@ -80,13 +90,39 @@ const drain = () => {
   while (queue.length && region.querySelectorAll(".toast:not(.leaving)").length < room) show(queue.shift());
 };
 
-/** toast(msg, { error }) says it in the page's live region; an error waits to be closed. */
-export const toast = (msg, { error = false } = {}) => {
+/**
+ * toast(msg, { error, action }) says it in the page's live region; an error waits to be closed.
+ * `action` ({ label, run }) is one verb on the toast, such as undo; pressing it closes the toast,
+ * and the toast waits like an error until it is closed or the next toast takes its place.
+ */
+export const toast = (msg, { error = false, action = null } = {}) => {
   // The same words twice say nothing new: one already showing or waiting stands for both.
   if (!msg || queue.some((q) => q.msg === msg) || [...region.querySelectorAll(".toast:not(.leaving) p")].some((p) => p.textContent === msg)) return;
-  queue.push({ msg, error });
+  // A toast with an action is replaced by the next toast rather than holding the queue behind it.
+  for (const held of region.querySelectorAll(".toast.acting:not(.leaving)")) leave(held, drain);
+  queue.push({ msg, error, action });
   drain();
 };
 
 /** A failed action, named: "Could not <what>: <why>", in an error toast that stays until it is closed. */
 export const failed = (what, err) => toast(`Could not ${what}: ${err.message}`, { error: true });
+
+/**
+ * Every write on every page, said the same way. The control that asked (if any) holds still and
+ * says it is working while `run` goes; the outcome is a toast (`done` is the words, or a function
+ * of the result), with `undo` as its action when there is one; a refusal names `what` and gives
+ * the control back. Resolves the result, or null when it was refused.
+ */
+export const attempt = async ({ what, done, run, control = null, undo = null }) => {
+  control?.setAttribute("aria-busy", "true");
+  if (control) control.disabled = true;
+  try {
+    const result = await run();
+    toast(typeof done === "function" ? done(result) : done, undo ? { action: { label: "undo", run: undo } } : {});
+    return result ?? true;
+  } catch (err) {
+    failed(what, err);
+    if (control?.isConnected) { control.disabled = false; control.removeAttribute("aria-busy"); }
+    return null;
+  }
+};

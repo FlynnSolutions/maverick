@@ -38,7 +38,7 @@ import { readSessions, sessionsForProject, writeSession, type SessionRecord } fr
 import { addPending, createFormation, deleteFormation, listFormations, resolvePending, updateFormation } from "./src/formations.ts";
 import { readNames, setName } from "./src/names.ts";
 import { closeTerminal, listTerminals, openTerminal, resize, subscribe, writeInput } from "./src/terminal.ts";
-import { addGroup, applyEdit, applyMove, deleteGroup, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
+import { addGroup, applyEdit, applyMove, deleteGroup, newItem, parseTracker, removeItem, renameGroup, StaleMoveError, type MoveRequest } from "./src/trackers.ts";
 
 const run = promisify(execFile);
 const serverRoot = dirname(fileURLToPath(import.meta.url));
@@ -206,6 +206,19 @@ const createGroup = async (body: GroupBody): Promise<{ commit: string }> => {
   const after = addGroup(await readFile(tracker.path, "utf8"), body.heading, name);
   await writeFile(tracker.path, after, "utf8");
   return { commit: await commitFile(tracker.path, `console: add group "${name}" under ${body.heading}`) };
+};
+
+interface NewItemBody extends GroupBody {
+  title: string;
+}
+
+const createItem = async (body: NewItemBody): Promise<{ commit: string }> => {
+  const project = await projectById(body.project);
+  const tracker = project.trackers[body.tracker];
+  if (!tracker) throw new Error(`project "${project.id}" has no tracker at index ${body.tracker}`);
+  const after = newItem(await readFile(tracker.path, "utf8"), body.heading, body.name, body.title);
+  await writeFile(tracker.path, after, "utf8");
+  return { commit: await commitFile(tracker.path, `console: add "${body.title.trim()}" under ${body.name ? `${body.heading} / ${body.name}` : body.heading}`) };
 };
 
 interface EditBody {
@@ -502,7 +515,6 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     return sendJson(res, 200, { missions: await missionQuestions(await requireProject(url)) });
   }
   if (method === "GET" && path === "/api/workspace") {
-    const lan = lanAddress();
     // With a project it also carries that project's missions, each with what it asks and its
     // merged diff, swept first the way the mission list is.
     let missions: WorkspaceMission[] | undefined;
@@ -511,12 +523,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       await sweepMissions(project).catch((err: Error) => console.error(`mission sweep for ${project.name}:`, err.message));
       missions = await workspaceMissions(project);
     }
-    return sendJson(res, 200, {
-      host: config.host,
-      lanUrl: config.host === "127.0.0.1" || !lan ? null : `http://${lan}:${config.port}/review.html?key=${accessKey}`,
-      lanHint: config.host === "127.0.0.1" ? "start with SESSION_CONSOLE_HOST=0.0.0.0 to reach the console from your phone" : null,
-      ...(missions ? { missions } : {}),
-    });
+    return sendJson(res, 200, { ...(missions ? { missions } : {}) });
   }
   if (method === "POST" && path === "/api/remove") {
     const body = await readJson<{ project: string; tracker: number; itemStart: number; itemFirstLine: string; reason: string }>(req);
@@ -591,6 +598,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
   }
 
+  if (method === "POST" && path === "/api/items") return sendJson(res, 200, await createItem(await readJson<NewItemBody>(req)));
   if (method === "POST" && path === "/api/groups") return sendJson(res, 200, await createGroup(await readJson<GroupBody>(req)));
   if (method === "POST" && path === "/api/groups/rename") return sendJson(res, 200, await renameGroupIn(await readJson<RenameBody>(req)));
   if (method === "DELETE" && path === "/api/groups") {
@@ -936,6 +944,6 @@ createServer((req, res) => {
   console.log(`maverick: http://localhost:${config.port}`);
   console.log(`  projects: ${config.projectsFile}`);
   const lan = lanAddress();
-  if (config.host !== "127.0.0.1" && lan) console.log(`  phone: http://${lan}:${config.port}/review.html?key=${accessKey}`);
+  if (config.host !== "127.0.0.1" && lan) console.log(`  lan: http://${lan}:${config.port}/?key=${accessKey}`);
   usage().catch((err: Error) => console.error("usage scan:", err.message));
 });
