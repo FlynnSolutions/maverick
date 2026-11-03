@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - if: env.KIT_KEY != ''
+      - if: env.KIT_KEY
         uses: actions/checkout@v7
         with:
           repository: FlynnSolutions/flynn-kit
@@ -42,7 +42,7 @@ jobs:
       - run: node tools/ui-check.mjs --out ui-check
         env:
           CHROME: /usr/bin/google-chrome
-          MAVERICK_UI_AUDIT: ${{ env.KIT_KEY != '' && format('{0}/.kit/plugins/flynn-core/skills/ui-audit', github.workspace) || '' }}
+          MAVERICK_UI_AUDIT: ${{ env.KIT_KEY && '.kit/plugins/flynn-core/skills/ui-audit' || '' }}
       - if: failure()
         uses: actions/upload-artifact@v7
         with:
