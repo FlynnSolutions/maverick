@@ -79,3 +79,37 @@ otherwise; an error toast stays until it is closed.
 - **Undo for `later`**: it writes an item and a commit to the tracker. It is taken back on the board, where the item is, not by a toast here.
 - **Undo for answers, pause, stop and close**: each is an outward effect (an agent sent out, a session stopped, work landed) and each that cannot be taken back asks twice instead (`feedback.md` section 1).
 - **Diff views (split, whitespace, inline comments), plan history, report download**: the mission branch is a real git branch reviewed with the person's own tools; this page says what merged and where, not a second code review tool.
+
+## The workspace inbox (`web/index.html?view=workspace`, `web/command.js`, `web/inbox.js`)
+
+The page's question is the same one: what is waiting on me, across every session and mission in
+the project. Four groups in a fixed order (Needs you, Working, Ready to review, Done), then the
+brainstorms. A session or a mission is one strip in one group. What an action did is a toast
+(`web/toast.js`); a standing condition stays on the bar.
+
+| Object | Action | Trigger | Feedback | Motion | Seen in |
+|---|---|---|---|---|---|
+| Mission | Answer its question where it sits | The answer buttons under the question in its strip, primary first, the same routes the mission page posts | Toast naming the mission and the answer; an error toast stays until closed | A strip new since the last paint rises in | Linear inbox, GitHub notifications |
+| Mission | Answer with a note | The note field above the answers; an answer that needs one refuses empty and says so | Hint under the answers | none | Buildkite block step |
+| Mission | Open it | `open` in its row, a click anywhere on the strip, or Enter on it | The mission page | none | Linear |
+| Mission | Open where an answer acts | An answer with a place (walk, close, answer the interview) opens the mission page there | The mission page at that place | none | GitHub "review changes" |
+| Mission | Start one | `open a mission` under the racks: a name, then the line, in two asks | The mission page, on its interview | none | Devin new session |
+| Session | Open it | A click on its strip, or Enter: full screen in the rack, in place inside a formation | The conversation and composer | none | Warp, iTerm tabs |
+| Session | Rename it | `rename`, in place; Enter or blur keeps it, Escape restores, empty hands back Claude Code's own title | The new name at once, and a toast | none | Linear inline edit |
+| Session | Close, stop or remove it | `close` (asks first), `stop`, `remove`, each naming its object | Toast; the strip leaves on the next paint | none | GitHub Actions cancel |
+| Session | Answer a permission prompt | The prompt's choices as buttons in its open pane, the terminal still under it | The pane clears the card | none | Claude Code |
+| Session | Write to it | The composer in its open pane; Enter sends | Toast "sent"; an error toast names what failed | The turn lands in the conversation | Claude desktop |
+| Session | Start one, or a shell | `New session` in the bar; the terminal icon beside the tabs | The new strip rises in | Rises in | Warp |
+| Formation | Group sessions | Drag a strip onto a tab; every drag also has its right-click menu path | Toast naming where it went | none | Linear move to |
+| Formation | Make, rename, disband, pop out | `+` beside the tabs; the tab's own right-click menu | Toast; disband asks first | none | Chrome tab groups |
+| Brainstorm | Start one, open one | `brainstorm` on its heading; `open` in its row | The breakdown page | none | n/a |
+| Usage | Read the limits, calibrate | The meter in the head opens its panel | The panel; calibrate saves in place | none | n/a |
+| Page | Refresh, and see it loading or failing | The refresh icon; the page repaints every ten seconds and waits while a field on it is being typed in | "reading sessions…" while it loads; "sessions unavailable" with the reason when it cannot | none | n/a |
+
+### Floor rows left out, and why
+
+- **Delete as one step with undo**: closing a session ends a real process and removing a record discards it; each asks first instead (`feedback.md` section 1).
+- **Bulk select**: sessions are acted on one at a time by design (each is its own process with its own state); nothing here is worth doing to twenty at once.
+- **Search and filter**: one project at a time (system.md, "One project at a time"), grouped by what needs you; a rack longer than a screen is not the case this page is for.
+- **Reorder by hand**: the racks sort by urgency; the only move is between groups and formations, which is the drag and its menu.
+- **Keyboard walk (`j`/`k`)**: every strip is a stop on the Tab path and opens on Enter; the racks are short.
