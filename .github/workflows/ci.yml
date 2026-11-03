@@ -18,3 +18,33 @@ jobs:
           node-version-file: .nvmrc
       - run: npm test
       - run: npm run lint
+
+  ui:
+    name: page renders, a save commits, ui-audit grades A
+    runs-on: ubuntu-latest
+    # The ui-audit is a slot (tools/ui-check.mjs). This repo plugs in flynn-core's, read with a
+    # read-only deploy key; a fork's pull request has no secrets, so it skips only the grade.
+    env:
+      KIT_KEY: ${{ secrets.FLYNN_KIT_DEPLOY_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - if: env.KIT_KEY != ''
+        uses: actions/checkout@v7
+        with:
+          repository: FlynnSolutions/flynn-kit
+          ref: 04ddf02e02c1d844c05e912e0457e74d1aa8331d
+          ssh-key: ${{ secrets.FLYNN_KIT_DEPLOY_KEY }}
+          path: .kit
+          sparse-checkout: plugins/flynn-core/skills/ui-audit/scripts
+      - run: node tools/ui-check.mjs --out ui-check
+        env:
+          CHROME: /usr/bin/google-chrome
+          MAVERICK_UI_AUDIT: ${{ env.KIT_KEY != '' && format('{0}/.kit/plugins/flynn-core/skills/ui-audit', github.workspace) || '' }}
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-check
+          path: ui-check
