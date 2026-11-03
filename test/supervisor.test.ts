@@ -4,69 +4,70 @@
  * real child process, the way the app runs `server.ts`, and reads the log a person would read.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { supervise } from "../src/supervisor.ts";
+import { until } from "./fixtures.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "mv-supervise-"));
-/** A stand-in server: counts its starts in a file, says something, then does what `how` says. */
+/** A stand-in server: counts its starts in a file (`n` is this run's), says something, then does what `how` says. */
 const script = (name: string, how: string) => {
   const file = join(dir, `${name}.mjs`);
-  writeFileSync(file, `import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(join(dir, `${name}.starts`))}, "x");
+  const count = JSON.stringify(join(dir, `${name}.starts`));
+  writeFileSync(file, `import { appendFileSync, readFileSync } from "node:fs";
+appendFileSync(${count}, "x");
+const n = readFileSync(${count}, "utf8").length;
 console.log("listening on 8766");
 ${how}
 `, "utf8");
   return file;
 };
-const starts = (name: string) => { try { return readFileSync(join(dir, `${name}.starts`), "utf8").length; } catch { return 0; } };
-const until = async (ok: () => boolean, ms = 5000) => {
-  for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 25))) if (ok()) return;
-  throw new Error("timed out");
+const starts = (name: string) => (existsSync(join(dir, `${name}.starts`)) ? readFileSync(join(dir, `${name}.starts`), "utf8").length : 0);
+const STAY_UP = "setInterval(() => {}, 1000);";
+const run = (name: string, how: string, more: Partial<Parameters<typeof supervise>[0]> = {}) => {
+  const log = join(dir, `${name}.log`);
+  const stop = supervise({ command: process.execPath, args: [script(name, how)], log, delay: () => 50, ...more });
+  after(stop);
+  return { stop, text: () => readFileSync(log, "utf8") };
 };
 
 test("a server that dies is logged with its code and last words, and started again", async () => {
-  const log = join(dir, "crash.log");
-  const s = supervise({ command: process.execPath, args: [script("crash", `// The first run dies the way a server does; the second stays up.
-if ((await import("node:fs")).readFileSync(${JSON.stringify(join(dir, "crash.starts"))}, "utf8").length === 1) { console.error("TypeError: cannot read the ledger"); process.exit(3); }
-setInterval(() => {}, 1000);`)], log, delay: () => 50 });
-  after(s.stop);
+  const { text } = run("crash", `if (n === 1) { console.error("TypeError: cannot read the ledger"); process.exit(3); }\n${STAY_UP}`);
   await until(() => starts("crash") === 2);
-  s.stop();
-  const text = readFileSync(log, "utf8");
-  assert.match(text, /supervisor: the server exited with code 3 after \d+s; starting it again in 0s; its last words:\n {4}listening on 8766\n {4}TypeError: cannot read the ledger/);
-  assert.match(text, /listening on 8766[\s\S]*listening on 8766/, "what it printed is in the log, both runs");
+  assert.match(text(), /supervisor: the server exited with code 3 after \d+s; starting it again in 0s; its last words:\n {4}listening on 8766\n {4}TypeError: cannot read the ledger/);
+  assert.match(text(), /listening on 8766[\s\S]*listening on 8766/, "what it printed is in the log, both runs");
 });
 
 test("a server killed by a signal says so", async () => {
-  const log = join(dir, "killed.log");
-  const s = supervise({ command: process.execPath, args: [script("killed", "setInterval(() => {}, 1000);")], log, delay: () => 50 });
-  after(s.stop);
-  await until(() => starts("killed") === 1);
-  process.kill(s.pid()!, "SIGKILL");
+  const { text } = run("killed", `if (n === 1) process.kill(process.pid, "SIGKILL");\n${STAY_UP}`);
   await until(() => starts("killed") === 2);
-  assert.match(readFileSync(log, "utf8"), /the server killed by SIGKILL after \d+s; starting it again/);
+  assert.match(text(), /the server killed by SIGKILL after \d+s; starting it again/);
 });
 
 test("a server that keeps dying fast is given up on with the reason, not restarted forever", async () => {
-  const log = join(dir, "loop.log");
   let gaveUp = "";
-  supervise({ command: process.execPath, args: [script("loop", "process.exit(1);")], log, delay: () => 10, maxDeaths: 3, onGiveUp: (why) => { gaveUp = why; } });
+  const { text } = run("loop", "process.exit(1);", { delay: () => 10, maxDeaths: 3, onGiveUp: (why) => { gaveUp = why; } });
   await until(() => gaveUp !== "");
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(starts("loop"), 3, "three starts, then no more");
   assert.match(gaveUp, /exited with code 1 after 0s, 3 deaths inside 1m0s, so it is not started again/);
-  assert.match(readFileSync(log, "utf8"), /so it is not started again; its last words:\n {4}listening on 8766/);
+  assert.match(text(), /so it is not started again; its last words:\n {4}listening on 8766/);
+});
+
+test("a command that cannot be started is a death too, so it is given up on rather than left waiting", async () => {
+  let gaveUp = "";
+  after(supervise({ command: join(dir, "no-such-binary"), args: [], log: join(dir, "missing.log"), delay: () => 10, maxDeaths: 2, onGiveUp: (why) => { gaveUp = why; } }));
+  await until(() => gaveUp !== "");
+  assert.match(gaveUp, /could not start \(spawn .*ENOENT\)/);
 });
 
 test("stopping it ends the server for good", async () => {
-  const log = join(dir, "stop.log");
-  const s = supervise({ command: process.execPath, args: [script("stop", "setInterval(() => {}, 1000);")], log, delay: () => 10 });
+  const { stop, text } = run("stop", STAY_UP);
   await until(() => starts("stop") === 1);
-  s.stop();
-  await until(() => /supervisor: stopped/.test(readFileSync(log, "utf8")));
+  stop();
+  await until(() => /supervisor: stopped/.test(text()));
   await new Promise((r) => setTimeout(r, 150));
   assert.equal(starts("stop"), 1);
 });

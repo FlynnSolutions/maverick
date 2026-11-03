@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
-import { tempRepo } from "./fixtures.ts";
+import { tempRepo, until } from "./fixtures.ts";
 import { INTERVIEW_PROBES, applyPlanState, approveMission, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask, markReadings, WALKTHROUGH_TEMPLATE, placeWalkthrough, walkKey, walkthroughPrompt } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
@@ -1276,9 +1276,6 @@ test("the pace is measured from past mission records: each passed task's build p
 
 /* ---------- the sweep runs when a session ends ---------- */
 
-const until = async (ok: () => boolean, ms = 5_000): Promise<void> => {
-  for (const start = Date.now(); !ok(); await new Promise((r) => setTimeout(r, 25))) if (Date.now() - start > ms) throw new Error(`not within ${ms} ms`);
-};
 
 test("a burst of endings is one pass, run once the burst settles", async () => {
   const project = { id: "p-soon", name: "P", path: "/p" } as never;

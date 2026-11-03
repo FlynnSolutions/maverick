@@ -908,12 +908,16 @@ Everything the server prints goes to one log (`~/Library/Logs/Maverick/server.lo
 `MAVERICK_SERVER_LOG`). A death is written there with its exit code or signal, how long it ran
 and its last 40 lines, and the server is started again after 1 s, doubling to 30 s for each death
 in a row. Five deaths inside a minute is a server that cannot stay up: it is not started again,
-and the app says so in a dialog naming the log. Every way the app ends takes the server with it
-(quit, a signal, exit), so no orphan holds the port.
+and the app says so in a dialog naming the log. Every way the app ends takes the server with it:
+a quit or a signal stops it, and a kill -9 of the app closes the server's stdin, which a server
+started with `MAVERICK_SUPERVISED` exits on. No orphan holds the port unwatched.
 
 **What stays.** M15's shape: the app is a window onto the server, and if something already
 answers on the port the app opens on that and starts nothing. `node server.ts` in a terminal is
 unsupervised, as before; the app is where it has to stay up on its own.
+
+**Not known:** whether the 8766 that died on 2026-10-30 was the app or a `node server.ts` in a
+terminal. If it was the terminal, this covers it only once that server is run by the app.
 
 **Rejected: restarting in-process.** An uncaught error in the main process is the app's error,
 not the server's, and a server that half-died in-process cannot be told from one that is fine.

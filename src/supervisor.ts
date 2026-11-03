@@ -6,38 +6,35 @@
  * log file, a death is written there with its exit code or signal, how long it ran and the last
  * thing it said, and it is started again after a pause that grows with each death in a row. A
  * server that keeps dying fast is given up on with that reason, rather than restarted forever.
+ *
+ * The child is started with `MAVERICK_SUPERVISED=1` and its stdin a pipe from here; `server.ts`
+ * exits when that pipe closes, so a supervisor that dies without a word (a kill -9, a crash)
+ * takes its server with it rather than leaving one on the port that nothing watches.
  */
-import { spawn, type ChildProcess } from "node:child_process";
-import { appendFileSync, mkdirSync, statSync, truncateSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { closeSync, openSync, renameSync, statSync, writeSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 export interface SuperviseOptions {
   command: string;
   args: string[];
   env?: NodeJS.ProcessEnv;
-  cwd?: string;
-  /** The log every line the server prints goes to, and every death and restart. */
+  /** The log every byte the server prints goes to, and every death and restart. */
   log: string;
-  /** Deaths inside `window` ms before it is given up on. */
+  /** Deaths inside a minute before it is given up on. */
   maxDeaths?: number;
-  window?: number;
   /** Pause before restart `n` (1-based). */
   delay?: (n: number) => number;
   /** Called once when it is given up on, with the line that says why. */
   onGiveUp?: (why: string) => void;
 }
 
-export interface Supervised {
-  /** Stop for good: the child is killed and not started again. */
-  stop: () => void;
-  /** The child's pid, while one is running. */
-  pid: () => number | undefined;
-}
-
 /** What a death leaves in the log, past the server's own lines: the last of what it printed. */
 const TAIL_LINES = 40;
-/** A log past this is cut back to nothing at start, so it never fills the disk. */
+const TAIL_BYTES = 8 * 1024;
+/** Past this the log moves to `<log>.1`, replacing the one before, so it never fills the disk and the last deaths survive. */
 const LOG_CAP_BYTES = 10 * 1024 * 1024;
+const WINDOW_MS = 60_000;
 
 const backoff = (n: number): number => Math.min(1000 * 2 ** (n - 1), 30_000);
 
@@ -46,58 +43,77 @@ const lasted = (ms: number): string => {
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m${s % 60}s` : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`;
 };
 
-export const supervise = (o: SuperviseOptions): Supervised => {
-  const { maxDeaths = 5, window = 60_000, delay = backoff } = o;
-  mkdirSync(dirname(o.log), { recursive: true });
-  try { if (statSync(o.log).size > LOG_CAP_BYTES) truncateSync(o.log, 0); } catch { /* no log yet */ }
-  const write = (text: string) => appendFileSync(o.log, text);
+/** An append-only log that rotates itself by size, written synchronously so the last line before an exit lands. */
+const openLog = (file: string): ((bytes: Buffer | string) => void) => {
+  mkdirSync(dirname(file), { recursive: true });
+  let size = statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+  let fd = openSync(file, "a");
+  return (bytes) => {
+    if (size > LOG_CAP_BYTES) {
+      closeSync(fd);
+      renameSync(file, `${file}.1`);
+      fd = openSync(file, "a");
+      size = 0;
+    }
+    size += writeSync(fd, bytes);
+  };
+};
+
+/** Run the server and keep it running. Returns the stop: the child is killed and not started again. */
+export const supervise = (o: SuperviseOptions): (() => void) => {
+  const { maxDeaths = 5, delay = backoff } = o;
+  const write = openLog(o.log);
   const note = (line: string) => write(`${new Date().toISOString()} supervisor: ${line}\n`);
 
-  let child: ChildProcess | undefined;
+  let kill: (() => void) | undefined;
   let stopped = false;
   let timer: NodeJS.Timeout | undefined;
   const deaths: number[] = [];
 
   const start = () => {
     const began = Date.now();
-    let tail: string[] = [];
+    // Raw bytes, cut to lines only when the server dies: output is constant, a death is rare.
+    let tail = Buffer.alloc(0);
     const keep = (chunk: Buffer) => {
-      const text = chunk.toString();
-      write(text);
-      tail = [...tail, ...text.split("\n").filter(Boolean)].slice(-TAIL_LINES);
+      write(chunk);
+      tail = Buffer.concat([tail, chunk]).subarray(-TAIL_BYTES);
     };
-    child = spawn(o.command, o.args, { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(o.command, o.args, { env: { ...(o.env ?? process.env), MAVERICK_SUPERVISED: "1" }, stdio: ["pipe", "pipe", "pipe"] });
+    kill = () => child.kill();
     note(`started ${o.args.join(" ")} (pid ${child.pid})`);
-    child.stdout!.on("data", keep);
-    child.stderr!.on("data", keep);
-    child.on("error", (err) => note(`could not start: ${err.message}`));
-    child.on("exit", (code, signal) => {
-      child = undefined;
-      if (stopped) return note(`stopped (${signal ?? `code ${code}`})`);
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    let ended = false;
+    const died = (how: string) => {
+      if (ended) return;
+      ended = true;
+      kill = undefined;
+      if (stopped) return note(`stopped (${how})`);
       const now = Date.now();
       deaths.push(now);
-      while (deaths.length && now - deaths[0] > window) deaths.shift();
-      const how = signal ? `killed by ${signal}` : `exited with code ${code}`;
-      const last = tail.length ? `; its last words:\n${tail.map((l) => `    ${l}`).join("\n")}` : "; it printed nothing";
+      while (deaths.length && now - deaths[0] > WINDOW_MS) deaths.shift();
+      const lines = tail.toString().split("\n").filter(Boolean).slice(-TAIL_LINES);
+      const last = lines.length ? `; its last words:\n${lines.map((l) => `    ${l}`).join("\n")}` : "; it printed nothing";
+      const what = `the server ${how} after ${lasted(now - began)}`;
       if (deaths.length >= maxDeaths) {
-        const why = `the server ${how} after ${lasted(now - began)}, ${deaths.length} deaths inside ${lasted(window)}, so it is not started again`;
+        const why = `${what}, ${deaths.length} deaths inside ${lasted(WINDOW_MS)}, so it is not started again`;
         note(`${why}${last}`);
         o.onGiveUp?.(why);
         return;
       }
       const wait = delay(deaths.length);
-      note(`the server ${how} after ${lasted(now - began)}; starting it again in ${lasted(wait)}${last}`);
+      note(`${what}; starting it again in ${lasted(wait)}${last}`);
       timer = setTimeout(start, wait);
-    });
+    };
+    // A command that cannot be started at all errors with no exit to follow; it is a death like any other.
+    child.on("error", (err) => died(`could not start (${err.message})`));
+    child.on("exit", (code, signal) => died(signal ? `killed by ${signal}` : `exited with code ${code}`));
   };
   start();
 
-  return {
-    stop: () => {
-      stopped = true;
-      clearTimeout(timer);
-      child?.kill();
-    },
-    pid: () => child?.pid,
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    kill?.();
   };
 };

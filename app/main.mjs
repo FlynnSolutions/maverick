@@ -1,6 +1,6 @@
 /**
- * The Electron shell: one window onto the same server a browser tab talks to. `server.ts` is
- * imported here as the main process and `web/` is served from it unchanged. If something
+ * The Electron shell: one window onto the same server a browser tab talks to. `server.ts` runs
+ * beside it as a supervised child (decisions M31) and `web/` is served from it unchanged. If something
  * already answers on the port (a `node server.ts` left running in a terminal), the window
  * opens on that and starts nothing of its own. With `--source <checkout>` the server is that
  * checkout's, not the packed copy; the page reads which off the server's `/api/about`.
@@ -45,22 +45,27 @@ const answers = (port) =>
 /**
  * The server runs beside the app, not inside it, under a supervisor: a crash is written to the log
  * with why, and the server comes back on its own (decisions M31). Electron's own Node runs it, so
- * the packed app needs nothing installed. Returns the stop, for quitting.
+ * the packed app needs nothing installed. Its stop is kept for every way the app ends.
  */
+let stopServer = () => {};
+
 const startServer = async () => {
   const path = await loginPath();
   if (path) process.env.PATH = path;
-  const server = supervise({
+  stopServer = supervise({
     command: process.execPath,
     args: [serverPath(source, fileURLToPath(new URL("../server.ts", import.meta.url)))],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
     log: config.serverLog,
-    onGiveUp: (why) => dialog.showErrorBox("Maverick's server stopped", `${why}.\n\nWhat it printed is in ${config.serverLog}.`),
+    onGiveUp: (why) => {
+      dialog.showErrorBox("Maverick's server stopped", `${why}.\n\nWhat it printed is in ${config.serverLog}.`);
+      app.quit();
+    },
   });
   // Every way the app ends takes its server with it: a quit runs will-quit, but a signal (a logout,
-  // a kill) ends Electron without it, and an orphan would hold the port unsupervised.
-  app.on("will-quit", server.stop);
-  process.on("exit", server.stop);
+  // a kill) ends Electron without it. A kill -9 runs nothing here; the server's closed stdin covers that.
+  app.on("will-quit", stopServer);
+  process.on("exit", stopServer);
   for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => app.quit());
   const started = Date.now();
   while (!(await answers(config.port))) {
@@ -171,8 +176,9 @@ const pollQuestions = (win, origin) => {
   poll();
 };
 
-/** The same app again on another source, or none: server.ts is imported in-process, so swapping it is a relaunch. */
+/** The same app again on another source, or none. The old server is stopped first, so the new app cannot open onto it. */
 const relaunch = (dir) => {
+  stopServer();
   app.relaunch({ args: [...withoutSource(process.argv.slice(1)), ...(dir ? ["--source", dir] : [])] });
   app.exit(0);
 };
