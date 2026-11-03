@@ -423,6 +423,36 @@ format: checklist
 
 ## 📋 Backlog
 
+- [ ] `[ENG]` `[S]` **A refused write answers 500, as if the server broke**
+  - created: 2026-11-03
+  - source: the HTTP write tests (#54), 2026-11-03
+  - kind: bug
+  Medium, not fixed in the review pass: the refusal is correct and says why, only the status is
+  wrong. Every `throw new Error` a route uses to refuse bad input or a wrong state (a remove with
+  no reason, a ship version like `next`, a second approve) reaches the catch-all in `server.ts` and
+  answers 500; only `StaleMoveError` maps to 409. One refusal error class mapped in that catch, 400
+  for bad input and 409 for a wrong state, then the tests in `test/http-writes.test.ts` assert the
+  code as well as the message.
+
+- [ ] `[ENG]` `[S]` **The Strike Lead writes unattended, fenced only by its prompt**
+  - created: 2026-11-03
+  - source: /code-review high over v0.3.1..main, 2026-11-03
+  - kind: decision
+  Medium, not fixed, because it needs Cory's call: since protocol v3 the Strike Lead runs headless
+  (`claude -p --permission-mode auto`, `src/git.ts` `claudeArgs`) where it used to run in a
+  terminal Cory approved edits in. "The plan document is the only file you write" is the prompt's
+  rule alone. It needs Write for the plan, and `--tools` cannot fence by path, so the choices are a
+  hook that refuses writes outside `deliverables/missions/`, or accepting it and saying so in M28.
+
+- [ ] `[ENG]` `[S]` **watchEndings remembers every session it ever saw**
+  - created: 2026-11-03
+  - source: /code-review high over v0.3.1..main, 2026-11-03
+  - kind: chore
+  Medium, not fixed: the `finished` map in `watchEndings` (`src/missions.ts`) keeps one entry per
+  background session's `state.json` for the life of the server. One small entry per Wingman, RIO
+  and builder, so it is a slow leak rather than a fault; prune an entry once its session is gone
+  from `claude agents`.
+
 - [ ] `[ENG]` `[S]` **A milestone with no screen should not need a walkthrough**
   - created: 2026-10-28
   - source: Cory, Realtime concept-build mission, 2026-10-28 ("there are generated walkthroughs for the contract and backends so its tough")

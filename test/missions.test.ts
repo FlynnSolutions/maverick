@@ -1401,3 +1401,75 @@ test("the walkthrough starts as the template, placed with its key set, and the p
   assert.ok(prompt.includes("  - a station with no feed says so"), "the plan's walk cases are handed on");
   assert.doesNotMatch(prompt, /ship-test-walkthrough/, "no skill that does not exist");
 });
+
+/* ---------- from the review of main since v0.3.1 ---------- */
+
+test("a walk's fix task, which the document does not list, is logged when it moves and not again on every write", () => {
+  const plan = parsePlan(`${shaped({ tasks: [task("Build it", ["touches: src/a.ts"])] })}\n## Log\n\n- 2026-11-03 10:00 m1-fix1 fix the 1 case walk 1 of milestone 1 failed: new to pending\n`, ["root"]);
+  const fix = { id: "m1-fix1", title: "fix the 1 case walk 1 of milestone 1 failed", intent: "i", repo: "root", status: "pending" as const, attempts: 0 };
+  const built = { id: "m1-t1", title: "Build it", intent: "i", repo: "root", status: "pending" as const, attempts: 0 };
+  const mission = { milestones: [{ n: 1, title: "m1", done: "d", tasks: [built, fix] }] } as unknown as Mission;
+  assert.deepEqual(transitions(plan, mission, "2026-11-03 10:05"), [], "nothing moved, so nothing is written");
+  fix.status = "flying" as never;
+  assert.deepEqual(transitions(plan, mission, "2026-11-03 10:06"), ["2026-11-03 10:06 m1-fix1 fix the 1 case walk 1 of milestone 1 failed: pending to flying"]);
+  assert.equal(feedOf(["2026-11-03 10:06 m1-fix1 fix the 1 case walk 1 of milestone 1 failed: pending to flying"]).length, 1, "and the feed reads the line");
+});
+
+test("a milestone a walk reopened that merges again leaves a second merge line", () => {
+  const plan = parsePlan(`${shaped({ tasks: [task("Build it", ["touches: src/a.ts"])] })}\n## Log\n\n- 2026-11-03 09:00 merged: milestone 1 (m1) is on the mission branch\n`, ["root"]);
+  const at = (iso: string) => ({ milestones: [{ n: 1, title: "m1", done: "d", merged: iso, tasks: plan.milestones[0].tasks }] }) as unknown as Mission;
+  const first = new Date(2026, 10, 3, 9, 0).toISOString();
+  assert.deepEqual(transitions(plan, at(first), "2026-11-03 09:01").filter((l) => / merged: /.test(l)), [], "the first merge is logged once");
+  const again = new Date(2026, 10, 3, 11, 30).toISOString();
+  assert.deepEqual(transitions(plan, at(again), "2026-11-03 11:31").filter((l) => / merged: /.test(l)), ["2026-11-03 11:30 merged: milestone 1 (m1) is on the mission branch"]);
+});
+
+test("a task that needs a milestone being fixed after a failed walk waits for the fix, and says so", () => {
+  const passed = (id: string) => ({ id, title: id, intent: "i", repo: "root", status: "passed" as const, attempts: 1, commits: ["c"] });
+  const fixing = { n: 1, title: "a", done: "d", dispatched: "x", tasks: [passed("m1-t1"), { id: "m1-fix1", title: "fix", intent: "i", repo: "root", status: "pending" as const, attempts: 0 }], walkthrough: { doc: "w.html", fixes: [{ round: 1, task: "m1-fix1", cases: ["b"], filed: "x" }] } };
+  const later = { n: 2, title: "b", done: "d", dispatched: "x", tasks: [{ id: "m2-t1", title: "on top", intent: "i", repo: "root", status: "pending" as const, attempts: 0, needs: ["m1-t1"] }] };
+  const mission = { status: "flying" as const, milestones: [fixing, later] } as never;
+  assert.deepEqual(startable(mission).map((s: { task: MissionTask }) => s.task.id), ["m1-fix1"], "the fix goes, the task built on it does not");
+  assert.match(waitingOn(mission).tasks["m2-t1"], /m1-t1 \(its milestone is being fixed after a failed walk\)/);
+});
+
+test("a builder that finished without filling the placed template has failed, not written the walkthrough", async () => {
+  const { project, root } = summaryFixture("unfilled", { status: "flying", milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-14T07:30:00Z", merged: "2026-10-14T09:00:00Z", mergeShas: { root: "abc" }, walkthrough: { claudeId: "wb-1", started: "2026-11-03T09:00:00Z" }, tasks: [
+    { id: "m1-t1", title: "The worker", intent: "Build the worker.", repo: "root", status: "passed", attempts: 1, commits: ["c"] }] }] as never });
+  execFileSync("git", ["-C", root, "checkout", "-q", "-b", "mission/unfilled"]);
+  await placeWalkthrough(root, "deliverables/testing/unfilled-m1-walkthrough.html", "unfilled-m1");
+  agentsSay([{ id: "wb-1", state: "done" }]);
+  await sweepMissions(project);
+  const w = recordOf("unfilled").milestones[0].walkthrough!;
+  assert.equal(w.doc, undefined, "the template is not the walkthrough");
+  assert.match(w.failed ?? "", /without filling in the walkthrough template/);
+});
+
+test("a retry of a task whose launch never made its worktree makes it, and sends the Wingman out from there", async () => {
+  const { project, root } = summaryFixture("no-worktree", { status: "flying", milestones: [{ n: 1, title: "the first", done: "d", dispatched: "2026-10-14T07:30:00Z", tasks: [
+    { id: "m1-t1", title: "The worker", intent: "Build the worker.", repo: "root", status: "handed-back", attempts: 0, note: "could not launch: fatal: a lock", worktree: "", branch: "mission/no-worktree-m1-t1" }] }] as never });
+  const worktree = join(root, ".claude", "worktrees", "no-worktree-m1-t1");
+  execFileSync("git", ["-C", root, "branch", "mission/no-worktree"]);
+  const record = recordOf("no-worktree");
+  record.milestones[0].tasks[0].worktree = worktree;
+  writeFileSync(join(sessions, "missions", "p-m3-t1", "no-worktree.json"), JSON.stringify(record), "utf8");
+  agentsSay([]);
+  const { retryTask } = await import("../src/missions.ts");
+  await retryTask(project, "no-worktree", "m1-t1");
+  assert.ok(existsSync(join(worktree, ".git")), "the worktree exists now");
+  assert.equal(readFileSync(join(fakeClaude, "cwd"), "utf8").trim(), worktree, "and the Wingman works in it");
+  assert.equal(recordOf("no-worktree").milestones[0].tasks[0].status, "flying");
+});
+
+test("a first turn that failed is not tried again by the sweep until the person writes", async () => {
+  const { project } = summaryFixture("first-fails", { status: "interviewing", approved: undefined, milestones: [], chat: [] } as never);
+  scriptTurn(null);
+  await sweepMissions(project);
+  await leadSettled("first-fails", "p-m3-t1");
+  await sweepMissions(project);
+  await leadSettled("first-fails", "p-m3-t1");
+  await sweepMissions(project);
+  await leadSettled("first-fails", "p-m3-t1");
+  assert.equal(readFileSync(join(fakeClaude, "turns.log"), "utf8").split("=====").length - 1, 1, "one turn across three sweeps");
+  assert.equal(recordOf("first-fails").chat?.filter((e) => e.error).length, 1, "and one error in the chat");
+});

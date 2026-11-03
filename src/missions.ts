@@ -771,22 +771,31 @@ const carriedCounts = (carried: string[]): string => {
  * for what a person did, and nothing for a plain pass or retry. The report reads those words,
  * not the prose after them. A pass with notes says how many right after its verdict.
  */
+/** A task's move as `transitions` writes it: its id, the status it moved to, and the RIO's verdict when it had one. */
+const LOGGED_MOVE = /^\S+ \S+ (?:auto: )?(m\d+-(?:t|fix)\d+) .+?: \S+ to (pending|flying|built|reviewing|passed|handed-back)(?: \(RIO: ([^)]+)\))?/;
+
 /** A ledger stamp: local date and time to the minute, as every line of the log carries. */
 const stampOf = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
 export const transitions = (before: ReturnType<typeof parsePlan>, mission: Mission, stamp: string): string[] => {
-  const was = new Map(before.milestones.flatMap((m) => m.tasks).map((t) => [t.id, t]));
+  // A task the document does not list (a walk's fix task, filed after the plan was written) is
+  // as its last line in the log left it, or every write would log it again as new.
+  const was = new Map<string, Pick<MissionTask, "status" | "verdict">>(before.log.flatMap((l) => {
+    const t = l.match(LOGGED_MOVE);
+    return t ? [[t[1], { status: t[2] as TaskStatus, verdict: t[3] }] as const] : [];
+  }));
+  for (const t of before.milestones.flatMap((m) => m.tasks)) was.set(t.id, t);
   const heldLogged = new Set(before.log.filter((l) => /^\S+ \S+ held: /.test(l)).map((l) => l.match(/\(since ([^)]+)\)/)?.[1]));
-  // Once per milestone, stamped when it merged rather than when the line was written: a merge is
-  // the moment a person most wants to hear about, and it used to leave no line.
-  const mergedLogged = new Set(before.log.map((l) => l.match(/^\S+ \S+ merged: milestone (\d+)\b/)?.[1]).filter(Boolean).map(Number));
+  // Once per merge, stamped when it merged rather than when the line was written: a merge is
+  // the moment a person most wants to hear about, and a milestone a walk reopened merges again.
+  const mergedLogged = new Set(before.log.map((l) => l.match(/^(\S+ \S+) merged: milestone (\d+)\b/)).filter((m) => m !== null).map((m) => `${m[1]} ${m[2]}`));
   return [
     ...mission.milestones.flatMap((m) => m.tasks).filter((t) => {
       const prior = was.get(t.id);
       return !prior || prior.status !== t.status || prior.verdict !== t.verdict;
     }).map((t) => `${stamp} ${t.status === "passed" && t.note?.startsWith("the RIO said") ? "auto: " : ""}${t.id} ${t.title}: ${was.get(t.id)?.status ?? "new"} to ${t.status}${t.verdict ? ` (RIO: ${t.verdict})` : ""}${t.carried?.length ? carriedCounts(t.carried) : ""}${t.note ? `: ${t.note}` : ""}`),
     ...mission.milestones.filter((m) => m.hold && !heldLogged.has(m.hold.at)).map((m) => `${stamp} held: milestone ${m.n} (since ${m.hold!.at}): ${m.hold!.reason}`),
-    ...mission.milestones.filter((m) => m.merged && !mergedLogged.has(m.n)).map((m) => `${stampOf(new Date(m.merged!))} merged: milestone ${m.n} (${m.title}) is on the mission branch`),
+    ...mission.milestones.filter((m) => m.merged && !mergedLogged.has(`${stampOf(new Date(m.merged))} ${m.n}`)).map((m) => `${stampOf(new Date(m.merged!))} merged: milestone ${m.n} (${m.title}) is on the mission branch`),
   ];
 };
 
@@ -1324,8 +1333,10 @@ const settleWalkthroughs = async (project: Project, mission: Mission, state: Map
     if (!building(m) || !isOver(state, w!.claudeId!, w!.started)) continue;
     const repo = walkRepo(mission, m);
     const doc = repo && (await documentsSince(repo.integration, w!.started ?? "")).find((d) => WALKTHROUGH_DOC.test(d));
-    if (doc) w!.doc = relative(project.path, join(repo.integration, doc));
-    else w!.failed = "the session finished without writing a walkthrough document";
+    // The template is placed before the builder starts, so a document is only the builder's once it has replaced the examples.
+    const filled = doc && !(await readFile(join(repo.integration, doc), "utf8")).includes("data-example");
+    if (filled) w!.doc = relative(project.path, join(repo.integration, doc));
+    else w!.failed = doc ? "the session finished without filling in the walkthrough template: its example cases are still there" : "the session finished without writing a walkthrough document";
     changed = true;
   }
   return changed;
@@ -1486,8 +1497,8 @@ const clashOn = (a: MissionTask, b: MissionTask): string[] => {
 /** The statuses of a task with an agent in the air: what a task about to start must not clash with. */
 const AIRBORNE = new Set<TaskStatus>(["flying", "built", "reviewing"]);
 
-/** A passed task is a base to build on unless its milestone is held, or merged and not yet proved and walked. */
-const isBase = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean => !m.hold && (!m.merged || done(mission, m));
+/** A passed task is a base to build on unless its milestone is held, being fixed after a failed walk, or merged and not yet proved and walked. */
+const isBase = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean => !m.hold && !openFix(m.walkthrough) && (!m.merged || done(mission, m));
 
 /** The first milestone before this one that is not done: what a milestone is sent, and merged, after. */
 const undoneBefore = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): Milestone | undefined =>
@@ -1530,7 +1541,7 @@ const gates = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">
           const at = home.get(id);
           if (!at) return [{ id, why: "not in the plan" }];
           if (at.task.status !== "passed") return [{ id, title: at.task.title, why: at.task.status === "handed-back" ? "waiting for you" : at.task.status }];
-          if (!isBase(mission, at.m)) return [{ id, why: at.m.hold ? "its milestone is held" : proved(mission, at.m) ? "its milestone is not walked yet" : "its milestone is still being proved" }];
+          if (!isBase(mission, at.m)) return [{ id, why: at.m.hold ? "its milestone is held" : openFix(at.m.walkthrough) ? "its milestone is being fixed after a failed walk" : proved(mission, at.m) ? "its milestone is not walked yet" : "its milestone is still being proved" }];
           return [];
         });
         if (needs.length) return { needs };
@@ -1805,6 +1816,8 @@ const forget = (task: MissionTask): void => {
 const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<boolean> => {
   const previous = task.claudeId;
   const cfg = await missionConfigFor(project.path);
+  const repo = missionRepo(mission, task);
+  let base = task.base;
   // The record is about to forget both, and the verdict is read: nothing reads either again.
   for (const id of [previous, task.review?.claudeId]) if (id) await stopAgent(id);
   const out = await claimed(mission,
@@ -1820,8 +1833,13 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
       task.note = undefined;
       forget(task);
     },
-    () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
-    (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
+    async () => {
+      // A launch that failed making the worktree left its path on the task and nothing on disk; the retry makes it.
+      await ensureWorktree(repo.path, task.worktree!, task.branch!, repo.branch);
+      base ??= await revParse(repo.path, task.branch!);
+      return spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg));
+    },
+    (on, claudeId) => { const t = taskOn(on, task.id); if (t) { t.claudeId = claudeId; t.base = base; } },
     launchFailed(task.id));
   if (!out) return false;
   if (previous) await patchSession(config.sessionsDir, `bg-${previous}`, { status: "handed-off", ended: new Date().toISOString(), handoff: findings.split("\n")[0] });
@@ -1866,9 +1884,12 @@ export const sweepMissions = async (project: Project): Promise<void> => {
   // The one place work resumes: an interview whose first turn a restart cut off, or a message to the
   // Strike Lead that a restart or a terminal holding its session left unanswered, is answered on the next pass.
   for (const m of await listMissions(project.id)) {
-    if (!over(m) && !leadBusy(m) && ((!m.lead && !m.approved) || unheard(m.chat ?? []).length)) hearLead(project, m.id);
+    if (!over(m) && !leadBusy(m) && ((!m.lead && !m.approved && !failedSinceYou(m.chat ?? [])) || unheard(m.chat ?? []).length)) hearLead(project, m.id);
   }
 };
+
+/** A turn failed since the person last spoke: the next try is theirs to start by writing, not the sweep's on every pass. */
+const failedSinceYou = (chat: NonNullable<Mission["chat"]>): boolean => chat.slice(chat.findLastIndex((e) => e.who === "you") + 1).some((e) => e.error);
 
 /** How long a burst of endings is let settle before the one pass it earns. */
 const ENDING_SETTLE_MS = 3_000;
@@ -1916,6 +1937,11 @@ export const watchEndings = (projects: () => Promise<Project[]>, onEnd: (project
     const watcher = watch(dir, { recursive: true }, (_, file) => {
       // A file caught mid-write is read again on its next write; the tick covers the last one.
       if (file && /(^|\/)state\.json$/.test(file)) seen(file).catch(() => undefined);
+    });
+    // A watch can fail long after it starts (the folder removed, out of descriptors); with no listener that error ends the server.
+    watcher.on("error", (err) => {
+      console.error(`stopped watching ${dir} for sessions that end; the sweep runs on its tick alone:`, err.message);
+      watcher.close();
     });
     return () => watcher.close();
   } catch (err) {
@@ -2426,9 +2452,14 @@ const leadKey = (m: Pick<Mission, "project" | "id">): string => `${m.project}/${
  */
 export const leadBusy = (m: Pick<Mission, "project" | "id">): boolean => {
   const key = leadKey(m);
+  return leading.has(key) || inTerminal(key);
+};
+
+/** The lead's session is open in one of Maverick's terminals; one that has exited is forgotten here. */
+const inTerminal = (key: string): boolean => {
   const terminal = leadTerminals.get(key);
   if (terminal && !listTerminals().some((t) => t.id === terminal && t.exitCode === null)) leadTerminals.delete(key);
-  return leading.has(key) || leadTerminals.has(key);
+  return leadTerminals.has(key);
 };
 
 /** A turn reads the repo before it answers; a long one is still well inside this. */
@@ -2481,7 +2512,7 @@ export const hearLead = (project: Project, id: string): void => {
       const chat = mission.chat ?? [];
       const heard = unheard(chat);
       const first = !mission.lead;
-      if (over(mission) || leadTerminals.has(key) || (!first && !heard.length)) return;
+      if (over(mission) || inTerminal(key) || (!first && !heard.length)) return;
       const sessionId = mission.lead?.sessionId ?? randomUUID();
       const turn = await leadTurn(project, first ? { sessionId } : { resume: sessionId }, await leadPrompt(project, mission, first, heard));
       // Read before the reply lands, so a plan the Strike Lead says is ready is checked as it is now.
