@@ -1,0 +1,39 @@
+/* The flight effects: the flyby, the loading pass, the missile and the flares (web/afterburner.js).
+   Only the workspace plays them, so only index.html links this sheet. The flyby and the loading
+   pass are the one authored moment (.ui-design/system.md) and run past MO-6's 500 ms by decision;
+   every other effect here is an action's, and stands down under reduced motion. */
+
+.fx { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: visible; }
+.fx .contrail { fill: none; stroke: color-mix(in srgb, var(--ink-soft) 55%, transparent); stroke-width: 1.6; stroke-linecap: round; filter: blur(0.6px); animation: contrail-draw var(--dur, 1400ms) linear forwards, contrail-fade 1200ms ease-out var(--dur, 1400ms) forwards; }
+@keyframes contrail-draw { to { stroke-dashoffset: 0; } }
+@keyframes contrail-fade { to { opacity: 0; } }
+.fx .jet { transform: translate(-60px, var(--y)); animation: jet-cross var(--dur, 1400ms) cubic-bezier(0.3, 0, 0.7, 1) forwards; }
+.fx .jet .body, .fx .jet .detail { fill: var(--ink-soft); }
+.fx .jet .t3 { fill: color-mix(in srgb, var(--ink-soft) 84%, var(--carbon)); }
+.fx .jet .t2 { fill: color-mix(in srgb, var(--ink-soft) 66%, var(--carbon)); }
+.fx .jet .t1 { fill: color-mix(in srgb, var(--ink-soft) 46%, var(--carbon)); }
+.fx .jet .t0 { fill: color-mix(in srgb, var(--ink-soft) 28%, var(--carbon)); }
+/* The loading pass is bigger, slower and dimmer than a one-off flyby. */
+.fx.loading .jet.big { transform: translate(-220px, var(--y)) scale(var(--scale, 3)); opacity: .45; animation: jet-cross-big var(--dur, 2200ms) linear forwards; }
+.fx .jet .burner { fill: var(--accent-hot); filter: blur(2px); animation: burner 90ms steps(2) infinite; }
+@keyframes jet-cross { to { transform: translate(calc(100vw + 80px), var(--y)); } }
+@keyframes jet-cross-big { to { transform: translate(calc(100vw + 300px), var(--y)) scale(var(--scale, 3)); } }
+@keyframes burner { from { opacity: 0.95; rx: 9px; } to { opacity: 0.6; rx: 12px; } }
+.fx .missile-trail { fill: none; stroke: rgba(232, 236, 241, 0.7); stroke-width: 2; stroke-linecap: round; filter: blur(0.8px); }
+.fx .missile-head { fill: var(--accent-core); filter: drop-shadow(0 0 6px var(--accent-hot)); }
+.fx .impact { fill: var(--accent-hot); filter: blur(2px); animation: impact 500ms ease-out forwards; }
+@keyframes impact { from { transform: scale(0.6); opacity: 1; } to { transform: scale(6); opacity: 0; } }
+.fx .flare { fill: var(--accent-hot); filter: drop-shadow(0 0 4px var(--accent)); animation: flare 480ms cubic-bezier(0.2, 0.7, 0.4, 1) var(--delay, 0ms) forwards; }
+@keyframes flare {
+  0% { transform: translate(0, 0); opacity: 0; }
+  10% { opacity: 1; }
+  70% { opacity: 0.9; }
+  100% { transform: translate(var(--dx), calc(var(--dy) + 90px)); opacity: 0; }
+}
+.card.struck, .row.struck, .items.struck, .lane.struck, .release-card.struck {
+  box-shadow: 0 0 0 1px var(--accent-hot), 0 0 28px var(--accent-glow), 0 0 70px var(--accent-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx .missile-trail, .fx .missile-head, .fx .flare, .fx .impact { animation: none; opacity: 0; }
+}

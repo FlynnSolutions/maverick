@@ -894,7 +894,7 @@ body.ask-open { overflow: hidden; }
 .ship-cta { margin-top: 10px; }
 .ship-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .ship-progress .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--panel); overflow: hidden; }
-.ship-progress .fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hot)); box-shadow: 0 0 10px var(--accent-glow); transition: width 300ms var(--ease-out); }
+.ship-progress .fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hot)); box-shadow: 0 0 10px var(--accent-glow); transform-origin: left; transition: transform 300ms var(--ease-out); }
 .ship-step { padding: 10px 12px; margin-bottom: 8px; border-radius: var(--radius-m); background: var(--carbon); box-shadow: 0 0 0 1px var(--seam-soft); }
 .ship-step.current { box-shadow: 0 0 0 1px var(--accent-glow), 0 0 18px var(--accent-dim); }
 .ship-step.done, .ship-step.skipped { opacity: 0.7; }
@@ -983,38 +983,6 @@ body.ask-open { overflow: hidden; }
 .workspace h3 { font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 22px 0 8px; }
 @media (max-width: 900px) { .ws-tiles { grid-template-columns: 1fr 1fr; } .ws-cols { grid-template-columns: 1fr; } }
 
-/* ---------- flight effects ---------- */
-
-.fx { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: visible; }
-.fx .contrail { fill: none; stroke: color-mix(in srgb, var(--ink-soft) 55%, transparent); stroke-width: 1.6; stroke-linecap: round; filter: blur(0.6px); animation: contrail-draw var(--dur, 1400ms) linear forwards, contrail-fade 1200ms ease-out var(--dur, 1400ms) forwards; }
-@keyframes contrail-draw { to { stroke-dashoffset: 0; } }
-@keyframes contrail-fade { to { opacity: 0; } }
-.fx .jet { transform: translate(-60px, var(--y)); animation: jet-cross var(--dur, 1400ms) cubic-bezier(0.3, 0, 0.7, 1) forwards; }
-.fx .jet .body, .fx .jet .detail { fill: var(--ink-soft); }
-.fx .jet .t3 { fill: color-mix(in srgb, var(--ink-soft) 84%, var(--carbon)); }
-.fx .jet .t2 { fill: color-mix(in srgb, var(--ink-soft) 66%, var(--carbon)); }
-.fx .jet .t1 { fill: color-mix(in srgb, var(--ink-soft) 46%, var(--carbon)); }
-.fx .jet .t0 { fill: color-mix(in srgb, var(--ink-soft) 28%, var(--carbon)); }
-/* The loading pass is bigger, slower and dimmer than a one-off flyby. */
-.fx.loading .jet.big { transform: translate(-220px, var(--y)) scale(var(--scale, 3)); opacity: .45; animation: jet-cross-big var(--dur, 2200ms) linear forwards; }
-.fx .jet .burner { fill: var(--accent-hot); filter: blur(2px); animation: burner 90ms steps(2) infinite; }
-@keyframes jet-cross { to { transform: translate(calc(100vw + 80px), var(--y)); } }
-@keyframes jet-cross-big { to { transform: translate(calc(100vw + 300px), var(--y)) scale(var(--scale, 3)); } }
-@keyframes burner { from { opacity: 0.95; rx: 9px; } to { opacity: 0.6; rx: 12px; } }
-.fx .missile-trail { fill: none; stroke: rgba(232, 236, 241, 0.7); stroke-width: 2; stroke-linecap: round; filter: blur(0.8px); }
-.fx .missile-head { fill: var(--accent-core); filter: drop-shadow(0 0 6px var(--accent-hot)); }
-.fx .impact { fill: var(--accent-hot); filter: blur(2px); animation: impact 500ms ease-out forwards; }
-@keyframes impact { from { transform: scale(0.6); opacity: 1; } to { transform: scale(6); opacity: 0; } }
-.fx .flare { fill: var(--accent-hot); filter: drop-shadow(0 0 4px var(--accent)); animation: flare 900ms cubic-bezier(0.2, 0.7, 0.4, 1) var(--delay, 0ms) forwards; }
-@keyframes flare {
-  0% { transform: translate(0, 0); opacity: 0; }
-  10% { opacity: 1; }
-  70% { opacity: 0.9; }
-  100% { transform: translate(var(--dx), calc(var(--dy) + 90px)); opacity: 0; }
-}
-.card.struck, .row.struck, .items.struck, .lane.struck, .release-card.struck {
-  box-shadow: 0 0 0 1px var(--accent-hot), 0 0 28px var(--accent-glow), 0 0 70px var(--accent-dim);
-}
 .brand .callsign { color: var(--accent-hot); margin-left: 8px; font-weight: 500; letter-spacing: 0.04em; text-transform: none; }
 
 /* ---------- release strip on one grid: every card the same four rows, 8px rhythm ---------- */
@@ -1119,14 +1087,18 @@ body.ask-open { overflow: hidden; }
 .ship-when { margin-top: 6px; }
 .ship-report .k { font-family: var(--display); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hud); margin-right: 8px; }
 .ship-progress { align-items: center; gap: 14px; margin: 4px 0 16px; }
-.ship-progress .runway, .wt-progress .runway { position: relative; flex: 1; height: 10px; border-radius: 5px; background: var(--panel); overflow: visible; }
-.ship-progress .runway .fill, .wt-progress .runway .fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent), var(--accent-hot)); box-shadow: 0 0 12px var(--accent-glow); transition: width 900ms cubic-bezier(0.2, 0.8, 0.3, 1); }
-.ship-progress .runway .jet-marker, .wt-progress .runway .jet-marker { position: absolute; top: 50%; width: 38px; height: 16px; transform: translate(-8px, -50%); transition: left 900ms cubic-bezier(0.2, 0.8, 0.3, 1); filter: drop-shadow(0 0 6px var(--accent-glow)); }
+/* The fill is the whole runway scaled to the share done, and the jet sits at it (--p, 0 to 100):
+   both move by transform, never by width or left, and the jet taxis in from the start of the
+   runway on arrival, measured in the runway's own width (cqw). */
+.ship-progress .runway, .wt-progress .runway { position: relative; flex: 1; height: 10px; border-radius: 5px; background: var(--panel); overflow: visible; container-type: inline-size; }
+.ship-progress .runway .fill, .wt-progress .runway .fill { width: 100%; height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent), var(--accent-hot)); box-shadow: 0 0 12px var(--accent-glow); transform-origin: left; transform: scaleX(calc(var(--p, 0) / 100)); transition: transform 300ms var(--ease-out); }
+.ship-progress .runway .jet-marker, .wt-progress .runway .jet-marker { position: absolute; top: 50%; left: 0; width: 38px; height: 16px; transform: translate(calc(var(--p, 0) * 1cqw - 8px), -50%); transition: transform 300ms var(--ease-out); filter: drop-shadow(0 0 6px var(--accent-glow)); }
 .ship-progress .runway .jet-glyph, .wt-progress .runway .jet-glyph { width: 38px; height: 38px; display: block; }
-@keyframes taxi { from { left: 0; } }
-.ship-progress .runway .jet-marker, .wt-progress .runway .jet-marker { animation: taxi 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
-.ship-progress .runway .fill, .wt-progress .runway .fill { animation: taxi-fill 900ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
-@keyframes taxi-fill { from { width: 0; } }
+@keyframes taxi { from { transform: translate(-8px, -50%); } }
+.ship-progress .runway .jet-marker, .wt-progress .runway .jet-marker { animation: taxi 480ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.ship-progress .runway .fill, .wt-progress .runway .fill { animation: taxi-fill 480ms cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+@keyframes taxi-fill { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .ship-progress .runway .jet-marker, .wt-progress .runway .jet-marker, .ship-progress .runway .fill, .wt-progress .runway .fill { animation: none; transition: none; } }
 
 /* The pages off the board (ship, mission, breakdown): the bar's crumb and its way back, and the
    hosted walkthrough (web/walkthrough.js) each of them draws, its runway above, its pillars and
@@ -1142,7 +1114,7 @@ body.ask-open { overflow: hidden; }
 .pillars { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .pillar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 8px 10px; border-radius: var(--radius-s); background: var(--carbon); box-shadow: inset 0 0 0 1px var(--seam-soft); }
 .pillar.complete { box-shadow: inset 0 0 0 1px rgba(141, 255, 176, 0.4); }
-.pillar .pname { font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pillar .pname { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
 .pillar .pcount { font-size: 12px; color: var(--accent-hot); }
 .pillar .pverdicts { grid-column: 1 / -1; }
 .doc-frame { width: 100%; height: 70vh; border: 0; border-radius: var(--radius-s); background: #fff; }
@@ -1191,7 +1163,7 @@ body.ask-open { overflow: hidden; }
 .cu-baby .cu-meter { width: 46px; }
 .cu-baby .chev { color: var(--ink-faint); font-size: 11px; }
 .cu-meter { display: inline-block; height: 6px; width: 120px; border-radius: 3px; background: rgba(170, 190, 215, 0.1); overflow: hidden; position: relative; }
-.cu-meter i { display: block; height: 100%; border-radius: 3px; background: var(--c, var(--accent)); transition: width 400ms var(--ease-out); }
+.cu-meter i { display: block; width: 100%; height: 100%; border-radius: 3px; background: var(--c, var(--accent)); transform-origin: left; transform: scaleX(calc(var(--p, 0) / 100)); transition: transform 300ms var(--ease-out); }
 .cu-meter.peak i { opacity: 0.75; }
 .cu-meter.caution i { background: var(--caution); }
 .cu-meter.threat i { background: var(--threat); box-shadow: 0 0 8px var(--threat-dim); }
@@ -1675,3 +1647,8 @@ body.bare .cc-pane.inline { height: min(78vh, 900px); }
    it is another line of furniture at the bottom. */
 body.bare .cc-composer .hint { display: none; }
 body.bare .cc-composer { padding-bottom: 10px; }
+
+/* The bar's links are targets a finger can hit on every page that carries it: 44px inside the 52px bar. */
+.bar .brand, .bar .button-link { min-height: 44px; }
+/* On a phone the bar wraps anyway, so the status line wraps with it rather than cutting its message off. */
+@media (max-width: 600px) { .bar .status { white-space: normal; flex-basis: 100%; } .bar .status:empty { display: none; } }

@@ -6,8 +6,9 @@
 // raw rows only append, so a half-typed note or an opened fold survives a sweep.
 
 import { answerControls } from "../answers.js";
-import { card, findingId } from "../card.js";
+import { card, chipLink, findingId } from "../card.js";
 import { LAMP } from "./plan.js";
+import { isEnded } from "./state.js";
 
 /** Lamp by kind, as the mockup draws them, for the raw rows. */
 const lampFor = (ctx, entry) =>
@@ -56,11 +57,13 @@ export const mount = (host, view, ctx) => {
   const groupFor = (g) => {
     if (groups.has(g)) return groups.get(g);
     const cards = el("div", { class: "prog-cards" });
-    const feed = el("ol", { class: "prog-feed", role: "log", "aria-label": g === "gate" ? "Every move at the gate" : `Every move in milestone ${g}` });
+    const feed = el("ol", { class: "prog-feed", "aria-label": g === "gate" ? "Every move at the gate" : `Every move in milestone ${g}` });
     const label = el("span", {});
     const moves = el("details", { class: "prog-moves", hidden: true }, el("summary", {}, el("span", { class: "chev" }), label), feed);
-    const node = el("div", { class: "prog-group" }, el("h3", { class: "prog-group-head" }, groupLabel(g)), cards, moves);
-    const group = { g, node, cards, feed, moves, label, n: 0 };
+    const tally = el("span", { class: "prog-tally" });
+    const node = el("details", { class: "prog-group", open: "" },
+      el("summary", {}, el("span", { class: "chev" }), el("h3", { class: "prog-group-head" }, groupLabel(g)), tally), cards, moves);
+    const group = { g, node, cards, feed, moves, label, tally, n: 0, done: null };
     groups.set(g, group);
     board.insertBefore(node, g === "gate" ? board.firstChild : null);
     return group;
@@ -96,9 +99,10 @@ export const mount = (host, view, ctx) => {
     const li = el("li", { class: "prog-attempt" }, `${parts.join(" · ")}${m.verdict ? " · " : ""}`);
     if (m.verdict) {
       const cls = `chip ${VERDICT_CLS[m.verdict] ?? ""}`.trim();
-      li.append(href
-        ? el("a", { class: cls, href, "aria-label": `${m.verdict}, read the findings for ${m.taskId}` }, m.verdict)
-        : el("span", { class: cls }, m.verdict));
+      if (href) {
+        li.classList.add("linked");
+        li.append(chipLink(el, m.verdict, VERDICT_CLS[m.verdict], { href, "aria-label": `${m.verdict}, read the findings for ${m.taskId}` }));
+      } else li.append(el("span", { class: cls }, m.verdict));
     }
     return li;
   };
@@ -139,12 +143,24 @@ export const mount = (host, view, ctx) => {
     for (const x of list) map.set(x.taskId, [...(map.get(x.taskId) ?? []), x]);
     return map;
   };
+  /**
+   * A milestone whose every task has passed is history: it folds to its heading and a tally, so
+   * what is still moving is what the section shows. Decided when the block first shows and again
+   * when it finishes; a block you opened or closed yourself stays as you left it.
+   */
   const settleTasks = () => {
     const moves = byTask(current.moves ?? []);
     const readings = byTask(current.readings ?? []);
     for (const m of current.milestones) {
-      groupFor(m.n);
+      const group = groupFor(m.n);
       for (const task of m.tasks) settleTask(task, m.n, moves.get(task.id) ?? [], readings.get(task.id) ?? []);
+      const passed = m.tasks.filter((t) => t.status === "passed").length;
+      const done = m.tasks.length > 0 && passed === m.tasks.length;
+      group.tally.textContent = `${passed} of ${plural(m.tasks.length, "task")} passed`;
+      if (done !== group.done) {
+        if (group.done === null || done) group.node.open = !done;
+        group.done = done;
+      }
     }
   };
 
@@ -203,8 +219,33 @@ export const mount = (host, view, ctx) => {
 
   const offeredOf = (q) => q.answers.map((a) => a.path ?? a.go).join(" ");
 
+  /**
+   * The walk is a list, not a paragraph: one row per milestone with how far its walkthrough has
+   * got and the button that opens it, so the progress and the action sit on one line. What the
+   * server says after the list (then close, a change asked too late) is the line under it.
+   */
+  const walkRows = (q) => {
+    const { buttons } = answerControls(q, { el, btn: ctx.btn, submit: () => {} });
+    return el("ul", { class: "prog-walks" }, ...q.answers.map((a, i) => {
+      const n = Number(a.go?.match(/^milestone-(\d+)$/)?.[1]);
+      const m = current.milestones.find((x) => x.n === n);
+      const p = m?.walkthrough?.progress;
+      const failed = Object.values(p?.verdicts ?? {}).filter((x) => x === "fail").length;
+      return el("li", {},
+        el("span", { class: "d" }, el("b", {}, `Milestone ${n}`), m ? ` ${m.title}` : ""),
+        el("span", { class: "p" }, p?.total ? `${p.answered} of ${p.total} answered${failed ? `, ${failed} failed` : ""}` : "not opened yet"),
+        buttons[i]);
+    }));
+  };
+  const walkTail = (q) => {
+    const at = (q.body ?? "").indexOf(" Then close");
+    return at < 0 ? "" : q.body.slice(at + 1);
+  };
+  const offeredOfWalk = (q) => JSON.stringify([offeredOf(q), q.body]);
+
   /** A question's card: its body, then its answers. Answers that changed (a pause, a resume) are swapped, keeping the note. */
   const settleQuestion = (q, i) => {
+    if (q.kind === "walk") return settleWalk(q, i);
     let on = asked.get(q.id);
     if (!on) {
       const body = el("p", { class: "prog-ask" });
@@ -219,6 +260,9 @@ export const mount = (host, view, ctx) => {
       on.offered = offeredOf(q);
     }
     on.body.textContent = q.body ?? "";
+    place(q, i, on);
+  };
+  const place = (q, i, on) => {
     const spec = { key: anchorOf(q), kind: "question", lamp: ["blocked", "work"], title: q.title, chips: q.at ? [{ text: fmtTime(q.at) }] : [], headline: on.headline };
     if (on.handle) on.handle.update(spec);
     else {
@@ -227,6 +271,24 @@ export const mount = (host, view, ctx) => {
       on.handle.node.classList.add("prog-q");
     }
     if (pins.children[i] !== on.handle.node) pins.insertBefore(on.handle.node, pins.children[i] ?? null);
+  };
+
+  const settleWalk = (q, i) => {
+    let on = asked.get(q.id);
+    const offered = offeredOfWalk(q);
+    if (!on) {
+      on = { body: el("p", { class: "prog-ask" }), rows: walkRows(q), offered };
+      on.headline = el("div", {}, on.rows, on.body);
+      asked.set(q.id, on);
+    } else if (on.offered !== offered) {
+      const next = walkRows(q);
+      on.rows.replaceWith(next);
+      on.rows = next;
+      on.offered = offered;
+    }
+    on.body.textContent = walkTail(q);
+    on.body.hidden = !on.body.textContent;
+    place(q, i, on);
   };
 
   const settleQuestions = () => {
@@ -261,7 +323,7 @@ export const mount = (host, view, ctx) => {
    * Result to ask, the link is left to the browser.
    */
   host.addEventListener("click", (e) => {
-    const chip = e.target.closest?.('a.chip[href^="#rd-"]');
+    const chip = e.target.closest?.('a.chip-hit[href^="#rd-"]');
     if (!chip || !host.contains(chip) || !ctx.reveal) return;
     const id = chip.getAttribute("href").slice(1);
     const key = (current.readings ?? []).find((r) => findingId(r.key) === id)?.key;
@@ -284,7 +346,9 @@ export const mount = (host, view, ctx) => {
     append(feed.slice(shown), shown);
     shown = Math.max(shown, feed.length);
     settleQuestions();
-    count.textContent = `${shown} entries · live`;
+    const over = isEnded(next.status);
+    count.textContent = over ? `${shown} entries` : `${shown} entries · live`;
+    live.hidden = over;
     tick();
     toHash();
   };

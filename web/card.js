@@ -26,6 +26,25 @@ import { icon } from "./icons.js";
 /** A finding's card id, the anchor a verdict chip links to, cut to the characters an id survives. */
 export const findingId = (key) => `rd-${key.replace(/[^a-z0-9-]/gi, "-")}`;
 
+/** A chip that is a link: the pill (`.chip` and `cls`) inside a `.chip-hit` link sized for a finger. */
+export const chipLink = (el, text, cls, attrs = {}) => el("a", { ...attrs, class: "chip-hit" }, el("span", { class: cls ? `chip ${cls}` : "chip" }, text));
+
+/**
+ * Long text folded to its opening, faded at the cut, with one button under it that opens and
+ * folds it again. `ctx` needs `el` and `btn`; `height` is how much of the opening shows.
+ */
+export const foldable = ({ el, btn }, node, { more, height }) => {
+  node.classList.add("fold-cut", "folded");
+  node.style.setProperty("--fold-h", height);
+  const toggle = btn(more, () => {
+    const folded = node.classList.toggle("folded");
+    toggle.textContent = folded ? more : "fold it";
+    toggle.setAttribute("aria-expanded", String(!folded));
+  }, "ghost fold-toggle");
+  toggle.setAttribute("aria-expanded", "false");
+  return el("div", { class: "fold-wrap" }, node, toggle);
+};
+
 /** A string becomes the node's text; a Node replaces what was there; nothing empties it. */
 const put = (node, content) => {
   if (content instanceof Node) node.replaceChildren(content);
@@ -64,22 +83,27 @@ export const card = (spec, ctx) => {
   };
   if (folds) fold(open);
 
-  /** Each chip is patched where it stands, so a focused chip link keeps its focus through a sweep. */
+  /**
+   * Each chip is patched where it stands, so a focused chip link keeps its focus through a sweep.
+   * A linked chip is the pill inside a 44px link (`chipLink`), so the target is a finger's size
+   * and the pill stays the size it reads at.
+   */
   const drawChips = (list) => {
     const want = list ?? [];
     const have = [...chips.children];
     want.forEach((c, i) => {
       const tag = c.href ? "a" : "span";
-      let chip = have[i];
-      if (!chip || chip.tagName.toLowerCase() !== tag) {
-        const fresh = el(tag, {});
-        if (chip) chip.replaceWith(fresh);
+      let slot = have[i];
+      if (!slot || slot.tagName.toLowerCase() !== tag) {
+        const fresh = c.href ? chipLink(el, c.text, c.cls) : el("span", {});
+        if (slot) slot.replaceWith(fresh);
         else chips.append(fresh);
-        chip = fresh;
+        slot = fresh;
       }
+      const chip = c.href ? slot.firstChild : slot;
       chip.className = `chip${c.cls ? ` ${c.cls}` : ""}`;
       chip.textContent = c.text;
-      if (c.href) chip.setAttribute("href", c.href);
+      if (c.href) slot.setAttribute("href", c.href);
     });
     for (const extra of have.slice(want.length)) extra.remove();
   };

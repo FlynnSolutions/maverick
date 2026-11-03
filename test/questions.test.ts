@@ -55,9 +55,11 @@ test("an escalation, a pause and the gate each ask their own question", () => {
   assert.equal(paused.kind, "paused");
   assert.equal(paused.body, "credential expired");
   assert.deepEqual(paused.answers, [{ label: "resume", method: "POST", path: "resume", primary: true }]);
-  const [gate] = questionsOf(base({ status: "planned" }));
+  const ready = [{ at: "2026-10-02T00:00:00.000Z", who: "Strike Lead" as const, text: "Planned.", planReady: true }];
+  const [gate] = questionsOf(base({ status: "planned", chat: ready }));
   assert.equal(gate.kind, "gate");
-  assert.deepEqual(gate.answers, [{ label: "approve", method: "POST", path: "approve", primary: true }]);
+  assert.deepEqual(gate.answers, [{ label: "read the terms and fire", go: "gate", primary: true }], "approving is asked twice on the page, never in one press from a list");
+  assert.deepEqual(questionsOf(base({ status: "planned", chat: [{ ...ready[0], planReady: undefined }] })), [], "a plan the Strike Lead is still fixing waits on it, not on the person");
 });
 
 test("an escalation offers only what the server takes in the mission's state", () => {
@@ -179,7 +181,7 @@ test("statusWord follows the questions: done, waiting for you, error and working
   assert.equal(statusWord(base({ status: "blocked", milestones: [ms(1, [], { hold: { kind: "collision", reason: "r", at: "a" } })] })), "waiting for you");
   assert.equal(statusWord(base({ status: "flying", escalation: "e" })), "waiting for you");
   assert.equal(statusWord(base({ status: "paused", pausedFor: "" })), "waiting for you");
-  assert.equal(statusWord(base({ status: "planned" })), "waiting for you");
+  assert.equal(statusWord(base({ status: "planned", chat: [{ at: "2026-10-02T00:00:00.000Z", who: "Strike Lead", text: "Planned.", planReady: true }] } as Partial<Mission>)), "waiting for you");
   // Nothing open is never waiting, whatever the record carries (Cory's call on m1-t1).
   assert.equal(statusWord(base({ status: "review", escalation: "stale" })), "waiting for you", "a stale escalation on a review mission is history; the review question is what waits");
   assert.deepEqual(questionsOf(base({ status: "review", escalation: "stale" })).map((q) => q.kind), ["review"]);

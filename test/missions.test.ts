@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo } from "./fixtures.ts";
-import { INTERVIEW_PROBES, applyPlanState, approveMission, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask } from "../src/missions.ts";
+import { INTERVIEW_PROBES, applyPlanState, approveMission, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask, markReadings } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -853,6 +853,20 @@ test("missionView's readings are every carried and handed-back finding, keyed by
   assert.equal(view.readings[1].key, keyFor("m1-t2", "BLOCKER(src/worker/, fix): the worker never stops. It spins on an empty queue."));
   assert.deepEqual(view.readings.map((r) => [r.taskTitle, r.milestone, r.state]).slice(0, 1), [["In review now", 1, undefined]]);
   assert.equal(view.readings[4].detail, "The Wingman called it out of scope.");
+});
+
+test("markReadings marks several read in one write, and hands read ones back to unread", async () => {
+  const { project } = readingsFixture("bulk", {});
+  const a = keyFor("m1-t1", CARRIED[3]);
+  const b = keyFor("m1-t1", CARRIED[0]);
+  await assert.rejects(() => markReadings(project, "bulk", { "m1-t1": [a, "m1-t1:00000000"] }, "read"), /no finding "m1-t1:00000000"/);
+  await assert.rejects(() => markReadings(project, "bulk", { "m9-t9": [a] }, "read"), /no task "m9-t9"/);
+  await assert.rejects(() => markReadings(project, "bulk", { "m1-t1": [a] }, "later" as never), /"read" or "unread"/);
+  await assert.rejects(() => markReadings(project, "bulk", { "m1-t1": [] }, "read"), /no findings named/);
+  const both = await markReadings(project, "bulk", { "m1-t1": [a, b] }, "read");
+  assert.deepEqual(both.milestones[0].tasks[0].readings, { [a]: "read", [b]: "read" });
+  const undone = await markReadings(project, "bulk", { "m1-t1": [b] }, "unread");
+  assert.deepEqual(undone.milestones[0].tasks[0].readings, { [a]: "read" }, "unread drops the mark rather than writing a third state");
 });
 
 test("markReading records read, and later also puts one backlog item on the mission's tracker and a decision in the ledger, once", async () => {

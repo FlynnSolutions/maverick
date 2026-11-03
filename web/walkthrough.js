@@ -27,7 +27,7 @@ export const stopWalkthrough = () => {
  * answers are dropped from the document once, and every save after says which round it has seen.
  */
 export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, cleared, onSave }) => {
-  const bar = el("div", { class: "runway small" }, el("div", { class: "fill", style: "width:0%" }));
+  const bar = el("div", { class: "runway small", style: "--p:0" }, el("div", { class: "fill" }));
   const count = el("span", { class: "mono small muted" }, "reading the document…");
   const pillars = el("div", { class: "pillars" });
   const frame = el("iframe", { class: "doc-frame tall", src: url, title: doc });
@@ -42,7 +42,7 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, cleared, onSave
     const state = readState();
     const answered = cases.filter((c) => state[c.id]?.v);
     const pct = cases.length ? (answered.length / cases.length) * 100 : 0;
-    bar.firstChild.style.width = `${pct}%`;
+    bar.style.setProperty("--p", String(pct));
     count.textContent = cases.length ? `${answered.length} of ${cases.length} cases answered` : "no cases found in the document";
     const byPillar = new Map();
     for (const c of cases) {
@@ -70,7 +70,29 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, cleared, onSave
     localStorage.setItem(roundKey(), String(cleared.round));
     return true;
   };
-  let lastSaved = "";
+  // What the server already has is not news: only a change from it is saved.
+  let lastSaved = saved?.verdicts ? JSON.stringify(saved.verdicts) : "";
+  /**
+   * The answers live in this browser's storage and the record keeps a copy. A browser that has
+   * never opened this document (another machine, a cleared profile) would read none and save
+   * zero over the record, so the record's answers are written back into storage first and the
+   * document reloaded once to paint them. An answer given here always wins over the record's.
+   */
+  let seeded = false;
+  const seed = () => {
+    if (seeded || !key || !saved?.verdicts) return false;
+    seeded = true;
+    const state = readState();
+    // A case a fix round cleared is walked again; the record's answer from before the round does not come back.
+    const redo = cleared && (saved.round ?? 0) < cleared.round ? new Set(cleared.cases) : new Set();
+    const missing = Object.entries(saved.verdicts).filter(([id]) => !state[id]?.v && !redo.has(id));
+    if (!missing.length) return false;
+    for (const [id, v] of missing) state[id] = { ...state[id], v };
+    // Storage that will not take the answers cannot hold new ones either; saving now could only write zero.
+    try { localStorage.setItem(key, JSON.stringify(state)); } catch { return true; }
+    frame.contentWindow.location.reload();
+    return true;
+  };
   const save = async () => {
     const { answered, verdicts, notes } = paint();
     if (!key || !cases.length) return;
@@ -92,6 +114,7 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, cleared, onSave
       }
       // The document read its answers as it loaded, so it is loaded again to show the cleared ones empty.
       if (dropCleared()) return frame.contentWindow.location.reload();
+      if (seed()) return;
       save();
     } catch (err) {
       count.textContent = `could not read the document: ${err.message}`;

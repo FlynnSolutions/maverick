@@ -1380,7 +1380,7 @@ const openShipWizard = async (version) => {
     const { done, total } = shipProgress(ship);
     const pct = (done / total) * 100;
     const runway = el("div", { class: "ship-progress" },
-      el("div", { class: "runway" }, el("div", { class: "fill", style: `width:${pct}%` }), el("div", { class: "jet-marker", style: `left:${pct}%` }, jetGlyph())),
+      el("div", { class: "runway", style: `--p:${pct}` }, el("div", { class: "fill" }), el("div", { class: "jet-marker" }, jetGlyph())),
       el("span", { class: "mono small muted" }, `${done} of ${total} steps${ship.finished ? ` · shipped ${fmtDate(ship.finished)}` : ""}`));
     list.replaceChildren(runway);
     const current = ship.steps.find((st) => st.status !== "done" && st.status !== "skipped");

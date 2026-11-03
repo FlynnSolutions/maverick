@@ -126,7 +126,7 @@ const meter = (value, limit, colour, calibrated) => {
   if (!calibrated) return el("span", { class: "cu-meter unset", title: "no limit set yet: see Calibrate" });
   const pct = limit ? Math.min(100, (value / limit) * 100) : 0;
   const tone = pct >= 90 ? "threat" : pct >= 70 ? "caution" : "";
-  return el("span", { class: `cu-meter ${tone}`, style: `--c:${colour}`, title: `${Math.round(pct)}% of the limit you set` }, el("i", { style: `width:${pct.toFixed(1)}%` }));
+  return el("span", { class: `cu-meter ${tone}`, style: `--c:${colour}`, title: `${Math.round(pct)}% of the limit you set` }, el("i", { style: `--p:${pct.toFixed(1)}` }));
 };
 
 /** A percentage only means something against a limit you set; otherwise the load itself is the number. */
@@ -265,7 +265,7 @@ const when = (iso) => {
 const limitName = (l) => (l.kind === "session" ? "5-hour window" : l.kind === "weekly_all" ? "Weekly · all models" : l.scope?.model?.display_name ? `Weekly · ${l.scope.model.display_name}` : `Weekly · ${l.kind}`);
 const liveMeter = (l) => {
   const tone = l.severity === "critical" || l.percent >= 90 ? "threat" : l.severity === "warning" || l.percent >= 70 ? "caution" : "";
-  return el("span", { class: `cu-meter ${tone}`, style: `--c:${l.kind === "session" ? "var(--ink)" : "var(--model-opus)"}`, title: `${l.percent}% used` }, el("i", { style: `width:${Math.min(100, l.percent)}%` }));
+  return el("span", { class: `cu-meter ${tone}`, style: `--c:${l.kind === "session" ? "var(--ink)" : "var(--model-opus)"}`, title: `${l.percent}% used` }, el("i", { style: `--p:${Math.min(100, l.percent)}` }));
 };
 const liveRows = (limits) =>
   el("div", { class: "cu-rows" }, ...limits.map((l) =>
