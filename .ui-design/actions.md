@@ -113,3 +113,27 @@ brainstorms. A session or a mission is one strip in one group. What an action di
 - **Search and filter**: one project at a time (system.md, "One project at a time"), grouped by what needs you; a rack longer than a screen is not the case this page is for.
 - **Reorder by hand**: the racks sort by urgency; the only move is between groups and formations, which is the drag and its menu.
 - **Keyboard walk (`j`/`k`)**: every strip is a stop on the Tab path and opens on Enter; the racks are short.
+
+## The walkthrough (`web/walkthrough-template.html`, hosted by `web/walkthrough.js`)
+
+The document a person walks at the end of each milestone. A session writes it from the template
+for that milestone; the console hosts it under the milestone's step and saves its answers to the
+mission. Its question: did this milestone do what it said, seen with your own eyes.
+
+| Object | Action | Trigger | Feedback | Motion | Seen in |
+|---|---|---|---|---|---|
+| Case | Give a verdict: pass, partial, fail, blocked, later | The five buttons under the case, one group; pressing the chosen one again clears it | The button reads chosen, the case's edge takes the verdict's colour, the counts move | The edge colour eases | TestRail, Linear |
+| Case | Say what you saw | The note under the case | "kept" under the note, or that this browser will not keep it | none | TestRail result comment |
+| Case | Run a command it needs (start the app, seed, clear, dry run) | `copy` beside the command | The button says "copied", or "select it" when the browser refuses | none | GitHub copy button |
+| Case | Compare a dry run before and after | The two outputs side by side, one over the other on a phone | n/a | none | GitHub split diff |
+| Walk | See how far it has got | The bar at the top: "N of M answered", the count per verdict, and each pillar's own count beside its heading | Updates as each verdict is given | none | TestRail run summary |
+| Walk | See only what is left | `show only what is left` | Answered cases leave the list; the button reads pressed | none | GitHub hide viewed files |
+| Walk | Pick it up elsewhere | Answers given in another tab of the document arrive here; the console saves them to the mission, and a browser without them is filled from the mission's copy | The counts match | none | n/a |
+| Walk | Open it in its own tab | `open in its own tab` on the hosted panel | A new tab | none | n/a |
+
+### Floor rows left out, and why
+
+- **Create, edit, delete, reorder cases**: the cases are written by the session that built the document from the milestone's plan; the person walks them, and a case that is wrong is a note on it.
+- **Bulk verdicts**: a walk is a person checking each case with their own eyes; marking ten at once is the thing it exists to prevent.
+- **Undo**: pressing the chosen verdict again clears it, and any verdict can be changed until the milestone is closed.
+- **Search and filter on text**: a walk is a dozen cases at most; `show only what is left` is the one filter it needs.

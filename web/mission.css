@@ -246,3 +246,7 @@ html { scroll-padding-top: 70px; }
   .bar { position: static; }
   html { scroll-padding-top: 8px; }
 }
+
+/* A hosted walkthrough runs the height of its document, so its count stays in view while the cases scroll past. */
+.walkthrough-panel > h2 { position: sticky; top: 52px; z-index: 1; padding: 8px 0; background: var(--carbon); }
+@media (max-width: 600px) { .walkthrough-panel > h2 { top: 0; } }

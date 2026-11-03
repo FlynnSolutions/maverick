@@ -142,9 +142,10 @@ export const mount = (host, view, ctx) => {
     const cleared = w.fixes?.findLast((f) => f.cleared);
     const panel = walkthroughPanel({ el, fmtTime, url, doc: w.doc, saved: w.progress, cleared, onSave: async (progress) => {
       w.progress = progress;
+      // Everything the panel reports is the record's, except the storage key it read it from.
+      const { key: _key, ...rest } = progress;
       try {
-        const { key, ...kept } = progress;
-        const back = await post(actionUrl(walkPath(m.n)), { progress: kept });
+        const back = await post(actionUrl(walkPath(m.n)), { progress: rest });
         const fix = back.milestones?.find((x) => x.n === m.n)?.walkthrough?.fixes?.find((f) => !f.cleared);
         said.classList.remove("warn");
         said.textContent = fix ? `${fix.cases.length} failed: ${fix.task} fixes them all, then you walk those again`

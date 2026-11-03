@@ -413,3 +413,19 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
   missions and brainstorms still draw, so a question stays answerable.
 - **Every target is 44px at every width on the shared base** (`button`, `.button-link`,
   `summary`, `select`, text inputs), so a control nobody sized still clears the floor.
+
+## The walkthrough (2026-10-31)
+
+- **Every milestone's walkthrough starts as one template** (`web/walkthrough-template.html`),
+  placed by Maverick into the milestone's worktree with its key set; the session fills in the
+  cases and never touches the script or the styles. Four pillars in a fixed order: journeys
+  across the stack, look and feel (390 and 1280, light and dark), at scale (a seed command of
+  invented data and its clear), and before and after (a dry run's output, side by side). A pillar
+  with nothing to walk says why; it is never dropped.
+- **A verdict is one of five, one colour each, set once** (`--vc`): pass green, fail red, blocked
+  red and dashed, partial info, later soft ink. Amber stays needs-you.
+- **The verdicts are a radio group**: one Tab stop per case, arrows move and choose, pressing the
+  chosen one again clears it. The note travels with the verdict to the mission's record, so a
+  browser that never opened the document is filled from the record, notes included.
+- **Hosted, the document is as tall as itself** (the console sizes the frame to the body), so the
+  page has one scroll, and the console's count heading is what stays in view.
