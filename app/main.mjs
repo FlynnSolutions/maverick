@@ -13,8 +13,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { config } from "../src/config.ts";
 import { newQuestions } from "../src/notify.ts";
+import { supervise } from "../src/supervisor.ts";
 import { browserTab } from "./browser.mjs";
-import { serverUrl, sourceDir, withoutSource } from "./source.mjs";
+import { serverPath, sourceDir, withoutSource } from "./source.mjs";
 
 const run = promisify(execFile);
 const source = sourceDir(process.argv, process.env);
@@ -41,10 +42,26 @@ const answers = (port) =>
     req.end();
   });
 
+/**
+ * The server runs beside the app, not inside it, under a supervisor: a crash is written to the log
+ * with why, and the server comes back on its own (decisions M31). Electron's own Node runs it, so
+ * the packed app needs nothing installed. Returns the stop, for quitting.
+ */
 const startServer = async () => {
   const path = await loginPath();
   if (path) process.env.PATH = path;
-  await import(serverUrl(source, fileURLToPath(new URL("../server.ts", import.meta.url))));
+  const server = supervise({
+    command: process.execPath,
+    args: [serverPath(source, fileURLToPath(new URL("../server.ts", import.meta.url)))],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    log: config.serverLog,
+    onGiveUp: (why) => dialog.showErrorBox("Maverick's server stopped", `${why}.\n\nWhat it printed is in ${config.serverLog}.`),
+  });
+  // Every way the app ends takes its server with it: a quit runs will-quit, but a signal (a logout,
+  // a kill) ends Electron without it, and an orphan would hold the port unsupervised.
+  app.on("will-quit", server.stop);
+  process.on("exit", server.stop);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => app.quit());
   const started = Date.now();
   while (!(await answers(config.port))) {
     if (Date.now() - started > 10_000) throw new Error(`nothing answered on port ${config.port} ten seconds after starting the server`);

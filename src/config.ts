@@ -3,7 +3,7 @@
  * code runs against scratch data (tests), the real projects (daily use), or inside an
  * Electron shell later.
  */
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
 const home = homedir();
@@ -35,6 +35,8 @@ export const config = {
   claudeSessionsDir: join(home, ".claude", "sessions"),
   /** Claude Code's background sessions, one folder each with its `state.json`. Read-only; watched so a session that ends sweeps its project at once. */
   claudeJobsDir: join(home, ".claude", "jobs"),
+  /** What the app's server printed, and every time it died and was started again (see src/supervisor.ts). */
+  serverLog: process.env.MAVERICK_SERVER_LOG ?? (platform() === "darwin" ? join(home, "Library", "Logs", "Maverick", "server.log") : join(consoleHome, "server.log")),
   /** Live signals (gh, git, claude agents) are refreshed at most this often, per project. */
   liveCacheMs: 60_000,
 };

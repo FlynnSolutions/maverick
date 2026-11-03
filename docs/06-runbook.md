@@ -35,6 +35,15 @@ naming it, read off `GET /api/about` (`source`, `packed`). A release is cut by p
 builds the macOS app (arm64, unsigned) and attaches it to the GitHub Release. Run by hand from
 the Actions tab it uploads the build as an artifact without cutting a release.
 
+**When the app's server dies** it is started again on its own (M31). Why it died is in the log:
+
+```bash
+tail -50 ~/Library/Logs/Maverick/server.log    # every line it printed; deaths and restarts as "supervisor:"
+grep supervisor ~/Library/Logs/Maverick/server.log
+```
+
+Five deaths inside a minute stops the restarts, and the app shows a dialog naming the log.
+
 ## Configure it
 
 Everything environment-specific is in `src/config.ts` and overridable by env:
@@ -45,6 +54,7 @@ Everything environment-specific is in `src/config.ts` and overridable by env:
 | `SESSION_CONSOLE_HOST` | `127.0.0.1` | `0.0.0.0` opens it to the LAN; non-loopback clients need the key from `~/.claude/session-console/access-key` once (`?key=`), then a cookie |
 | `SESSION_CONSOLE_HOME` | `~/.claude/session-console` | projects, release labels, access key, usage cache |
 | `SESSION_CONSOLE_SESSIONS` | `~/.claude/console-sessions` | session records and ship runs |
+| `MAVERICK_SERVER_LOG` | `~/Library/Logs/Maverick/server.log` | where the app's supervised server writes, and every death and restart |
 | `MAVERICK_BROWSER` | `Google Chrome` | the Chromium browser the app sends outside links to, into one reused tab (macOS) |
 
 ## Session records
