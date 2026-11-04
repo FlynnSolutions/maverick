@@ -423,6 +423,16 @@ format: checklist
 
 ## 📋 Backlog
 
+- [ ] `[ENG]` `[S]` **A server the supervisor restarted looks alive to a page that lost its terminals**
+  - created: 2026-11-03
+  - source: /simplify altitude pass on the supervisor (M31), 2026-11-03
+  - kind: bug
+  Medium, not fixed: since M31 the app's server comes back on its own, but open terminals are
+  ptys held by the server process (`src/terminal.ts`), so a restart loses every one, and the
+  terminal stream in `web/app.js` has no `onerror`, so its tail goes quietly dead. A boot id on
+  `/api/about`, compared by the page, lets it reload and say "the server restarted; its terminals
+  are gone" instead of looking alive.
+
 - [ ] `[ENG]` `[S]` **A refused write answers 500, as if the server broke**
   - created: 2026-11-03
   - source: the HTTP write tests (#54), 2026-11-03

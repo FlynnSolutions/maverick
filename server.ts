@@ -932,6 +932,9 @@ const sweepAll = async (): Promise<void> => {
 setInterval(() => { sweepAll().catch((err: Error) => console.error("sweep:", err.message)); }, 60_000).unref();
 // A Wingman or RIO that ends sweeps its project's missions then; the tick above is the backstop.
 watchEndings(readProjects, sweepSoon);
+// Run by the app's supervisor, stdin is a pipe from it: when that closes the supervisor is gone,
+// however it went, and a server left on the port with nothing watching it is what M31 removes.
+if (process.env.MAVERICK_SUPERVISED) process.stdin.on("end", () => process.exit(0)).resume();
 
 createServer((req, res) => {
   handle(req, res).catch((err: Error) => {

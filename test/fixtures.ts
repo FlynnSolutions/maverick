@@ -13,3 +13,8 @@ export const tempRepo = (prefix: string, branch = "main"): { dir: string; git: (
   git("commit", "-q", "--allow-empty", "-m", "base");
   return { dir, git };
 };
+
+/** Wait for `ok` to hold, polling every 25 ms; past `ms` it is an error, not a hang. */
+export const until = async (ok: () => boolean, ms = 5_000): Promise<void> => {
+  for (const start = Date.now(); !ok(); await new Promise((r) => setTimeout(r, 25))) if (Date.now() - start > ms) throw new Error(`not within ${ms} ms`);
+};

@@ -5,7 +5,6 @@
  * without Electron.
  */
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 /** The checkout named on the command line or in the environment, resolved; undefined for the packed copy. */
 export const sourceDir = (argv, env = {}) => {
@@ -20,5 +19,5 @@ export const sourceDir = (argv, env = {}) => {
 /** The same arguments with any `--source` taken out, for a relaunch that names a new one or none. */
 export const withoutSource = (argv) => argv.filter((a, i, all) => a !== "--source" && !a.startsWith("--source=") && all[i - 1] !== "--source");
 
-/** The module the app imports as its server: the checkout's `server.ts`, or the packed one beside this file. */
-export const serverUrl = (source, packed) => pathToFileURL(source ? resolve(source, "server.ts") : packed).href;
+/** The server the app runs: the checkout's `server.ts`, or the packed one beside this file. */
+export const serverPath = (source, packed) => (source ? resolve(source, "server.ts") : packed);

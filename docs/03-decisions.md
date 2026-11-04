@@ -318,7 +318,8 @@ server.ts` keeps working with no install.
 
 **The shape.** The shell is `app/`: its own `package.json` with `electron` and
 `electron-builder` as dev dependencies, the only `npm install` in the repo, and one file,
-`app/main.mjs`, that imports `../server.ts` and opens a window on the port it listens on. The
+`app/main.mjs`, that imports `../server.ts` and opens a window on the port it listens on (since
+M31 it runs it as a supervised child instead). The
 renderer is `web/` unchanged; nothing in it may start assuming Electron, and the browser tab
 stays a first-class way to run it. The app is a window onto the same server: if something
 already answers on the port, the window opens on that and starts nothing.
@@ -894,3 +895,30 @@ the walkthrough pre-screen passed 22 of 22, all on behaviour, and the screens lo
 what he approved. The opposite failure came first (2026-10-02, one-off controls that matched a
 mockup and nothing else in the app). Both had one root: the decision was never made explicitly.
 Decided by Cory 2026-10-30.
+
+## M31: The app runs its server beside it, supervised, and a death says why ✅ built
+
+**What happened.** On 2026-10-30 the console on 8766 went down mid-session. Nothing brought it
+back, and nothing said why: the app imported `server.ts` into its own main process (M15), so a
+crash ended the app, and what the server printed went to a GUI app's stdout, which nobody reads.
+
+**The shape.** `app/main.mjs` runs `server.ts` as a child under `src/supervisor.ts`, with
+Electron's own Node (`ELECTRON_RUN_AS_NODE`), so the packed app still needs nothing installed.
+Everything the server prints goes to one log (`~/Library/Logs/Maverick/server.log`, or
+`MAVERICK_SERVER_LOG`). A death is written there with its exit code or signal, how long it ran
+and its last 40 lines, and the server is started again after 1 s, doubling to 30 s for each death
+in a row. Five deaths inside a minute is a server that cannot stay up: it is not started again,
+and the app says so in a dialog naming the log. Every way the app ends takes the server with it:
+a quit or a signal stops it, and a kill -9 of the app closes the server's stdin, which a server
+started with `MAVERICK_SUPERVISED` exits on. No orphan holds the port unwatched.
+
+**What stays.** M15's shape: the app is a window onto the server, and if something already
+answers on the port the app opens on that and starts nothing. `node server.ts` in a terminal is
+unsupervised, as before; the app is where it has to stay up on its own.
+
+**Not known:** whether the 8766 that died on 2026-10-30 was the app or a `node server.ts` in a
+terminal. If it was the terminal, this covers it only once that server is run by the app.
+
+**Rejected: restarting in-process.** An uncaught error in the main process is the app's error,
+not the server's, and a server that half-died in-process cannot be told from one that is fine.
+
