@@ -13,7 +13,8 @@ const url = process.argv[2];
 const width = Number(arg("w", 1600));
 const height = Number(arg("h", 1200));
 const waitMs = Number(arg("wait", 4500));
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// `$CHROME` first, as the ui-audit scanner reads it, so the same run works on a Linux runner.
+const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const profile = await mkdtemp(join(tmpdir(), "cdp-"));

@@ -104,7 +104,9 @@ export const startHarbor = async (): Promise<Harbor> => {
   // The gate refuses a mission whose RIO has no standing orders, as it would on a fresh machine.
   writeFileSync(join(agents, "rio.md"), "---\nname: rio\ndescription: the harbor's reviewer\n---\nRead, run, judge.\n", "utf8");
 
-  const { dir: repo, git } = tempRepo("mv-harbor-repo");
+  // One long unbroken folder name, so a view that cannot wrap a path shows it at a phone's width
+  // on any machine: a short tmpdir (Linux's /tmp) once hid exactly that overflow in the picker.
+  const { dir: repo, git } = tempRepo("mv-harbor-repo-with-a-deliberately-long-unbroken-folder-name-for-the-picker");
   const tracker = join(repo, "deliverables", "CHECKLIST.md");
   mkdirSync(dirname(tracker), { recursive: true });
   writeFileSync(tracker, TRACKER, "utf8");
