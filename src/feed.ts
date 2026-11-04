@@ -30,8 +30,8 @@ const STAMPED = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[
 /** The word right after the stamp says what the line is (see `transitions` and `recorded` in `src/missions.ts`). */
 const MARKED = /^(decision|auto|held|merged): (.*)$/;
 /** A task's transition, as `transitions` writes it: `<id> <title>: <was> to <now>[ (RIO: <verdict>)][: <note>]`. */
-const TRANSITION = /^(m\d+-t\d+) .+?: (new|pending|flying|built|reviewing|passed|handed-back) to (pending|flying|built|reviewing|passed|handed-back)(?: \(RIO: ([^)]+)\))?/;
-const TASK = /\b(m(\d+)-t\d+)\b/;
+const TRANSITION = /^(m\d+-(?:t|fix)\d+) .+?: (new|pending|flying|built|reviewing|passed|handed-back) to (pending|flying|built|reviewing|passed|handed-back)(?: \(RIO: ([^)]+)\))?/;
+const TASK = /\b(m(\d+)-(?:t|fix)\d+)\b/;
 const MILESTONE = /\bmilestone (\d+)\b/;
 /** A pass with notes, as `transitions` writes it now: `(RIO: <verdict>) with N notes carried[, M unverified]`. */
 const CARRIED = /\) with (\d+) notes carried(?:, (\d+) unverified)?/;

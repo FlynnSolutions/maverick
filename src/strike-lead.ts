@@ -124,6 +124,9 @@ export const snapshot = (mission: Mission, questions: Array<{ title: string }>, 
   return lines.join("\n");
 };
 
+/** Everything in the chat since the person last wrote. */
+export const sinceYou = (chat: ChatEntry[]): ChatEntry[] => chat.slice(chat.findLastIndex((e) => e.who === "you") + 1);
+
 /** The chat entries the Strike Lead has not answered yet: everything after its last reply, Maverick's notes included. */
 export const unheard = (chat: ChatEntry[]): ChatEntry[] => {
   // A failed turn closes what it carried, as a reply would: sending it again is the person's call, not a loop's.

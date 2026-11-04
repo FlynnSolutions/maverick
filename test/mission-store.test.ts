@@ -325,8 +325,8 @@ test("a retry whose Wingman cannot launch says why and hands the task back witho
   Object.assign(m.milestones[0].tasks[0], { status: "handed-back", claudeId: undefined, note: "could not launch: before" });
   (m as { repos: unknown[] }).repos = [{ label: "root", path: "/tmp", base: "main", branch: "mission/nolaunch", integration: "/tmp/none", land: "merge" }];
   await writeFile(file("nolaunch"), JSON.stringify(m), "utf8");
-  // The worktree does not exist, so `claude --bg` cannot start there: no agent is ever launched.
-  await assert.rejects(() => retryTask(project, "nolaunch", "m1-t1"), /could not launch: claude --bg did not start in \/tmp\/none/);
+  // The worktree cannot be made (/tmp is no repo), so no agent is ever launched.
+  await assert.rejects(() => retryTask(project, "nolaunch", "m1-t1"), /could not launch: .*worktree/);
   const after = (await readMission("p", "nolaunch"))!.milestones[0].tasks[0];
   assert.equal(after.status, "handed-back");
   assert.equal(after.claudeId, undefined);
