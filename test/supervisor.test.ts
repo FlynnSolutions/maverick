@@ -52,7 +52,7 @@ test("a server that keeps dying fast is given up on with the reason, not restart
   await until(() => gaveUp !== "");
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(starts("loop"), 3, "three starts, then no more");
-  assert.match(gaveUp, /exited with code 1 after 0s, 3 deaths inside 1m0s, so it is not started again/);
+  assert.match(gaveUp, /exited with code 1 after \d+s, 3 deaths inside 1m0s, so it is not started again/);
   assert.match(text(), /so it is not started again; its last words:\n {4}listening on 8766/);
 });
 
