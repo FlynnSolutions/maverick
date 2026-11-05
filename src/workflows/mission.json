@@ -1,0 +1,31 @@
+{
+  "id": "mission",
+  "stages": [
+    { "id": "interview", "kind": "interview" },
+    { "id": "plan-gate", "kind": "gate" },
+    { "id": "preflight", "kind": "preflight" },
+    {
+      "id": "milestones",
+      "kind": "for-each",
+      "over": "milestones",
+      "stages": [
+        {
+          "id": "tasks",
+          "kind": "for-each",
+          "over": "tasks",
+          "stages": [
+            { "id": "build", "kind": "agent", "slot": "wingmanAgent" },
+            { "id": "review", "kind": "agent", "slot": "rioAgent" }
+          ]
+        },
+        { "id": "merge", "kind": "merge" },
+        { "id": "proof", "kind": "command", "slot": "proof" },
+        { "id": "land", "kind": "land" },
+        { "id": "walkthrough", "kind": "agent" },
+        { "id": "walk", "kind": "walk" }
+      ]
+    },
+    { "id": "close", "kind": "close" },
+    { "id": "summary", "kind": "agent", "slot": "rioAgent" }
+  ]
+}
