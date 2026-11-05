@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { config } from "../src/config.ts";
 import { FINISHED } from "../src/git.ts";
 import { tempRepo, until } from "./fixtures.ts";
-import { INTERVIEW_PROBES, applyPlanState, approveMission, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask, markReadings, WALKTHROUGH_TEMPLATE, placeWalkthrough, walkKey, walkthroughPrompt } from "../src/missions.ts";
+import { INTERVIEW_PROBES, applyPlanState, approveMission, blockedDetail, stuckLine, interviewPrompt, ownScreenshots, costOf, DEFAULT_LINK_MINUTES, endFinished, estimateOf, leadBusy, longestChain, markReading, MAX_ATTEMPTS, measuredPace, mergeable, missionView, movesOf, needsPerson, parsePlan, runProof, sayToStrikeLead, settle, settleReview, startable, strays, summarizeMission, summaryState, sweepMissions, sweepSoon, transitions, waitingOn, watchEndings, type Mission, type MissionTask, markReadings, WALKTHROUGH_TEMPLATE, placeWalkthrough, walkKey, walkthroughPrompt } from "../src/missions.ts";
 import { findingsOf, verdictOf } from "../src/audits.ts";
 import { feedOf } from "../src/feed.ts";
 import { addItem, applyMove, parseTracker, today } from "../src/trackers.ts";
@@ -1482,4 +1482,18 @@ test("a builder that filled the template and kept its comment has written the wa
   const w = recordOf("filled").milestones[0].walkthrough!;
   assert.equal(w.failed, undefined);
   assert.equal(w.doc, join(root, file).slice(project.path.length + 1));
+});
+
+test("a blocked session says why when Claude Code recorded it, and a login says what to do", async () => {
+  const jobs = mkdtempSync(join(tmpdir(), "mv-jobs-"));
+  made.push(jobs);
+  mkdirSync(join(jobs, "3e245f9c"));
+  writeFileSync(join(jobs, "3e245f9c", "state.json"), JSON.stringify({ state: "blocked", detail: "Login expired" }), "utf8");
+  assert.equal(await blockedDetail("3e245f9c", jobs), "Login expired");
+  writeFileSync(join(jobs, "3e245f9c", "state.json"), JSON.stringify({ state: "working", detail: "Login expired" }), "utf8");
+  assert.equal(await blockedDetail("3e245f9c", jobs), undefined, "a detail is only taken while the file agrees the session is blocked");
+  assert.equal(await blockedDetail("nope", jobs), undefined, "no state file is no reason, not an error");
+  assert.equal(stuckLine("the RIO on Reorder", "Login expired"), "the RIO on Reorder stopped: Login expired. Log in again (`claude`), then open its session and tell it to carry on");
+  assert.equal(stuckLine("Reorder", "fixing the auth middleware; awaiting your answer on ct2"), "Reorder is waiting on you in its own session; it last said: fixing the auth middleware; awaiting your answer on ct2", "work that mentions auth is not a login");
+  assert.equal(stuckLine("Reorder"), "Reorder is waiting on you in its own session", "with no reason it still asks, as before");
 });

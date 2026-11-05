@@ -26,7 +26,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { landFor, missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
-import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, spawnBackgroundAgent, stopAgent, toplevelOf, underPath, whyFailed, type BackgroundAgent } from "./git.ts";
+import { FINISHED, assertCheckedOut, backgroundAgents, changedFiles, claudeArgs, commitFile, commitsAhead, currentBranch, diffStat, ensureBranch, ensureWorktree, excludeLocally, mergeInto, openPullRequest, pushBranch, pushFastForward, removeWorktree, reposUnder, revParse, sessionEnv, spawnBackgroundAgent, stopAgent, toplevelOf, underPath, whyFailed, type BackgroundAgent } from "./git.ts";
 import { findingsOf, slug, verdictOf, type Verdict } from "./audits.ts";
 import type { Project } from "./projects.ts";
 import { createFormation, listFormations, updateFormation } from "./formations.ts";
@@ -1186,7 +1186,7 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   // Before any worktree exists: the worktrees and the scratch folders inside them are ignored
   // locally in every repo the project holds (the worktrees live under the project root, which
   // may be a repo the plan does not name), so nothing on a base branch can sweep them in (M8).
-  for (const repo of choices) await excludeLocally(repo.path, [`${cfg.worktrees.replace(/\/+$/, "")}/`, ".scratch/"]);
+  for (const repo of choices) await excludeLocally(repo.path, [`${cfg.worktrees.replace(/\/+$/, "")}/`, ".scratch/", ".claude/settings.local.json"]);
   for (const repo of mission.repos) {
     await ensureBranch(repo.path, repo.branch, repo.base);
     await ensureWorktree(repo.path, repo.integration, repo.branch, repo.base);
@@ -1688,8 +1688,9 @@ const taskOn = (on: Mission, id: string): MissionTask | undefined => on.mileston
  * fork point: the branch just made, not the mission tip a moment later. A launch that failed
  * here left the layout on the task and nothing on disk, so a retry calls this too.
  */
-const cutWorktree = async (repo: MissionRepo, task: MissionTask): Promise<string> => {
+const cutWorktree = async (repo: MissionRepo, task: MissionTask, cfg: Pick<MissionConfig, "shared">): Promise<string> => {
   await ensureWorktree(repo.path, task.worktree!, task.branch!, repo.branch);
+  await sessionEnv(task.worktree!, { MAVERICK_TASK: task.id, ...(cfg.shared.length ? { MAVERICK_SHARED: cfg.shared.join(",") } : {}) });
   return revParse(repo.path, task.branch!);
 };
 
@@ -1697,10 +1698,10 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
   try {
     const repo = missionRepo(mission, task);
     ({ worktree: task.worktree, branch: task.branch } = taskLayout(project, cfg, mission.id, task, repo));
-    task.base = await cutWorktree(repo, task);
+    task.base = await cutWorktree(repo, task, cfg);
     const out = await claimed(mission,
       () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
-      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), cfg.wingmanAgent),
       (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
       launchFailed(task.id));
     if (!out) return;
@@ -1712,9 +1713,6 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     await writeMission(mission);
   }
 };
-
-/** What a Wingman's shell is told about itself, so a project's own scripts can refuse what the brief forbids. */
-const wingmanEnv = (task: MissionTask, cfg: MissionConfig): Record<string, string> => ({ MAVERICK_TASK: task.id, ...(cfg.shared.length ? { MAVERICK_SHARED: cfg.shared.join(",") } : {}) });
 
 /**
  * Run the project's proof command where the milestone's work is merged. Never throws: a proof
@@ -1846,8 +1844,8 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
       forget(task);
     },
     async () => {
-      const base = await cutWorktree(repo, task);
-      return { base, claudeId: await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)) };
+      const base = await cutWorktree(repo, task, cfg);
+      return { base, claudeId: await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg), findings), cfg.wingmanAgent) };
     },
     // The fork point a worktree already had stands; only one this retry made takes the new one.
     (on, r) => { const t = taskOn(on, task.id); if (t) { t.claudeId = r.claudeId; t.base ??= r.base; } },
@@ -1979,6 +1977,28 @@ const inherited = (mission: Mission, task: MissionTask): string[] => {
 };
 
 /**
+ * What a blocked session last said, from the state file Claude Code keeps for it
+ * (`<jobs>/<id>/state.json`). Its `detail` is the session's own running status line, not a reason
+ * field, so it is only taken while that file agrees the session is blocked; the listing says only
+ * "blocked", which read as a question for the person when a RIO had stopped on an expired login.
+ */
+export const blockedDetail = async (claudeId: string, dir = config.claudeJobsDir): Promise<string | undefined> => {
+  const s = await readFile(join(dir, claudeId, "state.json"), "utf8").then((t) => JSON.parse(t) as { state?: unknown; detail?: unknown }, () => undefined);
+  const detail = s?.state === "blocked" && typeof s.detail === "string" ? s.detail.trim() : "";
+  return detail || undefined;
+};
+
+/** Claude Code's own words for a session stopped on its login, not a session that happens to be working on one. */
+const LOGIN_ENDED = /login expired|not logged in|please (?:log in|run \/login)/i;
+
+/** What a blocked session asks of the person: a login said as a login, otherwise what it last said. */
+export const stuckLine = (who: string, detail?: string): string => {
+  if (!detail) return `${who} is waiting on you in its own session`;
+  if (LOGIN_ENDED.test(detail)) return `${who} stopped: ${detail}. Log in again (\`claude\`), then open its session and tell it to carry on`;
+  return `${who} is waiting on you in its own session; it last said: ${detail}`;
+};
+
+/**
  * Step one of a pass: record what finished. Session ids, Wingmen that stopped (with their
  * commits, head and strays), verdicts that arrived (recorded on the task, acted on in step
  * two), reconciles that ended, proofs that settled. Nothing here spawns, so it runs paused or
@@ -2005,8 +2025,8 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
         task.note = `its ${claim.who} never started: the launch failed or was cut off before an agent was recorded`;
       }
       const asking = (id?: string): boolean => Boolean(id) && state.get(id!) === "blocked";
-      if (task.status === "flying" && asking(task.claudeId)) waiting.push(`${task.title} is waiting on you in its own session`);
-      if (task.status === "reviewing" && asking(task.review?.claudeId)) waiting.push(`the RIO on ${task.title} is waiting on you in its own session`);
+      if (task.status === "flying" && asking(task.claudeId)) waiting.push(stuckLine(task.title, await blockedDetail(task.claudeId!)));
+      if (task.status === "reviewing" && asking(task.review?.claudeId)) waiting.push(stuckLine(`the RIO on ${task.title}`, await blockedDetail(task.review!.claudeId!)));
       if (task.status === "flying" && task.claudeId && isOver(state, task.claudeId, task.started)) {
         const repo = missionRepo(mission, task);
         task.status = "built";
