@@ -38,8 +38,9 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - [~] **A mission pins its template when it starts**
   - touches: src/missions.ts, test/workflow-pin.test.ts
   - needs: m1-t1, m1-t2
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 597b328
   `startMission` in `src/missions.ts` sets `template: defaultWorkflow()` on the new record, and the `Mission` interface gains `template?: Workflow`. The copy holds slot names, never resolved values: `maverick.json`'s `wingmanAgent`, `rioAgent` and `proof` are read at use, because `sweepOnce` deliberately follows the project mid-flight today and that stays. So editing a template file never changes a mission in flight, and editing `maverick.json` still does, exactly as now. A record with no `template` reads as the default through `workflowOf` and is never written back. Add no migration. This task changes no behaviour of the flow and consults the template nowhere else; the next tasks do that. The page reads nothing from the new field, and do not touch `web/`, the ledger format or `applyPlanState`. If an existing test breaks because a record gained a field, stop and say so: no existing assertion may change.
 
   Prove it: `test/workflow-pin.test.ts` proves a started mission carries the template on disk; changing the template the loader would return leaves that record's copy unchanged; a pre-existing record with no field, read and swept and written, still has no field and answers `workflowOf` with the default; and `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, results in the commit message.
@@ -101,3 +102,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 22:37 m1-t1 The full flight, proved on today's code: flying to reviewing
 - 2026-11-04 22:51 m1-t1 The full flight, proved on today's code: reviewing to passed (RIO: pass with notes) with 7 notes carried, 3 unverified
 - 2026-11-04 22:51 m1-t3 A mission pins its template when it starts: pending to flying
+- 2026-11-04 22:56 m1-t3 A mission pins its template when it starts: flying to reviewing
