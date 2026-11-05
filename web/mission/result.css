@@ -42,10 +42,10 @@
 .rs-files .pm b { color: var(--hud); font-weight: 400; }
 .rs-files .pm i { color: var(--threat); font-style: normal; }
 
-/* A finding's chip on a file row is the severity chip card.css draws, inside a 44px link to the finding's card.
+/* A finding's chip on a file row is the severity chip card.css draws, inside a control-sized link to the finding's card.
    A row carrying one stands tall enough that the next row's chip is a clear 8px away. */
 .mv-result a.chip-hit:hover { text-decoration: none; }
-.rs-files .rs-file.chipped { min-height: 52px; padding-top: 0; padding-bottom: 0; }
+.rs-files .rs-file.chipped { min-height: calc(var(--control) + 8px); padding-top: 0; padding-bottom: 0; }
 .rs-files .rs-file .d { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: center; }
 .rs-files .rs-file .p { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
@@ -113,7 +113,7 @@
 .rs-report { margin: 10px 0 0; }
 .rs-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
 .rs-acts button { font: 500 13px var(--sans); }
-.rs-acts > a, .rs-meta > a { display: inline-flex; align-items: center; min-height: 44px; }
+.rs-acts > a, .rs-meta > a { display: inline-flex; align-items: center; min-height: var(--control); }
 
 /* The tools over the findings: hide what is read, mark a bucket read, and the keys. */
 .rs-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 8px 0; }

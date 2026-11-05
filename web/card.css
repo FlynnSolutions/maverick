@@ -13,11 +13,11 @@
 .mv-card[id] { scroll-margin-top: 20px; }
 
 /* The head: mark, title, chips, on one x down every card. */
-.card-head { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.card-head { display: flex; align-items: center; gap: 12px; min-height: var(--control); }
 /* A head carrying a linked chip stands clear of the row above and the line below it, 8px each way. */
 .card-head:has(.chip-hit) { padding: 8px 0; }
 .card-toggle {
-  display: flex; flex: 1 1 auto; align-items: center; gap: 10px; min-width: 0; height: auto; min-height: 44px;
+  display: flex; flex: 1 1 auto; align-items: center; gap: 10px; min-width: 0; height: auto; min-height: var(--control);
   padding: 0; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   color: var(--ink); font: 500 13.5px/1.3 var(--sans); text-align: left;
 }
@@ -26,7 +26,7 @@ button.card-toggle:hover { background: none; box-shadow: none; }
 button.card-toggle:active { transform: none; }
 button.card-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-s); }
 .card-mark { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--ink-faint); }
-.card-mark svg.lamp { width: 14px; height: 14px; }
+.card-mark svg.lamp { width: 18px; height: 18px; }
 .card-glyph { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 /* A title is read whole: it wraps rather than cutting off, and the head grows a line for it. */
 .card-title { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; padding: 4px 0; }
@@ -44,10 +44,10 @@ button.card-toggle:hover .card-why { color: var(--ink-soft); }
 /* Long text folded to its opening (card.js foldable), faded at the cut so it reads as more to come. */
 .fold-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; justify-items: start; }
 .fold-cut.folded { max-height: var(--fold-h); overflow: hidden; mask-image: linear-gradient(to bottom, #000 60%, transparent); }
-button.fold-toggle { min-height: 44px; height: auto; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
+button.fold-toggle { min-height: var(--control); height: auto; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
 
-/* A linked chip is the pill inside a link a finger can hit: 44px square at the least, the pill centred in it. */
-.chip-hit { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; text-decoration: none; border-radius: var(--radius-s); }
+/* A linked chip is the pill inside a full control, the pill centred in it. */
+.chip-hit { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: var(--control); text-decoration: none; border-radius: var(--radius-s); }
 .chip-hit:hover .chip { background: var(--panel); }
 .chip-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 

@@ -13,7 +13,7 @@ import { toast } from "./toast.js";
  * `/api/missions/<id>/<path>?project=`, says what it did in a toast (an error stays until closed),
  * and refreshes; one with `go` opens the mission page at that place.
  *
- * `ctx` is the workspace's: `el`, `post`, `refresh`, `projectId`.
+ * `ctx` is the workspace's: `el`, `post`, `refresh`, `projectId`, and `titled: false` where the title is already said.
  */
 export const questionLines = (mission, ctx) => {
   const { el } = ctx;
@@ -36,7 +36,7 @@ export const questionLines = (mission, ctx) => {
     } });
     hint.classList.add("empty");
     return el("div", { class: "strip-say inbox-q", "data-question": q.id },
-      el("p", { class: "claude" }, el("span", { class: "who" }, "asks"), el("span", {}, el("b", {}, q.title), q.body ? el("span", { class: "inbox-body" }, q.body) : null)),
+      el("p", { class: "claude" }, el("span", { class: "who" }, "asks"), el("span", {}, ctx.titled === false ? null : el("b", {}, q.title), q.body ? el("span", { class: "inbox-body" }, q.body) : null)),
       note ? el("p", {}, el("span", { class: "who" }, "note"), note) : null,
       el("p", {}, el("span", { class: "who" }, "answer"), el("span", { class: "inbox-answers" }, ...buttons)),
       el("p", {}, el("span", { class: "who" }), hint));

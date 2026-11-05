@@ -7,25 +7,39 @@
 import { render as renderMd } from "./markdown.js";
 import { jetSvg } from "./jet.js";
 import { lamp } from "./lamp.js";
+import { isEnded, missionWord } from "./mission/state.js";
 import { icon } from "./icons.js";
 import { questionLines } from "./inbox.js";
 import { failed, leave, toast } from "./toast.js";
 
 const NEAR_BOTTOM = 80;
-const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5 };
+const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5, down: 5 };
 const HOUR = 3600000;
+const ARCHIVE_PAGE = 30;
+const DAY = 24 * HOUR;
+const OLD_MISSION = 7 * DAY;
 /**
  * A session that has ended. `blocked` is deliberately not here: it is running and stopped at a
  * prompt, which is the loudest thing on the page, not the quietest. Counting it as finished put
  * the same session in "Needs you" and in "Background · done" at once, because those two filters
  * run independently over one list, and painted a lock lamp on a strip marked finished.
  */
-const finished = (s) => /^(done|exited|stopped)$/.test(s ?? "");
+export const finished = (s) => /^(done|exited|stopped|down)$/.test(s ?? "");
 /**
  * The agent's own word about itself, which outranks the registry's read of its process: it has
  * ended, or it is stopped at a prompt. Neither is something a live pid can show.
  */
 const trustAgent = (s) => finished(s) || s === "blocked";
+/** One word per fact in the state column: the registry's words differ by where the session runs, not by what it is doing. */
+const STATE_WORD = { busy: "working", running: "working", waiting: "waiting for you", shell: "idle", done: "ended", exited: "ended" };
+/** The prompt Maverick spawned an agent with: its words, not the person's, so it never reads as `you`. */
+const SPAWN_PROMPT = /^You are (the|a|an|writing|summarizing)\b/;
+const WANTS_YOU = /^(waiting|blocked)$/;
+/** The listing cuts a name at 60 characters, so a name that long, or stopped on punctuation, says it was cut. */
+const listedName = (name) => (name && (name.length >= 59 || /[,:;]$/.test(name)) ? `${name.trimEnd()}…` : name);
+/** A session named for a mission: the way the Wingman's record and listing name start. */
+const belongsTo = (m, title) => Boolean(title) && (title.startsWith(`${m.name}: `) || title.startsWith(`${m.name} · `));
+const stateWord = (s) => (s.isShell ? "shell" : STATE_WORD[s.status] ?? s.status);
 
 const age = (ms) => {
   if (!ms) return "";
@@ -72,7 +86,7 @@ const assemble = (all) => {
     const merged = {
       ...(twin ?? {}),
       key: `bg:${a.id}`, kind: "background", claudeId: a.id, sessionId: a.sessionId, cwd: a.cwd, project: a.project ?? twin?.project ?? record?.project,
-      title: named(a.sessionId, record?.loop, twin?.title, a.name, a.id), status: trustAgent(a.state) ? a.state : twin?.status ?? a.state ?? "running", at: twin?.at ?? a.startedAt, record,
+      title: named(a.sessionId, record?.loop, twin?.title, listedName(a.name), a.id), status: trustAgent(a.state) ? a.state : twin?.status ?? a.state ?? "running", at: twin?.at ?? a.startedAt, record,
       lastPrompt: a.lastPrompt ?? twin?.lastPrompt, lastReply: a.lastReply ?? twin?.lastReply,
     };
     if (twin) sessions.splice(sessions.indexOf(twin), 1, merged);
@@ -114,6 +128,12 @@ export const mountCommandCenter = (root, ctx) => {
   // are the racks, so drag and drop is one rule: a strip dropped on a tab flies there. Inside a
   // formation the lead slot and the flight are two more racks, which is promote and demote.
   let dragging = null; // { sessionId, from: formation id or null for the rack, title }
+  let archiveOpen = new URLSearchParams(location.search).has("archive"); // the Archive tab is showing; its rows are only drawn then
+  let archiveQuery = "";
+  let archiveShown = ARCHIVE_PAGE;
+  let archived = { done: [], over: [], closed: [] }; // what has ended, read once per paint
+  let archiveAgents = false; // the archive also lists what the missions spawned
+  const asksOpen = new Set(); // the old missions whose asks are unfolded, kept across repaints
 
   /* ---------- panels ---------- */
 
@@ -128,12 +148,24 @@ export const mountCommandCenter = (root, ctx) => {
   };
 
   /** Where the session lives. Inside a project's own section its name is on the heading already. */
-  const whereText = (s, inProject = false) => {
+  const whereText = (s, inProject = false, tty = true) => {
     const proj = all.projects.find((p) => p.id === s.project);
     const rel = proj ? s.cwd.replace(proj.path, "").replace(/^\//, "") : s.cwd.replace(/^\/Users\/[^/]+\//, "~/");
     const place = proj ? (inProject ? rel : `${proj.name}${rel ? `/${rel}` : ""}`) : rel;
-    return [s.kind === "background" ? "background" : s.app ?? "terminal", s.tty, place].filter(Boolean).join(" · ");
+    return [s.kind === "background" ? "background" : s.app ?? "terminal", tty ? s.tty : null, place].filter(Boolean).join(" · ");
   };
+
+  /** The mission a spawned session flies for, if any. */
+  const missionOf = (s) => {
+    const recorded = (s.record ?? model.byClaudeId.get(s.claudeId))?.mission;
+    // A RIO has no record, and a retried task keeps only its newest agent's id, so an older one is known by its name.
+    const task = (s.title ?? "").replace(/^(RIO|Wingman) · /, "").replace(/…$/, "");
+    return missions.find((m) => m.id === recorded || belongsTo(m, s.title) || s.cwd?.includes(`/worktrees/${m.id}-`)
+      || m.milestones.some((x) => x.tasks.some((t) => (s.claudeId && (t.claudeId === s.claudeId || t.review?.claudeId === s.claudeId)) || (task.length > 8 && task !== s.title && t.title.startsWith(task)))));
+  };
+  const missionHref = (m) => `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
+  /** A labelled line under a strip: the exchange, an ask's reason. */
+  const sayLine = (who, body, cls = "claude") => el("p", { class: cls }, el("span", { class: "who" }, who), body);
 
   const dockFor = (s) => (s.kind === "background" ? { kind: "attach", id: s.claudeId, title: s.title } : { kind: "resume", sessionId: s.sessionId, title: s.title });
 
@@ -141,7 +173,7 @@ export const mountCommandCenter = (root, ctx) => {
   /** A strip's name is its button: Enter and a screen reader reach it as the control that opens the strip; a click anywhere else on the strip still opens it for a pointer. */
   const stripName = (text, open) => el("button", { type: "button", class: "strip-name", onclick: (e) => { e.stopPropagation(); open(); } }, text);
   /** A page strip's one verb, in the verbs' own column for open, so every open on the page shares one x. */
-  const openAct = (title, open) => [el("span", {}), el("button", { type: "button", class: "ghost act", title, onclick: open }, "open")];
+  const openAct = (title, open) => [el("span", {}), el("button", { type: "button", class: "ghost act primary-act", title, onclick: open }, "open")];
   /** What an empty place says, and the one thing to do about it. */
   const emptyStart = (message, button) => el("div", { class: "cc-empty-start" }, message ? el("p", { class: "muted small" }, message) : null, button);
   const clipboardDenied = () => toast("The browser would not give up the clipboard: allow clipboard access for this page.", { error: true });
@@ -160,7 +192,7 @@ export const mountCommandCenter = (root, ctx) => {
             failed(`close ${s.title}`, err);
           }
           window.setTimeout(load, 600);
-        } }, long ? "close shell" : "close")
+        } }, long ? "close shell" : "end")
     : s.kind === "background"
       ? el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
@@ -173,8 +205,8 @@ export const mountCommandCenter = (root, ctx) => {
             failed(`${done ? "remove" : "stop"} ${s.title}`, err);
           }
           window.setTimeout(load, 1200);
-        }, title: finished(s.status) ? `remove the record for "${s.title}"` : `stop the background agent running "${s.title}"` },
-        finished(s.status) ? (long ? "remove record" : "remove") : long ? "stop agent" : "stop")
+        }, title: finished(s.status) ? `remove the record for "${s.title}"` : `end the background agent running "${s.title}"` },
+        finished(s.status) ? (long ? "remove record" : "remove") : long ? "end session" : "end")
       : el("button", { type: "button", class: cls, onclick: async (e) => {
           e.stopPropagation();
           if (!(await askClose(s))) return;
@@ -185,10 +217,10 @@ export const mountCommandCenter = (root, ctx) => {
             failed(`close ${s.title}`, err);
           }
           window.setTimeout(load, 1500);
-        }, title: `close the Claude running "${s.title}"` }, long ? "end session" : "close");
+        }, title: `end the Claude running "${s.title}"` }, long ? "end session" : "end");
 
   /** Open the session full screen with its terminal already attached. */
-  const terminalButton = (s) => el("button", { type: "button", class: "ghost act", title: "open this session with its terminal", onclick: (e) => { e.stopPropagation(); openFull(s, { stick: true }); } }, "open");
+  const terminalButton = (s) => el("button", { type: "button", class: "ghost act primary-act", title: "open this session with its terminal", onclick: (e) => { e.stopPropagation(); openFull(s, { stick: true }); } }, "open");
 
   /**
    * Rename in place, the way a controller annotates a flight strip: the name becomes an input
@@ -244,8 +276,8 @@ export const mountCommandCenter = (root, ctx) => {
   /** The last exchange, carried only by the strips you are meant to read. */
   const say = (s) =>
     el("div", { class: "strip-say" },
-      s.lastPrompt ? el("p", { class: "you" }, el("span", { class: "who" }, "you"), text(clip(plain(s.lastPrompt), 150))) : null,
-      s.lastReply ? el("p", { class: "claude" }, el("span", { class: "who" }, "claude"), text(clip(plain(s.lastReply), 260))) : el("p", { class: "claude empty" }, "nothing said yet"));
+      s.lastPrompt && !SPAWN_PROMPT.test(s.lastPrompt) ? sayLine("you", text(clip(plain(s.lastPrompt), 150)), "you") : null,
+      s.lastReply ? sayLine("claude", text(clip(plain(s.lastReply), 260))) : el("p", { class: "claude empty" }, "nothing said yet"));
 
   /**
    * One session as a flight progress strip. The line is a grid of fixed columns, so the lamp,
@@ -262,7 +294,7 @@ export const mountCommandCenter = (root, ctx) => {
       lamp(status, band),
       el("div", { class: "strip-id" }, lead, name, ...chips),
       el("span", { class: "strip-state", title: [state, note].filter(Boolean).join(" · ") }, el("b", {}, state), note ? el("i", {}, note) : null),
-      el("span", { class: "strip-when", title: [when, up].filter(Boolean).join(" · ") }, when, up ? el("i", {}, up) : null),
+      el("span", { class: "strip-when", title: [when, up].filter(Boolean).join(" · ") }, when),
       el("span", { class: "strip-where", title: where }, where),
       el("div", { class: "strip-acts" }, ...acts));
 
@@ -270,15 +302,18 @@ export const mountCommandCenter = (root, ctx) => {
   const strip = (s, record, wide = false, band = "") => {
     // The name is the strip's control: Enter and a screen reader reach it as a button, and a
     // click anywhere else on the strip still opens it for a pointer.
-    const name = stripName(s.title, () => openIt());
     const inFormation = formations.find((x) => x.id === activeFormation) ?? null;
+    // The where column names the mission, and a bare task is the Wingman that built it, as the RIO's row beside it says.
+    const mission = missionOf(s);
+    const shown = mission && belongsTo(mission, s.title) ? `Wingman · ${s.title.slice(mission.name.length).replace(/^(: | · )/, "")}` : s.title;
+    const name = stripName(shown, () => openIt());
     // Inside a formation a strip opens where it sits, so several run at once. In the rack it
     // still goes full screen: sixteen strips have no room to hold a conversation open.
     const expandable = s.isShell || (Boolean(inFormation) && Boolean(s.sessionId));
     const isOpen = expandable && opened.has(s.key);
     const openIt = () => (expandable ? toggleOpen(s.key) : openFull(s));
     const node = el("article", {
-      class: `strip ${s.status}${finished(s.status) ? " finished" : ""}${wide ? " full" : ""}${isOpen ? " open" : ""}`,
+      class: `strip ${s.status}${s.isShell ? " is-shell" : ""}${finished(s.status) ? " finished" : ""}${wide ? " full" : ""}${isOpen ? " open" : ""}`,
       "data-key": s.key,
       title: s.title,
       // A session with no id has nothing a formation could hold on to, so it stays put.
@@ -304,11 +339,11 @@ export const mountCommandCenter = (root, ctx) => {
         : null,
       chips: [roleChip(record), auditChip(record)],
       // An idle session in Needs you asked you something; in Ready to review it replied. Say which, not just "idle".
-      state: band === "action" ? (asksYou(s) ? "asked you" : "replied") : s.status,
+      state: band === "action" ? (asksYou(s) ? "asked you" : "replied") : stateWord(s),
       note: s.waitingFor,
       when: age(s.at),
       up: s.elapsed ? `up ${s.elapsed}` : null,
-      where: whereText(s, true),
+      where: mission?.name ?? whereText(s, true, false),
       acts: [s.sessionId ? renameButton(s, name) : disabledRename(), terminalButton(s), endButton(s, "ghost act end")],
     }),
     // An open strip shows the conversation itself; the one-line excerpt would only repeat it.
@@ -365,17 +400,6 @@ export const mountCommandCenter = (root, ctx) => {
     }
     if (!children.length) wings.append(el("p", { class: "muted small cc-empty" }, "no task sessions under this lead yet: pick it when you spawn from a card"));
     return el("section", { class: "cc-formation" }, lead, wings);
-  };
-
-  /** A formation with nothing alive in it, folded to one line. */
-  const closedFormation = (parentRecord) => {
-    const children = model.parents.get(parentRecord.id) ?? [];
-    return el("li", { class: "cc-closed-row", title: parentRecord.handoff ?? "" },
-      el("span", { class: "lamp" }),
-      el("span", { class: "role" }, parentRecord.role),
-      el("span", { class: "name" }, parentRecord.loop),
-      el("span", { class: "sub" }, `${parentRecord.status} · ${children.length} session${children.length === 1 ? "" : "s"}${parentRecord.handoff ? ` · ${clip(parentRecord.handoff, 90)}` : ""}`),
-    );
   };
 
   /* ---------- formations: a lead and its flight, as tabs ---------- */
@@ -544,22 +568,17 @@ export const mountCommandCenter = (root, ctx) => {
 
   const formationTabs = () => {
     const tab = (id, label, count, f) =>
-      dropZone(el("button", { type: "button", class: activeFormation === id ? "on" : "",
+      dropZone(el("button", { type: "button", class: !archiveOpen && activeFormation === id ? "on" : "",
         title: f ? `${f.name} · drop a strip here to bring it into the flight · right-click to pop out, rename or disband` : "every session in this project · drop a strip here to take it out of its formation",
         oncontextmenu: f ? (e) => { e.preventDefault(); tabMenu(f, e.clientX, e.clientY); } : null,
-        onclick: () => {
-        activeFormation = id;
-        const u = new URL(location.href);
-        if (id) u.searchParams.set("formation", id); else u.searchParams.delete("formation");
-        history.replaceState({}, "", u);
-        paint();
-      } }, label, count != null ? el("b", {}, String(count)) : null),
+        onclick: () => showFormation(id) }, label, count != null ? el("b", {}, String(count)) : null),
       // The rack you came from is not somewhere to land.
       (d) => d.from !== id, (d) => moveTo(d, id));
     return el("div", { class: "forms" },
       // With the list unreadable there is no count to give, so none is shown rather than a zero.
-      tab(null, "Rack", sessionsFailed ? null : mySessions().length),
-      ...formations.map((f) => tab(f.id, f.name, slots(f), f)),
+      tab(null, "Rack", sessionsFailed ? null : mySessions().filter((s) => !finished(s.status)).length + missions.filter((m) => !isEnded(m.status)).length),
+      ...formations.filter((f) => liveSlots(f)).map((f) => tab(f.id, missions.some((m) => m.formation === f.id && !isEnded(m.status)) ? `${f.name} crew` : f.name, liveSlots(f), f)),
+      sessionsFailed ? null : el("button", { type: "button", class: `archive-tab${archiveOpen || (activeFormation && formations.some((f) => f.id === activeFormation && !liveSlots(f))) ? " on" : ""}`, title: "everything that has ended in this project", onclick: () => { setArchive(true); activeFormation = null; paint(); } }, "Archive", el("b", {}, String(archived.done.length + archived.over.length + archived.closed.length))),
       el("button", { type: "button", class: "new shell", title: "open a shell in this project", onclick: async () => {
         try {
           const t = await post("/api/terminals", { project: ctx.projectId, kind: "shell", cols: 120, rows: 34 });
@@ -574,7 +593,7 @@ export const mountCommandCenter = (root, ctx) => {
         } catch (err) {
           failed("open a shell", err);
         }
-      } }, icon("terminal")),
+      } }, icon("terminal"), "shell"),
       el("button", { type: "button", class: "new", title: "new formation", "aria-label": "new formation", onclick: async () => {
         try {
           const f = await api("/api/formations?project=" + encodeURIComponent(ctx.projectId), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
@@ -597,6 +616,26 @@ export const mountCommandCenter = (root, ctx) => {
         lamp(s.status), el("b", {}, s.title), el("i", {}, s.status)))));
   };
 
+  const setArchive = (open) => {
+    archiveOpen = open;
+    const u = new URL(location.href);
+    if (open) { u.searchParams.set("archive", "1"); u.searchParams.delete("formation"); } else u.searchParams.delete("archive");
+    history.replaceState({}, "", u);
+  };
+  /** A formation's sessions still running: one with none is finished, and lives in the archive. */
+  const liveSlots = (f) => {
+    const live = new Set(mySessions().filter((s) => s.sessionId && !finished(s.status)).map((s) => s.sessionId));
+    return [f.lead, ...f.members].filter((id) => live.has(id)).length + (f.pending?.length ?? 0);
+  };
+  /** Leave the archive for a formation's tab, or for the rack with none. */
+  const showFormation = (id) => {
+    setArchive(false);
+    activeFormation = id;
+    const u = new URL(location.href);
+    if (id) u.searchParams.set("formation", id); else u.searchParams.delete("formation");
+    history.replaceState({}, "", u);
+    paint();
+  };
   /** Everything the formation is holding: its lead, its flight, and the slots still starting. */
   const slots = (f) => (f.lead ? 1 : 0) + f.members.length + (f.pending?.length ?? 0);
 
@@ -660,6 +699,15 @@ export const mountCommandCenter = (root, ctx) => {
         writeOpen();
       }
     }
+    // Nothing left running: a record of who flew, with nothing offering to start more of it.
+    if (!liveSlots(f)) {
+      const crew = [...(lead ? [lead] : []), ...flight];
+      return el("section", { class: "cc-project" },
+        el("div", {}, el("h2", { class: "archive-formation-name" }, f.name), el("p", { class: "muted small" }, "Everything in this formation has ended.")),
+        el("section", { class: "rack archive", "aria-label": f.name },
+          rackHead(el("span", { class: "rack-col name" }, "Session")),
+          el("div", { class: "rack-strips" }, ...crew.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "done")))));
+    }
     const leadOpen = Boolean(lead && opened.has(lead.key));
     return el("section", { class: `cc-project formation${leadOpen ? " with-lead" : ""}` },
       // Drop a strip on the lead slot to put it in front; the lead it replaces joins the flight.
@@ -692,14 +740,92 @@ export const mountCommandCenter = (root, ctx) => {
         el("button", { type: "button", class: "ghost", onclick: () => disband(f) }, "disband this formation")));
   };
 
-  /** One of the workspace's four groups: a rack of rows already drawn. `n` counts what a row holds more than one of. */
-  const rack = (name, rows, cls = "", n = rows.length) =>
+  /** The columns' labels, the strip's own grid, after whatever heads the first column. */
+  const rackHead = (first) => el("div", { class: "rack-head" }, first,
+    el("span", { class: "rack-col" }, "State"), el("span", { class: "rack-col" }, "When"), el("span", { class: "rack-col where" }, "Where / progress"));
+  /** One of the workspace's groups: a rack of rows already drawn. */
+  const rack = (name, rows, cls = "") =>
     rows.length
       ? el("section", { class: `rack ${cls}` },
-          el("h2", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(n))),
+          rackHead(el("h2", {}, cls === "needs" ? jetSvg("jet-glyph band") : null, el("span", {}, name), el("span", { class: "n" }, String(rows.length)))),
           // The same rule as a formation's flight: past one open strip the rack shares columns.
           el("div", { class: `rack-strips${rows.filter((x) => x.classList.contains("open")).length > 1 ? " grid" : ""}` }, ...rows))
       : null;
+  /** Every session a mission spawned, by id, with the whole task title its 60-character listing name lost. */
+  const missionAgents = () => {
+    const out = new Map();
+    for (const m of missions) for (const t of m.milestones.flatMap((x) => x.tasks)) {
+      if (t.claudeId) out.set(t.claudeId, `Wingman · ${t.title}`);
+      if (t.review?.claudeId) out.set(t.review.claudeId, `RIO · ${t.title}`);
+    }
+    return out;
+  };
+  const spawned = (s, agents) => agents.has(s.claudeId) || /^(RIO|Wingman|walkthrough|summary|breakdown) ·/.test(s.title) || missions.some((m) => belongsTo(m, s.title));
+  /** The bucket a time falls in, which is how a person remembers it. */
+  const whenBucket = (at) => {
+    if (!at) return "Older";
+    const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / DAY);
+    return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days <= 7 ? "Past 7 days" : days <= 14 ? "Past 14 days" : days <= 30 ? "Past 30 days" : "Older";
+  };
+  /** What has ended, in this project. Formations with nothing live are here too, off the tab row. */
+  const archiveParts = (proj, sessions) => ({
+    done: sessions.filter((s) => finished(s.status)),
+    over: missions.filter((m) => isEnded(m.status)),
+    closed: [...model.parents.keys()].map((id) => model.records.find((r) => r.id === id)).filter((r) => r && recordInProject(proj, r) && !formationAlive(r)),
+  });
+  /** The Archive tab: everything that has ended, newest first, the person's own by default. Only the rows on show are drawn. */
+  const archiveView = () => {
+    const agents = missionAgents();
+    const entries = [
+      ...archived.done.map((s) => {
+        const named = agents.has(s.claudeId) && !all.names?.[s.sessionId] ? { ...s, title: agents.get(s.claudeId) } : s;
+        return { at: s.at, agent: spawned(s, agents), text: `${named.title} ${stateWord(s)} ${missionOf(s)?.name ?? whereText(s, true, false)}`, draw: () => strip(named, s.record ?? model.byClaudeId.get(s.claudeId), false, "done") };
+      }),
+      ...archived.over.map((m) => ({ at: Date.parse(m.approved ?? m.created), agent: false, text: `${m.name} ${missionWord(m)}`, draw: () => missionRow(m) })),
+      ...archived.closed.map((r) => ({ at: Date.parse(r.ended ?? r.started ?? ""), agent: false, text: `${r.loop} ${r.status}`, draw: () => ghost(r) })),
+    ].sort((a, b) => (b.at || 0) - (a.at || 0));
+    const spawnedCount = entries.filter((e) => e.agent).length;
+    const list = el("div", { class: "rack-strips" });
+    const said = el("span", { class: "muted small", role: "status" });
+    const none = el("p", { class: "archive-none" });
+    const head = rackHead(el("span", { class: "rack-col name" }, "Session"));
+    const more = el("button", { type: "button", class: "rack-verb", onclick: () => { archiveShown += ARCHIVE_PAGE; show(); } }, "show more");
+    const showAgents = spawnedCount ? el("button", { type: "button", class: "rack-verb", "aria-pressed": String(archiveAgents), onclick: () => { archiveAgents = !archiveAgents; archiveShown = ARCHIVE_PAGE; paint(); } }, archiveAgents ? "hide mission agents" : `show ${spawnedCount} mission agents`) : null;
+    /** The query's matches or, without one, the person's own sessions unless agents are asked for. */
+    const show = () => {
+      const q = archiveQuery.trim().toLowerCase();
+      const hits = entries.filter((e) => (q ? e.text.toLowerCase().includes(q) : archiveAgents || !e.agent));
+      const rows = [];
+      let bucket = null;
+      for (const e of hits.slice(0, archiveShown)) {
+        const when = whenBucket(e.at);
+        if (when !== bucket) { bucket = when; rows.push(el("h2", { class: "archive-when" }, when)); }
+        rows.push(e.draw());
+      }
+      list.replaceChildren(...rows);
+      more.hidden = hits.length <= archiveShown;
+      said.textContent = hits.length ? `${Math.min(hits.length, archiveShown)} of ${hits.length === entries.length ? entries.length : `${hits.length} found, ${entries.length}`}` : "";
+      none.textContent = hits.length ? "" : q ? `Nothing in the archive says "${archiveQuery.trim()}".` : "Nothing here but what the missions spawned.";
+      none.hidden = Boolean(hits.length);
+      head.hidden = !hits.length;
+      if (showAgents) showAgents.hidden = Boolean(q);
+    };
+    const find = el("input", { type: "text", class: "rack-find", placeholder: "find in the archive", "aria-label": "find in the archive", value: archiveQuery,
+      oninput: (e) => { archiveQuery = e.target.value; archiveShown = ARCHIVE_PAGE; show(); } });
+    // A live mission's formation is its crew between agents, not finished work.
+    const dead = formations.filter((f) => !liveSlots(f) && !missions.some((m) => m.formation === f.id && !isEnded(m.status)));
+    show();
+    return el("section", { class: "cc-project" },
+      el("div", { class: "archive-tools" }, find, showAgents, said),
+      el("section", { class: "rack archive", "aria-label": "Archive" }, head, none, list, more),
+      dead.length ? el("nav", { class: "archive-formations", "aria-label": "Finished formations" }, el("span", {}, "Finished formations"), ...dead.map((f) => el("button", { type: "button", class: "rack-verb", onclick: () => showFormation(f.id) }, f.name))) : null);
+  };
+  /** The way back to every live mission and the way to start one, on the first screen of every tab. */
+  const missionLinks = () =>
+    el("nav", { class: "cc-missions", "aria-label": "Missions" }, el("span", {}, "Missions"),
+      ...missions.filter((m) => !isEnded(m.status)).map((m) => { const wants = lampOf(m); return el("a", { class: `cc-mission${WANTS_YOU.test(wants) ? " wants" : ""}`, href: missionHref(m) }, lamp(wants), m.name, el("i", {}, missionWord(m))); }),
+      el("button", { type: "button", class: "rack-verb", title: "for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve", onclick: newMission }, "open a mission"),
+      el("button", { type: "button", class: "rack-verb", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm"));
   const strips = (sessions, full, band) => sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, band));
 
   /**
@@ -719,8 +845,7 @@ export const mountCommandCenter = (root, ctx) => {
     flying: "flying",
     blocked: "needs you",
     paused: "paused",
-    review: "ready for you to read and test",
-    closed: "closed",
+    review: "ready to walk and close",
   };
 
   /** A strip that is a link to its own page: the article shell, with click and keyboard opening it, around a strip line and whatever sits under it. */
@@ -728,31 +853,50 @@ export const mountCommandCenter = (root, ctx) => {
     class: `strip ${status}${status === "done" ? " finished" : ""}${status === "waiting" || status === "blocked" ? " full" : ""}`,
     "data-key": key,
     title,
-    onclick: (e) => { if (!e.target.closest("button, input")) open(); },
+    onclick: (e) => { if (!e.target.closest("button, input, summary, .strip-asks")) open(); },
   }, ...children);
 
+
+  const oldMission = (m) => Date.now() - Date.parse(m.approved ?? m.created) > OLD_MISSION;
+  /** A mission's asks under its strip. One past a week folds to a line, so what is old cannot fill the screen over what is live. */
+  const missionAsks = (m) => {
+    if (!m.questions?.length) return [];
+    const old = oldMission(m);
+    // A lone ask's title is the fold's summary, so it is not said again inside.
+    const lines = questionLines(m, { el, post, refresh: load, projectId: ctx.projectId, titled: !old || m.questions.length > 1 });
+    if (!old) return lines;
+    const fold = el("details", { class: "strip-asks", ontoggle: (e) => { if (e.target.open) asksOpen.add(m.id); else asksOpen.delete(m.id); } },
+      el("summary", {}, icon("chevron"), m.questions.length === 1 ? m.questions[0].title : `${m.questions.length} asks: ${m.questions[0].title}`), ...lines);
+    fold.open = asksOpen.has(m.id);
+    return [fold];
+  };
+
+  /** The sessions stopped at a prompt that this mission's row speaks for. */
+  const heldBy = (m) => model.sessions.filter((s) => WANTS_YOU.test(s.status ?? "") && missionOf(s)?.id === m.id);
 
   const missionRow = (m) => {
     const tasks = m.milestones.flatMap((x) => x.tasks);
     const passed = tasks.filter((t) => t.status === "passed").length;
     const merged = m.milestones.filter((x) => x.merged).length;
     const status = lampOf(m);
-    const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
+    const href = missionHref(m);
     const openMission = () => { location.href = href; };
-    return pageStrip({ status, title: `${m.name} · ${m.word}`, open: openMission, key: `mission:${m.id}` }, stripLine({
+    // What it says of itself fits the state column; a reason is a sentence, and sits under the line.
+    const over = isEnded(m.status);
+    const why = over ? null : m.escalation ?? m.trouble ?? null;
+    const held = over ? [] : heldBy(m);
+    return pageStrip({ status, title: `${m.name} · ${missionWord(m)}`, open: openMission, key: `mission:${m.id}` }, stripLine({
       status,
       name: stripName(m.name, openMission),
-      state: m.word,
-      note: m.escalation ? clip(m.escalation, 90) : m.trouble ? clip(m.trouble, 90) : MISSION_SAYS[m.status] ?? null,
+      state: missionWord(m),
+      note: over ? null : MISSION_SAYS[m.status] ?? null,
       when: age(Date.parse(m.approved ?? m.created)),
       where: [tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "), m.diffstat].filter(Boolean).join(" · "),
       acts: openAct("open this mission", openMission),
-    }), ...(m.questions?.length ? questionLines(m, { el, post, refresh: load, projectId: ctx.projectId }) : []));
+    }), why || held.length ? el("div", { class: "strip-say" },
+      sayLine("why", el("span", {}, why, ...held.map((x) => el("button", { type: "button", class: "rack-verb say-verb", onclick: () => openFull(x) }, "open that session")))),
+      ...held.filter((x) => x.lastReply).map((x) => sayLine("claude", text(clip(plain(x.lastReply), 260))))) : null, ...missionAsks(m));
   };
-
-  /** Missions open here, because the page that lists them is this one. */
-  const missionFoot = () => emptyStart(missions.length ? null : "A mission is for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve.",
-    el("button", { type: "button", class: "rack-verb", onclick: newMission }, "open a mission"));
 
   /* The brainstorms, and where each one stands on its way to the board. The verbs live on the breakdown page. */
   const WAITING = "proposal waiting";
@@ -765,22 +909,17 @@ export const mountCommandCenter = (root, ctx) => {
     return pageStrip({ status, title: `${b.title} · ${BRAINSTORM_SAYS[b.state] ?? b.state}`, open, key: `brainstorm:${b.file}` }, stripLine({
       status,
       name: stripName(b.title, open),
-      state: BRAINSTORM_SAYS[b.state] ?? b.state,
-      note: b.parsed?.problems?.length ? clip(b.parsed.problems[0], 90) : null,
+      state: b.state === "broken down" ? "on the board" : b.state,
       when: b.approved ? `approved ${b.approved}` : null,
       where: b.parsed ? `${b.parsed.items.length} proposed · ${b.parsed.already.length} already there` : b.file.replace(/^deliverables\/brainstorms\//, ""),
       acts: openAct(b.state === WAITING ? "open the breakdown gate" : "open the breakdown", open),
-    }));
+    }), b.parsed?.problems?.length ? el("div", { class: "strip-say" }, sayLine("why", text(clip(b.parsed.problems[0], 180)))) : null);
   };
   const brainstormsRack = () => {
     const rest = brainstorms.filter((b) => b.state !== WAITING);
-    return el("section", { class: "rack brainstorms" },
-      el("h2", {}, el("span", {}, "Brainstorms"), el("span", { class: "n" }, String(rest.length)),
-        el("span", { class: "spacer" }),
-        el("button", { type: "button", class: "rack-verb", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm")),
-      rest.length
-        ? el("div", { class: "rack-strips" }, ...rest.map(brainstormRow))
-        : el("p", { class: "muted small cc-empty" }, brainstorms.length ? "The one waiting on you is in Needs you." : "None yet. A brainstorm is one conversation with the CAG and one dated document; breaking it down is how its ideas reach the board."));
+    return rest.length
+      ? el("section", { class: "rack brainstorms" }, el("h2", {}, el("span", {}, "Brainstorms"), el("span", { class: "n" }, String(rest.length))), el("div", { class: "rack-strips" }, ...rest.map(brainstormRow)))
+      : null;
   };
 
   /** The CAG in a terminal. It reads and writes documents and runs nothing; the tracker is not touched until a breakdown is approved. */
@@ -803,60 +942,57 @@ export const mountCommandCenter = (root, ctx) => {
     }
   };
 
+  const recordInProject = (proj, r) => (proj ? r.project === proj.id || r.project === proj.name : !r.project || !all.projects.some((p) => p.id === r.project || p.name === r.project));
+  const formationAlive = (r) => Boolean(sessionForRecord(r)) || (model.parents.get(r.id) ?? []).some((c) => sessionForRecord(c));
+
   const projectSection = (proj, sessions) => {
     const used = new Set();
     const formations = [];
-    const closed = [];
-    const inProject = (r) => (proj ? r.project === proj.id || r.project === proj.name : !r.project || !all.projects.some((p) => p.id === r.project || p.name === r.project));
     for (const parentId of model.parents.keys()) {
       const parentRecord = model.records.find((r) => r.id === parentId);
-      if (!parentRecord || !inProject(parentRecord)) continue;
-      const children = model.parents.get(parentId) ?? [];
-      const alive = sessionForRecord(parentRecord) || children.some((c) => sessionForRecord(c));
-      if (alive) formations.push(formation(parentRecord, used));
-      else closed.push(closedFormation(parentRecord));
+      if (parentRecord && recordInProject(proj, parentRecord) && formationAlive(parentRecord)) formations.push(formation(parentRecord, used));
     }
     const loose = sessions.filter((s) => !used.has(s.key)).sort((a, b) => (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || (b.at ?? 0) - (a.at ?? 0));
     const is = (...st) => (s) => st.includes(s.status);
     const shells = loose.filter((s) => s.isShell && s.status === "shell");
     const blocked = loose.filter(is("waiting", "blocked"));
     const busy = loose.filter(is("busy", "running"));
-    const done = loose.filter((s) => finished(s.status));
-    const idle = loose.filter((s) => !blocked.includes(s) && !busy.includes(s) && !done.includes(s) && !shells.includes(s));
+    const idle = loose.filter((s) => !blocked.includes(s) && !busy.includes(s) && !finished(s.status) && !shells.includes(s));
     // Between turns for under an hour is a conversation you are in the middle of; it is your move.
     const recent = idle.filter((s) => s.at && Date.now() - s.at <= HOUR);
     // Of those, the ones Claude ended on a question want an answer; the rest want reading.
     const asking = recent.filter(asksYou);
     const replied = recent.filter((s) => !asking.includes(s) && s.lastReply);
     // Idle past the hour is a tab you have moved on from, which is stale here.
-    const stale = idle.filter((s) => !asking.includes(s) && !replied.includes(s));
+    const stale = idle.filter((s) => !asking.includes(s) && !replied.includes(s)).sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
     const byLamp = (a, b) => (rank[lampOf(a)] ?? 4) - (rank[lampOf(b)] ?? 4);
     const mine = [...missions].sort(byLamp);
     // A mission is one strip, in one group, its questions under it (the rack rule: a state belongs to one rack).
-    const over = mine.filter((m) => m.status === "closed" || m.status === "abandoned");
     // Needs you is everything that asks you something (a mission at review asks for its walk and
     // its close); Ready to review is a session that replied and has something to read.
-    const wanting = mine.filter((m) => !over.includes(m) && (m.questions?.length || m.word === "waiting for you" || m.word === "error" || m.status === "review"));
-    const flying = mine.filter((m) => !over.includes(m) && !wanting.includes(m));
-    const needs = [...strips(blocked, true, "needs"), ...wanting.map(missionRow), ...brainstorms.filter((b) => b.state === WAITING).map(brainstormRow), ...strips(asking, true, "action")];
+    const live = mine.filter((m) => !isEnded(m.status));
+    const wanting = live.filter((m) => (m.questions?.length || m.word === "waiting for you" || m.word === "error" || m.status === "review")).sort((a, b) => oldMission(a) - oldMission(b));
+    const flying = live.filter((m) => !wanting.includes(m));
+    // An agent holding a mission in this rack is said on that mission's row: one event, one row.
+    const spokenFor = new Set(wanting.flatMap(heldBy));
+    const needs = [...strips(blocked.filter((s) => !spokenFor.has(s)), true, "needs"), ...wanting.map(missionRow), ...brainstorms.filter((b) => b.state === WAITING).map(brainstormRow), ...strips(asking, true, "action")];
     const working = [...strips(busy, true, "working"), ...formations, ...strips(shells, false, "working"), ...flying.map(missionRow)];
     const review = strips(replied, true, "action");
-    const ended = [...strips(done, false, "done"), ...strips(stale, false, "stale"), ...over.map(missionRow)];
     // No project heading: the bar already names the project, and every group carries its own
-    // count. Four groups, always in this order, then the brainstorms and the way to open a mission.
+    // count. Four groups, always in this order, then the brainstorms.
     return el(
       "section",
       { class: "cc-project" },
       // With the session list unreadable, "no sessions" would be a claim the page cannot make.
-      !sessionsFailed && !sessions.length && !formations.length && !closed.length && !missions.length
+      !sessionsFailed && !sessions.some((s) => !finished(s.status)) && !formations.length && !live.length
         ? emptyStart("No sessions in this project.", el("button", { type: "button", class: "primary", onclick: () => openTerminal({ kind: "new", title: `claude · ${ctx.project?.name ?? ctx.projectId}` }) }, "start a session"))
         : null,
       rack("Needs you", needs, "needs"),
       rack("Working", working, "working"),
       rack("Ready to review", review, "review"),
-      rack("Done", closed.length ? [...ended, el("ul", { class: "cc-closed" }, ...closed)] : ended, "done", ended.length + closed.length),
+      // Idle is a live session you have moved on from, which is still yours to go back to; only what has ended is archived.
+      rack("Idle", strips(stale, false, "stale"), "idle"),
       brainstormsRack(),
-      missionFoot(),
     );
   };
 
@@ -870,7 +1006,7 @@ export const mountCommandCenter = (root, ctx) => {
     const now = new Set();
     for (const s of sections) for (const node of s.querySelectorAll(".strip[data-key]")) {
       now.add(node.dataset.key);
-      if (seenKeys && !seenKeys.has(node.dataset.key)) node.classList.add("arrived");
+      if (seenKeys && !seenKeys.has(node.dataset.key) && !node.closest(".rack.archive")) node.classList.add("arrived");
     }
     seenKeys = now;
   };
@@ -881,17 +1017,18 @@ export const mountCommandCenter = (root, ctx) => {
     // One project at a time. Maverick is opened on a project; sessions running somewhere else
     // are that project's business, not this page's.
     const mine = model.sessions.filter((s) => s.project === ctx.projectId);
+    const proj = all.projects.find((p) => p.id === ctx.projectId) ?? null;
+    archived = archiveParts(proj, mine);
     ctx.filterRoot?.replaceChildren(formationTabs());
     const active = formations.find((f) => f.id === activeFormation);
     if (activeFormation && !active) activeFormation = null;
-    const proj = all.projects.find((p) => p.id === ctx.projectId) ?? null;
-    const section = active ? formationView(active) : projectSection(proj, mine);
+    const section = archiveOpen ? archiveView() : active ? formationView(active) : projectSection(proj, mine);
     const sections = section ? [section] : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
     markArrivals(sections);
     const trouble = sessionsFailed ? el("div", { class: "cc-trouble", role: "alert" },
       el("p", {}, `The session list could not be read: ${sessionsFailed.message}. Missions and brainstorms below are current; sessions are not shown.`),
       el("button", { type: "button", onclick: () => load() }, "try again")) : null;
-    root.replaceChildren(...[trouble, ...sections].filter(Boolean));
+    root.replaceChildren(...[trouble, archiveOpen ? null : missionLinks(), ...sections].filter(Boolean));
     // Every open pane's head carries live state (lamp, status, timing), so they follow the model.
     for (const p of panes.values()) {
       paintHead(p);
@@ -1029,7 +1166,6 @@ export const mountCommandCenter = (root, ctx) => {
   const liveSession = (p) => model?.sessions.find((s) => s.key === p.key) ?? p.session;
 
   /** The two states that want the pilot; the lamp draws them as a reticle for the same reason. */
-  const WANTS_YOU = /^(waiting|blocked)$/;
 
   /** A session we can type into: one of our own ptys, or a background agent we can attach to. */
   const ownPty = (s) => Boolean(s.terminalId) || s.kind === "background";
@@ -1142,7 +1278,7 @@ export const mountCommandCenter = (root, ctx) => {
     const s = p.session;
     const peer = s.kind !== "background" && !s.terminalId; // lives in another terminal
     if (finished(s.status)) {
-      p.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ${s.status}. Its conversation stays on disk.`)));
+      p.composer.replaceChildren(el("div", { class: "notice" }, el("span", {}, `This background session has ended. Its conversation stays on disk.`)));
       return;
     }
     const area = el("textarea", { rows: "1", "aria-label": "Message this session", placeholder: "Message this session; Enter sends", title: peer ? `It arrives in ${s.app ?? "its terminal"} as a peer message.` : "It is typed into the session's terminal." });

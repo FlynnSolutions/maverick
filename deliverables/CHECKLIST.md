@@ -16,6 +16,23 @@ format: checklist
 
 ## 🔥 Priority
 
+- [ ] `[DEBT]` `[S]` **Record which mission and role spawned every agent, so the command center stops reading it off titles**
+  - created: 2026-11-04
+  - source: /simplify on the command center pass
+  - kind: chore
+  Only Wingmen get a session record with `mission`. RIO, walkthrough, summary and resolve agents do
+  not, so `missionOf`, `spawned`, `SPAWN_PROMPT` and `listedName` in `web/command.js` read titles and
+  prompts. Write `{mission, role, task, title}` at the spawn (`spawnBackgroundAgent`), and persist the
+  agents at a prompt on the mission instead of matching `trouble` in `statusWord`. Older sessions
+  have no record, so the fallback stays for them.
+
+- [ ] `[ENG]` `[M]` **The Board at real scale: long lanes fold or page, as the Archive did for the command center**
+  - created: 2026-11-04
+  - source: Cory, 2026-11-04 (command center UI pass)
+  - kind: feature
+  The heaviest real project's Board is about 42,000px tall with 311 backlog cards, and the real-data audit stops at
+  its 150-Tab focus cap, holding the app grade at C. Handoff: `deliverables/plans/board-scale-handoff-2026-11-04.md`.
+
 ### Open source, for real
 
 - [ ] `[OSS]` `[S]` **Clear agent-readiness Level 2 on Maverick itself**

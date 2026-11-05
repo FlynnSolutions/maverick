@@ -4,7 +4,7 @@
 import { jetSvg } from "./jet.js";
 import { PROJECT_PROPS, applyProjectTheme } from "./theme.js";
 import { strike, loading, missile, flares, flyby } from "./afterburner.js";
-import { mountCommandCenter } from "./command.js";
+import { finished, mountCommandCenter } from "./command.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
@@ -95,10 +95,10 @@ const ask = ({ title, body, confirm, danger = false, field = null }) =>
   });
 
 /** The two questions every session surface asks: close an interactive claude, or stop / remove a background one. */
-const askClose = (s) => ask({ title: `Close "${s.title ?? s.name}"?`, body: `This ends the Claude process in ${s.app ?? "its terminal"}${s.tty ? ` (${s.tty})` : ""}. The conversation stays on disk and can be resumed later.`, confirm: "close", danger: true });
+const askClose = (s) => ask({ title: `End "${s.title ?? s.name}"?`, body: `This ends the Claude process in ${s.app ?? "its terminal"}${s.tty ? ` (${s.tty})` : ""}. The conversation stays on disk and can be resumed later.`, confirm: "end", danger: true });
 const askEnd = (done, label) => ask(done
   ? { title: `Remove ${label}?`, body: "It leaves the list; its transcript stays on disk.", confirm: "remove" }
-  : { title: `Stop ${label}?`, body: "Its conversation is kept and can be resumed.", confirm: "stop", danger: true });
+  : { title: `End ${label}?`, body: "Its conversation is kept and can be resumed.", confirm: "end", danger: true });
 
 const api = async (path, init) => {
   const res = await fetch(path, init);
@@ -1482,7 +1482,6 @@ const renderWorkspace = async () => {
       el("span", { class: "ws-gap" }),
       el("div", { class: "ws-tools" },
         usageRoot,
-        el("button", { type: "button", class: "ghost icon-btn", "aria-label": "refresh sessions", title: "refresh sessions", onclick: () => commandCenter?.refresh() }, icon("refresh")),
       ),
     ),
   );
@@ -1568,7 +1567,8 @@ const renderSessions = (records, live) => {
       ),
     );
   }
-  for (const a of live.backgroundAgents) {
+  // What has ended is the workspace's archive, not this rail's Running.
+  for (const a of live.backgroundAgents.filter((x) => !finished(x.state))) {
     const record = byClaudeId.get(a.id);
     running.append(
       sessionRow(
@@ -1838,7 +1838,7 @@ const boot = async () => {
     el("span", { class: "dot", style: `background:${project.theme?.accent ?? "var(--accent)"}` }),
     el("b", {}, project.name),
     icon("chevron"));
-  pick.replaceChildren(pickBtn, btn("change project", () => { location.href = "/?pick"; }, "ghost"));
+  pick.replaceChildren(pickBtn);
   pick.hidden = false;
   window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePick(); });
 
@@ -1860,6 +1860,7 @@ const boot = async () => {
   $("#reload").hidden = false;
   const ns = $("#new-session");
   ns.replaceChildren(icon("plus"), el("span", {}, "New session"));
+  ns.setAttribute("aria-label", "New session");
   ns.hidden = false;
   // One menu for every preference, so the bar carries one control instead of three.
   const setMode = (m) => {
@@ -1911,8 +1912,8 @@ const boot = async () => {
 
   const reload = $("#reload");
   reload.classList.add("ghost", "icon-btn");
-  reload.setAttribute("aria-label", "refresh the board");
-  reload.setAttribute("title", "refresh the board");
+  reload.setAttribute("aria-label", "refresh");
+  reload.setAttribute("title", "refresh");
   reload.replaceChildren(icon("refresh"));
   reload.addEventListener("click", () => { loadBoard(); loadRail(true); });
   $("#refresh-live").addEventListener("click", () => loadRail(true));

@@ -119,7 +119,7 @@ test("a mission at review asks for each walkthrough still to walk, how far throu
   assert.equal(q.id, "walk:5", "named for the latest milestone in it, so a newly merged one asks again");
   assert.equal(q.at, at(3), "as old as the oldest walk it asks for");
   assert.equal(q.title, "ready to review: walk 3 milestones, then close");
-  assert.equal(q.body, "milestone 3, m3: 1 of 14 answered, 1 failed. milestone 4, m4: 0 of 5 answered. milestone 5, m5: its walkthrough is still being written. Then close the mission.");
+  assert.equal(q.body, "milestone 3, m3: 1 of 14 answered, 1 failed.\nmilestone 4, m4: 0 of 5 answered.\nmilestone 5, m5: its walkthrough is still being written.\nThen close the mission.");
   assert.deepEqual(q.answers, [
     { label: "walk milestone 3", go: "milestone-3", primary: true },
     { label: "walk milestone 4", go: "milestone-4" },
@@ -135,7 +135,7 @@ test("a mission at review asks for each walkthrough still to walk, how far throu
   const done = base({ status: "review", milestones: [ms(1, [built], { merged: at(1), walkthrough: walked(2, ["pass", "pass"]) })] });
   const [close] = questionsOf(done);
   assert.deepEqual([close.id, close.kind, close.title], ["review", "review", "ready to close"]);
-  assert.deepEqual(close.answers, [{ label: "close", go: "close", primary: true }]);
+  assert.deepEqual(close.answers, [{ label: "land and close", go: "close", primary: true }]);
 });
 
 test("a mission in flight asks for the walk of every merged milestone waiting on it, and never the close", () => {
@@ -185,7 +185,8 @@ test("statusWord follows the questions: done, waiting for you, error and working
   // Nothing open is never waiting, whatever the record carries (Cory's call on m1-t1).
   assert.equal(statusWord(base({ status: "review", escalation: "stale" })), "waiting for you", "a stale escalation on a review mission is history; the review question is what waits");
   assert.deepEqual(questionsOf(base({ status: "review", escalation: "stale" })).map((q) => q.kind), ["review"]);
-  assert.equal(statusWord(base({ status: "blocked", trouble: "title a is waiting on you in its own session" })), "working");
+  // The one exception, Cory's call of 2026-11-04: an agent stopped at a prompt is the person's move.
+  assert.equal(statusWord(base({ status: "blocked", trouble: "title a is waiting on you in its own session" })), "waiting for you");
   assert.equal(statusWord(base({ status: "flying" }), [{ id: "x" } as never]), "waiting for you", "the questions passed in decide");
 
   assert.equal(statusWord(base({ status: "closed", trouble: "the report could not be written: EACCES" })), "error");
@@ -223,3 +224,10 @@ test("a round of questions the Strike Lead is waiting on is a question for you, 
   assert.equal(statusWord(base({ status: "interviewing", chat: [{ ...asked, questions: [] }] })), "working");
 });
 
+test("an agent stopped at a prompt makes a live mission wait for you; other trouble and an ended mission do not", () => {
+  const live = { status: "flying", milestones: [] } as unknown as Parameters<typeof statusWord>[0];
+  assert.equal(statusWord({ ...live, trouble: "the RIO on x is waiting on you in its own session" }, []), "waiting for you");
+  assert.equal(statusWord({ ...live, trouble: "x is waiting on you in its own session" }, []), "waiting for you");
+  assert.equal(statusWord({ ...live, trouble: "a merge is held" }, []), "working");
+  assert.equal(statusWord({ ...live, status: "abandoned", trouble: "x is waiting on you in its own session" }, []), "done");
+});

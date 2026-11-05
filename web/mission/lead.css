@@ -39,7 +39,7 @@
 .lead-opt { font: 500 13px var(--sans); text-align: left; background: var(--panel); color: var(--ink); border: 0; border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam-strong); cursor: pointer; }
 .lead-opt:hover { box-shadow: 0 0 0 1px var(--ink-faint); }
 .lead-opt[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 1px var(--accent); }
-.lead-q .mv-note { height: 44px; }
+.lead-q .mv-note { height: var(--control); }
 .lead-compose textarea::placeholder { color: var(--ink-faint); }
 .lead-hint { margin: 0; max-width: var(--measure); font-size: 12.5px; color: var(--ink-soft); }
 .lead-why > summary { display: inline-flex; align-items: center; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
@@ -60,7 +60,7 @@
 .lead-fire-btn { font: 600 15px var(--sans); }
 
 .lead-compose { display: flex; gap: 8px; align-items: flex-end; }
-.lead-compose textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 40vh; padding: 9px 10px; resize: vertical; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font: 13.5px/1.45 var(--sans); }
+.lead-compose textarea { flex: 1; min-width: 0; min-height: var(--control); max-height: 40vh; padding: 9px 10px; resize: vertical; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font: 13.5px/1.45 var(--sans); }
 .lead-heard { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
 .lead-heard:empty { display: none; }
 .lead-heard.error { color: var(--threat); }
