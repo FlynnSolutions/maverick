@@ -35,20 +35,22 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 
   Prove it: `test/workflows.test.ts` covers that the built-in template loads and validates; each refusal, with its message naming the stage; each permitted leaving-out; `walkthrough` without `walk` refused and the reverse; `agentFor`'s three answers; `hasStage`; `workflowOf` returning a pinned copy when there is one and the default when there is none. `npm test && npm run lint`, results in the commit message.
 
-- [~] **A mission pins its template when it starts**
+- [x] **A mission pins its template when it starts**
   - touches: src/missions.ts, test/workflow-pin.test.ts
   - needs: m1-t1, m1-t2
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: 597b328
   `startMission` in `src/missions.ts` sets `template: defaultWorkflow()` on the new record, and the `Mission` interface gains `template?: Workflow`. The copy holds slot names, never resolved values: `maverick.json`'s `wingmanAgent`, `rioAgent` and `proof` are read at use, because `sweepOnce` deliberately follows the project mid-flight today and that stays. So editing a template file never changes a mission in flight, and editing `maverick.json` still does, exactly as now. A record with no `template` reads as the default through `workflowOf` and is never written back. Add no migration. This task changes no behaviour of the flow and consults the template nowhere else; the next tasks do that. The page reads nothing from the new field, and do not touch `web/`, the ledger format or `applyPlanState`. If an existing test breaks because a record gained a field, stop and say so: no existing assertion may change.
 
   Prove it: `test/workflow-pin.test.ts` proves a started mission carries the template on disk; changing the template the loader would return leaves that record's copy unchanged; a pre-existing record with no field, read and swept and written, still has no field and answers `workflowOf` with the default; and `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, results in the commit message.
 
-- [ ] **The template says who runs a stage**
+- [~] **The template says who runs a stage**
   - touches: src/missions.ts, src/preflight.ts, test/workflow-flow.test.ts
   - needs: m1-t3
-  - status: pending
+  - status: flying
+  - attempt: 1
   Every place the flow spawns an agent asks the mission's template, through `agentFor(workflowOf(mission), <stage>, cfg)`, instead of reading the slot directly. These are the sites in `src/missions.ts`: `launch` and `handBack` (`build`), the RIO spawn in `actOn` (`review`), `commissionWalkthrough` (`walkthrough`, which passes no agent today and must still pass none under the default), and `summarizeMission` (`summary`). A named agent on `review` or `summary` keeps `RIO_TOOLS` as its fence: the template changes who runs, never the fence. Leave the Strike Lead's interview turns and the collision resolver as they are: they refuse an `agent` by Cory's call. `preflightFor` and `src/preflight.ts` check every agent the mission's template will launch rather than only the two slots, through an optional new input, so the default's checks stay the same names in the same order and `test/preflight.test.ts` passes unchanged. `previewPlan`'s `wingmanAgent` answers through the template as well. Refit, not rewrite: the statuses, `sweepOnce`, `gates` and the ledger stay. If a change looks like rewriting the sweep, stop and record it.
 
   Prove it: new `test/workflow-flow.test.ts`, with its own fake `claude`, drives through the real sweep. A pinned test template that names another agent for each of `build` (first launch and the retry through `handBack`), `review`, `walkthrough` and `summary` makes that stage's spawn carry that `--agent`. With the default pinned, a `wingmanAgent` and a `rioAgent` set in the project's `maverick.json` are the ones launched, so no project changes anything. Preflight fails on a pinned agent that is not installed. Then make `workflowOf` ignore the pinned copy, run the new test, show it failing, restore, and put that output in the commit message. `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, results in the commit message.
@@ -103,3 +105,5 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 22:51 m1-t1 The full flight, proved on today's code: reviewing to passed (RIO: pass with notes) with 7 notes carried, 3 unverified
 - 2026-11-04 22:51 m1-t3 A mission pins its template when it starts: pending to flying
 - 2026-11-04 22:56 m1-t3 A mission pins its template when it starts: flying to reviewing
+- 2026-11-04 23:00 m1-t3 A mission pins its template when it starts: reviewing to passed (RIO: pass with notes) with 10 notes carried, 2 unverified
+- 2026-11-04 23:00 m1-t4 The template says who runs a stage: pending to flying
