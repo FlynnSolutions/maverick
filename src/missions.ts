@@ -43,6 +43,7 @@ import { reportFor } from "./report.ts";
 import { failingCases, lastCleared, needsWalking, openFix, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
+import { defaultWorkflow, type Workflow } from "./workflows.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
@@ -265,6 +266,8 @@ export interface Mission {
   requirements?: Requirement[];
   /** The project sets a proof command, so a merged milestone is not done until its proof passed. Frozen at approval. */
   proofRequired?: boolean;
+  /** The flow this mission started with, pinned so editing a template never changes it in flight. Holds slot names, never their values: `maverick.json` is read at use. Absent on older records, which read as the default through `workflowOf` and are never back-filled. */
+  template?: Workflow;
   /** Bumped on every write. A write carrying a stale one is refused; see `writeMission`. */
   rev?: number;
   /** How many milestones this mission has had to reconcile. A plan whose tasks overlap shows up here. */
@@ -1071,6 +1074,7 @@ export const startMission = async (project: Project, name: string, brief: string
     land: cfg.land,
     trackerIndex,
     milestones: [],
+    template: defaultWorkflow(),
   };
   if (!project.trackers[trackerIndex]) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
   await mkdir(join(project.path, "deliverables", "missions"), { recursive: true });
