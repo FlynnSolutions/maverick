@@ -19,10 +19,11 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 
   Prove it: `node --test test/mission-flight.test.ts`, then `npm test && npm run lint`, on a branch with no change under `src/`. Put both results in the commit message. If today's code cannot be driven this way without changing `src/`, stop and say what is in the way; do not change `src/` to make it testable.
 
-- [~] **The template, its loader and its validator**
+- [x] **The template, its loader and its validator**
   - touches: src/workflows.ts, src/workflows/mission.json, test/workflows.test.ts
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: 3233986
   Create the template and the pure module that answers questions about it. `src/workflows.ts` reads no mission state from disk, spawns nothing and imports nothing from `src/missions.ts`. It may not touch `src/missions.ts`, `src/questions.ts` or `src/preflight.ts`; later tasks wire it in. Match the neighbours: plain TypeScript run directly by Node, no build step, no dependency, lowercase plain comments. The template is JSON because the project allows no YAML parser. Find the template's file with `new URL("./workflows/mission.json", import.meta.url)`, as `WALKTHROUGH_TEMPLATE` finds its file, because the packed app carries `src/**` as plain files (`app/electron-builder.yml`). Nothing machine-specific.
 
@@ -93,3 +94,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 21:11 m1-t1 The full flight, proved on today's code: pending to flying
 - 2026-11-04 21:11 m1-t2 The template, its loader and its validator: pending to flying
 - 2026-11-04 21:16 m1-t2 The template, its loader and its validator: flying to reviewing
+- 2026-11-04 21:26 m1-t2 The template, its loader and its validator: reviewing to passed (RIO: pass with notes) with 7 notes carried, 2 unverified
