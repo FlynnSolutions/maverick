@@ -56,7 +56,7 @@ import { jetSvg } from "./jet.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { inline, render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
-import { atReview, isEnded } from "./mission/state.js";
+import { atReview, isEnded, missionWord } from "./mission/state.js";
 import { toast } from "./toast.js";
 import { foldable } from "./card.js";
 
@@ -296,10 +296,8 @@ const toGate = () => {
 
 /** What waits on the person: the server's questions, an open interview round and the gate among them. */
 const waiting = () => mission.questions?.length ?? 0;
-/** A stopped mission is not a finished one: "done" in the good colour is for work that landed. */
-const wordOf = () => (mission.status === "abandoned" && mission.word !== "error" ? "stopped" : mission.word ?? "working");
 const renderWord = () => {
-  const word = wordOf();
+  const word = missionWord(mission);
   const look = WORD[word] ?? WORD.working;
   const open = waiting();
   const chip = $("#word");

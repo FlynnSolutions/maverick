@@ -39,15 +39,19 @@ const BROKEN = [/the report could not be written/, /the ledger .*could not be wr
 /** Ended missions ask nothing: every action on one is refused. */
 export const over = (mission: Pick<Mission, "status">): boolean => mission.status === "closed" || mission.status === "abandoned";
 
+/** The line the sweep writes for an agent stopped at a prompt, the one trouble that is the person's move. */
+const AGENT_WAITING = /is waiting on you in its own session/;
+
 /**
  * The word follows the questions (Cory's call on m1-t1): a mission with nothing open is never
  * "waiting for you", whatever escalation or trouble it carries. A stale escalation on a review
- * mission is history, not a question.
+ * mission is history, not a question. One exception (Cory's call, 2026-11-04): an agent of a live
+ * mission stopped at a prompt, because nothing moves until the person goes to it.
  */
 export const statusWord = (mission: Mission, questions: Question[] = questionsOf(mission)): StatusWord => {
   if (mission.trouble && BROKEN.some((re) => re.test(mission.trouble!))) return "error";
   if (over(mission)) return "done";
-  return questions.length ? "waiting for you" : "working";
+  return questions.length || AGENT_WAITING.test(mission.trouble ?? "") ? "waiting for you" : "working";
 };
 
 export const walkthroughState = (m: Milestone): WalkthroughState => {
@@ -126,7 +130,7 @@ const walkQuestion = (mission: Mission, left: ReturnType<typeof toWalk>): Questi
     id: `walk:${left[left.length - 1].n}`,
     kind: "walk",
     title: review ? `ready to review: walk ${which}, then close` : `walk ${which}`,
-    body: `${left.map((m) => `milestone ${m.n}, ${m.title}: ${walkLeft(m)}`).join(". ")}.${review ? ` Then close the mission.${strandedNote(mission)}` : ""}`,
+    body: `${left.map((m) => `milestone ${m.n}, ${m.title}: ${walkLeft(m)}`).join(".\n")}.${review ? `\nThen close the mission.${strandedNote(mission)}` : ""}`,
     at: left.map((m) => m.merged).sort()[0],
     answers: left.map((m, i) => ({ label: `walk milestone ${m.n}`, go: `milestone-${m.n}`, ...(i === 0 && { primary: true }) })),
   };
@@ -138,7 +142,7 @@ const closeQuestion = (mission: Mission): Question => ({
   title: "ready to close",
   body: `Every milestone is walked or waived. Closing ticks the tracker and lands the work.${strandedNote(mission)}`,
   at: mission.finished ?? mission.created,
-  answers: [{ label: "close", go: "close", primary: true }],
+  answers: [{ label: "land and close", go: "close", primary: true }],
 });
 
 /**

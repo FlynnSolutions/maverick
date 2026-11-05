@@ -66,11 +66,11 @@ const freePort = (): Promise<number> =>
     });
   });
 
-/** A `claude` that lists no agents and backgrounds every spawn under one id, recording its arguments. */
+/** A `claude` that lists what `agents.json` holds (none, by default) and backgrounds every spawn under one id, recording its arguments. */
 const fakeClaude = (dir: string): void => {
   const bin = join(dir, "claude");
   writeFileSync(bin, `#!/bin/sh
-if [ "$1" = agents ]; then echo '[]'; exit 0; fi
+if [ "$1" = agents ]; then cat "${dir}/agents.json" 2>/dev/null || echo '[]'; exit 0; fi
 printf '%s\\0' "$@" >> "${dir}/spawns"
 echo "backgrounded · a7b0c"
 `, "utf8");
@@ -92,7 +92,14 @@ const ready = async (url: string, child: ReturnType<typeof spawn>, log: () => st
   throw new Error(`the harbor server did not answer in 15s:\n${log()}`);
 };
 
-export const startHarbor = async (): Promise<Harbor> => {
+/** The sessions a project piles up: finished Wingmen and RIOs, the number a real mission leaves behind and more. */
+const endedAgents = (n: number, cwd: string): object[] =>
+  Array.from({ length: n }, (_, i) => ({
+    id: `ended${i}`, sessionId: `ended-session-${i}`, kind: "background", cwd, state: i % 9 ? "done" : "stopped",
+    name: `${["", "RIO · ", "Wingman · "][i % 3]}Survey berth ${i + 1} and record its depth`, startedAt: Date.now() - (i + 1) * 3_600_000,
+  }));
+
+export const startHarbor = async ({ ended = 0 } = {}): Promise<Harbor> => {
   const scratch = mkdtempSync(join(tmpdir(), "mv-harbor-"));
   const home = join(scratch, "home");
   const consoleHome = join(home, ".claude", "session-console");
@@ -112,6 +119,7 @@ export const startHarbor = async (): Promise<Harbor> => {
   writeFileSync(tracker, TRACKER, "utf8");
   git("add", ".");
   git("commit", "-q", "-m", "harbor: the checklist");
+  if (ended) writeFileSync(join(claudeDir, "agents.json"), JSON.stringify(endedAgents(ended, repo)), "utf8");
   writeFileSync(join(consoleHome, "projects.json"), JSON.stringify([{ id: "harbor", name: "Harbor", path: repo, trackers: [{ label: "CHECKLIST", path: tracker }] }]), "utf8");
 
   const port = await freePort();
@@ -147,7 +155,7 @@ export const startHarbor = async (): Promise<Harbor> => {
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const harbor = await startHarbor();
+  const harbor = await startHarbor({ ended: Number(process.env.HARBOR_ENDED ?? 0) });
   console.log(`harbor: ${harbor.url}/?project=harbor`);
   console.log(`  repo: ${harbor.repo}`);
   const stop = () => { harbor.stop().then(() => process.exit(0)); };

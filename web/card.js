@@ -85,7 +85,7 @@ export const card = (spec, ctx) => {
 
   /**
    * Each chip is patched where it stands, so a focused chip link keeps its focus through a sweep.
-   * A linked chip is the pill inside a 44px link (`chipLink`), so the target is a finger's size
+   * A linked chip is the pill inside a control-sized link (`chipLink`), so the target is a finger's size
    * and the pill stays the size it reads at.
    */
   const drawChips = (list) => {

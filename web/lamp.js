@@ -36,17 +36,6 @@ const brackets = (cx, cy, r, len) => {
   }
   return d;
 };
-const ticks = (cx, cy, r, n, len) => {
-  let d = "";
-  for (let i = 0; i < n; i += 1) {
-    const a = (i / n) * TAU;
-    const [x1, y1] = pt(cx, cy, r, a);
-    const [x2, y2] = pt(cx, cy, r + len, a);
-    d += `M${f(x1)} ${f(y1)}L${f(x2)} ${f(y2)}`;
-  }
-  return d;
-};
-
 const NOZZLE =
   `<circle class="case" cx="16" cy="16" r="13.5"/><circle class="lip" cx="16" cy="16" r="11.8"/>` +
   `<g class="iris"><path class="tooth" fill-rule="evenodd" d="${petalRing(16, 16, 10.4, 8.2, 16)}"/></g>` +
@@ -63,10 +52,10 @@ const LOCK =
 const ACQUIRE =
   `<g class="acq"><path class="ret" d="${brackets(16, 16, 13.4, 4.6)}"/>` +
   `<g class="sweep"><circle class="ring" cx="16" cy="16" r="8.4"/>` +
-  `<path class="ret thin" d="${ticks(16, 16, 8.4, 8, 2.2)}M16 6.2L16 9.4"/></g>` +
+  `<path class="ret thin" d="M16 5.6L16 10"/></g>` +
   `<circle class="pip hollow" cx="16" cy="16" r="2.2"/></g>`;
 
-const HEAT = { busy: "work", running: "work", shell: "warm", idle: "warm", done: "done", exited: "done", stopped: "done" };
+const HEAT = { busy: "work", running: "work", shell: "warm", idle: "warm", done: "done", exited: "done", stopped: "done", down: "cold" };
 const WANTS_YOU = /^(waiting|blocked)$/;
 
 /**

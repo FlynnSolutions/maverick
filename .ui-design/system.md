@@ -78,7 +78,7 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   brackets closed on the target, a filled pip, and a burst of flicker once every five seconds
   rather than a steady blink. Your-turn is acquiring: brackets held open with the ring sweeping
   inside them. A different *form*, so a blocked session can never be mistaken for a busy one at
-  14px. Rotate the ring, not the brackets, and set `transform-box: view-box` or it spins about
+  20px, the lamp's size in a strip (raised from 14, Cory, 2026-11-04). Rotate the ring, not the brackets, and set `transform-box: view-box` or it spins about
   its own bounding box and wobbles.
 - **The airframe is traced, never drawn.** `web/jet.js` is an F-14A generated from a photograph:
   sky cut, the mask's own border followed pixel by pixel, simplified, then the interior quantised
@@ -86,13 +86,12 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   the reference; do not hand-edit coordinates, which is what produced three bad jets before this.
 - **Session strip** (`.strip`) — the signature. Air traffic control keeps one paper progress
   strip per flight in a rack, ordered by urgency and annotated by hand; a session is a flight.
-  The line is a grid of fixed columns (`8px · name 1fr · 180px state · 148px timing · 230px
-  where · 152px actions`, 14px gaps, 52px min height), so the lamp, the state and the three
+  The line is a grid of fixed columns (`20px lamp · name 1fr · 180px state · 175px timing · 230px
+  detail · 198px actions`, 14px gaps, 40px min height), labelled once per rack in its heading, so the lamp, the state and the three
   verbs share one x down the entire page however long a title runs. Right-aligning the action
   group is not enough: `close`, `stop` and `remove` differ in width, so each verb gets its own
-  column (66 / 52 / 64px, 8px apart). Every verb is a real 44px target, because the audit
-  measures the box and an `::after` reaching past it does not count; the row is 52px so they
-  fit with room. A cell is read whole: a long name, state or place wraps to a second line
+  column (66 / 52 / 64px, 8px apart). Every verb is a `--control` tall box, and the row is 40px
+  so they fit with room. A cell is read whole: a long name, state or place wraps to a second line
   rather than being cut. A strip's name is its button (Enter, a screen reader), and a click
   anywhere else on it still opens it. A strip in a column (open beside another, or in a
   formation with its lead open) has no room for six columns, so it takes the phone's line:
@@ -101,6 +100,20 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   name 15px/600 and carries the last exchange beneath the line; `line` is the bare strip at
   13.5px/500. A rack of 40px lines under one lifted strip is the whole hierarchy: no second
   colour, no border, no size ramp needed.
+- **What has ended is archived.** Needs you, Working, Ready to review, Idle (a live session you
+  moved on from). `Archive` is a tab, not a rack: done, stopped and down sessions, closed missions
+  and closed formations, newest first under calendar headings, with find, and in the URL (`?archive=1`). By default it
+  lists the person's own sessions; what the missions spawned is one toggle away, and find searches
+  both. Rows are drawn only while it shows. A formation with nothing live leaves the tab row for
+  it. Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
+- **Missions have a way back on the first screen**: `.cc-missions`, one link per live mission on
+  every tab but the archive, with the verbs that start a mission or a brainstorm. A formation sharing a mission's
+  name reads `<name> crew`, because its tab is not the mission's page.
+- **An agent holding a live mission shows inside it.** A mission whose agent is stopped at a prompt
+  reads `waiting for you` and sits in Needs you (Cory, 2026-11-04), one row: the reason, what the
+  agent last said, and `open that session`.
+- **One word per fact.** The state column says `working`, `waiting for you`, `idle`; the verb that
+  ends a live session is `end`, in every place. `land and close` is the mission's: it ships work.
 - **Racks are ordered by who needs you, projects included.** A project holding a waiting session
   is drawn before one that is merely busy, and an empty project draws nothing. The page's focal
   element is whatever waits on the pilot, wherever it lives.
@@ -112,11 +125,11 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   the verb that kills the Claude, and there was no dismiss control at all, so the position every
   interface reserves for "close this window" was wired to "close this session". The corner is a
   drawn ✕ that only closes the view; the destructive verb sits left of the primary and names its
-  object (`end session`, `stop agent`, `remove record`). The rack's dense gutter keeps the short
+  object (`end session`, `remove record`). The rack's dense gutter keeps the short
   verbs, because it has one column of room and a confirm behind it.
 - **Icons are drawn** (`web/icons.js`): one 16px box, one 1.6 stroke, `currentColor`, an
   `aria-label` on the button. Never a unicode glyph, so an icon can sit next to the jet.
-  An icon button is a 44px box, the glyph centred in it.
+  An icon button is 44px wide and a `--control` tall, the glyph centred in it.
 - **The page head is one row**: title, the project filter, then the instruments. The filter had a
   row of its own that was empty but for one word at the far right. The command center renders its
   chips into a `filterRoot` the head owns, which is also why refresh survives a failed load.
@@ -357,9 +370,9 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   `stopped` or `done`, and nothing on it is amber or live.
 - **Amber is a need, red is a failure.** A broken write (the report, the ledger) is `.mv-fail` in
   threat, with what still works and the way on beside it; caution stays for what waits on you.
-- **Every target is 44px at every width**, not only on a phone, 8px from the next: the scanner
-  measures the box, so a `::after` extension does not count. A linked chip is the pill inside a
-  44px `.chip-hit` link. Phone order is the word, `#now`, the anchors, the sections, then the brakes.
+- **A control is `--control` tall: 30px at a pointer's width, 44px below 840 for a fingertip**, 8px
+  from the next (Cory, 2026-11-04: 44 at desktop width came from touch and made every button too
+  tall). The scanner measures the box. A linked chip is the pill inside a `.chip-hit` link. Phone order is the word, `#now`, the anchors, the sections, then the brakes.
 - **An action's outcome is a toast; a condition is the bar.** `web/toast.js` says what an action
   did in the one polite live region, bottom right (full width on a phone), over the page so
   nothing shifts: four seconds for a line, never past ten, paused on hover, focus or a hidden
@@ -411,7 +424,7 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
   Escape gives the focus back. Every menu opens through one `openMenu`.
 - **The session list failing is not the page failing**: a red line with `try again`, and the
   missions and brainstorms still draw, so a question stays answerable.
-- **Every target is 44px at every width on the shared base** (`button`, `.button-link`,
+- **`--control` sits on the shared base** (`button`, `.button-link`,
   `summary`, `select`, text inputs), so a control nobody sized still clears the floor.
 
 ## The walkthrough (2026-10-31)

@@ -269,11 +269,12 @@ button {
   cursor: pointer;
   transition: background 120ms var(--ease-out), transform 100ms var(--ease-out), box-shadow 160ms var(--ease-out);
 }
-/* Every target is 44px at every width, 8px from the next (system.md): the floor sits on the base
-   elements, so a control nobody sized still clears it. The scanner measures the box, so the size
-   is the control's own, never an ::after reaching past it. */
-button, .button-link, summary, select, input[type="text"], input[type="date"] { min-height: 44px; }
+/* A control is --control tall: a pointer's 30px, a fingertip's 44px below 840 (system.md), 8px from
+   the next. The floor sits on the base elements, so a control nobody sized still clears it. */
+button, .button-link, summary, select, input[type="text"], input[type="date"] { min-height: var(--control); }
 button, .button-link { min-width: 44px; }
+:root { --control: 30px; }
+@media (max-width: 839px) { :root { --control: 44px; } }
 button:hover { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
 button:active { transform: scale(0.97); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -319,7 +320,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 }
 .project-list li:hover { box-shadow: 0 0 0 1px var(--accent-glow), 0 0 24px var(--accent-dim); }
 .project-list a { font-family: var(--display); font-size: 16px; font-weight: 600; text-decoration: none; color: var(--ink); }
-.project-list a { grid-column: 1; grid-row: 1; display: flex; align-items: center; min-height: 44px; }
+.project-list a { grid-column: 1; grid-row: 1; display: flex; align-items: center; min-height: var(--control); }
 .project-list li.trouble { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; background: var(--threat-dim); box-shadow: inset 0 0 0 1px var(--threat); color: var(--ink); }
 .project-list .muted { grid-column: 1; grid-row: 2; overflow-wrap: anywhere; }
 /* Items with a definite row are auto-placed first, so pin the column too or the button lands in column 1. */
@@ -371,7 +372,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-faint);
-  min-height: 44px;
+  min-height: var(--control);
   margin-bottom: 6px;
 }
 .lane-title .label { flex: 1; }
@@ -448,10 +449,10 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
   font-family: var(--display);
   font-size: 12px;
   font-weight: 600;
-  color: var(--ink-ghost);
+  color: var(--ink-faint);
   padding-top: 1px;
 }
-.runway .card .num { color: var(--accent); text-shadow: 0 0 10px var(--accent-glow); }
+.runway .card .num { color: var(--ink-soft); }
 /* The title is the card's button, dressed as its text. */
 .card .title { grid-area: title; display: flex; align-items: center; padding: 0; border: 0; background: none; box-shadow: none; color: inherit; font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
 .card .title span { line-height: 1.35; overflow-wrap: anywhere; }
@@ -501,7 +502,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .sr-only { position: absolute; left: 0; top: 0; margin: 0; clip-path: inset(50%); pointer-events: none; }
 .row .sub { grid-column: 2 / span 2; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); overflow-wrap: anywhere; }
 .row .actions { display: flex; gap: 8px; }
-.row .actions a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; justify-content: center; }
+.row .actions a { display: inline-flex; align-items: center; min-height: var(--control); min-width: 44px; justify-content: center; }
 .row .actions button { padding: 0 8px; font-size: 11px; }
 .row.record { background: transparent; box-shadow: none; padding-left: calc(10px + var(--depth, 0) * 12px); }
 .row.record .name { font-weight: 400; color: var(--ink-soft); }
@@ -523,9 +524,9 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .rack .jet-glyph.band { --jet-skin: var(--caution); }
 .ship-progress .runway .jet-glyph, .wt-progress .runway .jet-glyph { --jet-skin: #e9ecee; }
 
-svg.lamp { width: 14px; height: 14px; display: block; flex: 0 0 auto; overflow: visible; }
+svg.lamp { width: 20px; height: 20px; display: block; flex: 0 0 auto; overflow: visible; }
 /* A plain dot, for rows that carry a record's state rather than an engine's: session records,
-   dock tabs, closed formations. The drawn lamp is an svg; these are spans. */
+   dock tabs. The drawn lamp is an svg; these are spans. */
 span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold); flex: 0 0 auto; }
 .row.record.open span.lamp { background: var(--hud); }
 .row.record.closed span.lamp, .row.record.handed-off span.lamp { background: var(--ink-ghost); }
@@ -536,7 +537,7 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .lamp .band  { fill: var(--mid); r: calc(3.4px + var(--bloom) * 2.8px); }
 .lamp .core  { fill: var(--hot); r: calc(1.4px + var(--bloom) * 2.4px); }
 
-.lamp.burn.cold { --hot:var(--cold-hot); --mid:var(--cold-mid); --deep:var(--cold-deep); --rim:var(--cold-rim); --bloom:0; --flutter:0s; --flick:0s; }
+.lamp.burn.cold { opacity: .55; --hot:var(--cold-hot); --mid:var(--cold-mid); --deep:var(--cold-deep); --rim:var(--cold-rim); --bloom:0; --flutter:0s; --flick:0s; }
 .lamp.burn.done { --hot:#7fd8a0; --mid:#478f66; --deep:#26382e; --rim:#3f5a49; --bloom:.28; --flutter:0s;   --flick:0s; }
 .lamp.burn.warm { --hot:#d8802e; --mid:#a85c1c; --deep:#5e3210; --rim:#7a4a1e; --bloom:.5;  --flutter:2.9s; --flick:3.2s; }
 .lamp.burn.work { --hot:#ffe0b0; --mid:#ff9a2b; --deep:#c05a12; --rim:#ffb54d; --bloom:1;   --flutter:.85s; --flick:.32s; }
@@ -550,9 +551,9 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .lamp .core { animation: flick var(--flick, 0s) steps(1, end) infinite; }
 
 /* Reticle: strokes, never fills, so it cannot read as another lamp. */
-.lamp .ret { fill: none; stroke: var(--ret); stroke-width: 1.4; stroke-linecap: square; }
-.lamp .ret.thin { stroke-width: 1; opacity: .85; }
-.lamp .ring { fill: none; stroke: var(--ret); stroke-width: 1; opacity: .6; stroke-dasharray: 3 3.4; }
+.lamp .ret { fill: none; stroke: var(--ret); stroke-width: 2.4; stroke-linecap: square; }
+.lamp .ret.thin { stroke-width: 1.8; opacity: 1; }
+.lamp .ring { fill: none; stroke: var(--ret); stroke-width: 1.8; opacity: .8; stroke-dasharray: 3 3.4; }
 .lamp .pip { fill: var(--ret); }
 .lamp .pip.hollow { fill: none; stroke: var(--ret); stroke-width: 1.2; }
 .lamp.lock { --ret: var(--caution); }
@@ -589,7 +590,7 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 .cc-stick .term .xterm-screen { padding: 2px 0; }
 
 /* ---------- formations: a lead and its flight, as tabs ---------- */
-.forms { display: inline-flex; align-items: center; gap: 8px; padding: 3px; border-radius: 10px; background: var(--inset); }
+.forms { display: inline-flex; flex-wrap: wrap; max-width: 100%; align-items: center; gap: 8px; padding: 3px; border-radius: 10px; background: var(--inset); }
 .forms button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; border: 0; background: transparent; box-shadow: none; color: var(--ink-faint); font: 500 12.5px var(--sans); }
 .forms button:hover { color: var(--ink-soft); background: transparent; box-shadow: none; }
 .forms button.on { background: var(--panel-lifted); color: var(--ink); box-shadow: 0 1px 2px var(--shade-soft); }
@@ -607,9 +608,9 @@ span.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--cold)
 
 /* ---------- moving a strip between racks ----------
    A controller picks a paper flight strip out of one rack and puts it in another, so the strip
-   takes the grab cursor and the racks it could land in are what light up. Nothing is added to
+   takes the grabbing cursor and the racks it could land in are what light up. Nothing is added to
    the strip's own row, which is already six columns dense. */
-.strip[draggable="true"] { cursor: grab; }
+.strip[draggable="true"] { cursor: pointer; }
 .strip[draggable="true"]:active { cursor: grabbing; }
 /* An outline, never a ring or padding: a landing zone must not move the page it is drawn on. */
 .forms button.drop-on { background: var(--accent-dim); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -806,8 +807,8 @@ body.ask-open { overflow: hidden; }
   .cal-wd { display: inline; }
 }
 .cal-cell.today .cal-day { color: var(--accent-hot); }
-/* An event is a button: 44px tall, the full cell wide, its words cut with the whole of them in its title. */
-.cal-event { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: 44px; line-height: 1.3; padding: 0 10px; margin-bottom: 8px; border: 0; border-radius: var(--radius-s); background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+/* An event is a button: a control tall, the full cell wide, its words cut with the whole of them in its title. */
+.cal-event { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: var(--control); line-height: 1.3; padding: 0 10px; margin-bottom: 8px; border: 0; border-radius: var(--radius-s); background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .cal-event .icon, .cal-key .icon { flex: none; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .cal-event:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
 .cal-event.release, .cal-key.release { background: var(--panel); color: var(--ink); box-shadow: inset 3px 0 0 var(--info); font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; }
@@ -878,7 +879,7 @@ body.ask-open { overflow: hidden; }
 .release-card { cursor: pointer; flex-basis: 250px; }
 .release-card.next { box-shadow: 0 0 0 1px var(--accent-glow), 0 0 22px var(--accent-dim); }
 .release-card.planned { background: var(--gunmetal); }
-.release-card .version { min-height: 44px; padding: 0; border: 0; background: none; box-shadow: none; text-align: left; cursor: pointer; font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); }
+.release-card .version { min-height: var(--control); padding: 0; border: 0; background: none; box-shadow: none; text-align: left; cursor: pointer; font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); }
 .release-card .version:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .release-card.next .version { color: var(--accent-hot); }
 /* The counts are one line of words, not a row of number wells. */
@@ -894,7 +895,7 @@ body.ask-open { overflow: hidden; }
 .release-list li a { color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; }
 .release-list li .when { float: right; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
 .compare-links { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-.compare-links a { display: inline-flex; align-items: center; min-height: 44px; font-family: var(--mono); font-size: 12px; color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; }
+.compare-links a { display: inline-flex; align-items: center; min-height: var(--control); font-family: var(--mono); font-size: 12px; color: var(--accent-hot); text-decoration: underline; text-underline-offset: 2px; }
 .board-releases { margin-bottom: 16px; }
 .board-releases .strip-title { margin: 0 0 6px; }
 
@@ -1047,7 +1048,7 @@ body.ask-open { overflow: hidden; }
 .release-card, .release-card.slot { flex: 0 0 256px; display: grid; row-gap: 8px; align-content: start; padding: 12px; min-height: 0; }
 .release-card-head { margin: 0; }
 .release-date { margin: 0; line-height: 16px; }
-.release-card .cta-slot { min-height: 44px; margin-top: 8px; display: flex; align-items: center; }
+.release-card .cta-slot { min-height: var(--control); margin-top: 8px; display: flex; align-items: center; }
 .ship-cta { display: none; }
 .board-releases { margin-bottom: 20px; }
 .board-releases .strip-title, .calendar .strip-title { margin: 0 0 8px; }
@@ -1186,7 +1187,7 @@ body.ask-open { overflow: hidden; }
    sit on a row of its own that was empty but for a word at the far right. */
 .ws-head { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .ws-gap { flex: 1; }
-.ws-filter { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.ws-filter { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .ws-filter:empty { display: none; }
 .ws-head p { margin: 2px 0 0; }
 .ws-tools { display: flex; align-items: center; gap: 8px; position: relative; }
@@ -1260,7 +1261,7 @@ body.ask-open { overflow: hidden; }
 }
 
 .cc { display: flex; flex-direction: column; gap: 24px; }
-.ws-filter button { height: 28px; padding: 0 10px; font-size: 12px; border-color: transparent; background: transparent; box-shadow: none; color: var(--ink-faint); }
+.ws-filter button { padding: 0 10px; font-size: 12px; border-color: transparent; background: transparent; box-shadow: none; color: var(--ink-faint); }
 .ws-filter button:hover { background: var(--steel); color: var(--ink-soft); }
 .ws-filter button.on { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--seam); }
 .cc-project { display: flex; flex-direction: column; gap: 18px; }
@@ -1279,11 +1280,6 @@ body.ask-open { overflow: hidden; }
 .cc-lead .sub { font-family: var(--mono); font-size: 11.5px; color: color-mix(in srgb, var(--accent-hot) 55%, var(--ink-faint)); }
 .cc-wings .strip { position: relative; }
 .cc-wings .strip::before { content: ""; position: absolute; left: -13px; top: 20px; width: 13px; border-top: 1px solid var(--seam-strong); }
-.cc-closed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.cc-closed-row { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: 12.5px; color: var(--ink-soft); }
-.cc-closed-row .role { margin: 0; color: var(--ink-faint); }
-.cc-closed-row .sub { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cc-closed-row .lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-ghost); flex: 0 0 auto; }
 
 /* ---------- the rack: one session per flight progress strip ----------
    Fixed columns are the point: the lamp, state, timing and the three verbs share an x down
@@ -1291,14 +1287,69 @@ body.ask-open { overflow: hidden; }
    carry the hierarchy: what needs you is lifted and speaks, what is dead is one quiet line. */
 
 .rack { display: flex; flex-direction: column; gap: 8px; }
-.rack > h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink-soft); }
-.rack > h2 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
-.rack.needs > h2 { font-size: 19px; color: var(--caution); }
-.rack.done > h2 { color: var(--ink-faint); }
+.rack > h2, .rack-head > h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink-soft); }
+.rack > h2 .n, .rack-head > h2 .n { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
+.rack.needs h2 { font-size: 19px; color: var(--caution); }
 /* Your move, but nothing is blocked on it: brighter than the quiet racks, no signal colour. */
-.rack.review > h2 { color: var(--ink); }
+.rack.review h2 { color: var(--ink); }
 .rack .jet-glyph.band { width: 24px; height: 24px; }
 .rack-strips { display: flex; flex-direction: column; gap: 8px; }
+/* The rack's heading and its column labels: the strip's own grid, so each label stands over its column. */
+.rack-head { display: grid; grid-template-columns: var(--strip-cols); align-items: end; column-gap: 14px; padding: 0 14px; }
+.rack-head > h2 { grid-column: 1 / span 2; margin-left: -14px; }
+.rack-col, .cc-missions > span, .archive-formations > span, .archive-when { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+.rack-find { max-width: 360px; }
+.rack.archive > button.rack-verb { align-self: flex-start; }
+.archive-tools, .archive-formations { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.archive-formations > span, .archive-when { margin: 8px 0 0; }
+/* A finished row carries no signal: no live colour on the lamp, and no role chip taking the name's room. */
+.rack.archive .lamp { display: none; }
+.rack.archive .strip-id { grid-column: 1 / span 2; }
+.rack.archive .strip.ghost > :not(.strip-line) { display: none; }
+.rack.archive .role { display: none; }
+@media (max-width: 600px) {
+  .rack.archive .strip-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .rack.archive :is(.strip-id, .strip-when) { grid-column: 1 / -1; }
+  .rack.archive .strip-state { grid-column: 1; }
+  .rack.archive .strip-acts { grid-column: 2; grid-template-columns: auto auto; }
+  .rack.archive .act:not(.primary-act):not(.end) { display: none; }
+}
+.rack.archive .strip-turn { display: none; }
+.strip.finished .lamp { filter: grayscale(1); }
+.strip.finished :is(.role, .verdict.pending, .verdict.pass) { display: none; }
+.rack.archive .act:not(.primary-act):not(.end) { visibility: hidden; }
+.rack-col.name { grid-column: 1 / span 2; }
+.archive-formation-name { margin: 0 0 4px; font-family: var(--display); font-size: 14px; font-weight: 600; color: var(--ink-soft); }
+.archive-none { margin: 24px 0; font-size: 14px; color: var(--ink-soft); }
+.rack.archive .strip-name { color: var(--ink-soft); font-weight: 400; }
+/* The way back to a mission, on the first screen of every tab. */
+.cc-missions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: -10px; }
+.cc-mission { display: inline-flex; max-width: 100%; overflow-wrap: anywhere; align-items: center; gap: 8px; min-height: var(--control); padding: 0 10px; border-radius: var(--radius-s); background: var(--panel); box-shadow: 0 0 0 1px var(--seam); color: var(--ink); font-size: 13px; font-weight: 500; text-decoration: none; }
+.cc-mission:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
+.cc-mission i { font-style: normal; font-size: 12px; font-weight: 400; color: var(--ink-faint); }
+/* On a phone the page opens on what needs you: the tabs scroll in one row and the meter goes under the racks. */
+@media (max-width: 839px) {
+  .bar .wm, #new-session span { display: none; }
+  /* A mission waiting on you is the first row below, so its link would only say it twice. */
+  .cc-mission.wants { display: none; }
+  .strip-state i { display: none; }
+  .bar .status:empty { display: none; }
+  .bar .tools { order: 1; margin-left: auto; }
+  .bar #view-toggle { order: 2; }
+  .strip-acts .act { box-shadow: inset 0 0 0 1px var(--seam); }
+  .strip-state b { white-space: nowrap; }
+  .bar .brand { min-width: 44px; justify-content: center; }
+  .cc-missions > span { display: none; }
+  .forms { flex-wrap: nowrap; overflow-x: auto; }
+  .forms button { flex: 0 0 auto; white-space: nowrap; }
+  .workspace { display: flex; flex-direction: column; }
+  .ws-head { display: contents; }
+  .ws-title { font-size: 15px; margin-bottom: 8px; }
+  .ws-filter { margin-bottom: 14px; }
+  .ws-gap { display: none; }
+  .ws-tools { order: 9; margin-top: 24px; }
+}
+@media (max-width: 960px) { .rack-head { display: block; padding: 0; } .rack-head > h2 { margin-left: 0; } .rack-col { display: none; } }
 /* A strip that was not on the page at the last paint rises into place; nothing already there
    moves, because every paint rebuilds the racks and arriving is decided by key (command.js). */
 .strip.arrived {
@@ -1320,12 +1371,13 @@ body.ask-open { overflow: hidden; }
 .strip.ghost:hover { background: transparent; box-shadow: 0 0 0 1px var(--seam-soft); }
 
 /* The one grid every strip shares. Columns hold their width; only the name flexes. */
+:root { --strip-cols: 20px minmax(0, 1fr) 180px 175px minmax(230px, 0.5fr) 198px; }
 .strip-line {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) 180px 175px minmax(230px, 0.5fr) 198px;
+  grid-template-columns: var(--strip-cols);
   align-items: center;
   gap: 14px;
-  min-height: 52px;
+  min-height: 40px;
   padding: 4px 14px;
 }
 .strip-id { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
@@ -1337,16 +1389,17 @@ body.ask-open { overflow: hidden; }
 .strip-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; }
 .strip-state b { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); min-width: 0; overflow-wrap: break-word; }
 /* What the state says beyond its word is read, not signalled: plain ink. Amber is Needs you's rack, and its reticle. */
-.strip-state i { font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--ink-soft); min-width: 0; overflow-wrap: break-word; }
+.strip-state i { font-size: 12px; font-style: normal; color: var(--ink-soft); min-width: 0; overflow-wrap: break-word; }
 .strip-when, .strip-where { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--ink-faint); overflow-wrap: anywhere; }
-.strip-when i { font-style: normal; color: var(--ink-faint); }
-.strip-when i::before { content: " · "; }
 
 /* Actions: one column per verb, so close, stop and remove all share an x down the page
    however wide the word is. Right-aligning the group as a whole would not; the words differ.
    These are `button.ghost` at the rack's size, so only what differs is declared here. */
 .strip-acts { display: grid; grid-template-columns: 66px 52px 64px; gap: 8px; }
-.strip-acts .act:hover { background: var(--panel-lifted); color: var(--ink); }
+.strip-acts .act { font-size: 12px; color: var(--ink-soft); }
+/* Open is the row's verb and keeps its edge; the others take theirs when the row is in hand, so a quiet rack is not a wall of boxes. */
+.strip-acts .act.primary-act, .strip:is(:hover, :focus-within) .strip-acts .act { box-shadow: inset 0 0 0 1px var(--seam); }
+.strip-acts .act:hover { background: var(--steel); box-shadow: inset 0 0 0 1px var(--seam-strong); color: var(--ink); }
 .strip-acts .act.end:hover { color: var(--threat); }
 
 /* Rename in place: the page's own text input, wearing the name's type so the swap does not
@@ -1355,9 +1408,28 @@ body.ask-open { overflow: hidden; }
 .strip-rename:focus-visible { box-shadow: 0 0 0 3px var(--accent-dim); }
 
 /* What the session last said, under the line, aligned to the name column. */
-.strip-say { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 11px 42px; }
+.strip-say { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 11px 48px; }
+/* Wide enough, it takes the strip's own columns: what you said under the name, what came back from the state column on. */
+@media (min-width: 1100px) {
+  .strip-say { display: grid; grid-template-columns: var(--strip-cols); column-gap: 14px; row-gap: 0; padding-left: 14px; }
+  .strip-say > p { grid-column: 3 / -2; }
+  .strip-say > p.you { grid-column: 2; grid-row: 1 / span 4; }
+  /* An ask reads across to the WHERE column; its answers sit from there to the edge. */
+  .strip-say.inbox-q > p { grid-column: -3 / -1; }
+  .strip-say.inbox-q > p:first-child { grid-column: 2 / -3; grid-row: 1 / span 4; }
+  .strip-say.inbox-q > p:not(:first-child) + p { margin-top: 8px; }
+  .strip-say.inbox-q > p:last-child:not(:has(.mv-hint:not(:empty))) { display: none; }
+}
+.say-verb { margin-left: 10px; }
+.strip-asks { margin-top: 2px; }
+.strip-asks > summary { display: flex; align-items: center; gap: 6px; width: fit-content; padding: 0 10px; margin: 0 0 8px 38px; border-radius: var(--radius-s); font-size: 13px; color: var(--ink-soft); cursor: pointer; list-style: none; }
+.strip-asks > summary::-webkit-details-marker { display: none; }
+.strip-asks > summary:hover { background: var(--steel); color: var(--ink); }
+.strip-asks > summary .icon { transform: rotate(-90deg); transition: transform var(--dur-press) var(--ease-out); }
+.strip-asks[open] > summary .icon { transform: none; }
 .strip-say p { margin: 0; max-width: 78ch; display: flex; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.5; }
-.strip-say .who { flex: 0 0 auto; width: 46px; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.strip-say p, .strip-say p > * { min-width: 0; overflow-wrap: anywhere; }
+.strip-say .who { flex: 0 0 auto; width: 56px; overflow-wrap: normal; white-space: nowrap; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
 .strip-say .you { color: var(--ink-soft); }
 .strip-say .claude { color: var(--ink); }
 .strip-say .empty { color: var(--ink-faint); font-style: italic; }
@@ -1365,7 +1437,7 @@ body.ask-open { overflow: hidden; }
 .strip-say .inbox-answers { display: flex; flex-wrap: wrap; gap: 8px; }
 /* A question's title, then what it says, then its answers: the answer it wants first is the
    needs-you colour, as on the mission page, so one question never wears two dresses. */
-.inbox-q .inbox-body { display: block; margin-top: 2px; color: var(--ink-soft); }
+.inbox-q .inbox-body { white-space: pre-line; display: block; margin-top: 2px; color: var(--ink-soft); }
 .inbox-q + .inbox-q { margin-top: 4px; box-shadow: inset 0 1px 0 var(--seam-soft); padding-top: 10px; }
 .inbox-answers button { padding: 0 12px; }
 .inbox-answers button.primary { background: var(--caution); color: var(--carbon); border-color: transparent; }
@@ -1376,18 +1448,17 @@ body.ask-open { overflow: hidden; }
 .strip-say .inbox-answers button { white-space: nowrap; }
 
 /* Density: what needs you is lifted and louder; what is finished recedes. */
-.strip.full .strip-line { min-height: 46px; }
 .strip.full .strip-name { font-size: 15px; font-weight: 600; color: var(--ink); }
 /* The one rack that answers the page's question outranks the one that is merely busy. */
 .rack.needs .strip { background: var(--panel-lifted); box-shadow: 0 0 0 1px color-mix(in srgb, var(--caution) 45%, transparent); }
 .rack.needs .strip:hover { box-shadow: 0 0 0 1px var(--caution), 0 8px 30px var(--shade); }
-.rack.needs .strip-line { min-height: 56px; }
+.rack.needs .strip-line { min-height: 44px; }
 .rack.needs .strip-name { font-size: 17px; }
 .rack.needs .strip-say { padding-bottom: 14px; }
 .rack.needs .strip-say p { font-size: 13.5px; }
 /* The lifted surface is brighter, so its secondary text rises with it: still the readable
    floor, and the row that matters reads louder than the ones that do not. */
-.rack.needs .strip-state b, .rack.needs .strip-when, .rack.needs .strip-when i, .rack.needs .strip-where, .rack.needs .strip-acts .act, .rack.needs .strip-say .who { color: var(--ink-soft); }
+.rack.needs .strip-state b, .rack.needs .strip-when, .rack.needs .strip-where, .rack.needs .strip-acts .act, .rack.needs .strip-say .who { color: var(--ink-soft); }
 /* The reticle carries the red; the word saying *why* it is blocked is the brightest text here. */
 .rack.needs .strip-state i { color: var(--ink); }
 .strip.finished .strip-name, .strip.ghost .strip-name { color: var(--ink-faint); font-weight: 400; }
@@ -1395,11 +1466,12 @@ body.ask-open { overflow: hidden; }
 
 /* The rack narrows by dropping columns, not by wrapping them. */
 @media (max-width: 1240px) {
-  .strip-line { grid-template-columns: 14px minmax(0, 1fr) 180px 175px 198px; }
+  :root { --strip-cols: 20px minmax(0, 1fr) 180px 175px 198px; }
+  .rack-col.where { display: none; }
   .strip-where { display: none; }
 }
 @media (max-width: 960px) {
-  .strip-line { grid-template-columns: 14px minmax(0, 1fr) 160px 198px; }
+  :root { --strip-cols: 20px minmax(0, 1fr) 160px 198px; }
   .strip-state { display: none; }
 }
 
@@ -1440,7 +1512,7 @@ body.ask-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .menu { animation: none; } }
 
 /* Icons are drawn at one stroke weight and take the button's colour. */
-button.icon-btn { position: relative; width: 44px; min-width: 44px; height: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+button.icon-btn { position: relative; width: 44px; min-width: 44px; height: var(--control); padding: 0; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
 .icon-btn .icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
 /* full screen conversation */
@@ -1523,9 +1595,9 @@ input, textarea { caret-color: var(--accent); }
   .bar { flex-wrap: wrap; height: auto; min-height: 46px; padding-block: 6px; row-gap: 6px; }
   .ws-head { flex-direction: column; }
   .ws-tools { width: 100%; }
-  /* The meter takes what the refresh button leaves, never the whole row beside it. */
+  /* The meter takes its own width, never the whole row beside it. */
   .cu-root { flex: 1; min-width: 0; }
-  .cu-baby { width: 100%; max-width: 100%; height: 44px; justify-content: space-between; gap: 8px; }
+  .cu-baby { width: 100%; max-width: 100%; height: var(--control); justify-content: space-between; gap: 8px; }
   .cu-baby .cu-meter { display: none; }
   /* On a phone the panel opens in the page under the meter, not over the strips below it. */
   .cu-panel { position: static; width: auto; max-height: none; margin-top: 8px; }
@@ -1535,16 +1607,13 @@ input, textarea { caret-color: var(--accent); }
   .cc-full-head h2 { max-width: 100%; white-space: normal; }
   /* Phone keeps what the rack is sorted by (state, recency) and puts the verbs beside the
      state on their own row: name, then when, then state and verbs sharing the last line. */
-  .strip-line { grid-template-columns: 14px minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 12px; }
+  .strip-line { grid-template-columns: 20px minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 12px; }
   .strip-id, .strip-when { grid-column: 2 / span 2; }
   .strip-when { display: block; }
   .strip-state { display: flex; grid-column: 2; grid-row: 3; align-self: center; }
   .strip-acts { grid-column: 3; grid-row: 3; }
   .strip-say { padding-left: 30px; }
   .cu-baby { white-space: nowrap; overflow: hidden; }
-  /* The closed-formation line wrapped its loop text into a 170px column beside a clipped tail. */
-  .cc-closed-row { flex-wrap: wrap; }
-  .cc-closed-row .name { min-width: 0; }
 }
 
 /* ---------- full-screen session: scroll lock, composer, stale band, calibrate ---------- */
@@ -1555,12 +1624,12 @@ body.cc-full-open { overflow: hidden; }
    text field: in a pane it left most of the width empty and the box floating in the middle. */
 .cc-composer .row { display: flex; gap: 8px; align-items: flex-end; width: 100%; }
 /* One line to start, grown by script as you type; no manual resize handle to fight with. */
-.cc-composer textarea { flex: 1; min-height: 44px; max-height: 40vh; resize: none; overflow-y: auto; padding: 9px 12px; border-radius: var(--radius-m); border: 1px solid var(--seam); background: var(--carbon); color: var(--ink); font: 13.5px/1.45 var(--sans); }
+.cc-composer textarea { flex: 1; min-height: var(--control); max-height: 40vh; resize: none; overflow-y: auto; padding: 9px 12px; border-radius: var(--radius-m); border: 1px solid var(--seam); background: var(--carbon); color: var(--ink); font: 13.5px/1.45 var(--sans); }
 .cc-composer textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cc-composer .hint { width: 100%; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .cc-composer .hint .att { color: var(--accent-hot); }
 .cc-composer.dropping textarea { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.cc-composer .notice { width: 100%; font-size: 13px; color: var(--ink-soft); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-height: 44px; }
+.cc-composer .notice { width: 100%; font-size: 13px; color: var(--ink-soft); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-height: var(--control); }
 .term.dropping { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .cu-cal { display: flex; flex-direction: column; gap: 10px; }
@@ -1593,7 +1662,7 @@ body.cc-full-open { overflow: hidden; }
 
 /* The disclosure sits in the name cell, so the six columns the rack lines up on are untouched. */
 /* The drawn chevron points down, so collapsed turns it a quarter to the right and open is home. */
-.strip-turn { width: 44px; height: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; box-shadow: none; color: var(--ink-ghost); align-self: center; flex: 0 0 auto; transform: rotate(-90deg); transition: transform var(--dur-press) var(--ease-out), color var(--dur-press) var(--ease-out); }
+.strip-turn { width: 44px; height: var(--control); padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; box-shadow: none; color: var(--ink-ghost); align-self: center; flex: 0 0 auto; transform: rotate(-90deg); transition: transform var(--dur-press) var(--ease-out), color var(--dur-press) var(--ease-out); }
 .strip-turn .icon { width: 13px; height: 13px; }
 .strip:hover .strip-turn { color: var(--ink-faint); }
 .strip.open .strip-turn { color: var(--accent); transform: rotate(0deg); }
@@ -1655,7 +1724,7 @@ body.cc-full-open { overflow: hidden; }
 /* A shell is somewhere you work, not something you supervise, so its strips carry the
    terminal's own shape rather than an engine. */
 .forms .new.shell .icon { width: 15px; height: 15px; }
-.strip.shell .strip-name { font-family: var(--mono); font-size: 12.5px; }
+.strip.is-shell .strip-name { font-family: var(--mono); font-size: 12.5px; }
 
 
 /* Find, in the terminal's own pane. A rail above the screen rather than a floating box, so it
@@ -1686,8 +1755,8 @@ body.bare .cc-pane.inline { height: min(78vh, 900px); }
 body.bare .cc-composer .hint { display: none; }
 body.bare .cc-composer { padding-bottom: 10px; }
 
-/* The bar's links are targets a finger can hit on every page that carries it: 44px inside the 52px bar. */
-.bar .brand, .bar .button-link { min-height: 44px; }
+/* The bar's links are full controls on every page that carries it. */
+.bar .brand, .bar .button-link { min-height: var(--control); }
 /* On a phone the bar wraps anyway, so the status line wraps with it rather than cutting its message off. */
 @media (max-width: 600px) { .bar .status { white-space: normal; flex-basis: 100%; } .bar .status:empty { display: none; } }
 
@@ -1703,7 +1772,7 @@ html { scroll-padding-top: 64px; }
 button.rack-verb { padding: 0 12px; font-size: 12.5px; }
 /* The first read, standing in for the rack it will be. */
 .cc-skeleton { display: grid; gap: 8px; margin-top: 12px; }
-.cc-skeleton i { display: block; height: 52px; border-radius: var(--radius-m); background: var(--steel); }
+.cc-skeleton i { display: block; height: 40px; border-radius: var(--radius-m); background: var(--steel); }
 .cc-empty-start { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .cc-empty-start p { margin: 0; }
 /* The session list could not be read: said once, red, with the way to try again; what did load is drawn under it. */
@@ -1730,7 +1799,7 @@ button.strip-name:active { transform: none; }
    six-column line, and a fixed column left the name 0 to 26px wide. It takes the phone's line
    instead: the name across the top, then the state and the verbs, the place dropped because the
    pane says it. One rule for every column, so no context can starve the name again. */
-:is(.rack-strips.grid > .strip.open, .formation.with-lead) .strip-line { grid-template-columns: 14px minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 12px; }
+:is(.rack-strips.grid > .strip.open, .formation.with-lead) .strip-line { grid-template-columns: 20px minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 12px; }
 :is(.rack-strips.grid > .strip.open, .formation.with-lead) :is(.strip-id, .strip-when) { grid-column: 2 / span 2; }
 :is(.rack-strips.grid > .strip.open, .formation.with-lead) .strip-state { grid-column: 2; grid-row: 3; align-self: center; }
 :is(.rack-strips.grid > .strip.open, .formation.with-lead) .strip-acts { grid-column: 3; grid-row: 3; }
