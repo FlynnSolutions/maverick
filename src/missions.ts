@@ -43,7 +43,7 @@ import { reportFor } from "./report.ts";
 import { failingCases, lastCleared, needsWalking, openFix, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
-import { defaultWorkflow, type Workflow } from "./workflows.ts";
+import { agentFor, defaultWorkflow, workflowOf, type Workflow } from "./workflows.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
@@ -698,11 +698,21 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   return { name, intro, milestones, contracts, components, mockups, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
 };
 
+/**
+ * Every agent a template will launch, the RIO's first as the gate has always listed them. A later
+ * stage adds a line only for a name of its own: under the default the summary is the RIO again.
+ */
+const agentsLaunched = (w: Workflow, cfg: MissionConfig): string[] => {
+  const named = (ids: string[]): string[] => ids.flatMap((id) => agentFor(w, id, cfg) ?? []);
+  const first = named(["review", "build"]);
+  return [...first, ...new Set(named(["walkthrough", "summary"]).filter((agent) => !first.includes(agent)))];
+};
+
 /** The preflight for a plan in this project: what a machine can check, and what is a person's. */
-export const preflightFor = (project: Project, cfg: MissionConfig, choices: Array<{ label: string; path: string; land: Landing }>, parsed: ReturnType<typeof parsePlan>): Promise<Check[]> => {
+export const preflightFor = (project: Project, mission: { template?: Workflow }, cfg: MissionConfig, choices: Array<{ label: string; path: string; land: Landing }>, parsed: ReturnType<typeof parsePlan>): Promise<Check[]> => {
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
   const mine = choices.filter((r) => named.has(r.label));
-  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, remote: mine.filter((r) => r.land !== "merge").map(({ label, path }) => ({ label, path })) });
+  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, agents: agentsLaunched(workflowOf(mission), cfg), remote: mine.filter((r) => r.land !== "merge").map(({ label, path }) => ({ label, path })) });
 };
 
 /* ---------- the plan as the ledger ---------- */
@@ -1116,7 +1126,7 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
   }
   // Only the repos the plan names, so the gate shows what this mission will actually touch.
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
-  return { found: true, text, parsed, wingmanAgent: cfg.wingmanAgent, cost: costOf(parsed.milestones), estimate: estimateOf(parsed.milestones, await measuredPace()), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })), preflight: parsed.problems.length ? [] : await preflightFor(project, cfg, choices, parsed) };
+  return { found: true, text, parsed, wingmanAgent: agentFor(workflowOf(mission), "build", cfg), cost: costOf(parsed.milestones), estimate: estimateOf(parsed.milestones, await measuredPace()), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })), preflight: parsed.problems.length ? [] : await preflightFor(project, mission, cfg, choices, parsed) };
 };
 
 /* ---------- the blessing, and the tracker write ---------- */
@@ -1173,7 +1183,7 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   if (parsed.problems.length) throw new Error(`the plan cannot be flown as written: ${parsed.problems.join("; ")}`);
   // A tool or an agent the mission cannot run without is refused here; a credential, a pin or a
   // human step is shown at the gate for the person to settle, and approving is their answer.
-  const failing = (await preflightFor(project, cfg, choices, parsed)).filter((c) => refuses(c));
+  const failing = (await preflightFor(project, mission, cfg, choices, parsed)).filter((c) => refuses(c));
   if (failing.length) throw new Error(`preflight: ${failing.map((c) => `${c.name}: ${c.detail}`).join("; ")}`);
   mission.milestones = ownScreenshots(mission, parsed.milestones);
   mission.contracts = parsed.contracts;
@@ -1311,7 +1321,7 @@ const walkRepo = (mission: Mission, m: Milestone): MissionRepo | undefined => mi
 const building = (m: Milestone): boolean => m.walkthrough?.claudeId !== undefined && !m.walkthrough.doc && !m.walkthrough.failed;
 
 /** Sent the moment a milestone has merged, into the integration worktree of the repo it landed in. */
-const commissionWalkthrough = async (project: Project, mission: Mission, m: Milestone): Promise<void> => {
+const commissionWalkthrough = async (project: Project, mission: Mission, m: Milestone, cfg: MissionConfig): Promise<void> => {
   if (!m.tasks.some((t) => t.commits?.length)) return;
   const repo = walkRepo(mission, m);
   if (!repo) return;
@@ -1322,7 +1332,7 @@ const commissionWalkthrough = async (project: Project, mission: Mission, m: Mile
     () => { m.walkthrough = { claudeId: "", started }; },
     async () => {
       await placeWalkthrough(repo.integration, walkthroughFile(mission, m), walkKey(mission, m));
-      return spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m)));
+      return spawnBackgroundAgent(repo.integration, `walkthrough · m${m.n} ${m.title}`, walkthroughPrompt(project, mission, m, repo, walkthroughFile(mission, m)), agentFor(workflowOf(mission), "walkthrough", cfg));
     },
     (x, claudeId) => { const w = on(x)?.walkthrough; if (w) w.claudeId = claudeId; },
     (x, err) => { const y = on(x); if (y) y.walkthrough = { started, failed: `could not start the walkthrough builder: ${err.message}` }; })) agentCache.delete(project.path);
@@ -1704,7 +1714,7 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     task.base = await cutWorktree(repo, task);
     const out = await claimed(mission,
       () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
-      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), agentFor(workflowOf(mission), "build", cfg), undefined, wingmanEnv(task, cfg)),
       (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
       launchFailed(task.id));
     if (!out) return;
@@ -1851,7 +1861,7 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
     },
     async () => {
       const base = await cutWorktree(repo, task);
-      return { base, claudeId: await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)) };
+      return { base, claudeId: await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg), findings), agentFor(workflowOf(mission), "build", cfg), undefined, wingmanEnv(task, cfg)) };
     },
     // The fork point a worktree already had stands; only one this retry made takes the new one.
     (on, r) => { const t = taskOn(on, task.id); if (t) { t.claudeId = r.claudeId; t.base ??= r.base; } },
@@ -2093,7 +2103,7 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
       const previous = reviews > 1 ? await readFile(reviewFile(mission, { ...task, reviews: reviews - 1 }), "utf8").catch(() => undefined) : undefined;
       if (await claimed(mission,
         () => { task.reviews = reviews; task.status = "reviewing"; task.review = { claudeId: "", file, started: new Date().toISOString() }; },
-        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), file, previous), cfg.rioAgent, RIO_TOOLS),
+        () => spawnBackgroundAgent(project.path, `RIO · ${task.title}`, rioBrief(briefContext(project, mission, m, task, missionRepo(mission, task), cfg), file, previous), agentFor(workflowOf(mission), "review", cfg), RIO_TOOLS),
         (on, claudeId) => { const t = taskOn(on, task.id); if (t?.review) t.review.claudeId = claudeId; },
         (on, err) => { const t = taskOn(on, task.id); if (t) { t.status = "handed-back"; t.note = `could not start the RIO: ${err.message}`; } })) {
         agentCache.delete(project.path);
@@ -2171,7 +2181,7 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
       const { failed } = await landTheWork(mission);
       if (failed.length) { holdFor(m, "landing", `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`); continue; }
     }
-    if (!m.walkthrough) await commissionWalkthrough(project, mission, m);
+    if (!m.walkthrough) await commissionWalkthrough(project, mission, m, cfg);
     else clearWalkFix(m);
   }
   const next = mission.milestones.find((x) => !x.dispatched && !x.merged && !undoneBefore(mission, x));
@@ -2899,7 +2909,7 @@ export const summarizeMission = async (project: Project, id: string): Promise<Mi
     const [{ findings }, log] = await Promise.all([statsOf(mission, undefined, false), ledgerLog(project, mission)]);
     const brief = summaryBrief({ missionName: mission.name, report: reportFor(mission, findings, log), readings: readingsOf(mission, findings), file });
     await rm(file, { force: true });
-    claudeId = await spawnBackgroundAgent(project.path, `summary · ${mission.name}`, brief, cfg.rioAgent, RIO_TOOLS);
+    claudeId = await spawnBackgroundAgent(project.path, `summary · ${mission.name}`, brief, agentFor(workflowOf(mission), "summary", cfg), RIO_TOOLS);
   } catch (err) {
     // The claim is on disk and no session is behind it: say why, and leave the button live.
     return changeMission(project.id, id, (fresh) => {
