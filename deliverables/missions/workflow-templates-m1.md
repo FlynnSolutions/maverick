@@ -60,8 +60,9 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - [~] **The template decides whether proof and a walk happen**
   - touches: src/missions.ts, src/questions.ts, test/workflow-skip.test.ts
   - needs: m1-t4
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: c2bb475
   The flow consults the template where it decides on the stages that may be left out. Proof: `mission.proofRequired` in `approveOnce` and `sweepOnce` becomes `Boolean(cfg.proof) && hasStage(<template>, "proof")`; the proof start in `catchUp` is guarded the same way; `briefContext` passes no proof to a Wingman or RIO brief when the stage is absent. Walk: `commissionWalkthrough`'s call in `catchUp` is skipped without the stage, and a milestone with no walk stage does not need walking. Keep `needsWalking(m)` in `src/questions.ts` as it is, because existing tests call it with one argument and `closeMission` passes it straight to `filter`, which would hand an index to a new second parameter. Add `owesWalk(mission, m)` beside it and move `done`, `notBase`, `toWalk`, `closeMission` and `missionView` onto it, with `mission` staying optional-template so the existing partial fixtures read as the default. Summary: `summarizeMission` refuses with a message naming the stage when it is absent. The stages that may not be left out (`plan-gate`, `build`, `review`, `merge`, `land`, `close`) have nothing to decide in this milestone: the validator guarantees them, so no code asks. Add no question for a person and no word on the page: without a path to a non-default template nobody reaches this but a test. Refit, not rewrite, as in the task before.
 
   Prove it: new `test/workflow-skip.test.ts` drives through the real sweep with a project proof command that writes a sentinel file. A pinned template with no `proof`, no `walkthrough` and no `walk` merges, runs no proof (no sentinel), spawns no builder, reaches `review`, closes without a walk and starts the next milestone without one; its Wingman and RIO briefs carry no proof line. Leaving out `summary` makes `summarizeMission` refuse. The same fixture with the default template runs the proof, spawns the builder and holds on the walk. Then make `workflowOf` ignore the pinned copy, show the new test failing, restore, and put that output in the commit message. `test/mission-flight.test.ts` passes untouched. `git diff --stat main...HEAD -- web/` prints nothing. `npm test && npm run lint`, results in the commit message.
@@ -113,3 +114,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 23:14 m1-t4 The template says who runs a stage: flying to reviewing
 - 2026-11-04 23:21 m1-t4 The template says who runs a stage: reviewing to passed (RIO: pass with notes) with 9 notes carried, 1 unverified
 - 2026-11-04 23:21 m1-t5 The template decides whether proof and a walk happen: pending to flying
+- 2026-11-04 23:32 m1-t5 The template decides whether proof and a walk happen: flying to reviewing
