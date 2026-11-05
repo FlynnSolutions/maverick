@@ -168,12 +168,9 @@ test("a task that builds mockup cells is told the decisions over them and to com
   assert.ok(!rioBrief({ ...ctx, mission, task }, "/f.md").includes("mockup cells"), "nor does its RIO");
 });
 
-test("both briefs say the task's id for the shell to export, since a background session does not get it from Maverick", () => {
-  for (const brief of [wingmanBrief(ctx), rioBrief(ctx, "/f.md")]) {
-    assert.ok(brief.includes("This task's id is m1-t2."), "the id in words");
-    assert.ok(brief.includes("run `export MAVERICK_TASK=m1-t2` before anything of the project's"), "one export, no shared list when there is none");
-    assert.match(brief, /any MAVERICK_ variable already in it is another task's/, "the stale one is named as stale");
-  }
-  const shared = wingmanBrief({ ...ctx, shared: ["dev", "staging"] });
-  assert.ok(shared.includes("run `export MAVERICK_TASK=m1-t2 MAVERICK_SHARED=dev,staging` before anything of the project's, whose scripts read them."));
+test("a Wingman is told its shell has the task's id from its worktree, and a RIO, whose shell may not, names it on each command", () => {
+  assert.ok(wingmanBrief(ctx).includes("This task's id is m1-t2, and your shell has `MAVERICK_TASK=m1-t2` for the project's own scripts, set in your worktree's .claude/settings.local.json. Leave that file alone"));
+  assert.ok(wingmanBrief({ ...ctx, shared: ["dev", "staging"] }).includes("your shell has `MAVERICK_TASK=m1-t2 MAVERICK_SHARED=dev,staging`"));
+  const rio = rioBrief({ ...ctx, shared: ["dev"] }, "/f.md");
+  assert.ok(rio.includes("Your shell's MAVERICK_ variables may be another task's: put `MAVERICK_TASK=m1-t2 MAVERICK_SHARED=dev` in front of every command that runs the project's own scripts, which read them."));
 });

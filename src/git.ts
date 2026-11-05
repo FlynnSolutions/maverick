@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { appendFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { REPLY_FORMAT_ARGS } from "./reply-format.ts";
@@ -267,7 +267,57 @@ export const whyFailed = (err: Error & { stderr?: string }): string => {
 };
 
 /** Start a background Claude session and return the id it prints. `tools` fences it the way the CAG is fenced. */
+export interface ClaudeAuth { loggedIn?: boolean; loginExpiresAt?: string }
+
+/** What `claude auth status` reports, or undefined when it does not answer. */
+export const claudeAuth = async (): Promise<ClaudeAuth | undefined> => {
+  try {
+    return JSON.parse((await run("claude", ["auth", "status"], { timeout: 15_000 })).stdout) as ClaudeAuth;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Hours a login has left; NaN when it reports no expiry. */
+export const hoursLeft = (expires: string | undefined, now = Date.now()): number => (Date.parse(expires ?? "") - now) / 3_600_000;
+
+const AUTH_TTL_MS = 5 * 60_000;
+let authSeen: { at: number; auth: ClaudeAuth | undefined } | undefined;
+
+/**
+ * Why a session must not be launched now, or undefined. A session started on a login that has
+ * ended blocks at once and waits for a person, so after one expiry every launch the sweep made
+ * became another stuck session (2026-11-04). Read at most every five minutes; a status that does
+ * not answer launches, since a launch that fails says why on its own.
+ */
+export const launchRefused = async (now = Date.now(), read: () => Promise<ClaudeAuth | undefined> = claudeAuth): Promise<string | undefined> => {
+  if (!authSeen || now - authSeen.at > AUTH_TTL_MS) authSeen = { at: now, auth: await read() };
+  const auth = authSeen.auth;
+  if (!auth) return undefined;
+  if (!auth.loggedIn || hoursLeft(auth.loginExpiresAt, now) <= 0) {
+    authSeen = undefined;
+    return "the claude login has ended, so nothing is launched until you log in again (run `claude`); the mission carries on from there";
+  }
+  return undefined;
+};
+
+/**
+ * Give a session started in `dir` these variables in every shell it opens, through the folder's
+ * `.claude/settings.local.json`. The environment a `claude --bg` is spawned with never reaches the
+ * session (the background daemon hands out sessions it started with its own), and an `export` in
+ * one shell is gone by the next; a settings file's `env` is read by every call and wins over both.
+ * Merged into a file that is already there.
+ */
+export const sessionEnv = async (dir: string, env: Record<string, string>): Promise<void> => {
+  const file = join(dir, ".claude", "settings.local.json");
+  const existing = await readFile(file, "utf8").then((t) => JSON.parse(t) as { env?: Record<string, string> }, (err: NodeJS.ErrnoException) => { if (err.code === "ENOENT") return {}; throw err; });
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify({ ...existing, env: { ...existing.env, ...env } }, null, 2)}\n`, "utf8");
+};
+
 export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string, tools?: string): Promise<string> => {
+  const refused = await launchRefused();
+  if (refused) throw new Error(refused);
   const { stdout } = await run("claude", claudeArgs({ prompt, bg: true, agent, name, tools }), { cwd }).catch((err: Error & { stderr?: string }) => {
     throw new Error(`claude --bg did not start in ${cwd}: ${whyFailed(err)}`);
   });

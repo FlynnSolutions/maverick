@@ -91,14 +91,16 @@ export const RIO_CHECKLIST: readonly string[] = [
 const list = (lines: readonly string[]): string[] => lines.map((l) => `- ${l}`);
 
 /**
- * The task's id for its shell, said in the brief. A background session is not started with the
- * environment it is spawned with: Claude Code's daemon hands out sessions it started earlier with
- * its own, which on 2026-11-03 gave every later session the first task's MAVERICK_TASK. So the
- * session exports it itself, before the project's own scripts read it.
+ * The task's id, for the project's own scripts. A Wingman's shell has it from its worktree's
+ * `.claude/settings.local.json` (`sessionEnv`). A RIO runs from the project root, which every RIO
+ * shares, so its shell may hold another task's id: Claude Code's background daemon gave every
+ * session of 2026-11-03 the first task's. The RIO names it on each command instead.
  */
-const shellLine = (ctx: BriefContext): string => {
-  const exports = [`MAVERICK_TASK=${ctx.task.id}`, ...(ctx.shared?.length ? [`MAVERICK_SHARED=${ctx.shared.join(",")}`] : [])];
-  return `This task's id is ${ctx.task.id}. Your shell does not have it from Maverick, and any MAVERICK_ variable already in it is another task's: run \`export ${exports.join(" ")}\` before anything of the project's, whose scripts read ${ctx.shared?.length ? "them" : "it"}.`;
+const shellLine = (ctx: BriefContext, rio = false): string => {
+  const vars = [`MAVERICK_TASK=${ctx.task.id}`, ...(ctx.shared?.length ? [`MAVERICK_SHARED=${ctx.shared.join(",")}`] : [])];
+  return rio
+    ? `This task's id is ${ctx.task.id}. Your shell's MAVERICK_ variables may be another task's: put \`${vars.join(" ")}\` in front of every command that runs the project's own scripts, which read ${vars.length > 1 ? "them" : "it"}.`
+    : `This task's id is ${ctx.task.id}, and your shell has \`${vars.join(" ")}\` for the project's own scripts, set in your worktree's .claude/settings.local.json. Leave that file alone; it is not part of the task.`;
 };
 
 /** Where a task that builds mockup cells commits its screenshots, inside its own worktree; the task owns it. */
@@ -213,7 +215,7 @@ export const rioBrief = (ctx: BriefContext, file: string, previous?: string): st
     `The work is in the ${repo.label} repo, on branch ${task.branch}, in the worktree at ${task.worktree}. Read every commit on it that ${repo.branch} does not have (\`git -C ${task.worktree} log ${repo.branch}..HEAD -p\`). Run things in that worktree; if you need a checkout of your own, make a detached one under ${scratchFor(task, rioRole(task))} and remove it when you are done.`,
     planLine(ctx, ""),
     `Your scratch path is ${scratchFor(task, rioRole(task))}; git ignores it.`,
-    shellLine(ctx),
+    shellLine(ctx, true),
     "",
     `The task it was given: ${task.title}`,
     "",

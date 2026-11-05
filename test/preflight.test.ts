@@ -10,7 +10,7 @@ import { tempRepo } from "./fixtures.ts";
 // config.ts reads this once when the module graph loads, so it is set before the imports below.
 const claudeHome = mkdtempSync(join(tmpdir(), "mv-claude-"));
 process.env.CLAUDE_CONFIG_DIR = claudeHome;
-const { hoursOf, parseRequirements, preflight, untrusted, versionMeets } = await import("../src/preflight.ts");
+const { claudeLogin, hoursOf, parseRequirements, preflight, refuses, untrusted, versionMeets } = await import("../src/preflight.ts");
 const { parsePlan } = await import("../src/missions.ts");
 
 test("a preflight line names its kind, what, and a note", () => {
@@ -92,7 +92,6 @@ test("a repo set to land remotely with no git remote refuses approval, with the 
 });
 
 test("the Claude login every agent runs on is checked against how long the mission expects to fly", async () => {
-  const { claudeLogin, refuses } = await import("../src/preflight.ts");
   const now = Date.parse("2026-11-03T23:00:00Z");
   const at = (h: number) => new Date(now + h * 3_600_000).toISOString();
   const out = claudeLogin({ loggedIn: false }, 8, now);
