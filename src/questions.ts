@@ -7,6 +7,7 @@ import { findingsOf } from "./audits.ts";
 import { parseFinding } from "./findings.ts";
 import type { Milestone, MilestoneWalkthrough, Mission, MissionTask, WalkFix, WalkthroughProgress, WalkthroughState } from "./missions.ts";
 import type { ChatEntry } from "./strike-lead.ts";
+import { hasStage, workflowOf, type Workflow } from "./workflows.ts";
 
 export interface Question {
   id: string;
@@ -81,9 +82,12 @@ export const lastCleared = (w: Pick<MilestoneWalkthrough, "fixes"> | undefined):
 export const needsWalking = (m: Milestone): boolean =>
   m.tasks.some((t) => t.commits?.length) && !["walked", "waived"].includes(walkthroughState(m));
 
+/** Whether this mission still owes this milestone a walk: its template has a walk, and the milestone needs one. A record with no template reads as the default. */
+export const owesWalk = (mission: { template?: Workflow }, m: Milestone): boolean => hasStage(workflowOf(mission), "walk") && needsWalking(m);
+
 /** The milestones waiting on their walk: merged, and neither walked nor waived. The walk question and any gate that holds on a walk read this one list. */
-export const toWalk = (mission: Pick<Mission, "milestones">): Array<Milestone & { merged: string }> =>
-  mission.milestones.filter((m): m is Milestone & { merged: string } => Boolean(m.merged) && needsWalking(m));
+export const toWalk = (mission: Pick<Mission, "milestones" | "template">): Array<Milestone & { merged: string }> =>
+  mission.milestones.filter((m): m is Milestone & { merged: string } => Boolean(m.merged) && owesWalk(mission, m));
 
 /** How far a walkthrough still to walk has got, in the question's words: answered of total, and what came back failed or blocked. */
 const walkLeft = (m: Milestone): string => {
