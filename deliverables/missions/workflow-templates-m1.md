@@ -21,8 +21,9 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 
 - [~] **The template, its loader and its validator**
   - touches: src/workflows.ts, src/workflows/mission.json, test/workflows.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 3233986
   Create the template and the pure module that answers questions about it. `src/workflows.ts` reads no mission state from disk, spawns nothing and imports nothing from `src/missions.ts`. It may not touch `src/missions.ts`, `src/questions.ts` or `src/preflight.ts`; later tasks wire it in. Match the neighbours: plain TypeScript run directly by Node, no build step, no dependency, lowercase plain comments. The template is JSON because the project allows no YAML parser. Find the template's file with `new URL("./workflows/mission.json", import.meta.url)`, as `WALKTHROUGH_TEMPLATE` finds its file, because the packed app carries `src/**` as plain files (`app/electron-builder.yml`). Nothing machine-specific.
 
   `src/workflows/mission.json` follows the code's order, by Cory's call, not the older list that had land and summary after the walk. In order: `interview`, `plan-gate`, `preflight`, then a `for-each` over `milestones` holding (a `for-each` over `tasks` holding `build`, `review`), `merge`, `proof`, `land`, `walkthrough`, `walk`; then `close`, then `summary`. Landing is inside the milestone because `catchUp` lands `pr` and `push` repos after proof and before the walkthrough. `close` is `closeMission`, which tries landing again and ticks the tracker. `summary` is on demand, the button at `summarizeMission`; nothing runs it automatically. The retry after a failed review stays part of `review` with `MAX_ATTEMPTS` as its limit, and the fix round stays part of `walk`. `build` takes slot `wingmanAgent`, `review` and `summary` take slot `rioAgent`, `proof` takes slot `proof`, and `walkthrough` has no slot, so it launches with no `--agent` as today.
@@ -91,3 +92,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 
 - 2026-11-04 21:11 m1-t1 The full flight, proved on today's code: pending to flying
 - 2026-11-04 21:11 m1-t2 The template, its loader and its validator: pending to flying
+- 2026-11-04 21:16 m1-t2 The template, its loader and its validator: flying to reviewing
