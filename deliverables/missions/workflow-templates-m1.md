@@ -128,3 +128,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 23:53 merged: milestone 1 (Today's flow runs from a template) is on the mission branch
 - 2026-11-04 23:54 merged: milestone 1 (Today's flow runs from a template) is on the mission branch
 - 2026-11-04 23:55 held: milestone 1 (since 2026-11-05T07:55:18.497Z): the proof failed after milestone 1 merged: # skipped 0 | # todo 0 | # duration_ms 212930.354917
+- 2026-11-05 11:09 decision: Cory to the Strike Lead: "m1-t3 found the drop-over-Notes bug in m1-t1's AddRow; add a fix task for it, then rerun m1-t3.
