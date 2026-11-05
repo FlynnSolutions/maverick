@@ -7,10 +7,11 @@ Today's mission flow, hardcoded in `src/missions.ts`, becomes a built-in templat
 _done when: on the mission branch, `npm test && npm run lint` pass; `git diff --name-status main...HEAD -- test/` lists only added files, so no existing assertion changed; `test/mission-flight.test.ts` is byte-identical to the commit that first passed on unrefitted code, and it seeds its records with no template, so an older record loads, runs and lands as the default; `test/workflow-flow.test.ts` proves through the real sweep that a template leaving out proof and walkthrough skips them and that one naming another agent launches it for build, review, walkthrough and summary; and `git diff --stat main...HEAD -- web/` prints nothing._
 _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --name-status main...HEAD -- test/`, and see everything pass with only added test files; Read `src/workflows/mission.json` and see today's flow in the order the code runs it; Make `workflowOf` ignore a pinned template by hand, run `node --test test/workflow-flow.test.ts`, see the template tests fail, then restore it, so the template is driving and not decorating; Run `node --test test/workflows.test.ts` and see the validator refuse a reordered template, an unknown stage, an unknown kind and a template missing the merge, each with a message naming the stage; Run `git log --format=%s -- test/mission-flight.test.ts` and see only the commits of the first task, none from the refit, so the full flight passes untouched; Run `git diff --stat main...HEAD -- web/` and see nothing, so nothing a person sees changed_
 
-- [~] **The full flight, proved on today's code**
+- [x] **The full flight, proved on today's code**
   - touches: test/mission-flight.test.ts
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: 03068e2
   One new test file that drives invented missions through the whole flow with the real `src/missions.ts`, a fake `claude` first on PATH and real git in temp repos, and pins today's behaviour before anyone refits it. This task changes no file under `src/` and no existing test: it must pass on the code as it stands, because it is the before half of a before and after. No later task may change this file. That is the proof the flow stayed identical.
 
@@ -34,10 +35,11 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 
   Prove it: `test/workflows.test.ts` covers that the built-in template loads and validates; each refusal, with its message naming the stage; each permitted leaving-out; `walkthrough` without `walk` refused and the reverse; `agentFor`'s three answers; `hasStage`; `workflowOf` returning a pinned copy when there is one and the default when there is none. `npm test && npm run lint`, results in the commit message.
 
-- [ ] **A mission pins its template when it starts**
+- [~] **A mission pins its template when it starts**
   - touches: src/missions.ts, test/workflow-pin.test.ts
   - needs: m1-t1, m1-t2
-  - status: pending
+  - status: flying
+  - attempt: 1
   `startMission` in `src/missions.ts` sets `template: defaultWorkflow()` on the new record, and the `Mission` interface gains `template?: Workflow`. The copy holds slot names, never resolved values: `maverick.json`'s `wingmanAgent`, `rioAgent` and `proof` are read at use, because `sweepOnce` deliberately follows the project mid-flight today and that stays. So editing a template file never changes a mission in flight, and editing `maverick.json` still does, exactly as now. A record with no `template` reads as the default through `workflowOf` and is never written back. Add no migration. This task changes no behaviour of the flow and consults the template nowhere else; the next tasks do that. The page reads nothing from the new field, and do not touch `web/`, the ledger format or `applyPlanState`. If an existing test breaks because a record gained a field, stop and say so: no existing assertion may change.
 
   Prove it: `test/workflow-pin.test.ts` proves a started mission carries the template on disk; changing the template the loader would return leaves that record's copy unchanged; a pre-existing record with no field, read and swept and written, still has no field and answers `workflowOf` with the default; and `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, results in the commit message.
@@ -97,3 +99,5 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 21:16 m1-t2 The template, its loader and its validator: flying to reviewing
 - 2026-11-04 21:26 m1-t2 The template, its loader and its validator: reviewing to passed (RIO: pass with notes) with 7 notes carried, 2 unverified
 - 2026-11-04 22:37 m1-t1 The full flight, proved on today's code: flying to reviewing
+- 2026-11-04 22:51 m1-t1 The full flight, proved on today's code: reviewing to passed (RIO: pass with notes) with 7 notes carried, 3 unverified
+- 2026-11-04 22:51 m1-t3 A mission pins its template when it starts: pending to flying
