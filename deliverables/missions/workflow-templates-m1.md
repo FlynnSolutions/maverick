@@ -130,3 +130,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 23:55 held: milestone 1 (since 2026-11-05T07:55:18.497Z): the proof failed after milestone 1 merged: # skipped 0 | # todo 0 | # duration_ms 212930.354917
 - 2026-11-05 11:09 decision: Cory to the Strike Lead: "m1-t3 found the drop-over-Notes bug in m1-t1's AddRow; add a fix task for it, then rerun m1-t3.
 - 2026-11-05 13:31 decision: milestone 1 released by Cory: Proof reported 2 of 294 failing at 23:51; names lost to the 4000-character output limit. Reran twice on this merged code on 2026-11-05: 294 of 294, lint clean. Cause not identified, likely flaky or load. Cory chose to release and re-prove.
+- 2026-11-05 13:31 merged: milestone 1 (Today's flow runs from a template) is on the mission branch
