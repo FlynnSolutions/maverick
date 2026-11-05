@@ -9,8 +9,9 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 
 - [~] **The full flight, proved on today's code**
   - touches: test/mission-flight.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 03068e2
   One new test file that drives invented missions through the whole flow with the real `src/missions.ts`, a fake `claude` first on PATH and real git in temp repos, and pins today's behaviour before anyone refits it. This task changes no file under `src/` and no existing test: it must pass on the code as it stands, because it is the before half of a before and after. No later task may change this file. That is the proof the flow stayed identical.
 
   Copy the fixture approach from `test/missions.test.ts` (the fake `claude` around its line 925, `agentsSay`, `spawnedWith`, `summaryFixture`) and the rule in `test/mission-store.test.ts` that `SESSION_CONSOLE_SESSIONS` is set before `src/missions.ts` is imported. The fake must append every spawn's arguments to a log, so the test reads the whole sequence. The test plays each session's part between sweeps: commit on the task's branch and mark its agent finished, write a RIO's verdict to `task.review.file`, write a filled walkthrough document where `walkthroughFile` says. Two things will bite: the agent listing is cached for 20 seconds per project path (`agentsFor`), and `sweepSoon(project, sweepMissions, 0)` drops it where `sweepMissions` alone does not; the proof runs detached, so a test sweeps until `m.proof` appears.
@@ -95,3 +96,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 21:11 m1-t2 The template, its loader and its validator: pending to flying
 - 2026-11-04 21:16 m1-t2 The template, its loader and its validator: flying to reviewing
 - 2026-11-04 21:26 m1-t2 The template, its loader and its validator: reviewing to passed (RIO: pass with notes) with 7 notes carried, 2 unverified
+- 2026-11-04 22:37 m1-t1 The full flight, proved on today's code: flying to reviewing
