@@ -68,11 +68,12 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 
   Prove it: new `test/workflow-skip.test.ts` drives through the real sweep with a project proof command that writes a sentinel file. A pinned template with no `proof`, no `walkthrough` and no `walk` merges, runs no proof (no sentinel), spawns no builder, reaches `review`, closes without a walk and starts the next milestone without one; its Wingman and RIO briefs carry no proof line. Leaving out `summary` makes `summarizeMission` refuse. The same fixture with the default template runs the proof, spawns the builder and holds on the walk. Then make `workflowOf` ignore the pinned copy, show the new test failing, restore, and put that output in the commit message. `test/mission-flight.test.ts` passes untouched. `git diff --stat main...HEAD -- web/` prints nothing. `npm test && npm run lint`, results in the commit message.
 
-- [~] **The decision and the docs**
+- [x] **The decision and the docs**
   - touches: docs/03-decisions.md, docs/01-architecture.md, docs/02-data-model.md, docs/07-glossary.md, README.md
   - needs: m1-t5
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: 69c9c9b
   Write the decision entry in `docs/03-decisions.md` as M32, in the shape of M31 (what happened, the shape, what stays, not known, rejected). It records: Cory's calls (build inside Maverick and borrow from Archon; ordered stages with fan-out, not a free graph; one JSON file; a mission pins its template; the template follows the code's order, with landing inside the milestone and summary on demand; agents can be named for build, review, walkthrough and summary; the pull request comes from a session after the run); that slots stay live from `maverick.json` while the template is frozen; that an older record reads as the default; that whether an unverified run may land is unanswered; and the rejected free graph and YAML. Say what the full-flight test pins. Then keep the rest true: the record's new field in `docs/02-data-model.md`, the module in `docs/01-architecture.md`, a glossary line for a workflow template, and one short honest passage in `README.md` beside its passage on the Wingman and RIO agents in `maverick.json` (around line 344), which says `maverick.json` works as before and a person cannot pick another template yet. Read the code as merged on your branch, not this plan, for what you state. This repo is public: invented examples only, no real project paths. No em-dashes in anything you write. Do not touch `deliverables/CHECKLIST.md`, which Maverick owns while a mission flies, or any code.
 
@@ -121,3 +122,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 23:42 m1-t5 The template decides whether proof and a walk happen: reviewing to passed (RIO: pass with notes) with 9 notes carried, 3 unverified
 - 2026-11-04 23:42 m1-t6 The decision and the docs: pending to flying
 - 2026-11-04 23:47 m1-t6 The decision and the docs: flying to reviewing
+- 2026-11-04 23:51 m1-t6 The decision and the docs: reviewing to passed (RIO: pass with notes) with 6 notes carried, 2 unverified
