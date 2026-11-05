@@ -132,3 +132,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-05 13:31 decision: milestone 1 released by Cory: Proof reported 2 of 294 failing at 23:51; names lost to the 4000-character output limit. Reran twice on this merged code on 2026-11-05: 294 of 294, lint clean. Cause not identified, likely flaky or load. Cory chose to release and re-prove.
 - 2026-11-05 13:31 merged: milestone 1 (Today's flow runs from a template) is on the mission branch
 - 2026-11-05 13:32 merged: milestone 1 (Today's flow runs from a template) is on the mission branch
+- 2026-11-05 13:33 merged: milestone 1 (Today's flow runs from a template) is on the mission branch
