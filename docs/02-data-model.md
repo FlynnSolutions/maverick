@@ -34,11 +34,13 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | `Formation` | `src/formations.ts` | `session-console/` | `name` (phonetic callsign), `lead`, `members[]` |
 | `ShipRun` | `src/ships.ts` | `console-sessions/ships/<project>/<version>.json` | `version`, `steps[]` |
 | `ShipStep` | `src/ships.ts` | within the run | `prompt`, `status`, `claudeId`, `report`, `artifacts[]` |
-| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `repos[]`, `land`, `formation`, `milestones[]`, `contracts[]`, `requirements[]`, `summary` |
+| `Mission` | `src/missions.ts` | `console-sessions/missions/<project>/<id>.json` | `status`, `plan`, `repos[]`, `land`, `formation`, `milestones[]`, `contracts[]`, `requirements[]`, `summary`, `template` |
 | `MissionRepo` | `src/missions.ts` | within the mission | `label`, `path`, `base`, `branch`, `integration`, `landed` |
 | `Milestone` | `src/missions.ts` | within the mission | `n`, `title`, `done`, `tasks[]`, `merged`, `mergeShas`, `walkthrough` |
 | `MilestoneWalkthrough` | `src/missions.ts` | within the milestone | `claudeId`, `doc`, `progress`, `failed`, `waived` |
 | `MissionTask` | `src/missions.ts` | within the milestone | `repo`, `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict`, `head`, `touches[]`, `needs[]`, `strayed[]`, `carried[]`, `readings` |
+| `Workflow` | `src/workflows.ts` | `src/workflows/mission.json`, copied onto the mission as `template` | `id`, `stages[]` |
+| `Stage` | `src/workflows.ts` | within the workflow | `id`, `kind`, `over`, `stages[]`, `slot`, `agent` |
 | release labels | `src/releases.ts` | `session-console/releases.json` | the two planned slots' names and deploy dates only |
 | `Breakdown` | `src/breakdowns.ts` | parsed from `deliverables/breakdowns/<brainstorm>.md`, never stored | `topic`, `items[]` (title, kind, size, call), `already[]`, `problems[]` |
 
@@ -56,6 +58,12 @@ disagree the tracker wins, exactly as everywhere else ([`03-decisions.md`](./03-
 **The plan on the mission branch is the ledger** (M18): where every task stands is written under
 it as fields, and a `## Log` ends it. The record keeps what markdown cannot hold: session ids,
 worktrees, the revision.
+
+**A mission pins its flow** (M32): `Mission.template` is `src/workflows/mission.json` as it was when
+`startMission` ran. It holds slot names, never their values, so `maverick.json` is still read at
+use. It is optional: a record from before it has none, reads as the default through `workflowOf`,
+and is never written back with one. It is not validated when a record is read. It travels in the
+JSON of the mission's routes because those views spread the record; nothing under `web/` reads it.
 
 **A session record's `mission` names its owner, and that is what keeps it out of the ship's
 audit step.** A mission reviews its own work, so `src/ships.ts` skips a develop record that has
