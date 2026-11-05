@@ -1483,3 +1483,16 @@ test("a builder that filled the template and kept its comment has written the wa
   assert.equal(w.failed, undefined);
   assert.equal(w.doc, join(root, file).slice(project.path.length + 1));
 });
+
+test("a blocked session says why when Claude Code recorded it, and a login says what to do", async () => {
+  const { blockedDetail, stuckLine } = await import("../src/missions.ts");
+  const jobs = mkdtempSync(join(tmpdir(), "mv-jobs-"));
+  made.push(jobs);
+  mkdirSync(join(jobs, "3e245f9c"));
+  writeFileSync(join(jobs, "3e245f9c", "state.json"), JSON.stringify({ state: "blocked", detail: "Login expired" }), "utf8");
+  assert.equal(await blockedDetail("3e245f9c", jobs), "Login expired");
+  assert.equal(await blockedDetail("nope", jobs), undefined, "no state file is no reason, not an error");
+  assert.equal(stuckLine("the RIO on Reorder", "Login expired"), "the RIO on Reorder stopped: Login expired. Log in again (`claude`), then open its session and tell it to carry on");
+  assert.equal(stuckLine("Reorder", "Rate limited"), "Reorder is stuck in its own session: Rate limited");
+  assert.equal(stuckLine("Reorder"), "Reorder is waiting on you in its own session", "with no reason it still asks, as before");
+});

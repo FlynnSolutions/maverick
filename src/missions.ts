@@ -1700,7 +1700,7 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     task.base = await cutWorktree(repo, task);
     const out = await claimed(mission,
       () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
-      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)),
+      () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), cfg.wingmanAgent),
       (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
       launchFailed(task.id));
     if (!out) return;
@@ -1713,8 +1713,6 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
   }
 };
 
-/** What a Wingman's shell is told about itself, so a project's own scripts can refuse what the brief forbids. */
-const wingmanEnv = (task: MissionTask, cfg: MissionConfig): Record<string, string> => ({ MAVERICK_TASK: task.id, ...(cfg.shared.length ? { MAVERICK_SHARED: cfg.shared.join(",") } : {}) });
 
 /**
  * Run the project's proof command where the milestone's work is merged. Never throws: a proof
@@ -1847,7 +1845,7 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
     },
     async () => {
       const base = await cutWorktree(repo, task);
-      return { base, claudeId: await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg), findings), cfg.wingmanAgent, undefined, wingmanEnv(task, cfg)) };
+      return { base, claudeId: await spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title} (retry ${task.attempts})`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg), findings), cfg.wingmanAgent) };
     },
     // The fork point a worktree already had stands; only one this retry made takes the new one.
     (on, r) => { const t = taskOn(on, task.id); if (t) { t.claudeId = r.claudeId; t.base ??= r.base; } },
@@ -1979,6 +1977,23 @@ const inherited = (mission: Mission, task: MissionTask): string[] => {
 };
 
 /**
+ * Why Claude Code says a background session is blocked, from the state file it keeps for it
+ * (`<jobs>/<id>/state.json`, its `detail`). The listing says only "blocked", which reads as a
+ * question for the person even when the session stopped on a login that expired.
+ */
+export const blockedDetail = async (claudeId: string, dir = config.claudeJobsDir): Promise<string | undefined> => {
+  const detail = await readFile(join(dir, claudeId, "state.json"), "utf8").then((t) => (JSON.parse(t) as { detail?: unknown }).detail, () => undefined);
+  return typeof detail === "string" && detail.trim() ? detail.trim() : undefined;
+};
+
+/** What a blocked session asks of the person: its reason when Claude Code gave one, a login said as a login. */
+export const stuckLine = (who: string, detail?: string): string => {
+  if (!detail) return `${who} is waiting on you in its own session`;
+  if (/login|log in|auth/i.test(detail)) return `${who} stopped: ${detail}. Log in again (\`claude\`), then open its session and tell it to carry on`;
+  return `${who} is stuck in its own session: ${detail}`;
+};
+
+/**
  * Step one of a pass: record what finished. Session ids, Wingmen that stopped (with their
  * commits, head and strays), verdicts that arrived (recorded on the task, acted on in step
  * two), reconciles that ended, proofs that settled. Nothing here spawns, so it runs paused or
@@ -2005,8 +2020,8 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
         task.note = `its ${claim.who} never started: the launch failed or was cut off before an agent was recorded`;
       }
       const asking = (id?: string): boolean => Boolean(id) && state.get(id!) === "blocked";
-      if (task.status === "flying" && asking(task.claudeId)) waiting.push(`${task.title} is waiting on you in its own session`);
-      if (task.status === "reviewing" && asking(task.review?.claudeId)) waiting.push(`the RIO on ${task.title} is waiting on you in its own session`);
+      if (task.status === "flying" && asking(task.claudeId)) waiting.push(stuckLine(task.title, await blockedDetail(task.claudeId!)));
+      if (task.status === "reviewing" && asking(task.review?.claudeId)) waiting.push(stuckLine(`the RIO on ${task.title}`, await blockedDetail(task.review!.claudeId!)));
       if (task.status === "flying" && task.claudeId && isOver(state, task.claudeId, task.started)) {
         const repo = missionRepo(mission, task);
         task.status = "built";

@@ -267,8 +267,8 @@ export const whyFailed = (err: Error & { stderr?: string }): string => {
 };
 
 /** Start a background Claude session and return the id it prints. `tools` fences it the way the CAG is fenced. */
-export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string, tools?: string, env: Record<string, string> = {}): Promise<string> => {
-  const { stdout } = await run("claude", claudeArgs({ prompt, bg: true, agent, name, tools }), { cwd, env: { ...process.env, ...env } }).catch((err: Error & { stderr?: string }) => {
+export const spawnBackgroundAgent = async (cwd: string, name: string, prompt: string, agent?: string, tools?: string): Promise<string> => {
+  const { stdout } = await run("claude", claudeArgs({ prompt, bg: true, agent, name, tools }), { cwd }).catch((err: Error & { stderr?: string }) => {
     throw new Error(`claude --bg did not start in ${cwd}: ${whyFailed(err)}`);
   });
   const id = stdout.match(/backgrounded\s*·\s*([0-9a-f]+)/)?.[1];
