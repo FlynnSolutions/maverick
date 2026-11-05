@@ -708,8 +708,8 @@ const agentsLaunched = (w: Workflow, cfg: MissionConfig): string[] => {
   return [...first, ...new Set(named(["walkthrough", "summary"]).filter((agent) => !first.includes(agent)))];
 };
 
-/** The preflight for a plan in this project: what a machine can check, and what is a person's. */
-export const preflightFor = (project: Project, mission: { template?: Workflow }, cfg: MissionConfig, choices: Array<{ label: string; path: string; land: Landing }>, parsed: ReturnType<typeof parsePlan>): Promise<Check[]> => {
+/** The preflight for a plan in this project: what a machine can check, and what is a person's. With no mission yet, as `maverick preflight` asks it, the template is the default. */
+export const preflightFor = (project: Project, cfg: MissionConfig, choices: Array<{ label: string; path: string; land: Landing }>, parsed: ReturnType<typeof parsePlan>, mission: { template?: Workflow } = {}): Promise<Check[]> => {
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
   const mine = choices.filter((r) => named.has(r.label));
   return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, agents: agentsLaunched(workflowOf(mission), cfg), remote: mine.filter((r) => r.land !== "merge").map(({ label, path }) => ({ label, path })) });
@@ -1126,7 +1126,7 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
   }
   // Only the repos the plan names, so the gate shows what this mission will actually touch.
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
-  return { found: true, text, parsed, wingmanAgent: agentFor(workflowOf(mission), "build", cfg), cost: costOf(parsed.milestones), estimate: estimateOf(parsed.milestones, await measuredPace()), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })), preflight: parsed.problems.length ? [] : await preflightFor(project, mission, cfg, choices, parsed) };
+  return { found: true, text, parsed, wingmanAgent: agentFor(workflowOf(mission), "build", cfg), cost: costOf(parsed.milestones), estimate: estimateOf(parsed.milestones, await measuredPace()), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })), preflight: parsed.problems.length ? [] : await preflightFor(project, cfg, choices, parsed, mission) };
 };
 
 /* ---------- the blessing, and the tracker write ---------- */
@@ -1183,7 +1183,7 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   if (parsed.problems.length) throw new Error(`the plan cannot be flown as written: ${parsed.problems.join("; ")}`);
   // A tool or an agent the mission cannot run without is refused here; a credential, a pin or a
   // human step is shown at the gate for the person to settle, and approving is their answer.
-  const failing = (await preflightFor(project, mission, cfg, choices, parsed)).filter((c) => refuses(c));
+  const failing = (await preflightFor(project, cfg, choices, parsed, mission)).filter((c) => refuses(c));
   if (failing.length) throw new Error(`preflight: ${failing.map((c) => `${c.name}: ${c.detail}`).join("; ")}`);
   mission.milestones = ownScreenshots(mission, parsed.milestones);
   mission.contracts = parsed.contracts;
