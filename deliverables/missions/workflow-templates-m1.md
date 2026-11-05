@@ -124,3 +124,4 @@ _walk: Run `npm test && npm run lint` on the mission branch, then `git diff --na
 - 2026-11-04 23:47 m1-t6 The decision and the docs: flying to reviewing
 - 2026-11-04 23:51 m1-t6 The decision and the docs: reviewing to passed (RIO: pass with notes) with 6 notes carried, 2 unverified
 - 2026-11-04 23:51 merged: milestone 1 (Today's flow runs from a template) is on the mission branch
+- 2026-11-04 23:52 merged: milestone 1 (Today's flow runs from a template) is on the mission branch
