@@ -40,10 +40,10 @@ import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead,
 import { DECISION_WORDS, RIO_TOOLS, componentsOver, planOnBranch, rioBrief, screenshotsDir, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { failingCases, lastCleared, needsWalking, openFix, openRound, over, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
+import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
-import { agentFor, defaultWorkflow, workflowOf, type Workflow } from "./workflows.ts";
+import { agentFor, defaultWorkflow, hasStage, workflowOf, type Workflow } from "./workflows.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
@@ -1190,7 +1190,7 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   mission.components = parsed.components;
   mission.mockups = parsed.mockups;
   mission.requirements = parsed.requirements;
-  mission.proofRequired = Boolean(cfg.proof);
+  mission.proofRequired = Boolean(proofCommand(mission, cfg));
   mission.land = cfg.land;
   // Only the repos the plan actually names get a branch. A project with eleven repos does not
   // get eleven mission branches because one task touches one of them.
@@ -1216,7 +1216,10 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
 
 /* ---------- the flight ---------- */
 
-const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, cfg: Pick<MissionConfig, "shared" | "proof">): BriefContext => ({ projectPath: project.path, shared: cfg.shared, proof: cfg.proof, mission, milestone: m, task, repo });
+/** The proof this mission runs: the project's command, read at use, unless the mission's template leaves the stage out. */
+const proofCommand = (mission: Pick<Mission, "template">, cfg: Pick<MissionConfig, "proof">): string | undefined => (hasStage(workflowOf(mission), "proof") ? cfg.proof : undefined);
+
+const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, cfg: Pick<MissionConfig, "shared" | "proof">): BriefContext => ({ projectPath: project.path, shared: cfg.shared, proof: proofCommand(mission, cfg), mission, milestone: m, task, repo });
 
 /**
  * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:
@@ -1512,7 +1515,7 @@ const clashOn = (a: MissionTask, b: MissionTask): string[] => {
 const AIRBORNE = new Set<TaskStatus>(["flying", "built", "reviewing"]);
 
 /** Why a passed task is not yet a base to build on: its milestone is held, being fixed after a failed walk, or merged and not yet proved and walked. */
-const notBase = (mission: Pick<Mission, "proofRequired">, m: Milestone): string | undefined => {
+const notBase = (mission: Pick<Mission, "proofRequired" | "template">, m: Milestone): string | undefined => {
   if (m.hold) return "its milestone is held";
   if (openFix(m.walkthrough)) return "its milestone is being fixed after a failed walk";
   if (!m.merged || done(mission, m)) return undefined;
@@ -1520,7 +1523,7 @@ const notBase = (mission: Pick<Mission, "proofRequired">, m: Milestone): string 
 };
 
 /** The first milestone before this one that is not done: what a milestone is sent, and merged, after. */
-const undoneBefore = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): Milestone | undefined =>
+const undoneBefore = (mission: Pick<Mission, "milestones" | "proofRequired" | "template">, m: Milestone): Milestone | undefined =>
   mission.milestones.find((x) => x.n < m.n && !done(mission, x));
 
 /** What a milestone that is not done still owes, as the thing waited for: its merge (and proof), then its walk. */
@@ -1547,7 +1550,7 @@ type Gate =
  * pass cannot clash either. `startable` keeps the ones that go and `waitingOn` says why the rest
  * wait, so what the page says and what starts cannot drift apart.
  */
-const gates = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">): Array<{ milestone: Milestone; task: MissionTask; gate: Gate }> => {
+const gates = (mission: Pick<Mission, "milestones" | "status" | "proofRequired" | "template">): Array<{ milestone: Milestone; task: MissionTask; gate: Gate }> => {
   const home = new Map(mission.milestones.flatMap((m) => m.tasks.map((t) => [t.id, { task: t, m }] as const)));
   const airborne = mission.milestones.flatMap((m) => m.tasks).filter((t) => AIRBORNE.has(t.status));
   const out: Array<{ milestone: Milestone; task: MissionTask; gate: Gate }> = [];
@@ -1581,7 +1584,7 @@ const gates = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">
 };
 
 /** Which pending tasks may start now, by `gates`. */
-export const startable = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">): Array<{ milestone: Milestone; task: MissionTask }> =>
+export const startable = (mission: Pick<Mission, "milestones" | "status" | "proofRequired" | "template">): Array<{ milestone: Milestone; task: MissionTask }> =>
   gates(mission).filter(({ gate }) => "go" in gate).map(({ milestone, task }) => ({ milestone, task }));
 
 /** One verdict in words. Two needs are read by name; past that the ids say which, and the plan rows carry the names. */
@@ -1600,7 +1603,7 @@ const reason = (gate: Exclude<Gate, { go: true }>): string => {
  * the dispatch's own order, so "why is only one thing running?" is read off the plan rather than
  * worked out from the ledger. A task `startable` would let through says it starts on the next sweep.
  */
-export const waitingOn = (mission: Pick<Mission, "milestones" | "status" | "proofRequired">): { tasks: Record<string, string>; milestones: Record<number, string> } => {
+export const waitingOn = (mission: Pick<Mission, "milestones" | "status" | "proofRequired" | "template">): { tasks: Record<string, string>; milestones: Record<number, string> } => {
   const tasks = Object.fromEntries(gates(mission).map(({ task, gate }) => [task.id, "go" in gate ? "starts on the next sweep" : reason(gate)]));
   const milestones: Record<number, string> = {};
   for (const m of mission.milestones) {
@@ -1778,10 +1781,10 @@ export const proved = (mission: Pick<Mission, "proofRequired">, m: Milestone): b
   Boolean(m.merged) && !m.hold && (!mission.proofRequired || Boolean(m.proof?.ok));
 
 /** A milestone that is done with: proved, then walked or waived (M28). Nothing builds on, merges after, or is sent past one that is not. */
-export const done = (mission: Pick<Mission, "proofRequired">, m: Milestone): boolean => proved(mission, m) && !needsWalking(m);
+export const done = (mission: Pick<Mission, "proofRequired" | "template">, m: Milestone): boolean => proved(mission, m) && !owesWalk(mission, m);
 
 /** Milestones merge in order, and only once sent: a later one whose tasks all passed early still waits for the ones before it to be done. */
-export const mergeable = (mission: Pick<Mission, "milestones" | "proofRequired">, m: Milestone): boolean =>
+export const mergeable = (mission: Pick<Mission, "milestones" | "proofRequired" | "template">, m: Milestone): boolean =>
   Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && !m.hold && !undoneBefore(mission, m);
 
 /** Mark a milestone sent and start every task of it that can start; the rest wait on their `needs`. */
@@ -2165,11 +2168,12 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
   for (const m of mission.milestones) {
     if (!m.merged || m.hold) continue;
     const key = `${mission.id}/${m.n}`;
-    if (cfg.proof && !m.proof && !proving.has(key)) {
+    const proof = proofCommand(mission, cfg);
+    if (proof && !m.proof && !proving.has(key)) {
       // Detached: the pass starts it and a later pass reads it; a sweep is not held for half an hour.
       const job: { result?: Awaited<ReturnType<typeof runProof>> } = {};
       proving.set(key, job);
-      void runProof(walkRepo(mission, m)!.integration, cfg.proof).then((r) => { job.result = r; });
+      void runProof(walkRepo(mission, m)!.integration, proof).then((r) => { job.result = r; });
     }
     if (!proved(mission, m)) continue;
     // A repo with nothing left to do lands now rather than at the close, so an earlier repo can
@@ -2181,8 +2185,8 @@ const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): 
       const { failed } = await landTheWork(mission);
       if (failed.length) { holdFor(m, "landing", `could not land: ${failed.join(" · ")}. The next milestone is held until this does land, in case it depends on it.`); continue; }
     }
-    if (!m.walkthrough) await commissionWalkthrough(project, mission, m, cfg);
-    else clearWalkFix(m);
+    if (m.walkthrough) clearWalkFix(m);
+    else if (hasStage(workflowOf(mission), "walkthrough")) await commissionWalkthrough(project, mission, m, cfg);
   }
   const next = mission.milestones.find((x) => !x.dispatched && !x.merged && !undoneBefore(mission, x));
   if (next) await dispatch(project, mission, next);
@@ -2246,8 +2250,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
       continue;
     }
     try {
-      // The project may have set or removed its proof since approval; the record follows the project.
-      mission.proofRequired = Boolean(cfg.proof);
+      // The project may have set or removed its proof since approval; the record follows the project, within what the template runs.
+      mission.proofRequired = Boolean(proofCommand(mission, cfg));
       const { waiting, seated } = await recordFinished(project, mission, agents, state);
       // Paused: what is running is recorded and nothing new starts. Everything else is step two and three.
       if (mission.status !== "paused") {
@@ -2688,7 +2692,7 @@ export const closeMission = async (project: Project, id: string): Promise<{ miss
   if (mission.status !== "review") throw new Error(`${mission.name} is ${mission.status}, not ready to close; only a mission whose every milestone has merged can be closed`);
   // The walkthrough is the gate: a milestone is not done because its RIO said so, it is done
   // because a person went through it. Nothing lands and nothing is ticked before that.
-  const unwalked = mission.milestones.filter(needsWalking);
+  const unwalked = mission.milestones.filter((m) => owesWalk(mission, m));
   if (unwalked.length) throw new Error(`not walked yet: ${unwalked.map((m) => `milestone ${m.n} (${walkthroughState(m)})`).join(", ")}. Walk each one on its page, or waive it and say why.`);
   // Opened before the tracker is touched: a failure to push or open must not leave the board
   // saying done while nothing is up for review.
@@ -2895,6 +2899,7 @@ export const summarizeMission = async (project: Project, id: string): Promise<Mi
   const started = new Date().toISOString();
   let previous: string | undefined;
   const mission = await changeMission(project.id, id, (mission) => {
+    if (!hasStage(workflowOf(mission), "summary")) throw new Error(`${mission.name} runs a template with no summary stage, so it has no summary to write`);
     if (!mission.milestones.some((m) => m.merged)) throw new Error(`${mission.name} has merged nothing yet, so there is nothing to summarize`);
     if (summarizing(mission)) throw new Error(`${mission.name} is already being summarized, since ${mission.summary!.started}`);
     previous = mission.summary?.claudeId;
@@ -3009,7 +3014,7 @@ export const movesOf = (feed: FeedEntry[], mission: Mission): Move[] => {
 export const missionView = async (project: Project, id: string): Promise<MissionView> => {
   const mission = await missionOr404(project.id, id);
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
-  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: needsWalking(m) }]));
+  const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: owesWalk(mission, m) }]));
   const feed = feedOf(log, mission);
   return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
 };
