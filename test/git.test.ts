@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { FINISHED, changedFiles, excludeLocally, listedAgents, whyFailed } from "../src/git.ts";
@@ -53,4 +55,29 @@ test("a failed command says why in its own words, not by repeating the command l
   assert.equal(whyFailed(push), "fatal: 'origin' does not appear to be a git repository", "the first fatal line, not the advice after it");
   assert.equal(whyFailed(Object.assign(new Error("Command failed: claude --bg ..."), { stderr: "Workspace not trusted. Run `claude` in /w once and accept the trust prompt, then retry.\n" })), "Workspace not trusted. Run `claude` in /w once and accept the trust prompt, then retry.");
   assert.equal(whyFailed(new Error("spawn claude ENOENT\n  at ...")), "spawn claude ENOENT", "no stderr: the message's first line");
+});
+
+test("a session's variables go in its folder's settings, merged into what is there, since a background session gets no other way", async () => {
+  const { sessionEnv } = await import("../src/git.ts");
+  const dir = mkdtempSync(join(tmpdir(), "mv-sessionenv-"));
+  mkdirSync(join(dir, ".claude"));
+  writeFileSync(join(dir, ".claude", "settings.local.json"), JSON.stringify({ permissions: { allow: ["Bash(npm test)"] }, env: { KEEP: "1", MAVERICK_TASK: "m1-t1" } }), "utf8");
+  await sessionEnv(dir, { MAVERICK_TASK: "m1-t2" });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".claude", "settings.local.json"), "utf8")), { permissions: { allow: ["Bash(npm test)"] }, env: { KEEP: "1", MAVERICK_TASK: "m1-t2" } });
+  const fresh = mkdtempSync(join(tmpdir(), "mv-sessionenv-"));
+  await sessionEnv(fresh, { MAVERICK_TASK: "m2-t1", MAVERICK_SHARED: "dev" });
+  assert.deepEqual(JSON.parse(readFileSync(join(fresh, ".claude", "settings.local.json"), "utf8")), { env: { MAVERICK_TASK: "m2-t1", MAVERICK_SHARED: "dev" } });
+});
+
+test("no session is launched on a login that has ended, and the check is read at most every five minutes", async () => {
+  const { launchRefused } = await import("../src/git.ts");
+  let reads = 0;
+  const now = Date.parse("2026-11-04T09:00:00Z");
+  const said = (auth: object) => async () => { reads += 1; return auth; };
+  assert.match((await launchRefused(now, said({ loggedIn: true, loginExpiresAt: "2026-11-04T08:50:00Z" })))!, /claude login has ended/);
+  assert.equal(await launchRefused(now + 1000, said({ loggedIn: true, loginExpiresAt: "2026-12-03T00:00:00Z" })), undefined, "a refusal is not cached: logging in counts at once");
+  assert.equal(await launchRefused(now + 2000, said({ loggedIn: false })), undefined, "a good answer is kept for five minutes");
+  assert.equal(reads, 2);
+  assert.match((await launchRefused(now + 6 * 60_000, said({ loggedIn: false })))!, /log in again/);
+  assert.equal(await launchRefused(now + 13 * 60_000, async () => undefined), undefined, "a status that does not answer launches; a failed launch says why itself");
 });

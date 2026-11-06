@@ -117,9 +117,18 @@ first is what the tooling was usually written to stop.
 | `shared` | none | environments only the merged mission branch may deploy to; a task that claims one is refused at the gate, and every brief names them |
 | `proof` | none | a command run detached in the integration worktree after each milestone merges (`npm test`, say); a failure holds the milestone, and a merged milestone is not done until it passed |
 
-A Wingman's shell carries `MAVERICK_TASK` (its task id) and, when the project names shared
+A Wingman's shell has `MAVERICK_TASK` (its task id) and, when the project names shared
 environments, `MAVERICK_SHARED` (the list), so a project's own deploy or test scripts can refuse
-what the brief forbids and name what they make.
+what the brief forbids and name what they make. Maverick writes them into the task worktree's
+`.claude/settings.local.json` (`env`), which every shell the session opens reads, and keeps that
+file out of git. A RIO runs from the project root, shared by every RIO, so its brief tells it to
+put them in front of each command instead. They are not passed in the spawn's environment:
+Claude Code's background daemon hands out sessions it started earlier with its own environment,
+which on 2026-11-03 gave every session the first task's id, and the same holds for any other
+variable the server sets.
+
+A session is not launched while the Claude login has ended (`claude auth status`, read at most
+every five minutes): the task is handed back saying so, rather than started only to block.
 | `repos.<dir>.base` | that repo's current branch | what its work is cut from and lands against |
 | `repos.<dir>.land` | the mission's `land` | overrides it for that repo alone |
 

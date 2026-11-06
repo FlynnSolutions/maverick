@@ -90,6 +90,19 @@ export const RIO_CHECKLIST: readonly string[] = [
 
 const list = (lines: readonly string[]): string[] => lines.map((l) => `- ${l}`);
 
+/**
+ * The task's id, for the project's own scripts. A Wingman's shell has it from its worktree's
+ * `.claude/settings.local.json` (`sessionEnv`). A RIO runs from the project root, which every RIO
+ * shares, so its shell may hold another task's id: Claude Code's background daemon gave every
+ * session of 2026-11-03 the first task's. The RIO names it on each command instead.
+ */
+const shellLine = (ctx: BriefContext, rio = false): string => {
+  const vars = [`MAVERICK_TASK=${ctx.task.id}`, ...(ctx.shared?.length ? [`MAVERICK_SHARED=${ctx.shared.join(",")}`] : [])];
+  return rio
+    ? `This task's id is ${ctx.task.id}. Your shell's MAVERICK_ variables may be another task's: put \`${vars.join(" ")}\` in front of every command that runs the project's own scripts, which read ${vars.length > 1 ? "them" : "it"}.`
+    : `This task's id is ${ctx.task.id}, and your shell has \`${vars.join(" ")}\` for the project's own scripts, set in your worktree's .claude/settings.local.json. Leave that file alone; it is not part of the task.`;
+};
+
 /** Where a task that builds mockup cells commits its screenshots, inside its own worktree; the task owns it. */
 export const screenshotsDir = (mission: Pick<BriefContext["mission"], "id">, task: Pick<BriefContext["task"], "id">): string => `deliverables/screenshots/${mission.id}/${task.id}`;
 
@@ -161,6 +174,7 @@ export const wingmanBrief = (ctx: BriefContext, findings?: string): string => {
     `Your repo is ${repo.label}, at ${repo.path}. Your worktree is ${task.worktree}, on branch ${task.branch}, branched from ${repo.branch}. Work there and only there: do not touch the project's other repos, do not touch their main worktrees, do not switch branches, and do not merge anything.`,
     planLine(ctx, ", Maverick writes it"),
     `Your scratch path is ${scratchFor(task, "wingman")}; git ignores it.`,
+    shellLine(ctx),
     ...otherRepos(ctx),
     "",
     `Milestone ${m.n} — ${m.title}. That milestone is done when: ${m.done}`,
@@ -201,6 +215,7 @@ export const rioBrief = (ctx: BriefContext, file: string, previous?: string): st
     `The work is in the ${repo.label} repo, on branch ${task.branch}, in the worktree at ${task.worktree}. Read every commit on it that ${repo.branch} does not have (\`git -C ${task.worktree} log ${repo.branch}..HEAD -p\`). Run things in that worktree; if you need a checkout of your own, make a detached one under ${scratchFor(task, rioRole(task))} and remove it when you are done.`,
     planLine(ctx, ""),
     `Your scratch path is ${scratchFor(task, rioRole(task))}; git ignores it.`,
+    shellLine(ctx, true),
     "",
     `The task it was given: ${task.title}`,
     "",

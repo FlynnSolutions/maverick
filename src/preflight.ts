@@ -11,7 +11,7 @@ import { homedir, platform, arch } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { config } from "./config.ts";
-import { whyFailed } from "./git.ts";
+import { claudeAuth, hoursLeft, whyFailed, type ClaudeAuth } from "./git.ts";
 
 const run = promisify(execFile);
 
@@ -129,6 +129,23 @@ const awsCredential = async (profile?: string): Promise<{ who: string; expires?:
   }
 };
 
+/**
+ * The Claude login every agent of the mission runs on. None means every launch fails, so it refuses
+ * like a missing tool; one that ends before the mission does is a warning to settle at the gate:
+ * on 2026-11-04 a RIO's login expired mid-review and it sat blocked for twelve hours. A plan that
+ * declares no duration is compared with a day.
+ */
+export const claudeLogin = (status: ClaudeAuth | undefined, hours: number | undefined, now = Date.now()): Omit<Check, "refuses"> => {
+  if (!status) return { kind: "host", name: "claude login", status: "warn", detail: "`claude auth status` did not answer; check the login outlasts the mission yourself" };
+  if (!status.loggedIn) return { kind: "tool", name: "claude login", status: "fail", detail: "not logged in, so every agent the mission launches fails; run `claude` and log in" };
+  const left = hoursLeft(status.loginExpiresAt, now);
+  if (Number.isNaN(left)) return { kind: "credential", name: "claude login", status: "ok", detail: "logged in, no expiry reported" };
+  const needs = hours ?? 24;
+  return left < needs
+    ? { kind: "credential", name: "claude login", status: "warn", detail: `ends in ${left.toFixed(1)}h, before ${hours === undefined ? "a day is out (the plan declares no duration)" : `the ${needs}h the mission expects`}; an agent whose login ends stops where it is and waits. Log in again before approving` }
+    : { kind: "credential", name: "claude login", status: "ok", detail: `ends in ${left.toFixed(0)}h` };
+};
+
 /** A tool's own version, for a `runtime: node >=24` line. */
 const versionOf = async (tool: string): Promise<string | undefined> => {
   try {
@@ -161,6 +178,7 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
     const path = await has(tool);
     push({ kind: "tool", name: tool, status: path ? "ok" : "fail", detail: path ?? `not on PATH; every ${tool === "python3" ? "embedded terminal" : "agent"} needs it` });
   }
+  if (checks.some((c) => c.name === "claude" && c.status === "ok")) push(claudeLogin(await claudeAuth(), hours));
   for (const agent of [input.rioAgent, ...(input.wingmanAgent ? [input.wingmanAgent] : []), ...(input.also ?? [])]) {
     const ok = await agentResolves(agent, input.projectPath);
     push({ kind: "agent", name: `agent ${agent}`, status: ok ? "ok" : "fail", detail: ok ? "installed" : `no ${agent}.md in ~/.claude/agents or the project's .claude/agents; the session would run without its standing orders (the README says how to install it)` });

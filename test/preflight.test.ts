@@ -10,7 +10,7 @@ import { tempRepo } from "./fixtures.ts";
 // config.ts reads this once when the module graph loads, so it is set before the imports below.
 const claudeHome = mkdtempSync(join(tmpdir(), "mv-claude-"));
 process.env.CLAUDE_CONFIG_DIR = claudeHome;
-const { hoursOf, parseRequirements, preflight, untrusted, versionMeets } = await import("../src/preflight.ts");
+const { claudeLogin, hoursOf, parseRequirements, preflight, refuses, untrusted, versionMeets } = await import("../src/preflight.ts");
 const { parsePlan } = await import("../src/missions.ts");
 
 test("a preflight line names its kind, what, and a note", () => {
@@ -89,4 +89,19 @@ test("a repo set to land remotely with no git remote refuses approval, with the 
   const some = await landing();
   assert.deepEqual([some.status, some.detail], ["ok", "origin"]);
   assert.equal((await preflight({ projectPath: dir, repoPaths: [dir], requirements: [], rioAgent: "rio", remote: [] })).some((c) => c.kind === "landing"), false, "a repo that merges needs no remote");
+});
+
+test("the Claude login every agent runs on is checked against how long the mission expects to fly", async () => {
+  const now = Date.parse("2026-11-03T23:00:00Z");
+  const at = (h: number) => new Date(now + h * 3_600_000).toISOString();
+  const out = claudeLogin({ loggedIn: false }, 8, now);
+  assert.equal(out.status, "fail");
+  assert.ok(refuses(out), "no login refuses approval: every launch would fail");
+  const short = claudeLogin({ loggedIn: true, loginExpiresAt: at(6) }, 8, now);
+  assert.equal(short.status, "warn");
+  assert.match(short.detail, /ends in 6\.0h, before the 8h the mission expects/);
+  assert.ok(!refuses(short), "an expiry is the person's to settle by logging in, not a refusal");
+  assert.match(claudeLogin({ loggedIn: true, loginExpiresAt: at(10) }, undefined, now).detail, /before a day is out \(the plan declares no duration\)/, "no duration is compared with a day");
+  assert.equal(claudeLogin({ loggedIn: true, loginExpiresAt: at(720) }, 8, now).status, "ok");
+  assert.equal(claudeLogin(undefined, 8, now).status, "warn", "a status that does not answer is said, not passed");
 });
