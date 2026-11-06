@@ -36,6 +36,7 @@ process (M3, M15).
 | `releases.ts` | versions from the changelog plus merged PRs, and the two planned slots |
 | `ships.ts` | a ship run: saved, resumable steps for one version |
 | `missions.ts` | a mission: the Strike Lead's interview, the plan, the flight of Wingmen, their RIOs |
+| `workflows.ts` | a workflow template, `src/workflows/mission.json`: its validator, the mission's pinned copy (`workflowOf`), who runs a stage (`agentFor`) and whether it happens (`hasStage`); reads no mission state and spawns nothing |
 | `questions.ts` | what a mission is asking its person (`questionsOf`) and its one status word (`statusWord`); pure |
 | `feed.ts` | the ledger's `## Log` read back as typed feed entries for the page (`feedOf`); pure |
 | `notify.ts` | which questions are new since the last poll (`newQuestions`), for the app's notification; pure |

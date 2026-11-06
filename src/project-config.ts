@@ -110,7 +110,8 @@ const BRANCH_PREFIX = /^[A-Za-z0-9][A-Za-z0-9._-]*[/-]$/;
 const branchPrefix = (v: unknown): string =>
   typeof v === "string" && BRANCH_PREFIX.test(v) && !v.includes("..") ? v : DEFAULT_MISSION_CONFIG.branchPrefix;
 
-const AGENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+/** An agent name reaches the CLI as argv, so it is a plain word. */
+export const AGENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 /** A base is a branch name, so it is a string that git will not read as a flag or a path trick. */
 const REF = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;

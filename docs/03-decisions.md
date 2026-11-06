@@ -922,3 +922,80 @@ terminal. If it was the terminal, this covers it only once that server is run by
 **Rejected: restarting in-process.** An uncaught error in the main process is the app's error,
 not the server's, and a server that half-died in-process cannot be told from one that is fine.
 
+
+## M32: A mission's flow is a template, and a mission pins it when it starts ✅ built
+
+**What happened.** The mission flow was written only as code in `src/missions.ts`. On 2026-11-04
+Cory called it: composable workflows get built inside Maverick, borrowing Archon's ideas rather
+than running on Archon. No code or dependency of Archon's is in this repo. This entry is the first
+brick: today's flow written down as `src/workflows/mission.json`, and the flow asking that file.
+Project templates, a picker, any page for it, cost per run and other providers are not built.
+
+**The shape.** Cory's calls, as the code has them:
+
+- **Ordered stages with fan-out, not a free graph.** A `Workflow` is `{ id, stages }`. A `for-each`
+  over milestones holds a `for-each` over tasks, and that is the only nesting.
+- **One JSON file.** `src/workflows/mission.json` is the whole built-in template, found beside the
+  code, so the packed app carries it as it carries the rest of `src/`.
+- **A mission pins its template.** `startMission` sets `template` on the record, so editing the
+  file never changes a mission in flight.
+- **The template follows the code's order.** `interview`, `plan-gate`, `preflight`; for each
+  milestone (for each task `build`, `review`), `merge`, `proof`, `land`, `walkthrough`, `walk`;
+  then `close`, then `summary`. Landing is inside the milestone because `catchUp` lands a `pr` or
+  `push` repo after the proof and before the walkthrough builder; `closeMission` tries again only
+  what has not landed. The summary is on demand, from the button at `summarizeMission`, and nothing
+  runs it by itself. The retry after a failed review is part of `review`, and the fix round
+  (M29) is part of `walk`.
+- **Agents can be named for `build`, `review`, `walkthrough` and `summary`,** with a stage's
+  `agent` field, and the validator refuses it on any other stage. A named `review` or `summary`
+  keeps `RIO_TOOLS`: the template changes who runs, never the fence. The Strike Lead's turns and
+  the collision resolver take no agent, as before.
+- **The pull request comes from a session after the run.** This milestone's mission ends with the
+  work on its mission branch. A normal session then runs the real `/simplify` and opens the pull
+  request against `main`, and never merges it. That is how this work lands. It changes nothing in
+  the code: a project with `land: "pr"` still has its pull request opened by Maverick.
+
+The template answers two questions and no more: who runs a stage (`agentFor`) and whether a stage
+happens (`hasStage`, asked of `proof`, `walkthrough`, `walk` and `summary`). It does not drive the
+order. `sweepOnce`, `gates` and the statuses still run the flow in code, and only the validator
+reads a stage's `kind` and `over`. The validator accepts nothing but today's order, written in
+`src/workflows.ts` so the JSON cannot vouch for itself. `proof`, `summary`, and `walkthrough` with
+`walk` (only together) may be left out; anything else left out is refused by name.
+
+**What stays.** Slots stay live from `maverick.json` while the template is frozen. The copy holds
+the slot names `wingmanAgent`, `rioAgent` and `proof`, never their values, and each is read at use,
+because `sweepOnce` follows the project mid-flight and that stays. So editing
+`maverick.json` moves a mission in flight exactly as it did, and editing the template does not. An
+older record has no `template`, reads as the default through `workflowOf`, and is never written
+back with one; there is no migration. The page, the ledger's format and landing did not change, and
+nothing under `web/` reads the field.
+
+**What the full-flight test pins.** `test/mission-flight.test.ts` was written and passed on the
+code before any template existed, seeds its records with no template, and no commit of the refit
+touches it. With the real `src/missions.ts`, real git in temp repos and a fake `claude` and `gh`, it
+flies one mission that lands by merge (a failed review and its retry, a task that needs another,
+proof, a walk with a failed case, the fix task, a re-walk, the close, the summary) and one that
+lands by pull request (after the proof, before the walkthrough builder, and not again at the
+close). It asserts literally: every spawn in order with its name, `--agent`, `--tools`, folder and
+task; the final status of the mission, tasks and milestone; every ledger line; and that the record
+still has no `template` at the end. It starts from a record already `planned`, so it does not fly
+the interview, and it does not fly a collision, a hold, a pause, or a repo that lands by push. It
+pins what Maverick starts and in what order, not what a real session would do.
+
+**Not known:** whether an unverified run may land. That is Cory's question for the next milestone
+and this entry does not answer it. Nobody can reach it yet: `startMission` always pins the default,
+and nothing reads a template from anywhere else. Read from the code and not run: `proved` asks for a
+proof only when one is required, so `catchUp` would land a `pr` or `push` repo from a template with
+no proof, by the same branch a project with no proof command already takes, and landing comes
+before the walk under every template. The tests that leave stages out all land by merge. That is
+what the code happens to do, not a decision that it should. Also unsettled: a pinned copy is not
+validated when a record is read. The validator runs only on the built-in file, so a hand-edited
+record reaches the flow as written.
+
+**Rejected: a free graph.** Cory's call. What it would have cost: the flow has one order, and the
+refit keeps `sweepOnce` and `gates` as they are. A graph would need something that walks it, which
+is a rewrite of the sweep rather than a refit, and a validator could no longer hold a template to
+today's flow.
+
+**Rejected: YAML.** The project has no YAML parser and a new dependency is a decision the rulebook
+does not hand out for convenience. JSON is read with what Node already has.

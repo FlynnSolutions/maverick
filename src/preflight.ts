@@ -162,6 +162,8 @@ export interface PreflightInput {
   requirements: Requirement[];
   wingmanAgent?: string;
   rioAgent: string;
+  /** Any other agent the mission's template will launch. */
+  also?: string[];
   /** The repos that land by pushing or a pull request: each needs a git remote, and the mission needs `gh`. */
   remote: Array<{ label: string; path: string }>;
 }
@@ -177,7 +179,7 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
     push({ kind: "tool", name: tool, status: path ? "ok" : "fail", detail: path ?? `not on PATH; every ${tool === "python3" ? "embedded terminal" : "agent"} needs it` });
   }
   if (checks.some((c) => c.name === "claude" && c.status === "ok")) push(claudeLogin(await claudeAuth(), hours));
-  for (const agent of [input.rioAgent, ...(input.wingmanAgent ? [input.wingmanAgent] : [])]) {
+  for (const agent of [input.rioAgent, ...(input.wingmanAgent ? [input.wingmanAgent] : []), ...(input.also ?? [])]) {
     const ok = await agentResolves(agent, input.projectPath);
     push({ kind: "agent", name: `agent ${agent}`, status: ok ? "ok" : "fail", detail: ok ? "installed" : `no ${agent}.md in ~/.claude/agents or the project's .claude/agents; the session would run without its standing orders (the README says how to install it)` });
   }

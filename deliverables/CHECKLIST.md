@@ -424,6 +424,75 @@ format: checklist
   - repo: root
   Record decision M22 in the house shape (read M20 and M21): the ledger says how many and the record keeps the notes, Progress is one card per task with its attempts, automatic moves fold, verdicts are chips, the RIO and the summary are terse by brief and by code, one card component, one column with no boxes. Data model: `Move`, `FeedEntry.counts`, `summary.raw`. Runbook: the ledger line shape and that old ledgers still read. Glossary: move, card. No em-dashes.
 
+### Mission: workflow templates m1
+
+- [ ] `[ENG]` **Mission: workflow templates m1**
+  - created: 2026-11-04
+  - source: Strike Lead interview, 2026-11-04
+  - kind: mission
+  - mission: workflow-templates-m1
+  - plan: deliverables/missions/workflow-templates-m1.md
+  Today's mission flow, hardcoded in `src/missions.ts`, becomes a built-in template, `src/workflows/mission.json`, that every mission pins when it starts and actually runs from, behaving identically for every existing mission. This is the first brick of composable workflows (Cory, 2026-11-04: build inside Maverick, borrow Archon's ideas). It is deliberately not project templates, a picker, any UI, the canvas, skill or agent import, cost per run, an audit trail, other providers or any new dependency, and there is no change to a mission's page, ledger format or landing. No path lets a person choose a non-default template yet, so leaving out proof or a walk is reachable only from a test; whether an unverified run may land is Cory's question for the next milestone and this one does not answer it. The run ends with the work on the mission branch. Cory's call: a normal session after the run does the real `/simplify` and opens the pull request against `main`, with what `/simplify` caught under "Verified" and "Not verified" sections, and never merges it. No Wingman pushes, opens a pull request or runs that pass.
+  Milestone 1 — Today's flow runs from a template: done when on the mission branch, `npm test && npm run lint` pass; `git diff --name-status main...HEAD -- test/` lists only added files, so no existing assertion changed; `test/mission-flight.test.ts` is byte-identical to the commit that first passed on unrefitted code, and it seeds its records with no template, so an older record loads, runs and lands as the default; `test/workflow-flow.test.ts` proves through the real sweep that a template leaving out proof and walkthrough skips them and that one naming another agent launches it for build, review, walkthrough and summary; and `git diff --stat main...HEAD -- web/` prints nothing
+
+- [ ] `[ENG]` **The full flight, proved on today's code**
+  - created: 2026-11-04
+  - source: mission workflow-templates-m1, milestone 1
+  - mission: workflow-templates-m1
+  - milestone: 1
+  - repo: root
+  One new test file that drives invented missions through the whole flow with the real `src/missions.ts`, a fake `claude` first on PATH and real git in temp repos, and pins today's behaviour before anyone refits it. This task changes no file under `src/` and no existing test: it must pass on the code as it stands, because it is the before half of a before and after. No later task may change this file. That is the proof the flow stayed identical.
+  Copy the fixture approach from `test/missions.test.ts` (the fake `claude` around its line 925, `agentsSay`, `spawnedWith`, `summaryFixture`) and the rule in `test/mission-store.test.ts` that `SESSION_CONSOLE_SESSIONS` is set before `src/missions.ts` is imported. The fake must append every spawn's arguments to a log, so the test reads the whole sequence. The test plays each session's part between sweeps: commit on the task's branch and mark its agent finished, write a RIO's verdict to `task.review.file`, write a filled walkthrough document where `walkthroughFile` says. Two things will bite: the agent listing is cached for 20 seconds per project path (`agentsFor`), and `sweepSoon(project, sweepMissions, 0)` drops it where `sweepMissions` alone does not; the proof runs detached, so a test sweeps until `m.proof` appears.
+  First scenario, `land: "merge"`, with a project proof command and one milestone of two tasks where the second needs the first. A record with no template field, written as a record is today, goes through `approveMission`, then: Wingman, RIO, a failing RIO verdict and the retry with a fresh Wingman, a pass, the needing task, merge onto the mission branch, proof, walkthrough builder, a walk through `recordWalkthrough` with one failed case, the fix task `m1-fix1` (M29), a re-walk, then `closeMission`, then `summarizeMission`. Second scenario, `land: "pr"`, with a fake `gh` on PATH and a local bare remote: it proves landing happens after proof and before the walkthrough builder, as `catchUp` does today, and is not repeated at close. Assert literally: the ordered list of spawns with each one's name and `--agent` and `--tools` values (a walkthrough builder has no `--agent`, a summary runs as `rio`), the final status of the mission and each task and milestone, and the ledger's lines as `writeThenSync` wrote them.
+  Prove it: `node --test test/mission-flight.test.ts`, then `npm test && npm run lint`, on a branch with no change under `src/`. Put both results in the commit message. If today's code cannot be driven this way without changing `src/`, stop and say what is in the way; do not change `src/` to make it testable.
+
+- [ ] `[ENG]` **The template, its loader and its validator**
+  - created: 2026-11-04
+  - source: mission workflow-templates-m1, milestone 1
+  - mission: workflow-templates-m1
+  - milestone: 1
+  - repo: root
+  Create the template and the pure module that answers questions about it. `src/workflows.ts` reads no mission state from disk, spawns nothing and imports nothing from `src/missions.ts`. It may not touch `src/missions.ts`, `src/questions.ts` or `src/preflight.ts`; later tasks wire it in. Match the neighbours: plain TypeScript run directly by Node, no build step, no dependency, lowercase plain comments. The template is JSON because the project allows no YAML parser. Find the template's file with `new URL("./workflows/mission.json", import.meta.url)`, as `WALKTHROUGH_TEMPLATE` finds its file, because the packed app carries `src/**` as plain files (`app/electron-builder.yml`). Nothing machine-specific.
+  `src/workflows/mission.json` follows the code's order, by Cory's call, not the older list that had land and summary after the walk. In order: `interview`, `plan-gate`, `preflight`, then a `for-each` over `milestones` holding (a `for-each` over `tasks` holding `build`, `review`), `merge`, `proof`, `land`, `walkthrough`, `walk`; then `close`, then `summary`. Landing is inside the milestone because `catchUp` lands `pr` and `push` repos after proof and before the walkthrough. `close` is `closeMission`, which tries landing again and ticks the tracker. `summary` is on demand, the button at `summarizeMission`; nothing runs it automatically. The retry after a failed review stays part of `review` with `MAX_ATTEMPTS` as its limit, and the fix round stays part of `walk`. `build` takes slot `wingmanAgent`, `review` and `summary` take slot `rioAgent`, `proof` takes slot `proof`, and `walkthrough` has no slot, so it launches with no `--agent` as today.
+  The validator accepts only today's order. It refuses a reordered template, an unknown stage, an unknown kind, each with a message naming the stage. `proof`, `walkthrough` with `walk` (only together), and `summary` may be left out. Everything else, including `interview` and `preflight`, may not, and leaving one out is refused by name. An `agent` field is allowed only on `build`, `review`, `walkthrough` and `summary`; on any other stage it is refused by name, and an agent name must match the `AGENT` rule in `src/project-config.ts`, because it reaches the CLI as argv (reuse that rule, moving no code out of a file this task does not own: export nothing new from there, restate the pattern with a comment naming the source). `agentFor` returns a stage's own `agent`, else its slot's value, else undefined.
+  Prove it: `test/workflows.test.ts` covers that the built-in template loads and validates; each refusal, with its message naming the stage; each permitted leaving-out; `walkthrough` without `walk` refused and the reverse; `agentFor`'s three answers; `hasStage`; `workflowOf` returning a pinned copy when there is one and the default when there is none. `npm test && npm run lint`, results in the commit message.
+
+- [ ] `[ENG]` **A mission pins its template when it starts**
+  - created: 2026-11-04
+  - source: mission workflow-templates-m1, milestone 1
+  - mission: workflow-templates-m1
+  - milestone: 1
+  - repo: root
+  `startMission` in `src/missions.ts` sets `template: defaultWorkflow()` on the new record, and the `Mission` interface gains `template?: Workflow`. The copy holds slot names, never resolved values: `maverick.json`'s `wingmanAgent`, `rioAgent` and `proof` are read at use, because `sweepOnce` deliberately follows the project mid-flight today and that stays. So editing a template file never changes a mission in flight, and editing `maverick.json` still does, exactly as now. A record with no `template` reads as the default through `workflowOf` and is never written back. Add no migration. This task changes no behaviour of the flow and consults the template nowhere else; the next tasks do that. The page reads nothing from the new field, and do not touch `web/`, the ledger format or `applyPlanState`. If an existing test breaks because a record gained a field, stop and say so: no existing assertion may change.
+  Prove it: `test/workflow-pin.test.ts` proves a started mission carries the template on disk; changing the template the loader would return leaves that record's copy unchanged; a pre-existing record with no field, read and swept and written, still has no field and answers `workflowOf` with the default; and `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, results in the commit message.
+
+- [ ] `[ENG]` **The template says who runs a stage**
+  - created: 2026-11-04
+  - source: mission workflow-templates-m1, milestone 1
+  - mission: workflow-templates-m1
+  - milestone: 1
+  - repo: root
+  Every place the flow spawns an agent asks the mission's template, through `agentFor(workflowOf(mission), <stage>, cfg)`, instead of reading the slot directly. These are the sites in `src/missions.ts`: `launch` and `handBack` (`build`), the RIO spawn in `actOn` (`review`), `commissionWalkthrough` (`walkthrough`, which passes no agent today and must still pass none under the default), and `summarizeMission` (`summary`). A named agent on `review` or `summary` keeps `RIO_TOOLS` as its fence: the template changes who runs, never the fence. Leave the Strike Lead's interview turns and the collision resolver as they are: they refuse an `agent` by Cory's call. `preflightFor` and `src/preflight.ts` check every agent the mission's template will launch rather than only the two slots, through an optional new input, so the default's checks stay the same names in the same order and `test/preflight.test.ts` passes unchanged. `previewPlan`'s `wingmanAgent` answers through the template as well. Refit, not rewrite: the statuses, `sweepOnce`, `gates` and the ledger stay. If a change looks like rewriting the sweep, stop and record it.
+  Prove it: new `test/workflow-flow.test.ts`, with its own fake `claude`, drives through the real sweep. A pinned test template that names another agent for each of `build` (first launch and the retry through `handBack`), `review`, `walkthrough` and `summary` makes that stage's spawn carry that `--agent`. With the default pinned, a `wingmanAgent` and a `rioAgent` set in the project's `maverick.json` are the ones launched, so no project changes anything. Preflight fails on a pinned agent that is not installed. Then make `workflowOf` ignore the pinned copy, run the new test, show it failing, restore, and put that output in the commit message. `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, results in the commit message.
+
+- [ ] `[ENG]` **The template decides whether proof and a walk happen**
+  - created: 2026-11-04
+  - source: mission workflow-templates-m1, milestone 1
+  - mission: workflow-templates-m1
+  - milestone: 1
+  - repo: root
+  The flow consults the template where it decides on the stages that may be left out. Proof: `mission.proofRequired` in `approveOnce` and `sweepOnce` becomes `Boolean(cfg.proof) && hasStage(<template>, "proof")`; the proof start in `catchUp` is guarded the same way; `briefContext` passes no proof to a Wingman or RIO brief when the stage is absent. Walk: `commissionWalkthrough`'s call in `catchUp` is skipped without the stage, and a milestone with no walk stage does not need walking. Keep `needsWalking(m)` in `src/questions.ts` as it is, because existing tests call it with one argument and `closeMission` passes it straight to `filter`, which would hand an index to a new second parameter. Add `owesWalk(mission, m)` beside it and move `done`, `notBase`, `toWalk`, `closeMission` and `missionView` onto it, with `mission` staying optional-template so the existing partial fixtures read as the default. Summary: `summarizeMission` refuses with a message naming the stage when it is absent. The stages that may not be left out (`plan-gate`, `build`, `review`, `merge`, `land`, `close`) have nothing to decide in this milestone: the validator guarantees them, so no code asks. Add no question for a person and no word on the page: without a path to a non-default template nobody reaches this but a test. Refit, not rewrite, as in the task before.
+  Prove it: new `test/workflow-skip.test.ts` drives through the real sweep with a project proof command that writes a sentinel file. A pinned template with no `proof`, no `walkthrough` and no `walk` merges, runs no proof (no sentinel), spawns no builder, reaches `review`, closes without a walk and starts the next milestone without one; its Wingman and RIO briefs carry no proof line. Leaving out `summary` makes `summarizeMission` refuse. The same fixture with the default template runs the proof, spawns the builder and holds on the walk. Then make `workflowOf` ignore the pinned copy, show the new test failing, restore, and put that output in the commit message. `test/mission-flight.test.ts` passes untouched. `git diff --stat main...HEAD -- web/` prints nothing. `npm test && npm run lint`, results in the commit message.
+
+- [ ] `[ENG]` **The decision and the docs**
+  - created: 2026-11-04
+  - source: mission workflow-templates-m1, milestone 1
+  - mission: workflow-templates-m1
+  - milestone: 1
+  - repo: root
+  Write the decision entry in `docs/03-decisions.md` as M32, in the shape of M31 (what happened, the shape, what stays, not known, rejected). It records: Cory's calls (build inside Maverick and borrow from Archon; ordered stages with fan-out, not a free graph; one JSON file; a mission pins its template; the template follows the code's order, with landing inside the milestone and summary on demand; agents can be named for build, review, walkthrough and summary; the pull request comes from a session after the run); that slots stay live from `maverick.json` while the template is frozen; that an older record reads as the default; that whether an unverified run may land is unanswered; and the rejected free graph and YAML. Say what the full-flight test pins. Then keep the rest true: the record's new field in `docs/02-data-model.md`, the module in `docs/01-architecture.md`, a glossary line for a workflow template, and one short honest passage in `README.md` beside its passage on the Wingman and RIO agents in `maverick.json` (around line 344), which says `maverick.json` works as before and a person cannot pick another template yet. Read the code as merged on your branch, not this plan, for what you state. This repo is public: invented examples only, no real project paths. No em-dashes in anything you write. Do not touch `deliverables/CHECKLIST.md`, which Maverick owns while a mission flies, or any code.
+  Prove it: `grep -n "^## M32" docs/03-decisions.md` shows the entry, the path `src/workflows/mission.json` exists as named in each doc that names it, and `npm test && npm run lint` passes. Put the results in the commit message.
+
 ## 🚧 In Progress
 
 - [~] `[ENG]` `[L]` **The mission page and the inbox**
@@ -439,6 +508,24 @@ format: checklist
   `.ui-design/mockups/`, served at `/mockups/`.
 
 ## 📋 Backlog
+
+- [ ] `[ENG]` `[L]` **Composable workflows: Maverick runs any process from a saved template**
+  - created: 2026-11-04
+  - source: Cory, 2026-11-04, decided after reading Archon's code: build inside Maverick and borrow its ideas
+  - kind: feature
+  Milestone 1 is `deliverables/plans/mission-workflows-m1-2026-11-04.md`. After it, in order unless Cory reorders: project templates and a picker at mission start; a read-only flow view; the drag-and-drop canvas (round 1 picks: left to right, fan-outs visible and collapsible, card steps, shelf plus wire plus); importing skills and agents, including from GitHub; cost per run and an audit trail; other providers and any model. Comparison: `deliverables/plans/archon-vs-maverick-2026-11-04.html`.
+
+- [ ] `[ENG]` `[M]` **Run and answer workflows from your phone, away from home**
+  - created: 2026-11-04
+  - source: Cory, 2026-11-04, after seeing Archon's remote control
+  - kind: feature
+  Start a workflow, see what is waiting on you, and answer it from a phone on any network. Maverick already draws at phone width and has a key-protected LAN address (`server.ts`). Still needed: a safe way in from outside, and a push when something waits. Archon stores web push subscriptions, worth reading first.
+
+- [ ] `[ENG]` `[S]` **Study Archon's test suite and see what Maverick's should learn from it**
+  - created: 2026-11-04
+  - source: Cory, 2026-11-04 ("I'd love to hear more about that at some point")
+  - kind: chore
+  About 383k lines of test code against Maverick's 4k. A question to answer later, not work yet: what it tests that Maverick does not, and which of its methods are worth taking.
 
 - [ ] `[ENG]` `[S]` **A server the supervisor restarted looks alive to a page that lost its terminals**
   - created: 2026-11-03
@@ -490,6 +577,17 @@ format: checklist
   background session's `state.json` for the life of the server. One small entry per Wingman, RIO
   and builder, so it is a slow leak rather than a fault; prune an entry once its session is gone
   from `claude agents`.
+- [ ] `[ENG]` `[S]` **Mission gate: the preflight list opens a huge blank gap between a check's name and its detail**
+  - created: 2026-11-03
+  - source: Cory, 2026-11-03, Realtime market-research-image-drop mission
+  - kind: bug
+  One long name stretches the name column for every row of the list. `.mv-preflight ul` sizes that column `auto` and `.mv-preflight li strong` is `white-space: nowrap` (`web/mission.css:137-139`), so a `human:` step, whose whole sentence is its name, sets the width and pushes every detail far to the right. Read from the CSS, not yet confirmed in a browser. Fix shape: let long names wrap, or cap the name column, and check the list with a long human step and with short names only.
+
+- [ ] `[ENG]` `[S]` **Maverick mission chat: a fixed "plan cannot be flown" rejection still reads as a live blocker above Fire**
+  - created: 2026-11-03
+  - source: Cory, 2026-11-03, Realtime market-research-image-drop mission
+  - kind: bug
+  The old rejection and its bullet list stay in the chat history right above the Fire button, so a plan that has since passed looks blocked. Cory saw both at once and read it as Maverick offering Fire on an unflyable plan. The gate itself is correct: Fire is hidden while the plan has problems (`web/mission/lead.js:212`) and approval re-parses the plan (`src/missions.ts:1163`). Fix shape: once the plan passes, mark the earlier rejection (`sentBack` entries, written at `src/missions.ts:2499`) as resolved in the chat.
 
 - [ ] `[ENG]` `[S]` **A milestone with no screen should not need a walkthrough**
   - created: 2026-10-28

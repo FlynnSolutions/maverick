@@ -345,6 +345,11 @@ project's `maverick.json`, but whatever they are named has to exist in `~/.claud
 Without it Claude Code warns `no agent named …` and falls back to the default template, which is
 a Wingman with none of its boundaries, or a RIO that can edit, which is the one thing it must not.
 
+A mission's flow is written down as a template, `src/workflows/mission.json`, and a mission keeps
+its own copy from when it starts (`docs/03-decisions.md`, M32). `maverick.json` works as before:
+these agents and the proof command are still read from it while a mission flies. There is one
+template, and a person cannot pick another yet.
+
 ### The protocol from a terminal
 
 A mission can be flown by hand, outside the app, with the same parser and the same briefs:
