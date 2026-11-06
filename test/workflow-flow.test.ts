@@ -7,57 +7,21 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
+import { flightHarness, valueOf } from "./flight-harness.ts";
 import { tempRepo } from "./fixtures.ts";
 
-const made: string[] = [];
-const scratch = (name: string): string => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), `mv-m1-t4-flow-${name}-`)));
-  made.push(dir);
-  return dir;
-};
-
-// config.ts reads these once when the module graph loads, so they are set before the imports below.
-const sessions = scratch("sessions");
-process.env.SESSION_CONSOLE_SESSIONS = sessions;
-process.env.SESSION_CONSOLE_HOME = scratch("home");
-process.env.CLAUDE_CONFIG_DIR = scratch("claude");
+// config.ts reads its environment once when the module graph loads, so this runs before the imports below.
+const { made, sessions, listing, spawned } = flightHarness("mv-m1-t4-flow");
 const { approveMission, parsePlan, previewPlan, summarizeMission, sweepMissions, sweepSoon } = await import("../src/missions.ts");
 const { preflight } = await import("../src/preflight.ts");
 const { defaultWorkflow, validateWorkflow } = await import("../src/workflows.ts");
 type Stage = import("../src/workflows.ts").Stage;
 type Workflow = import("../src/workflows.ts").Workflow;
 
-/** Every background session is logged with its folder and arguments, fields ending in NUL and a record in 0x1e, because a brief holds anything else. */
-const bin = scratch("bin");
-const log = join(bin, "spawns");
-const listing = join(bin, "agents.json");
-writeFileSync(join(bin, "claude"), `#!/bin/sh
-case "$1" in
-  agents) cat "${listing}"; exit 0 ;;
-  stop) exit 0 ;;
-esac
-n=$(( $(cat "${bin}/count" 2>/dev/null || echo 160) + 1 )); echo "$n" > "${bin}/count"
-id=$(printf '%x' "$n")
-printf '%s\\0' "$id" "$(pwd)" "$@" >> "${log}"; printf '\\036' >> "${log}"
-echo "backgrounded · $id"
-`, "utf8");
-chmodSync(join(bin, "claude"), 0o755);
-const realPath = process.env.PATH;
-process.env.PATH = `${bin}:${realPath}`;
-after(() => {
-  process.env.PATH = realPath;
-  for (const dir of made) rmSync(dir, { recursive: true, force: true });
-});
-
-const valueOf = (args: string[], flag: string): string | undefined => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
-const allSpawns = () => (existsSync(log) ? readFileSync(log, "utf8").split("\x1e").slice(0, -1) : []).map((record) => {
-  const [id, cwd, ...args] = record.split("\0").slice(0, -1);
-  return { id, cwd, name: valueOf(args, "--name"), agent: valueOf(args, "--agent"), tools: valueOf(args, "--tools") };
-});
+const allSpawns = () => spawned().map(({ id, cwd, args }) => ({ id, cwd, name: valueOf(args, "--name"), agent: valueOf(args, "--agent"), tools: valueOf(args, "--tools") }));
 
 const RIO_FENCE = "Bash,Read,Grep,Glob";
 const SLOT_WINGMAN = "m1-t4-slot-wingman";
@@ -80,7 +44,7 @@ _walk: open the widget_
 
 /** The default with `agent` set on the stages named, and through the real validator, so a test cannot pin what no template could be. */
 const naming = (agents: Record<string, string>): Workflow => {
-  const w = JSON.parse(JSON.stringify(defaultWorkflow())) as Workflow;
+  const w = structuredClone(defaultWorkflow()) as Workflow;
   const walk = (stages: Stage[]): void => {
     for (const stage of stages) {
       if (agents[stage.id]) stage.agent = agents[stage.id];

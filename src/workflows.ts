@@ -4,8 +4,8 @@
  * state, spawns nothing, and knows a mission only by the one field `workflowOf` asks for.
  */
 import { readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { AGENT } from "./project-config.ts";
 
 export interface Stage {
   id: string;
@@ -23,11 +23,6 @@ export interface Workflow {
 
 /** where the built-in template lives. the packed app carries `src/**` as plain files. */
 const MISSION_TEMPLATE = fileURLToPath(new URL("./workflows/mission.json", import.meta.url));
-
-/** the same pattern as `AGENT` in `src/project-config.ts`: an agent name reaches the CLI as argv. */
-const AGENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-
-const KINDS = new Set<string>(["interview", "gate", "preflight", "for-each", "agent", "merge", "command", "land", "walk", "close"]);
 
 /** the fields a stage may carry, so a misspelt `agnet` is refused and not quietly ignored. */
 const FIELDS = new Set(["id", "kind", "over", "stages", "slot", "agent"]);
@@ -104,7 +99,6 @@ const checkStages = (raw: unknown, rules: Rule[], where: string): void => {
     if (!isObject(stage) || typeof stage.id !== "string") throw new Error(`${where}: every stage inside it needs an id`);
     const rule = rules.find((r) => r.id === stage.id);
     if (!rule) throw new Error(`${named(stage.id)}: ${KNOWN.has(stage.id) ? `does not belong in ${where}` : "unknown stage"}`);
-    if (!KINDS.has(stage.kind as string)) throw new Error(`${named(stage.id)}: unknown kind ${JSON.stringify(stage.kind)}`);
     if (seen.has(rule.id)) throw new Error(`${named(rule.id)}: appears twice`);
     const place = rules.indexOf(rule);
     if (place < at) throw new Error(`${named(rule.id)}: out of order, it comes before "${rules[at].id}"`);
@@ -143,23 +137,9 @@ export const validateWorkflow = (raw: unknown): Workflow => {
   return w;
 };
 
-/** names the file on the way out, because neither a parse error nor a stage's message does. */
-const parseWorkflow = (text: string, path: string): Workflow => {
-  try {
-    return validateWorkflow(JSON.parse(text));
-  } catch (err) {
-    throw new Error(`${path}: ${(err as Error).message}`, { cause: err });
-  }
-};
-
-export const loadWorkflow = async (path: string): Promise<Workflow> => parseWorkflow(await readFile(path, "utf8"), path);
-
-const deepFreeze = (stages: Stage[]): void => {
-  for (const stage of stages) {
-    deepFreeze(stage.stages ?? []);
-    if (stage.stages) Object.freeze(stage.stages);
-    Object.freeze(stage);
-  }
+const deepFreeze = <T>(value: T): T => {
+  if (typeof value === "object" && value !== null) Object.values(value).forEach(deepFreeze);
+  return Object.freeze(value);
 };
 
 let builtIn: Workflow | undefined;
@@ -169,15 +149,8 @@ let builtIn: Workflow | undefined;
  * cached copy, so it is frozen: a caller that changes it fails loud instead of changing the flow
  * for everyone else.
  */
-export const defaultWorkflow = (): Workflow => {
-  if (!builtIn) {
-    const w = parseWorkflow(readFileSync(MISSION_TEMPLATE, "utf8"), MISSION_TEMPLATE);
-    deepFreeze(w.stages);
-    Object.freeze(w.stages);
-    builtIn = Object.freeze(w);
-  }
-  return builtIn;
-};
+export const defaultWorkflow = (): Workflow =>
+  (builtIn ??= deepFreeze(validateWorkflow(JSON.parse(readFileSync(MISSION_TEMPLATE, "utf8")))));
 
 /** the pinned copy, else the default. an older record has no copy, and reads as the default. */
 export const workflowOf = (m: { template?: Workflow }): Workflow => m.template ?? defaultWorkflow();
@@ -191,4 +164,10 @@ export const agentFor = (w: Workflow, id: string, slots: { wingmanAgent?: string
   if (!stage) return undefined;
   if (stage.agent) return stage.agent;
   return stage.slot === "wingmanAgent" || stage.slot === "rioAgent" ? slots[stage.slot] : undefined;
+};
+
+/** every agent the template launches, in stage order, each name once. */
+export const agentsLaunched = (w: Workflow, slots: { wingmanAgent?: string; rioAgent?: string }): string[] => {
+  const walk = (stages: Stage[]): string[] => stages.flatMap((s) => (s.kind === "agent" ? (agentFor(w, s.id, slots) ?? []) : walk(s.stages ?? [])));
+  return [...new Set(walk(w.stages))];
 };

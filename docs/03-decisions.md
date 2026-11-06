@@ -984,12 +984,12 @@ pins what Maverick starts and in what order, not what a real session would do.
 
 **Not known:** whether an unverified run may land. That is Cory's question for the next milestone
 and this entry does not answer it. Nobody can reach it yet: `startMission` always pins the default,
-and nothing but the tests calls `loadWorkflow`. Read from the code and not run: `proved` asks for a
+and nothing reads a template from anywhere else. Read from the code and not run: `proved` asks for a
 proof only when one is required, so `catchUp` would land a `pr` or `push` repo from a template with
 no proof, by the same branch a project with no proof command already takes, and landing comes
 before the walk under every template. The tests that leave stages out all land by merge. That is
 what the code happens to do, not a decision that it should. Also unsettled: a pinned copy is not
-validated when a record is read. The validator runs on the built-in file and in `loadWorkflow`, so a hand-edited
+validated when a record is read. The validator runs only on the built-in file, so a hand-edited
 record reaches the flow as written.
 
 **Rejected: a free graph.** Cory's call. What it would have cost: the flow has one order, and the

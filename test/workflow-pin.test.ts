@@ -5,57 +5,22 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { flightHarness, valueOf } from "./flight-harness.ts";
 import { tempRepo, until } from "./fixtures.ts";
 
-const made: string[] = [];
-const scratch = (name: string): string => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), `mv-m1-t3-pin-${name}-`)));
-  made.push(dir);
-  return dir;
-};
-
-// config.ts reads these once when the module graph loads, so they are set before the imports below.
-const sessions = scratch("sessions");
-process.env.SESSION_CONSOLE_SESSIONS = sessions;
-process.env.SESSION_CONSOLE_HOME = scratch("home");
-process.env.CLAUDE_CONFIG_DIR = scratch("claude");
+// config.ts reads its environment once when the module graph loads, so this runs before the imports below.
+const { made, scratch, sessions, listing, spawned } = flightHarness("mv-m1-t3-pin", `-p) echo '{"is_error":false,"result":"","structured_output":{"message":"Tell me more.","questions":[],"planReady":false}}'; exit 0 ;;`);
 const { approveMission, leadBusy, parsePlan, startMission, sweepMissions, sweepSoon } = await import("../src/missions.ts");
 const { defaultWorkflow, hasStage, workflowOf } = await import("../src/workflows.ts");
 type Stage = import("../src/workflows.ts").Stage;
 
-/** A Strike Lead's turn answers in its schema; anything else is a background session, logged with its folder and arguments. */
-const bin = scratch("bin");
-const log = join(bin, "spawns");
-const listing = join(bin, "agents.json");
 writeFileSync(listing, "[]", "utf8");
-writeFileSync(join(bin, "claude"), `#!/bin/sh
-case "$1" in
-  agents) cat "${listing}"; exit 0 ;;
-  stop) exit 0 ;;
-  -p) echo '{"is_error":false,"result":"","structured_output":{"message":"Tell me more.","questions":[],"planReady":false}}'; exit 0 ;;
-esac
-n=$(( $(cat "${bin}/count" 2>/dev/null || echo 160) + 1 )); echo "$n" > "${bin}/count"
-id=$(printf '%x' "$n")
-printf '%s\\0' "$id" "$(pwd)" "$@" >> "${log}"; printf '\\036' >> "${log}"
-echo "backgrounded · $id"
-`, "utf8");
-chmodSync(join(bin, "claude"), 0o755);
-const realPath = process.env.PATH;
-process.env.PATH = `${bin}:${realPath}`;
-after(() => {
-  process.env.PATH = realPath;
-  for (const dir of made) rmSync(dir, { recursive: true, force: true });
-});
 
-const spawns = () => (existsSync(log) ? readFileSync(log, "utf8").split("\x1e").slice(0, -1) : []).map((record) => {
-  const [id, cwd, ...args] = record.split("\0").slice(0, -1);
-  return { id, cwd, agent: args.includes("--agent") ? args[args.indexOf("--agent") + 1] : undefined };
-});
+const spawns = () => spawned().map(({ id, cwd, args }) => ({ id, cwd, agent: valueOf(args, "--agent") }));
 
 const PLAN = `# Mission: pin
 
@@ -113,7 +78,7 @@ const started = async (id: string) => {
   return p;
 };
 
-const pinned = () => JSON.parse(JSON.stringify(defaultWorkflow()));
+const pinned = () => structuredClone(defaultWorkflow());
 const flat = (stages: Stage[]): Stage[] => stages.flatMap((s) => [s, ...flat(s.stages ?? [])]);
 
 test("a started mission carries the template on disk, as slot names and never their values", async () => {

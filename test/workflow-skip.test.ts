@@ -7,24 +7,14 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
+import { flightHarness, valueOf } from "./flight-harness.ts";
 import { tempRepo, until } from "./fixtures.ts";
 
-const made: string[] = [];
-const scratch = (name: string): string => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), `mv-m1-t5-skip-${name}-`)));
-  made.push(dir);
-  return dir;
-};
-
-// config.ts reads these once when the module graph loads, so they are set before the imports below.
-const sessions = scratch("sessions");
-process.env.SESSION_CONSOLE_SESSIONS = sessions;
-process.env.SESSION_CONSOLE_HOME = scratch("home");
-process.env.CLAUDE_CONFIG_DIR = scratch("claude");
+// config.ts reads its environment once when the module graph loads, so this runs before the imports below.
+const { made, scratch, sessions, listing, spawned } = flightHarness("mv-m1-t5-skip");
 const { approveMission, closeMission, done, missionView, parsePlan, startable, summarizeMission, sweepMissions, sweepSoon, waitingOn } = await import("../src/missions.ts");
 const { needsWalking, owesWalk, questionsOf, toWalk } = await import("../src/questions.ts");
 const { defaultWorkflow, validateWorkflow } = await import("../src/workflows.ts");
@@ -33,33 +23,7 @@ type Milestone = import("../src/missions.ts").Milestone;
 type Stage = import("../src/workflows.ts").Stage;
 type Workflow = import("../src/workflows.ts").Workflow;
 
-/** Every background session is logged with its folder and arguments, fields ending in NUL and a record in 0x1e, because a brief holds anything else. */
-const bin = scratch("bin");
-const log = join(bin, "spawns");
-const listing = join(bin, "agents.json");
-writeFileSync(join(bin, "claude"), `#!/bin/sh
-case "$1" in
-  agents) cat "${listing}"; exit 0 ;;
-  stop) exit 0 ;;
-esac
-n=$(( $(cat "${bin}/count" 2>/dev/null || echo 160) + 1 )); echo "$n" > "${bin}/count"
-id=$(printf '%x' "$n")
-printf '%s\\0' "$id" "$(pwd)" "$@" >> "${log}"; printf '\\036' >> "${log}"
-echo "backgrounded · $id"
-`, "utf8");
-chmodSync(join(bin, "claude"), 0o755);
-const realPath = process.env.PATH;
-process.env.PATH = `${bin}:${realPath}`;
-after(() => {
-  process.env.PATH = realPath;
-  for (const dir of made) rmSync(dir, { recursive: true, force: true });
-});
-
-const valueOf = (args: string[], flag: string): string | undefined => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
-const allSpawns = () => (existsSync(log) ? readFileSync(log, "utf8").split("\x1e").slice(0, -1) : []).map((record) => {
-  const [id, cwd, ...args] = record.split("\0").slice(0, -1);
-  return { id, cwd, name: valueOf(args, "--name") ?? "", text: args.join("\n") };
-});
+const allSpawns = () => spawned().map(({ id, cwd, args }) => ({ id, cwd, name: valueOf(args, "--name") ?? "", text: args.join("\n") }));
 
 const WINGMAN = "m1-t5-wingman";
 const RIO = "m1-t5-rio";
@@ -97,7 +61,7 @@ const ONE = TWO.slice(0, TWO.indexOf("## Milestone 2"));
 
 /** The default without the stages named, through the real validator, so a test cannot pin what no template could be. */
 const leaving = (...left: string[]): Workflow => {
-  const w = JSON.parse(JSON.stringify(defaultWorkflow())) as Workflow;
+  const w = structuredClone(defaultWorkflow()) as Workflow;
   const prune = (stages: Stage[]): Stage[] => stages.filter((s) => !left.includes(s.id)).map((s) => (s.stages ? { ...s, stages: prune(s.stages) } : s));
   return validateWorkflow({ ...w, stages: prune(w.stages) });
 };

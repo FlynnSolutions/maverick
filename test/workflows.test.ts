@@ -3,13 +3,14 @@
  * meaning something the code does not do. each refusal here checks the stage it names and why.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { missionConfigFor } from "../src/project-config.ts";
-import { agentFor, defaultWorkflow, hasStage, loadWorkflow, validateWorkflow, workflowOf, type Stage, type Workflow } from "../src/workflows.ts";
+import { agentFor, defaultWorkflow, hasStage, validateWorkflow, workflowOf, type Stage, type Workflow } from "../src/workflows.ts";
 
 const MISSION_JSON = fileURLToPath(new URL("../src/workflows/mission.json", import.meta.url));
 
@@ -86,7 +87,7 @@ test("the built-in template loads, validates, and is today's flow in the order t
     "close close",
     "summary agent slot rioAgent",
   ]);
-  assert.deepEqual(await loadWorkflow(MISSION_JSON), w, "the file on disk is what the default answers with");
+  assert.deepEqual(validateWorkflow(JSON.parse(readFileSync(MISSION_JSON, "utf8"))), w, "the file on disk is what the default answers with");
   assert.deepEqual(validateWorkflow(template()), w);
 });
 
@@ -137,8 +138,8 @@ test("a stage appearing twice is refused by name", () => {
 });
 
 test("an unknown kind is refused by name, and so is a real kind on the wrong stage", () => {
-  refused(changed("build", (s) => { s.kind = "shell" as Stage["kind"]; }), 'stage "build": unknown kind "shell"');
-  refused(changed("merge", (s) => { delete (s as Partial<Stage>).kind; }), 'stage "merge": unknown kind undefined');
+  refused(changed("build", (s) => { s.kind = "shell" as Stage["kind"]; }), 'stage "build": must be kind "agent", not "shell"');
+  refused(changed("merge", (s) => { delete (s as Partial<Stage>).kind; }), 'stage "merge": must be kind "merge", not undefined');
   refused(changed("merge", (s) => { s.kind = "land"; }), 'stage "merge": must be kind "merge", not "land"');
 });
 
@@ -213,19 +214,6 @@ test("what is not a workflow at all is refused", () => {
   refused({ stages: [] }, "a workflow needs an id");
   refused({ id: "x" }, 'workflow "x": stages must be a list');
   refused({ id: "x", stages: [{ kind: "merge" }] }, 'workflow "x": every stage inside it needs an id');
-});
-
-test("loadWorkflow reads and validates one file, and says which", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "mv-workflows-"));
-  t.after(() => rm(dir, { recursive: true }));
-  const file = join(dir, "t.json");
-  await writeFile(file, JSON.stringify(without("proof")), "utf8");
-  assert.equal(hasStage(await loadWorkflow(file), "proof"), false);
-  await writeFile(file, JSON.stringify(without("merge")), "utf8");
-  await assert.rejects(loadWorkflow(file), { message: `${file}: stage "merge": may not be left out` });
-  await writeFile(file, "{ not json", "utf8");
-  await assert.rejects(loadWorkflow(file), (err: Error) => err.message.startsWith(`${file}: `) && err.cause instanceof SyntaxError);
-  await assert.rejects(loadWorkflow(join(dir, "absent.json")), { code: "ENOENT" });
 });
 
 test("hasStage finds a stage at any depth and nothing else", () => {

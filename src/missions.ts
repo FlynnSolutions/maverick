@@ -43,7 +43,7 @@ import { reportFor } from "./report.ts";
 import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
-import { agentFor, defaultWorkflow, hasStage, workflowOf, type Workflow } from "./workflows.ts";
+import { agentFor, agentsLaunched, defaultWorkflow, hasStage, workflowOf, type Workflow } from "./workflows.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
@@ -698,21 +698,14 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
   return { name, intro, milestones, contracts, components, mockups, requirements, log, problems, overlaps: overlapsIn(milestones), warnings };
 };
 
-/**
- * Every agent a template will launch, the RIO's first as the gate has always listed them. A later
- * stage adds a line only for a name of its own: under the default the summary is the RIO again.
- */
-const agentsLaunched = (w: Workflow, cfg: MissionConfig): string[] => {
-  const named = (ids: string[]): string[] => ids.flatMap((id) => agentFor(w, id, cfg) ?? []);
-  const first = named(["review", "build"]);
-  return [...first, ...new Set(named(["walkthrough", "summary"]).filter((agent) => !first.includes(agent)))];
-};
-
 /** The preflight for a plan in this project: what a machine can check, and what is a person's. With no mission yet, as `maverick preflight` asks it, the template is the default. */
 export const preflightFor = (project: Project, cfg: MissionConfig, choices: Array<{ label: string; path: string; land: Landing }>, parsed: ReturnType<typeof parsePlan>, mission: { template?: Workflow } = {}): Promise<Check[]> => {
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
   const mine = choices.filter((r) => named.has(r.label));
-  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent: cfg.wingmanAgent, rioAgent: cfg.rioAgent, agents: agentsLaunched(workflowOf(mission), cfg), remote: mine.filter((r) => r.land !== "merge").map(({ label, path }) => ({ label, path })) });
+  const w = workflowOf(mission);
+  const rioAgent = agentFor(w, "review", cfg) ?? cfg.rioAgent;
+  const wingmanAgent = agentFor(w, "build", cfg);
+  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent, rioAgent, also: agentsLaunched(w, cfg).filter((a) => a !== rioAgent && a !== wingmanAgent), remote: mine.filter((r) => r.land !== "merge").map(({ label, path }) => ({ label, path })) });
 };
 
 /* ---------- the plan as the ledger ---------- */
@@ -2165,10 +2158,10 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
  * its proof, its landing and its walkthrough on resume, and a released hold is tried again.
  */
 const catchUp = async (project: Project, mission: Mission, cfg: MissionConfig): Promise<void> => {
+  const proof = proofCommand(mission, cfg);
   for (const m of mission.milestones) {
     if (!m.merged || m.hold) continue;
     const key = `${mission.id}/${m.n}`;
-    const proof = proofCommand(mission, cfg);
     if (proof && !m.proof && !proving.has(key)) {
       // Detached: the pass starts it and a later pass reads it; a sweep is not held for half an hour.
       const job: { result?: Awaited<ReturnType<typeof runProof>> } = {};
@@ -3016,7 +3009,9 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: owesWalk(mission, m) }]));
   const feed = feedOf(log, mission);
-  return { ...mission, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
+  // The page never reads the pinned template, so it stays on the record and out of every view.
+  const { template: _template, ...shown } = mission;
+  return { ...shown, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
