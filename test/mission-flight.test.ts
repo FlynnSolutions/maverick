@@ -49,10 +49,12 @@ const logs = (...fields: string[]): string => `printf '%s\\0' ${fields.join(" ")
 script("claude", `case "$1" in
   agents) cat "${listing}"; exit 0 ;;
   stop) ${logs("stop", '"$2"')}; exit 0 ;;
+  auth) echo '{"loggedIn":true}'; exit 0 ;;
 esac
+task=$(sed -n 's/.*"MAVERICK_TASK": *"\\([^"]*\\)".*/\\1/p' .claude/settings.local.json 2>/dev/null)
 n=$(( $(cat "${bin}/count" 2>/dev/null || echo 160) + 1 )); echo "$n" > "${bin}/count"
 id=$(printf '%x' "$n")
-${logs("spawn", '"$id"', '"$(pwd)"', '"\${MAVERICK_TASK:-}"', '"$@"')}
+${logs("spawn", '"$id"', '"$(pwd)"', '"$task"', '"$@"')}
 echo "backgrounded · $id"`);
 script("gh", `${logs("gh", '"$@"')}
 echo "https://example.test/flight/pull/1"`);
