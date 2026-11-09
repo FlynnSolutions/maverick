@@ -47,9 +47,9 @@ input.mv-note { align-self: stretch; height: var(--control); padding: 0 10px; ba
 .mv-note[aria-invalid="true"] { border-color: var(--caution); }
 
 /* The answer a question wants first is the needs-you colour, wherever a question draws it:
-   the answer row, a walk's row, the pointer to an interview round. */
-.mv-opts button.primary, .prog-walks button.primary, button.lead-to-round { background: var(--caution); color: var(--carbon); border-color: transparent; }
-.mv-opts button.primary:hover, .prog-walks button.primary:hover, button.lead-to-round:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
+   the answer row and a walk's row. */
+.mv-opts button.primary, .prog-walks button.primary { background: var(--caution); color: var(--carbon); border-color: transparent; }
+.mv-opts button.primary:hover, .prog-walks button.primary:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
 
 /* The answer row a question draws wherever it sits (web/answers.js): the buttons in the feed's
    caution dress, then the note and the hint on a line of their own. */
@@ -189,7 +189,7 @@ html { scroll-padding-top: 70px; }
 .mv-warn { margin: 10px 0 0; padding: 8px 12px; font-size: 12.5px; color: var(--caution); max-width: 74ch; background: var(--carbon); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--caution); }
 
 /* ---------- what waits on you, first: the open questions sit above the ask (ctx.now) ---------- */
-.mv-now:has(.prog-pins:not([hidden]), .mv-trouble:not(:empty)) { margin: 0 0 32px; }
+.mv-now:has(.prog-pins:not([hidden]), .mv-trouble:not(:empty), .lead-now:not([hidden]), .lead-card:not([hidden])) { margin: 0 0 32px; }
 /* The reason behind the word is waiting on you as much as a question is, so it leads the slot too. */
 .mv-now .mv-trouble { margin: 0 0 16px; }
 .mv-now .mv-trouble .mv-warn { max-width: none; font-size: 13.5px; }
@@ -219,11 +219,8 @@ html { scroll-padding-top: 70px; }
 .mv-page.unopened .mv-anchors, .mv-page.unopened #plan, .mv-page.unopened #progress, .mv-page.unopened #result { display: none; }
 .mv-page.unopened .mv-ask .button-link { height: var(--control); }
 
-/* The slot's own order, whichever module mounted first: the reason, the questions, then what to fix or decide. */
+/* The slot is read in its DOM order, which the shell sets once the sections have mounted (mission.js boot). */
 .mv-now { display: flex; flex-direction: column; }
-.mv-now > .prog-pins, .mv-now > .lead-now { order: 1; }
-.mv-now > .rs-now { order: 2; }
-.mv-now:has(.lead-now:not([hidden])) { margin: 0 0 32px; }
 
 /* A failure is threat, never caution: it is not waiting on you, it broke. It says what still works beside what did not. */
 .mv-fail { margin: 10px 0 0; padding: 8px 12px; font-size: 13px; color: var(--ink); max-width: 74ch; background: var(--threat-dim); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--threat); overflow-wrap: anywhere; }
@@ -238,9 +235,10 @@ html { scroll-padding-top: 70px; }
 .mv-skel i:nth-child(3) { width: 64%; }
 .mv-skel-block { height: 88px; margin-top: 32px; border-radius: var(--radius-m); background: var(--steel); }
 
-/* On a phone the bar is one line: the jet and the way back. The mission's name is the page's own heading right under it. */
+/* On a phone the bar is one line: the jet, the mission's name and the way back. What is being asked can push the page's own heading off the first screen. */
 @media (max-width: 600px) {
-  .bar .crumb { display: none; }
+  .bar .crumb { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .bar .crumb-path { display: none; }
   /* A phone has no height to give a bar that follows the page; the word and #now are right under it. */
   .bar { position: static; }
   html { scroll-padding-top: 8px; }

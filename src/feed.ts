@@ -127,12 +127,16 @@ const SAID: Record<string, (name: string, move: NonNullable<FeedEntry["move"]>) 
   passed: (name, move) => `passed${move.verdict ? ` (${move.verdict})` : ""}: ${name}`,
   "handed-back": (name) => `came back and needs you: ${name}`,
 };
+/** A ledger line as a person reads it in the chat: no raw stamp, and no test runner's tail (the proof's own lines are under Result). */
+const spoken = (text: string): string => text.replace(/ \(since [^)]+\)/, "").replace(/:\s*#\s[\s\S]*$/, "");
 export const updatesOf = (feed: FeedEntry[], mission: Pick<Mission, "milestones">): Array<{ at: string; text: string; kind: FeedEntry["kind"] }> => {
   const title = new Map(mission.milestones.flatMap((m) => m.tasks.map((t) => [t.id, t.title])));
-  return feed.flatMap((e) => {
+  const said = feed.flatMap((e) => {
     if (!e.at || e.who === "you") return [];
-    if (!e.move) return ["response", "question", "error"].includes(e.kind) ? [{ at: e.at, text: e.text, kind: e.kind }] : [];
+    if (!e.move) return ["response", "question", "error"].includes(e.kind) ? [{ at: e.at, text: spoken(e.text), kind: e.kind }] : [];
     const say = SAID[e.move.now];
     return say ? [{ at: e.at, text: say(`${e.move.taskId} ${title.get(e.move.taskId) ?? ""}`.trim(), e.move), kind: e.kind }] : [];
   });
+  // A sweep can log the same line every minute; a run of them is said once, at its latest.
+  return said.filter((u, i) => said[i + 1]?.text !== u.text);
 };

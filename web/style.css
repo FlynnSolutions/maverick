@@ -1806,3 +1806,6 @@ button.strip-name:active { transform: none; }
 :is(.rack-strips.grid > .strip.open, .formation.with-lead) .strip-where { display: none; }
 .menu-scrim { position: fixed; inset: 0; z-index: 45; background: transparent; }
 .release-list > .due-row { margin-bottom: 8px; }
+
+.wt-empty { text-transform: none; letter-spacing: 0; }
+.doc-frame.wt-blank { display: none; }

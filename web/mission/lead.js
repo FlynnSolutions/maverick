@@ -1,13 +1,14 @@
 // The Strike Lead as a chat: you write, it writes back, in one thread from the interview to the
-// flight. Its questions arrive as cards whose answers are buttons; the reason behind a question
-// is folded under it, so the question is the first thing read, not the last. When the plan it
-// wrote can fly, the button that fires the mission is under its message.
+// flight. A round of questions it is waiting on is asked at the top of the page, not in the thread:
+// the question, what it needs and the answer in one card, with the message that led to it one press
+// away. When the plan it wrote can fly, the button that fires the mission is under its message.
 //
 // Not a section module: the shell mounts it in Plan before approval and Progress mounts it after,
 // so the same thread is there the whole way through. Every class is `lead-`.
 
 import { render as renderMarkdown } from "../markdown.js";
 import { foldable } from "../card.js";
+import { showMe } from "../show-me.js";
 import { atReview, isEnded } from "./state.js";
 
 /**
@@ -23,24 +24,21 @@ export const leadThread = (ctx) => {
   const thinking = el("p", { class: "lead-thinking", role: "status", hidden: true }, ctx.lamp("busy", "work"), "the Strike Lead is reading and writing back");
   const fire = el("div", { class: "lead-fire" });
   /*
-   * Before approval what waits on you is in this thread, so the thread puts it in the page's top
-   * slot: a round of questions is pointed to (it is answered where it was asked, with what led to
-   * it), and a plan ready to fly brings its button up there whole, with what firing costs.
+   * What waits on you in this thread goes in the page's top slot. A round of questions is asked and
+   * answered there, in `askBox`. A plan ready to fly is only pointed to, since firing stays under
+   * what it costs, so the pointer is dressed as the link it is.
    */
-  const nowHead = el("h2", {});
-  // A ready plan's own line under the button says what firing does; only the round needs one here.
-  const nowWhy = el("p", { class: "lead-hint" }, "They are in the conversation below, with what led to them. It plans nothing until they are answered.");
-  // The pointer names #round, so it lands the way the inbox's answer does (toRound, below).
-  const roundButton = btn("answer them", () => {
-    if (location.hash === "#round") window.dispatchEvent(new HashChangeEvent("hashchange"));
-    else location.hash = "round";
-  }, "primary lead-to-round");
+  const askBox = el("section", { class: "lead-card", id: "round", hidden: true, "aria-label": "The Strike Lead is asking" });
+  ctx.now.append(askBox);
   // The gate's own verb takes the focus there (mission.js toGate), so the pointer lands on what fires it.
   const gateButton = btn("read the terms and fire", () => {
     if (location.hash === "#gate") window.dispatchEvent(new HashChangeEvent("hashchange"));
     else location.hash = "gate";
-  }, "primary lead-to-round");
-  const nowBox = el("section", { class: "lead-now", hidden: true, "aria-label": "Waiting on you" }, nowHead, nowWhy, roundButton, gateButton);
+  }, "ghost lead-link");
+  const nowBox = el("section", { class: "lead-now", hidden: true, "aria-label": "Waiting on you" },
+    el("h2", {}, "The plan is ready to fly"),
+    el("p", { class: "lead-hint" }, "What it writes, spawns and costs is in the gate below, with the button that fires it."),
+    gateButton);
   ctx.now.append(nowBox);
   const heard = el("p", { class: "lead-heard", role: "status" });
 
@@ -116,43 +114,115 @@ export const leadThread = (ctx) => {
     el("div", { class: "lead-foot" }, raw), well);
 
   /* ---------- one round of questions, answered with clicks ---------- */
-  const round = (entry) => {
+  /** The message a round came with, in the thread: the conversation opens to show it, however folded it was. */
+  const showInThread = (i, from, back) => {
+    unfolded = true;
+    foldLog();
+    const node = placed.get(`c${i}`)?.node;
+    // Sent to read it, so all of it shows.
+    node?.querySelector(".fold-cut.folded + .fold-toggle")?.click();
+    return showMe(node, { from, home: askBox, back });
+  };
+  /** All of what a question needs to say shows, up to what still leaves its send button on a first screen. */
+  const contextOf = (q, many) => {
+    if (!q.context) return null;
+    const tight = many || matchMedia("(max-width: 600px)").matches;
+    const body = el("div", { class: "lead-context" }, renderMarkdown(q.context, { project: projectId }));
+    return q.context.length <= (tight ? 240 : 720) ? body : foldable(ctx, body, { more: "the rest of the context", height: tight ? "6.2em" : "9.5em" });
+  };
+  const round = (entry, at) => {
+    const single = entry.questions.length === 1;
     const picked = new Map(entry.questions.map((q) => [q.id, { options: [], other: "" }]));
     /* A refused round says so under its own button, where the eye is, not under the composer below. */
     const roundSaid = el("p", { class: "lead-heard error", role: "status" });
-    const sendRound = btn("send answers", async () => {
+    const sendRound = btn(single ? "send answer" : "send answers", async () => {
+      const empty = entry.questions.findIndex((q) => { const mine = picked.get(q.id); return !mine.options.length && !mine.other.trim(); });
+      if (empty >= 0) {
+        const said = cards[empty].querySelector(".lead-heard");
+        said.textContent = "Pick an option or write your own answer first.";
+        cards[empty].querySelector(".lead-opt, .mv-note").focus();
+        return;
+      }
       sendRound.disabled = true;
       roundSaid.textContent = "";
+      // Set first: the stream can bring the round's end before this post comes back.
+      answered = entry.at;
       try {
         await say({ answers: Object.fromEntries(picked) });
-        // The round folds once the reply lands and takes this button with it; the next thing to say goes in the box.
-        box.focus({ preventScroll: true });
+        paintAsk();
+        askBox.querySelector(".lead-sent")?.focus({ preventScroll: true });
       } catch (err) {
-        roundSaid.textContent = `Could not send the answers: ${err.message}`;
+        answered = "";
+        roundSaid.textContent = `Could not send: ${err.message}. Your answer is still here; send it again.`;
         sendRound.disabled = false;
         sendRound.focus();
       }
     }, "primary");
+    const led = btn("the message that led to this", (e) => {
+      if (!showInThread(at, e.currentTarget, "back to the question")) roundSaid.textContent = "That message could not be shown; it is in the conversation below.";
+    }, "ghost lead-link");
     const cards = entry.questions.map((q, i) => {
       const mine = picked.get(q.id);
+      /* The empty-send line stands under the question it is about, next to where the focus goes. */
+      const missing = el("p", { class: "lead-heard error", role: "status" });
       const opts = q.options.map((o) => {
         const b = btn(o, () => {
+          missing.textContent = "";
           mine.options = q.multi ? (mine.options.includes(o) ? mine.options.filter((x) => x !== o) : [...mine.options, o]) : (mine.options[0] === o ? [] : [o]);
           for (const x of opts) x.setAttribute("aria-pressed", String(mine.options.includes(x.textContent)));
         }, "lead-opt");
         b.setAttribute("aria-pressed", "false");
         return b;
       });
-      const other = el("input", { type: "text", class: "mv-note", placeholder: "or in your own words", "aria-label": `Your own answer to: ${q.question}` });
-      other.addEventListener("input", () => { mine.other = other.value; });
+      const other = el("input", { type: "text", class: "mv-note", placeholder: q.options.length ? "your own words, alone or with an option" : "your answer", "aria-label": `Your own answer to: ${q.question}` });
+      other.addEventListener("input", () => { mine.other = other.value; missing.textContent = ""; });
       return el("li", { class: "lead-q" },
-        el("p", { class: "lead-ask" }, el("span", { class: "lead-n" }, String(i + 1)), q.question),
-        el("div", { class: "lead-opts", role: "group", "aria-label": q.question }, ...opts),
+        el("h2", { class: "lead-ask" }, single ? null : el("span", { class: "lead-n" }, String(i + 1)), q.question),
+        contextOf(q, !single),
+        q.options.length ? el("div", { class: "lead-opts", role: "group", "aria-label": q.question }, ...opts) : null,
         q.multi ? el("p", { class: "lead-hint" }, "pick any that apply") : null,
         other,
-        q.context ? el("details", { class: "lead-why" }, el("summary", {}, "more context"), el("p", {}, q.context)) : null);
+        missing);
     });
-    return el("div", { class: "lead-round", id: "round" }, el("ol", { class: "lead-qs" }, ...cards), el("div", { class: "lead-round-foot" }, sendRound, roundSaid));
+    return el("div", { class: "lead-round" },
+      el("p", { class: "lead-who" }, "The Strike Lead asks", el("span", { class: "lead-at" }, fmtTime(entry.at))),
+      el("ol", { class: "lead-qs" }, ...cards),
+      el("div", { class: "lead-round-foot" }, sendRound, led, roundSaid));
+  };
+
+  /**
+   * The round waiting on you, in the top slot. Built once per round, so a half-picked one survives
+   * every stream event. Once answered, the card says where that went until the page is left.
+   */
+  let askAt = "";
+  let answered = "";
+  const sentLine = el("p", { class: "lead-sent", tabindex: "-1" });
+  const toThread = btn("show me in the conversation", (e) => { showInThread((view.chat?.length ?? 1) - 1, e.currentTarget, "back"); }, "ghost lead-link");
+  const sentBox = el("div", { class: "lead-round" }, sentLine, toThread);
+  const paintAsk = () => {
+    const chat = view?.chat ?? [];
+    const open = openRound() && chat.at(-1).at !== answered ? chat.at(-1) : null;
+    if (open) {
+      if (askAt !== open.at) {
+        askAt = open.at;
+        answered = "";
+        askBox.replaceChildren(round(open, chat.length - 1));
+      }
+    } else if (askAt || answered) {
+      askAt = "";
+      // What has come back since the round was asked, as the answer itself and a turn that failed both land in the thread.
+      const last = chat.findLast((entry) => entry.who !== "you");
+      const reply = last?.at > answered ? last : null;
+      const said = reply?.error ? "The Strike Lead did not answer. The conversation says why."
+        : reply?.who === "Strike Lead" ? "The Strike Lead wrote back."
+          : "Answer sent. The Strike Lead is reading it and will write back in the conversation.";
+      if (sentLine.textContent !== said) sentLine.textContent = said;
+      if (!sentBox.isConnected) askBox.replaceChildren(sentBox);
+    }
+    askBox.hidden = !open && !answered;
+    // Nothing is being asked once it is answered, so it stops wearing what says something is.
+    askBox.classList.toggle("sent", !open);
+    askBox.setAttribute("aria-label", open ? "The Strike Lead is asking" : "Your answer");
   };
 
   /** A round already answered: its questions folded, so the thread reads as the conversation it was. */
@@ -169,7 +239,7 @@ export const leadThread = (ctx) => {
   const bubble = (entry, open) => el("li", { class: `lead-msg ${entry.who === "you" ? "you" : entry.who === "Maverick" ? "sys" : "sl"}${entry.error ? " error" : ""}` },
     el("p", { class: "lead-who" }, entry.who === "you" ? "you" : entry.who, el("span", { class: "lead-at" }, fmtTime(entry.at))),
     textOf(entry),
-    entry.questions?.length ? (open ? round(entry) : asked(entry)) : null);
+    entry.questions?.length ? (open ? el("p", { class: "lead-hint" }, "Its question is at the top of this page, waiting on you.") : asked(entry)) : null);
 
   /** Whether this entry's round is still open, as the server says it (`openRound`): it is the one the mission's questions name. */
   const isOpen = (chat, i) => Boolean(view?.questions?.some((q) => q.id === `round:${chat[i].at}`));
@@ -187,7 +257,8 @@ export const leadThread = (ctx) => {
   const paintLog = (chat, updates) => {
     const items = [
       ...chat.map((entry, i) => ({ key: `c${i}`, at: Date.parse(entry.at), entry, open: isOpen(chat, i) })),
-      ...updates.map((update, i) => ({ key: `u${i}`, at: Date.parse(update.at), update })),
+      // Keyed by what it says and when, since the server folds a run of the same line into its latest.
+      ...updates.map((update) => ({ key: `u${update.at}${update.text}`, at: Date.parse(update.at), update })),
     ].sort((a, b) => a.at - b.at);
     let prev = null;
     for (const item of items) {
@@ -201,6 +272,13 @@ export const leadThread = (ctx) => {
       const want = prev ? prev.nextSibling : log.firstChild;
       if (held.node !== want) log.insertBefore(held.node, want);
       prev = held.node;
+    }
+    // A line the server folded into a later one has left the list, so it leaves the thread too.
+    const keys = new Set(items.map((item) => item.key));
+    for (const [key, held] of placed) {
+      if (keys.has(key)) continue;
+      held.node.remove();
+      placed.delete(key);
     }
   };
 
@@ -228,15 +306,22 @@ export const leadThread = (ctx) => {
   };
 
   /* ---------- where links land ---------- */
-  /** A question's "answer in the chat" names `#round`: the open round comes into view with its first option focused, on a load as on a jump. */
+  /** The inbox's answer and the lamp name `#round`: the open round comes into view with its first control focused, on a load as on a jump. */
   let scrolledTo = "";
+  // As long as the flare in lead.css: reduced motion has no animation to end, so a timer clears it.
+  const LANDED_MS = 480;
   const toRound = () => {
-    const first = location.hash === "#round" ? log.querySelector("#round .lead-opt") : null;
+    const first = location.hash === "#round" ? askBox.querySelector(".lead-opt, .mv-note, .lead-sent") : null;
     if (!first || scrolledTo === location.hash) return;
     scrolledTo = location.hash;
     requestAnimationFrame(() => {
-      first.closest("#round").scrollIntoView({ block: "start" });
+      askBox.scrollIntoView({ block: "nearest" });
       first.focus({ preventScroll: true });
+      // Already in view, the landing would show nothing, so the card says "here" once, on every press.
+      askBox.classList.remove("landed");
+      void askBox.offsetWidth;
+      askBox.classList.add("landed");
+      setTimeout(() => askBox.classList.remove("landed"), LANDED_MS);
     });
   };
   window.addEventListener("hashchange", () => { scrolledTo = ""; toRound(); });
@@ -245,20 +330,12 @@ export const leadThread = (ctx) => {
     const chat = view?.chat ?? [];
     return chat.length && isOpen(chat, chat.length - 1) ? chat.at(-1).questions.length : 0;
   };
-  /**
-   * Before approval what waits on you is in this thread: a round of questions, or a plan ready to
-   * fly. The thread raises a pointer to it into the page's top slot; the round is answered where it
-   * was asked, and firing stays under its costs, in the gate and under the ready message.
-   */
   const paintNow = () => {
     const roundOpen = openRound();
     const fireReady = Boolean(fire.querySelector(".lead-fire-btn, .mv-confirm"));
-    nowBox.hidden = !roundOpen && !fireReady;
-    roundButton.hidden = !roundOpen;
-    gateButton.hidden = roundOpen || !fireReady;
-    nowHead.textContent = roundOpen ? `The Strike Lead is asking you ${plural(roundOpen, "question")}` : "The plan is ready to fly";
-    nowWhy.textContent = roundOpen ? "They are in the conversation below, with what led to them. It plans nothing until they are answered." : "What it writes, spawns and costs is in the gate below, with the button that fires it.";
-    // One primary at a time: while a plan waits to fly, the composer's send steps back too.
+    nowBox.hidden = roundOpen || !fireReady;
+    paintAsk();
+    // One primary at a time: while a round or a plan waits, the composer's send steps back too.
     send.classList.toggle("primary", !roundOpen && !fireReady);
   };
 
@@ -269,11 +346,11 @@ export const leadThread = (ctx) => {
     foldLog();
     composer.hidden = over();
     ended.hidden = !over();
-    toRound();
     thinking.hidden = !next.leadBusy;
     raw.hidden = !next.lead || next.leadBusy || over();
     paintFire();
     paintNow();
+    toRound();
   };
 
   return { node, update };

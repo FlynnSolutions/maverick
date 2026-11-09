@@ -42,7 +42,8 @@ export const answerControls = (question, { el, btn, submit, open = goHere }) => 
     } finally {
       for (const b of buttons) b.disabled = false;
     }
-  }, a.primary ? "primary" : ""));
+    // On the mission page a jump is dressed as the link it is; another page draws the answer as its way there.
+  }, a.link && open === goHere ? "ghost lead-link" : a.primary ? "primary" : ""));
   const node = el("div", { class: "mv-answers" },
     el("div", { class: "mv-opts" }, ...buttons),
     note ? el("div", { class: "mv-note-row" }, note, hint) : hint);
