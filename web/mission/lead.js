@@ -50,6 +50,7 @@ export const leadThread = (ctx) => {
     heard.textContent = err.message;
     heard.classList.add("error");
   };
+  const EMPTY = "Write something to send first.";
   const say = async (body) => {
     heard.textContent = "";
     heard.classList.remove("error");
@@ -58,7 +59,11 @@ export const leadThread = (ctx) => {
   const composer = el("form", { class: "lead-compose", id: "lead", onsubmit: async (e) => {
     e.preventDefault();
     const text = box.value.trim();
-    if (!text) return box.focus();
+    // An empty send says why nothing went, under the box the focus goes back to.
+    if (!text) {
+      fail(new Error(EMPTY));
+      return box.focus();
+    }
     send.disabled = true;
     send.textContent = "sending";
     try {
@@ -72,6 +77,7 @@ export const leadThread = (ctx) => {
     }
   } }, el("label", { class: "lead-to", for: "lead-box" }, "To the Strike Lead"), el("div", { class: "lead-compose-row" }, box, send));
   // Enter sends, as in every chat; Shift+Enter is a new line.
+  box.addEventListener("input", () => { if (heard.textContent === EMPTY) heard.textContent = ""; });
   box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); composer.requestSubmit(); } });
 
   const well = el("div", { class: "mv-session", hidden: true });
