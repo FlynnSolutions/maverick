@@ -80,8 +80,9 @@ _walk: Open a mission on the invented project from the mission branch's server a
   - touches: web/workflow.html, web/workflow.js, web/workflow.css
   - needs: m1-t2
   - cells: 39
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 8aac27f
   A new page, `web/workflow.html`, built from cell 39 and closing rule 5, with the flow drawn per `.ui-design/mockups/workflow-editor-round-1.html` picks 1 (left to right, wires), 7 (for-each as splay and rejoin), and 11 (card steps with ports). It is read-only, with no drag, add or delete. `?project=&id=` loads `GET /api/workflows/<id>`, and `?project=&mission=` loads that mission's pinned copy. It shows the crumb, name, description, the unverified sentence when `unverified` is true ("It leaves out review, proof and the walk, so a mission it runs stays on its mission branch, and you take the work from there by hand.", naming only what it actually leaves out), where it comes from (built-in or the project's file), then the flow and the legend. A stage the template leaves out is not drawn. Who runs each stage reads from the template (`agent`, else its slot's name). An unknown id or a broken template says so on the page, with the message. Match the other pages' bar and theme handling (`web/theme.js`, `web/page.js`, the `.bar` header as `web/mission.html` has it) and use only existing tokens. At 390 the flow scrolls sideways inside its frame and the page does not. Do not touch other pages or `src/`.
 
   Prove it: serve the branch on invented Harbor fixtures and grade the page with ui-audit at 390 and 1280 in light and dark for mission, light, a project template and a broken one, with the grade card in the commit message. The grid rule in `.ui-design/system.md` (a 600-character `<pre>` widens nothing) holds. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
@@ -141,3 +142,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 21:15 m1-t3 A mission starts from the chosen template, and its view says which and where it is: pending to flying
 - 2026-11-09 21:15 m1-t8 The read-only template page: pending to flying
 - 2026-11-09 21:28 m1-t3 A mission starts from the chosen template, and its view says which and where it is: flying to reviewing
+- 2026-11-09 21:50 m1-t8 The read-only template page: flying to reviewing
