@@ -39,7 +39,8 @@ Types are defined in the named modules; this table is a map, not a duplicate.
 | `Milestone` | `src/missions.ts` | within the mission | `n`, `title`, `done`, `tasks[]`, `merged`, `mergeShas`, `walkthrough` |
 | `MilestoneWalkthrough` | `src/missions.ts` | within the milestone | `claudeId`, `doc`, `progress`, `failed`, `waived` |
 | `MissionTask` | `src/missions.ts` | within the milestone | `repo`, `status`, `attempts`, `claudeId`, `worktree`, `branch`, `base`, `verdict`, `head`, `touches[]`, `needs[]`, `strayed[]`, `carried[]`, `readings` |
-| `Workflow` | `src/workflows.ts` | `src/workflows/mission.json`, copied onto the mission as `template` | `id`, `stages[]` |
+| `Workflow` | `src/workflows.ts` | `src/workflows/mission.json` and `light.json`, or a project's `.maverick/workflows/<id>.json`; copied onto the mission as `template` | `id`, `name?`, `description?`, `stages[]` |
+| `TemplateChoice` | `src/workflows.ts` | built by `templatesFor`, never stored | `id`, `name`, `description?`, `source` (`built-in`, `project`), `unverified`, `template?`, `error?` |
 | `Stage` | `src/workflows.ts` | within the workflow | `id`, `kind`, `over`, `stages[]`, `slot`, `agent` |
 | release labels | `src/releases.ts` | `session-console/releases.json` | the two planned slots' names and deploy dates only |
 | `Breakdown` | `src/breakdowns.ts` | parsed from `deliverables/breakdowns/<brainstorm>.md`, never stored | `topic`, `items[]` (title, kind, size, call), `already[]`, `problems[]` |
@@ -59,11 +60,12 @@ disagree the tracker wins, exactly as everywhere else ([`03-decisions.md`](./03-
 it as fields, and a `## Log` ends it. The record keeps what markdown cannot hold: session ids,
 worktrees, the revision.
 
-**A mission pins its flow** (M32): `Mission.template` is `src/workflows/mission.json` as it was when
-`startMission` ran. It holds slot names, never their values, so `maverick.json` is still read at
-use. It is optional: a record from before it has none, reads as the default through `workflowOf`,
-and is never written back with one. It is not validated when a record is read. It travels in the
-JSON of the mission's routes because those views spread the record; nothing under `web/` reads it.
+**A mission pins its flow** (M32, M33): `Mission.template` is the template chosen when
+`startMission` ran (`mission` unless another was picked), as it was then. It holds slot names, never
+their values, so `maverick.json` is still read at use. It is optional: a record from before it has
+none, reads as `mission` through `workflowOf`, and is never written back with one. It is not
+validated when a record is read. `missionView` leaves it out and sends `workflow` instead; the
+workspace list still spreads the record, so it travels there, and nothing under `web/` reads it.
 
 **A session record's `mission` names its owner, and that is what keeps it out of the ship's
 audit step.** A mission reviews its own work, so `src/ships.ts` skips a develop record that has
@@ -91,7 +93,7 @@ anywhere bumps the minor, fixes alone bump the patch.
 | `Finding` | `src/findings.ts` | `kind` (`BLOCKER`, `NOTE`, `UNVERIFIED`), `area`, `severity` (`fix`, `ship`, `check`), `headline`, `detail`, `raw` |
 | `Move` | `src/missions.ts` | `taskId`, `attempt`, the stamps `out?`, `built?`, `reviewed?`, `ended?`, `end?` (`passed`, `handed-back`, `retry`), `verdict?`, `counts?` (a `FeedEntry`'s) |
 | `Reading` | `src/missions.ts` | a `Finding` plus `key`, `taskId`, `taskTitle`, `milestone` and `state?` (`read`, `later`) |
-| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`, `readings`, `moves`, `leadBusy`, `waiting` (`waitingOn`: why each task and milestone that has not started is waiting), `proved` (the milestones `done()` calls done) and `updates` (`updatesOf`: Maverick's lines in the Strike Lead's chat, read off the feed): the JSON of `GET /api/missions/:id` and of each stream event |
+| `MissionView` | `src/missions.ts` | the `Mission` record plus `findings`, `diffstat`, `walk`, `word`, `questions`, `feed`, `readings`, `moves`, `leadBusy`, `waiting` (`waitingOn`: why each task and milestone that has not started is waiting), `proved` (the milestones `done()` calls done), `updates` (`updatesOf`: Maverick's lines in the Strike Lead's chat, read off the feed) and `workflow` (the pinned template's `id`, `name`, whether it is `unverified`, and `flight`, from `flightOf`: each stage it runs with its `label`, `state` `done`, `now` or `next`, and a `count` on Build and Review), and without `template`: the JSON of `GET /api/missions/:id` and of each stream event |
 | `WorkspaceMission` | `src/missions.ts` | the `Mission` record without its `chat` and `lead`, plus `word`, `questions` and `diffstat` (one `+N −M` line over its merged tasks), as `GET /api/workspace?project=` lists it |
 
 A question's `id` is stable while the thing it asks about is open: `task:<task id>`,
