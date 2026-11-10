@@ -706,9 +706,11 @@ export const preflightFor = (project: Project, cfg: MissionConfig, choices: Arra
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
   const mine = choices.filter((r) => named.has(r.label));
   const w = workflowOf(mission);
-  const rioAgent = agentFor(w, "review", cfg) ?? cfg.rioAgent;
+  // A template with no review launches no RIO, so a project with no rio.md is not refused for one.
+  const rioAgent = hasStage(w, "review") ? agentFor(w, "review", cfg) ?? cfg.rioAgent : undefined;
   const wingmanAgent = agentFor(w, "build", cfg);
-  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent, rioAgent, also: agentsLaunched(w, cfg).filter((a) => a !== rioAgent && a !== wingmanAgent), remote: mine.filter((r) => r.land !== "merge").map(({ label, path }) => ({ label, path })) });
+  const remote = mine.flatMap(({ label, path, land }) => (land === "merge" ? [] : [{ label, path, land }]));
+  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent, ...(rioAgent ? { rioAgent } : {}), also: agentsLaunched(w, cfg).filter((a) => a !== rioAgent && a !== wingmanAgent), remote, ...(unverified(w) ? { unverified: true, leftOut: leftOut(w) } : {}) });
 };
 
 /* ---------- the plan as the ledger ---------- */
@@ -1023,6 +1025,9 @@ export const INTERVIEW_PROBES = [
   "  - for every element the mockups draw, the existing component it resembles (or none, found by searching the code) and whether it is reused as it is, the shared component restyled everywhere, or a new one built for this; asked per element, citing the cells, for every one the mockup rounds did not already settle",
 ];
 
+/** The stages that make a template verified, in the order they are named, that this one leaves out. */
+const leftOut = (w: Workflow): string[] => ["review", "proof", "walk"].filter((id) => !hasStage(w, id));
+
 /**
  * What the Strike Lead is told about the template its mission runs: its name, its stages and
  * where the work ends up. Nothing for the full `mission`, whose prompt stays as it always was.
@@ -1034,7 +1039,7 @@ const templateLines = (w: Workflow, repos: Array<{ label: string; land: Landing 
   const runs = FLIGHT.filter((s) => hasStage(w, s.id)).map((s) => s.label);
   const head = `This mission runs the template "${w.name ?? w.id}" (${w.id}), whose stages are, in order: ${runs.join(", ")}. Nothing else runs.`;
   if (!unverified(w)) return ["", `${head} Where its work ends up is per repo, as above.`];
-  const left = ["review", "proof", "walk"].filter((id) => !hasStage(w, id));
+  const left = leftOut(w);
   const leaving = left.length > 1 ? `${left.slice(0, -1).join(", ")} or ${left.at(-1)}` : left[0];
   const refused = repos.filter((r) => r.land !== "merge");
   return ["",
@@ -2433,11 +2438,14 @@ export const landAgain = async (project: Project, id: string): Promise<{ mission
     if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; there is nothing left to land`);
     if (mission.status === "paused") throw new Error(`${mission.name} is paused; landing pushes, so resume it first`);
     // A landing that failed is often fixed in the project's own config (a repo with no remote set to merge); try it as the project now says.
+    const remote = new Set(mission.repos.filter((r) => r.land !== "merge").map((r) => r.label));
     changed = followLanding(mission, cfg);
+    // A repo the project now merges has nothing left to push: following it there is the recovery, even when nothing else lands.
+    const freed = mission.repos.some((r) => remote.has(r.label) && r.land === "merge");
     ({ landed, failed } = await landTheWork(mission));
     if (failed.length) {
       mission.trouble = `still could not land: ${failed.join(" · ")}`;
-    } else if (!landed.length) {
+    } else if (!landed.length && !freed) {
       // Nothing landed and nothing failed: every repo either has work still moving or has
       // already landed. Saying "recovered" here would be a lie that puts the mission back in
       // the air on the strength of having done nothing.
@@ -2680,11 +2688,17 @@ const landTheWork = async (mission: Mission): Promise<{ landed: string[]; failed
   const opened: string[] = [];
   const failed: string[] = [];
   const all = mission.milestones.flatMap((m) => m.tasks);
+  const w = workflowOf(mission);
   for (const repo of mission.repos) {
    try {
     if (repo.land === "merge") continue;
     if (repo.landed) {
       opened.push(repo.landed);
+      continue;
+    }
+    // Unverified work never leaves its mission branch, whatever maverick.json came to say after the gate: nothing is pushed or opened.
+    if (unverified(w)) {
+      failed.push(`${repo.label}: it is set to land by ${repo.land}, but this mission's template leaves out ${leftOut(w).join(", ")}, so its work stays on its mission branch; set its land to merge in maverick.json and land again`);
       continue;
     }
     const mine = all.filter((t) => t.repo === repo.label);
