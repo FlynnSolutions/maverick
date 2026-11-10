@@ -106,17 +106,25 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   lists the person's own sessions; what the missions spawned is one toggle away, and find searches
   both. Rows are drawn only while it shows. A formation with nothing live leaves the tab row for
   it. Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
-- **A long lane is paged the way the Archive is.** Each lane draws 20 cards, `show more` under it
-  draws 20 more beside `20 of 323`, and `find on the board` over the lanes draws only the matches
-  (title, tags, description, group name). The pager, the find box and the match rule live in
-  `web/paged-find.js`, and the Archive moves onto it next. Display only: the tracker is untouched,
-  and the pages and the find survive a write's repaint. A write never hides the card it placed: the
-  lane's page is raised to reach it, and a find that would hide it is cleared with a toast saying so,
-  so `20 of N` is always true. A card carries its place in its group's full list, so a drop under a
-  page or a find lands on the card it was aimed at; a group the find hid all of is drawn but stands by,
-  coming up as a drop target only while a card is carried. Done is paged like Backlog: it is the same
-  problem. The heaviest real tracker drew 55,000px and 1,015 focus stops; paged it is 4,400px and 200
-  (2026-11-09).
+- **A long lane is paged the way the Archive is.** Each lane draws 20 cards, and `show more` under it
+  draws 20 more beside `20 shown`; the foot is there only while there is more. `find on the board`
+  over the lanes draws only the matches (title, tags, description, group name), and the lane's head
+  says how many: `14 of 323`. A find always has its way out: the clear control in the field, Escape,
+  and `clear the find` on a lane it matched nothing in. The pager, the find box and the match rule
+  live in `web/paged-find.js`, and the Archive moves onto it next. Display only: the tracker is
+  untouched, and the pages and the find survive a write's repaint. A write never hides the card it
+  placed: the lane's page is raised to reach it, and a find that would hide it is cleared, said in
+  the write's own toast so its undo is not pushed off by a second one. A card carries its place in
+  its group's full list, so a drop under a page or a find lands on the card it was aimed at. **A drop
+  lands only among what is on show**: a group the find hid is not drawn, before or during a drag,
+  because a target that appears when a card is picked up moves every target under the pointer (the
+  judge measured lanes growing from 2,727 to 4,540px at dragstart). It is reached from the drawer's
+  `lane` select, or by leaving the find. Done is paged like Backlog. The heaviest real tracker drew
+  55,000px and 1,015 focus stops; paged it is about 4,300px and 200 (2026-11-09).
+- **A title wraps at its words.** Card titles and calendar events wrap at spaces, and inside an
+  identifier or a path after its own `_ - / .` (a `<wbr>`), never letter by letter. Four lanes need
+  about 200px each for that, so a board narrower than 960px (1280 with the sessions rail open) sets
+  them two by two.
 - **Missions have a way back on the first screen**: `.cc-missions`, one link per live mission on
   every tab but the archive, with the verbs that start a mission or a brainstorm. A formation sharing a mission's
   name reads `<name> crew`, because its tab is not the mission's page.

@@ -36,6 +36,8 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 const text = (s) => document.createTextNode(s);
+/** A title that wraps at its spaces and, inside an identifier or a path, after its own `_ - / .`, never mid-word. */
+const breakable = (s) => s.split(/(?<=[_\-/.])(?=\S)/).flatMap((part, i) => (i ? [el("wbr"), part] : [part]));
 
 let statusTimer = null;
 const setStatus = (msg, isError = false) => {
@@ -241,12 +243,10 @@ const cardFor = (trackerIndex, item, number, draggable = true, at = null) =>
         if (!draggable) return e.preventDefault();
         dragging = { trackerIndex, item };
         e.currentTarget.classList.add("dragging");
-        document.body.classList.add("carrying");
         e.dataTransfer.effectAllowed = "move";
       },
       ondragend: (e) => {
         e.currentTarget.classList.remove("dragging");
-        document.body.classList.remove("carrying");
         dragging = null;
       },
       onclick: (e) => {
@@ -256,7 +256,7 @@ const cardFor = (trackerIndex, item, number, draggable = true, at = null) =>
       },
     },
     number === null ? null : el("span", { class: "num" }, String(number)),
-    el("button", { type: "button", class: "title", onfocus: hideHover }, el("span", {}, item.title)),
+    el("button", { type: "button", class: "title", onfocus: hideHover }, el("span", {}, ...breakable(item.title))),
     el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), item.unplanned ? el("span", { class: "chip unplanned", title: "on the roadmap with no plan: a plan: field that names a real file" }, "unplanned") : null, createdOf(item) ? el("span", { class: "since", title: `${item.created ? "created" : "entry last changed"} ${fmtDate(createdOf(item))}` }, fmtDate(createdOf(item), true)) : null),
     item.checked
       ? null
@@ -384,7 +384,7 @@ const EVENT_ICONS = { done: "decision", overdue: "finding" };
 /** One thing on a day: a button, so it is reached and opened from the keyboard like anything else. */
 const calEvent = (cls, label, words, onclick) => {
   const said = words ? `${label}, ${words}` : label;
-  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, onclick }, label);
+  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, onclick }, el("span", {}, ...breakable(label)));
 };
 
 const dueChip = (item) => {
@@ -460,9 +460,10 @@ const itemsList = (trackerIndex, section, group) => {
 
 /**
  * After a write, the card it placed is on the page: its lane draws far enough down to reach it, and a
- * find that would hide it is cleared, saying so. Runs on the file as read back, before it is drawn.
+ * find that would hide it is cleared. Runs on the file as read back, before it is drawn. The write's
+ * own toast says the find was cleared (`clearsFind`), so its undo is not pushed off by a second toast.
  */
-const keepInView = (trackerIndex, is, title) => (trackers) => {
+const keepInView = (trackerIndex, is) => (trackers) => {
   const tracker = trackers.find((t) => t.index === trackerIndex);
   for (const [laneId] of tracker ? LANES : []) {
     const cards = laneRuns(tracker, laneId).flatMap((run) => run.cards.map((card) => ({ run, card })));
@@ -472,7 +473,6 @@ const keepInView = (trackerIndex, is, title) => (trackers) => {
     if (!matches(cardText(hit.run, hit.card), q)) {
       boardQuery.delete(trackerIndex);
       q = "";
-      toast(`Cleared the find, so ${short(title)} is on show.`);
     }
     const place = cards.filter(({ run, card }) => matches(cardText(run, card), q)).indexOf(hit);
     const key = `${trackerIndex}:${laneId}`;
@@ -480,6 +480,9 @@ const keepInView = (trackerIndex, is, title) => (trackers) => {
     return;
   }
 };
+
+/** The words a write's toast adds when the board's find would hide the card it lands as `text`. */
+const clearsFind = (trackerIndex, text) => (matches(text, query(boardQuery.get(trackerIndex) ?? "")) ? "" : " The find is cleared, so it is on show.");
 
 /** The one move, from a drop or from the drawer: the same write to the tracker either way. Undo moves it back. */
 const moveItem = (trackerIndex, item, section, group, targetIndex, undoing = false) => {
@@ -494,7 +497,8 @@ const moveItem = (trackerIndex, item, section, group, targetIndex, undoing = fal
     if (now && back) moveItem(trackerIndex, now, { heading: back.heading }, { name: back.name }, back.at, true);
     else failed(`move ${short(item.title)} back`, new Error("it is no longer on the board"));
   };
-  return write(`move ${short(item.title)}`, `Moved ${short(item.title)} to ${where}, #${targetIndex + 1}.`, run, undo, keepInView(trackerIndex, (i) => i.firstLine === item.firstLine, item.title));
+  const cleared = clearsFind(trackerIndex, cardText({ label: groupLabel(group) }, { item }));
+  return write(`move ${short(item.title)}`, `Moved ${short(item.title)} to ${where}, #${targetIndex + 1}.${cleared}`, run, undo, keepInView(trackerIndex, (i) => i.firstLine === item.firstLine));
 };
 const laneName = (section) => LANES.find(([id]) => id === section.column)?.[1] ?? section.heading;
 
@@ -514,25 +518,28 @@ const LANE_EMPTY = {
 };
 
 const quickAdd = (tracker, section, label, key) => {
-  const input = el("input", { type: "text", placeholder: "add an item", "aria-label": `new item in ${label}`, autocomplete: "off" });
+  // An empty add is said in readable words under the field, as the mission page's empty answer is, and the next keystroke takes it back.
+  const said = el("p", { class: "add-said", role: "status", id: `add-said-${key.replace(/\W/g, "-")}` });
+  const input = el("input", { type: "text", placeholder: "add an item", "aria-label": `new item in ${label}`, "aria-describedby": said.id, autocomplete: "off",
+    oninput: () => { input.removeAttribute("aria-invalid"); said.textContent = ""; } });
   return el("form", {
     class: "quick-add",
     "data-lane": key,
     onsubmit: async (e) => {
       e.preventDefault();
       const title = input.value.trim();
-      // An empty add says what is missing, in the field it is missing from.
       if (!title) {
-        input.placeholder = "type the item, then add";
+        said.textContent = `Type the item first, then add it to ${label}.`;
+        input.setAttribute("aria-invalid", "true");
         input.focus();
         return;
       }
       // The new item is the first under the section's heading, outside any group.
       const added = (trackers) => {
         const first = trackers.find((t) => t.index === tracker.index)?.sections.find((s) => s.heading === section.heading)?.groups.find((g) => !g.name)?.items[0];
-        if (first) keepInView(tracker.index, (i) => i === first, title)(trackers);
+        if (first) keepInView(tracker.index, (i) => i === first)(trackers);
       };
-      const ok = await write(`add ${short(title)}`, `Added ${short(title)} to ${label}.`, () => post("/api/items", { project: projectId, tracker: tracker.index, heading: section.heading, name: "", title }), null, added);
+      const ok = await write(`add ${short(title)}`, `Added ${short(title)} to ${label}.${clearsFind(tracker.index, title)}`, () => post("/api/items", { project: projectId, tracker: tracker.index, heading: section.heading, name: "", title }), null, added);
       await repainted;
       // The board repainted; the lane's new field takes the focus back, and a refusal keeps the words.
       const again = document.querySelector(`.quick-add[data-lane="${key}"] input`);
@@ -540,10 +547,10 @@ const quickAdd = (tracker, section, label, key) => {
       if (!ok) again.value = title;
       again.focus();
     },
-  }, input, el("button", { type: "submit" }, "add"));
+  }, input, el("button", { type: "submit" }, "add"), said);
 };
 
-const renderLane = (tracker, [laneId, label, extraClass]) => {
+const renderLane = (tracker, [laneId, label, extraClass], clearFind) => {
   const sections = tracker.sections.filter((s) => s.column === laneId);
   const key = `${tracker.index}:${laneId}`;
   const isCollapsed = collapsed.has(key);
@@ -551,6 +558,8 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
   const count = runs.reduce((n, run) => n + run.cards.length, 0);
 
   const lane = el("div", { class: `lane ${extraClass}${isCollapsed ? " collapsed" : ""}` });
+  // The head says how many the lane holds, and under a find how many of those it matched.
+  const counted = el("span", { class: "count" }, String(count));
   lane.append(
     el(
       "h3",
@@ -562,7 +571,7 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
         loadBoard();
       }),
       el("span", { class: "label" }, label),
-      el("span", { class: "count" }, String(count)),
+      counted,
     ),
   );
   if (isCollapsed) return { lane, show: () => {} };
@@ -570,16 +579,14 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
   if (laneId !== "shipped" && sections.length) lane.append(quickAdd(tracker, sections[0], label, key));
   const numbered = laneId === "priority";
   // Groups are labels, never boxes: the lane stays one runway. An empty group can be deleted.
-  // A group the find hid every card of stands by as a drop target, shown only while a card is carried.
-  const groupBlock = ({ section, group, heading: name, hits }) => {
+  const groupBlock = ({ section, group, heading: name }) => {
     const list = group ? itemsList(tracker.index, section, group) : el("div", { class: "items" });
-    const cls = `group${q && !hits.length ? " missed" : ""}`;
-    if (!name) return { block: el("div", { class: cls }, list), list };
+    if (!name) return { block: el("div", { class: "group" }, list), list };
     const remove = group?.items.length === 0 ? el("button", { type: "button", class: "ghost icon-btn", "aria-label": `delete the empty group ${name}`, title: "delete this empty group", onclick: async () => {
       if (!(await ask({ title: `Delete the empty group "${name}"?`, confirm: "delete", danger: true }))) return;
       await write(`delete the group "${name}"`, `Deleted the empty group "${name}".`, () => api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) }));
     } }, icon("close")) : null;
-    return { block: el("div", { class: cls }, el("div", { class: "group-name" }, name, remove), list), list };
+    return { block: el("div", { class: "group" }, el("div", { class: "group-name" }, name, remove), list), list };
   };
   const body = el("div");
   const page = pager({ page: LANE_PAGE, onMore: (to) => { laneShown.set(key, to); drawTo(to); tell(); }, footClass: "lane-foot" });
@@ -589,10 +596,15 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
   let drawn = 0;
   let q = "";
   const sectioned = new Set(runs.map((run) => run.section).filter(Boolean)).size > 1;
-  /** Draw on to `limit` cards, carrying on from where the last page stopped: a group's label and list are drawn when the page reaches it, even with no card the find matched. */
+  /**
+   * Draw on to `limit` cards, carrying on from where the last page stopped: a group's label and list
+   * are drawn when the page reaches it. A group the find matched none of is not drawn, so a drop
+   * lands only among what is on show and nothing moves when a card is picked up.
+   */
   const drawTo = (limit) => {
     let section;
     for (const run of shown) {
+      if (q && !run.hits.length) continue;
       if (!run.list) {
         if (drawn >= limit) break;
         if (sectioned && run.section && run.section !== section) body.append(el("div", { class: "group-name" }, run.section.heading));
@@ -606,7 +618,12 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
       drawn += next.length;
     }
   };
-  const tell = () => page.tell({ found: shown.reduce((n, run) => n + run.hits.length, 0), total: count, q, empty: count ? `Nothing in ${label} says "${(boardQuery.get(tracker.index) ?? "").trim()}".` : LANE_EMPTY[laneId] });
+  const tell = () => {
+    const found = shown.reduce((n, run) => n + run.hits.length, 0);
+    counted.textContent = q ? `${found} of ${count}` : String(count);
+    counted.title = q ? `${found} of the ${count} in ${label} match the find` : "";
+    page.tell({ found, empty: count ? `Nothing in ${label} says "${(boardQuery.get(tracker.index) ?? "").trim()}".` : LANE_EMPTY[laneId], clear: count ? clearFind : null });
+  };
   /** The lane drawn again for the find it now holds, from its first page, as the Archive draws its rows: only the cards on show are drawn. */
   const show = () => {
     q = query(boardQuery.get(tracker.index) ?? "");
@@ -623,26 +640,26 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
 };
 
 const renderBoard = (tracker) => {
-  const lanes = el("div", { class: "lanes" });
-  const shows = LANES.map((lane) => {
-    const drawn = renderLane(tracker, lane);
-    lanes.append(drawn.lane);
-    return drawn.show;
-  });
-  // A collapsed lane is a fixed strip, not a fraction: a fraction grows with the window and
-  // never actually gets out of the way.
-  lanes.style.setProperty("--lane-widths", LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "36px" : id === "priority" ? "minmax(0, 1.5fr)" : "minmax(0, 1fr)")).join(" "));
   // A card past a lane's first page is found here, as the Archive finds a finished session.
   const find = findBox({ label: "find on the board", value: boardQuery.get(tracker.index) ?? "", onFind: (words) => {
     boardQuery.set(tracker.index, words);
     for (const [id] of LANES) laneShown.delete(`${tracker.index}:${id}`);
     for (const show of shows) show();
   } });
-  find.classList.add("board-find");
+  find.node.classList.add("board-find");
+  const lanes = el("div", { class: "lanes" });
+  const shows = LANES.map((lane) => {
+    const drawn = renderLane(tracker, lane, find.clear);
+    lanes.append(drawn.lane);
+    return drawn.show;
+  });
+  // A collapsed lane is a fixed strip, not a fraction: a fraction grows with the window and
+  // never actually gets out of the way.
+  lanes.style.setProperty("--lane-widths", LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "36px" : id === "priority" ? "minmax(0, 1.5fr)" : "minmax(0, 1fr)")).join(" "));
   return el(
     "section",
     { class: "board" },
-    el("div", { class: "board-title" }, el("h2", {}, tracker.label), el("code", {}, tracker.path.replace(project.path, "").replace(/^\//, "")), find),
+    el("div", { class: "board-title" }, el("h2", {}, tracker.label), el("code", {}, tracker.path.replace(project.path, "").replace(/^\//, "")), find.node),
     lanes,
   );
 };

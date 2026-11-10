@@ -387,11 +387,13 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .lane.collapsed .lane-title .fold { writing-mode: horizontal-tb; }
 .lane.collapsed .lane-title .label { flex: 0; }
 .group-name { font-size: 11px; color: var(--ink-ghost); margin: 10px 0 4px; padding-left: 2px; }
-.quick-add { display: flex; gap: 8px; margin: 0 0 8px; }
+.quick-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.quick-add input[aria-invalid="true"] { box-shadow: 0 0 0 1px var(--caution); }
+.add-said { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--ink-soft); }
+.add-said:empty { display: none; }
 .quick-add input { flex: 1; min-width: 0; }
 .lane-empty { margin: 0 0 8px; padding-left: 2px; }
-/* A group the find hid every card of is drawn but stands by: it comes up as a drop target while a card is carried. */
-body:not(.carrying) .group.missed { display: none; }
+.lane-empty .rack-verb { margin-top: 6px; }
 .items { min-height: 32px; border-radius: var(--radius-m); transition: background 120ms var(--ease-out), box-shadow 120ms var(--ease-out); }
 .items.over { background: var(--accent-dim); box-shadow: inset 0 0 0 1px var(--accent-glow), 0 0 24px var(--accent-dim); }
 
@@ -458,7 +460,7 @@ body:not(.carrying) .group.missed { display: none; }
 .runway .card .num { color: var(--ink-soft); }
 /* The title is the card's button, dressed as its text. */
 .card .title { grid-area: title; display: flex; align-items: center; padding: 0; border: 0; background: none; box-shadow: none; color: inherit; font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
-.card .title span { line-height: 1.35; overflow-wrap: anywhere; }
+.card .title span { line-height: 1.35; overflow-wrap: break-word; }
 .card .title:hover { background: none; color: var(--ink); }
 .card .meta { grid-area: meta; display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
 .card .meta .tag { color: var(--accent); opacity: 0.8; }
@@ -660,6 +662,12 @@ body:has(#drawer-root .drawer) .toasts { right: auto; left: 24px; }
   .dispatch { position: static; max-height: none; }
   .lanes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* Four lanes need about 200px each before a card title wraps at its words rather than inside them;
+   a board narrower than that (1280 with the sessions rail open) sets them two by two. */
+.board { container-type: inline-size; }
+@container (max-width: 960px) {
+  .lanes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 /* A phone reads one lane at a time, top to bottom, in the order the work moves. */
 @media (max-width: 720px) {
   .lanes { grid-template-columns: minmax(0, 1fr); }
@@ -812,7 +820,7 @@ body.ask-open { overflow: hidden; }
 }
 .cal-cell.today .cal-day { color: var(--accent-hot); }
 /* An event is a button: a control tall, the full cell wide, its words cut with the whole of them in its title. */
-.cal-event { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: var(--control); line-height: 1.3; padding: 0 10px; margin-bottom: 8px; border: 0; border-radius: var(--radius-s); background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.cal-event { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: var(--control); line-height: 1.3; padding: 0 10px; margin-bottom: 8px; border: 0; border-radius: var(--radius-s); background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; overflow-wrap: break-word; }
 .cal-event .icon, .cal-key .icon { flex: none; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .cal-event:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
 .cal-event.release, .cal-key.release { background: var(--panel); color: var(--ink); box-shadow: inset 3px 0 0 var(--info); font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; }
@@ -857,8 +865,9 @@ body.ask-open { overflow: hidden; }
 /* ---------- release planning on the calendar ---------- */
 
 .strip-title { grid-column: 1 / -1; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 8px 0 0; }
-/* The strip runs past the edge once there are a few releases: its right edge fades, so the cut
-   reads as "more this way", and the end padding keeps the last card clear of the fade. */
+/* The strip runs past the edge once there are a few releases. A card is sized off the strip, so
+   wherever the edge falls the next one shows a third of itself before the fade, which is what reads
+   as "more this way"; the end padding keeps the last card clear of the fade. */
 .releases { grid-column: 1 / -1; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
 .releases::after { content: ""; flex: 0 0 22px; }
 .release-card {
@@ -1109,6 +1118,12 @@ body.ask-open { overflow: hidden; }
 .card .since, .cal-day, .group-name, .release-list li .key, .ws-bar span, .hovercard-hint, .dispatch li.empty, .board-title code, .lane-title .count, .row .age, .status { color: var(--ink-faint); }
 /* Stat labels must fit at the legibility floor: wider cards, tighter tile padding, full words. */
 .release-card, .release-card.slot { flex-basis: 284px; }
+/* Wherever the strip's edge falls, the next card shows about two fifths of itself before the fade,
+   which is what says "more this way": the cards are sized off the strip, never under 284px. */
+.board-releases, .calendar { container-type: inline-size; }
+@container (min-width: 640px) { .releases > .release-card:not(.add) { flex-basis: calc((100cqw - 24px) / 2.4); } }
+@container (min-width: 1000px) { .releases > .release-card:not(.add) { flex-basis: calc((100cqw - 36px) / 3.4); } }
+@container (min-width: 1360px) { .releases > .release-card:not(.add) { flex-basis: calc((100cqw - 48px) / 4.4); } }
 
 /* ---------- ship wizard: scrolls, live view, runway with the jet as the marker ---------- */
 
@@ -1306,6 +1321,10 @@ body.ask-open { overflow: hidden; }
 .rack-head > h2 { grid-column: 1 / span 2; margin-left: -14px; }
 .rack-col, .cc-missions > span, .archive-formations > span, .archive-when { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
 .rack-find { max-width: 360px; }
+/* A find's way out sits in the field's own right end, so the field keeps its seat. */
+.find-box { position: relative; max-width: 360px; }
+.find-box .rack-find { width: 100%; max-width: none; padding-right: 44px; }
+.find-box .find-clear { position: absolute; top: 0; right: 0; }
 .rack.archive > button.rack-verb { align-self: flex-start; }
 .archive-tools, .archive-formations, .lane-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .archive-formations > span, .archive-when { margin: 8px 0 0; }
