@@ -69,9 +69,8 @@ _walk: Open a mission on the invented project from the mission branch's server a
   - touches: web/app.js, web/command.js, web/style.css
   - needs: m1-t3
   - cells: 22
-  - status: reviewing
-  - attempt: 1
-  - commit: 6e2760a
+  - status: flying
+  - attempt: 2
   Build cell 22 of `.ui-design/mockups/workflow-templates-round-1.html` and follow its closing rules 1, 2 and 6. `ask()` in `web/app.js` gains an optional `choices` option: a list of `{ value, name, description, note?, error? }` and the selected value. It draws the new template card under the text field, one per row, as a radio group: one Tab stop, arrows move and choose, `aria-checked`, the selected card on `--panel` with a 2px accent ring, and a disabled card for `error` with the message in mono `--threat`. It resolves `{ text, choice }` when choices are given. Every other `ask()` call is untouched and behaves as today. In `web/command.js`, `newMission` fetches `GET /api/workflows?project=` before the second dialog, passes the choices (an unverified one gets the note "unverified: stays on its mission branch") with `mission` selected, and posts `template` with the name and brief. If the fetch fails, say so through `failed()` and do not open the dialog. Styles go in `web/style.css` beside `.ask`, using only existing tokens. Do not touch the mission page, `server.ts` or `src/`.
 
   Prove it: serve the branch on the invented Harbor project as `tools/ui-check.mjs` does, with a project template and a broken one, and grade the dialog with ui-audit (the `MAVERICK_UI_AUDIT` scripts: `scan.mjs`, then `grade.mjs`) at 390 and 1280 in light and dark. Put the grade card in the commit message and the screenshots where the brief says. Enter with no change opens a Mission. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
@@ -173,3 +172,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 23:35 m1-t5 Unverified work can't land: refused at the gate and at landing: reviewing to passed (RIO: pass with notes) with 8 notes carried, 1 unverified
 - 2026-11-09 23:41 m1-t7 The mission page: the template line, the status strip, and a Light result: reviewing to passed (RIO: pass with notes) with 13 notes carried, 2 unverified
 - 2026-11-10 00:38 m1-t6 Template cards in the new-mission dialog: flying to reviewing
+- 2026-11-10 00:48 m1-t6 Template cards in the new-mission dialog: reviewing to flying
