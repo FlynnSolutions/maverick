@@ -932,10 +932,19 @@ export const mountCommandCenter = (root, ctx) => {
   const newMission = async () => {
     const name = await ask({ title: "Open a mission", body: "A mission is a bounded multi-feature effort: the Strike Lead interviews you, plans it into milestones, and flies it once you approve. Give it a name.", confirm: "next", field: { placeholder: "what this mission is called" } });
     if (!name) return;
-    const brief = await ask({ title: "What do you want done?", body: "One line is enough, and one line is all it gets. The Strike Lead will not plan off it: it interviews you first.", confirm: "open the interview", field: { placeholder: "the line you would have opened a session with" } });
-    if (!brief) return;
+    // The templates are read before the question, so a list that cannot be read is said and no card is guessed.
+    let templates;
     try {
-      const { mission } = await post(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`, { name, brief });
+      templates = await api(`/api/workflows?project=${encodeURIComponent(ctx.projectId)}`);
+    } catch (err) {
+      return failed("read the templates", err);
+    }
+    const items = templates.map((t) => ({ value: t.id, name: t.name, description: t.description, note: t.unverified ? "unverified: stays on its mission branch" : undefined, error: t.error }));
+    const answer = await ask({ title: "What do you want done?", body: "One line is enough, and one line is all it gets. The Strike Lead will not plan off it: it interviews you first.", confirm: "open the interview", field: { placeholder: "the line you would have opened a session with" }, choices: { items, selected: "mission" } });
+    if (!answer) return;
+    const { text: brief, choice: template } = answer;
+    try {
+      const { mission } = await post(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`, { name, brief, template });
       location.href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(mission.id)}`;
     } catch (err) {
       failed("open the mission", err);
