@@ -71,6 +71,9 @@ const flow = async (id: string) => {
     writeFileSync(join(root, path), text, "utf8");
   };
   write("deliverables/CHECKLIST.md", "# Checklist\n\n## 🔥 Priority\n\n## 📋 Backlog\n");
+  // The gate refuses a mission whose agents have no standing orders; the project carries its own, as mission-flight's does, so no machine's ~/.claude decides it.
+  write(".claude/agents/wingman.md", "a wingman\n");
+  write(".claude/agents/rio.md", "a rio\n");
   git("add", "-A");
   git("commit", "-q", "-m", "the project");
   write(`deliverables/missions/${id}.md`, PLAN);
