@@ -990,7 +990,8 @@ no proof, by the same branch a project with no proof command already takes, and 
 before the walk under every template. The tests that leave stages out all land by merge. That is
 what the code happens to do, not a decision that it should. Also unsettled: a pinned copy is not
 validated when a record is read. The validator runs only on the built-in file, so a hand-edited
-record reaches the flow as written.
+record reaches the flow as written. Cory has since answered the landing question: unverified work
+stays on its mission branch, refused at the plan gate and again at landing ([M33](#m33-a-mission-picks-its-template-and-unverified-work-stays-on-its-branch--built)).
 
 **Rejected: a free graph.** Cory's call. What it would have cost: the flow has one order, and the
 refit keeps `sweepOnce` and `gates` as they are. A graph would need something that walks it, which
@@ -999,3 +1000,120 @@ today's flow.
 
 **Rejected: YAML.** The project has no YAML parser and a new dependency is a decision the rulebook
 does not hand out for convenience. JSON is read with what Node already has.
+
+## M33: A mission picks its template, and unverified work stays on its branch ✅ built
+
+**What happened.** M32 wrote the flow down as one template and left two things open: whether a
+person could choose another, and whether a run that leaves out review, proof or the walk may land.
+Cory called both on 2026-11-06 and 2026-11-09. A mission now starts from a template picked from
+cards. Maverick ships two, `mission` and `light`, and a project can keep its own. Light is
+interview, plan gate, preflight, build, merge, land and close, with no RIO, proof, walkthrough,
+walk or summary: a way to explore fast, whose work nobody but Cory reads.
+
+**The calls.** Cory's, settled and not reopened:
+
+- **Unverified work stays on its branch.** A run whose template leaves out review, proof or the
+  walk may never land by pull request or push, and is refused at the plan gate and again at
+  landing.
+- **A template may leave out review.**
+- **The interview and plan gate stay required.**
+- **Mission is preselected.** Pressing Enter in the new-mission dialog without touching the cards
+  opens a mission exactly as before.
+- **The read-only template page is in this milestone.** Editing is not.
+- **The look is the mockup's picks**: cells 22, 28, 34 and 39 of
+  `.ui-design/mockups/workflow-templates-round-1.html`, with the flow drawn per editor round 1
+  picks 1, 7 and 11.
+
+**The shape.**
+
+- **Ordered stages still.** M32's validator holds every template to today's order, written in
+  `src/workflows.ts`, and the sweep still runs the flow in code. The one change is that `review`
+  may be left out. Interview, plan gate, preflight, build, merge, land and close may not, and
+  walkthrough and walk only together. A template may carry `name` and `description`; any other
+  unknown field is still refused, and `id` must match `^[a-z0-9][a-z0-9-]*$` because it names a
+  file and reaches a URL.
+- **`unverified` is asked in one place.** `unverified(w)` in `src/workflows.ts` is true when a
+  template lacks any of `review`, `proof` or `walk`, and everything that decides on it calls it:
+  the gate (`preflightFor`), landing (`landTheWork`), the interview, `MissionView.workflow` and
+  each `TemplateChoice`. Two places list what a template leaves out so they can name it in words,
+  `leftOut` in `src/missions.ts` and the template page's sentence in `web/workflow.js`; neither
+  decides anything.
+- **A project's own templates** live at `<project>/.maverick/workflows/<id>.json`, written by hand.
+  `templatesFor` lists the built-ins first and then the project's files by id, and a project file
+  with a built-in's id replaces it in place, so a project can redefine `mission`. A file that is
+  not JSON, fails the validator, or whose id is not its file name is still listed, with its error
+  and no template, and its card is disabled with the message. `chooseTemplate` throws that error,
+  so a broken project `mission.json` refuses a start rather than quietly running the built-in. A
+  missing folder is no project templates; any other failure to read it throws, naming the folder.
+- **The pinned copy decides.** `startMission` takes the template id as its new last parameter and
+  pins `chooseTemplate(project.path, id)`; no id is `mission`, which for a project with no
+  `.maverick/workflows/` is exactly M32's default. Editing or deleting a project file changes no
+  mission already started, and `GET /api/workflows/<id>?project=&mission=` serves the copy the
+  mission pinned, which is what its template line links to. An older record with no `template`
+  still reads as `mission`.
+- **Review left out settles at `passed`.** In `actOn`, a `built` task under a template with no
+  `review` becomes `passed` with no RIO and no verdict, and its note says "no review in this
+  template", so no line claims a review. A Wingman that committed nothing is handed back instead
+  ("its Wingman committed nothing"): with no RIO nothing else would notice, and with no findings
+  there is nothing to retry on. `parsePlan` takes `{ walk: false }`, so a Light plan needs no
+  `_walk:_` line. `costOf` and `estimateOf` count a RIO per task only when the template reviews.
+  The Wingman brief says no RIO reviews the mission and keeps the checklist and the proof lines,
+  and the Strike Lead's interview names the template, its stages and where the work ends up.
+  Under `mission` the brief and the prompt are unchanged.
+- **Unverified work is refused twice.** At the plan gate, preflight adds a refusing `landing`
+  check, `unverified landing for <label>`, for every repo set to land by `pr` or `push`, and asks
+  for a RIO agent only when the template reviews. At landing, `landTheWork` refuses the same repos
+  before anything is pushed or opened and adds each to `failed`, so `catchUp` holds the milestone
+  on landing and `closeMission` refuses. The second refusal is there because `sweepOnce` follows
+  `maverick.json` mid-flight (M32): a project switched to `pr` after the gate is still caught.
+  Merge onto the mission branch is the only way an unverified mission's work moves, and Cory takes
+  it from there by hand.
+- **The pages say it in words.** The new-mission dialog's template cards, the mission page's
+  template line and status strip, and the read-only template page (`web/workflow.html`), recorded
+  in `.ui-design/system.md`. No colour carries "unverified", and a stage a template leaves out is
+  not drawn, never ghosted. Under an unverified template, Result draws no summarize button and no
+  "What I must read".
+
+**The `landAgain` release fix.** Read from the code while planning, and now run. On a single-repo
+mission held on a failed landing, setting the repo back to `merge` and landing again threw
+"nothing was waiting to land": `followLanding` moved the repo to merge, after which nothing landed
+and nothing failed. The throw discarded the change, so the hold could never come off. A repo
+followed from `pr` or `push` to `merge` now counts as the recovery, the hold comes off and
+`settle` runs. It was found for unverified work, and it holds for every mission.
+
+**The one existing assertion changed.** In `test/workflows.test.ts`, "each stage that may not be
+left out is refused by name" drops `"review"` from its list, because Cory's call made review
+optional and the line pinned the old rule. Every other existing line under `test/` is as it was,
+and `test/mission-flight.test.ts` (M32's full flight) is untouched and passes, so a `mission`
+flies exactly as it did.
+
+**What the tests pin.** `test/workflow-templates.test.ts`: Light's stages, the unverified rule for
+each of review, proof and walk, names, ids, unknown fields, project files overriding, broken and
+mismatched, a missing folder, and `chooseTemplate`'s three outcomes. `test/workflows-api.test.ts`:
+the list and one template over HTTP, a broken file answering 200 with its error, an unknown id a
+404, and `../` refused. `test/workflow-start.test.ts`: what a start pins, a broken `mission.json`
+refusing it, an edit after the start leaving the pinned copy, `missionView` carrying `workflow` and
+never `template`, and `flightOf` across every status under both built-ins.
+`test/workflow-light.test.ts`: a Light mission flown through the real sweep, with a fake `claude`,
+from the blessing to closed, spawning two Wingmen and nothing else, its ledger lines literally;
+an empty run handed back; a plan with no walk line; the brief and the interview.
+`test/workflow-landing.test.ts`: the gate refusing a `pr` and a `push` repo by name and passing
+`merge`; a mid-flight flip to `pr` refused at `landAgain` and at `closeMission` with a fake `gh`
+that logs every call and records none; the release; and a full `mission` still landing by pull
+request. With either guard or the release fix removed it fails, and the commit that wrote it
+carries those runs.
+
+**What they do not.** No test runs a real Claude session, so whether a real Strike Lead under
+Light tells Cory about a `pr` repo in its first round and promises no review is a prompt, not a
+check; the milestone's walk flies one real Light mission for that. The pages are graded by
+ui-audit through `tools/ui-check.mjs`, not by `npm test`. A Light task's line in the report
+(`src/report.ts`) still reads "RIO unrecorded" where no RIO was meant to run. A pinned copy is
+still not validated when a record is read (M32).
+
+**Not built, by Cory's scope:** editing or creating a template in a page (the canvas), reordering
+stages, leaving out the interview or plan gate, importing skills or agents, cost per run, an audit
+trail, other providers and phone control. A project's templates are written by hand as JSON.
+
+**Rejected, in the mockups:** a radio dot on the template card (cell 21), and a left-out stage
+drawn as a ghost in the strip or on the template page (29, 40). Cory picked 22, 28 and 39 over
+them on 2026-11-09.
