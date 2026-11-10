@@ -542,6 +542,9 @@ const renderBoard = (tracker) => {
 let lastTrackers = [];
 let missions = []; // every mission's status and word, for the board's and calendar's links
 let missionsFailed = null;
+// Read again only when this old, so folding a lane or turning a month does not re-read every mission.
+const MISSIONS_FRESH_MS = 15000;
+let missionsAt = 0;
 const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
@@ -552,11 +555,13 @@ const loadBoard = async () => {
     // Every view carries the ship-day banner, so the schedule is not calendar-only. The board and
     // the calendar also carry the way to each live mission (the light read: no sweep, no git); the
     // workspace draws its own.
-    missionsFailed = null;
+    const stale = view !== "workspace" && (missionsFailed || Date.now() - missionsAt > MISSIONS_FRESH_MS);
+    if (stale) missionsFailed = null;
     [ships, shipDays, missions] = await Promise.all([
       api(`/api/ships?project=${encodeURIComponent(projectId)}`),
       api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`),
-      view === "workspace" ? [] : api(`/api/questions?project=${encodeURIComponent(projectId)}`).then((q) => q.missions, (err) => { missionsFailed = err; return []; }),
+      view === "workspace" ? [] : !stale ? missions
+        : api(`/api/questions?project=${encodeURIComponent(projectId)}`).then((q) => { missionsAt = Date.now(); return q.missions; }, (err) => { missionsFailed = err; return []; }),
     ]);
     $("#project").classList.toggle("workspace-view", view === "workspace");
     // The workspace draws its own h1; the board and the calendar name themselves for a screen reader.
@@ -1222,7 +1227,8 @@ const shipCadenceRow = () => {
     next ? el("span", { class: "muted small mono" }, `next ${fmtDate(next.date, true)}`) : el("span", { class: "muted small" }, "none scheduled"),
     el("span", { class: "spacer" }),
     oneOff,
-    btn("add a one-off", () => { if (oneOff.value) setShipDay("add", oneOff.value); }, "ghost"),
+    // With no day picked there is nothing to add, and saying so beats a press that does nothing.
+    btn("add a one-off", () => { if (oneOff.value) return setShipDay("add", oneOff.value); oneOff.focus(); toast("Pick the day for the one-off ship first."); }, "ghost"),
   );
 };
 
@@ -1939,7 +1945,12 @@ const boot = async () => {
   reload.setAttribute("aria-label", "refresh");
   reload.setAttribute("title", "refresh");
   reload.replaceChildren(icon("refresh"));
-  reload.addEventListener("click", () => { loadBoard(); loadRail(true); });
+  // A refresh that finds nothing new changes nothing on the page, so it says it looked.
+  reload.addEventListener("click", async () => {
+    missionsAt = 0;
+    await Promise.all([loadBoard(), loadRail(true)]);
+    toast("Up to date.");
+  });
   $("#refresh-live").addEventListener("click", () => loadRail(true));
   let railCollapsed = false;
   try { railCollapsed = localStorage.getItem("console.rail") === "collapsed"; } catch {}

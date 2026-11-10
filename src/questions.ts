@@ -167,18 +167,40 @@ const closeQuestion = (mission: Mission): Question => ({
  * clearing, a milestone merging, flying turning blocked), because a round does not say what it is
  * about, and a question about the next milestone is still live after this one merges.
  */
-export const openRound = (mission: Pick<Mission, "chat" | "approved" | "finished">): (ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) | undefined => {
+type Round = ChatEntry & { questions: NonNullable<ChatEntry["questions"]> };
+/** The stage that passed a round asked at `at`, by what the record stamps; the words are the page's. */
+const overtakenBy = (mission: Pick<Mission, "approved" | "finished">, at: string): "finished" | "approved" | undefined =>
+  mission.finished !== undefined && mission.finished > at ? "finished" : mission.approved !== undefined && mission.approved > at ? "approved" : undefined;
+export const openRound = (mission: Pick<Mission, "chat" | "approved" | "finished">): Round | undefined => {
   const last = mission.chat?.at(-1);
-  if (last?.who !== "Strike Lead" || !last.questions?.length) return undefined;
-  if ([mission.approved, mission.finished].some((stage) => stage !== undefined && stage > last.at)) return undefined;
-  return last as ChatEntry & { questions: NonNullable<ChatEntry["questions"]> };
+  if (last?.who !== "Strike Lead" || !last.questions?.length || overtakenBy(mission, last.at)) return undefined;
+  return last as Round;
 };
 
 /**
- * The Strike Lead waiting on its own round of questions: its last word asked them and nothing has
- * been said since, the same rule the chat uses to keep a round open. It is answered in the chat,
- * so the answer goes there rather than posting anything. Cory's call, 2026-10-30: a round waiting
- * on him is waiting for him, in the inbox and on the lamp, like anything else.
+ * Where every round in the chat stands, by the rule `openRound` keeps: open, answered (the person
+ * has said something since), or overtaken, by the stage that passed it or by the mission ending.
+ * The page draws these as they come; it decides none of them.
+ */
+export type RoundState = { state: "open" | "answered" | "overtaken"; by?: "finished" | "approved" | "ended" };
+export const roundsOf = (mission: Pick<Mission, "chat" | "approved" | "finished" | "status">): Array<RoundState | undefined> => {
+  const chat = mission.chat ?? [];
+  // An ended mission asks nothing (`questionsOf`), so its last round is overtaken by the end, not open.
+  const open = over(mission) ? undefined : openRound(mission);
+  const lastYou = chat.findLastIndex((entry) => entry.who === "you");
+  return chat.map((entry, i): RoundState | undefined => {
+    if (!entry.questions?.length) return undefined;
+    if (entry === open) return { state: "open" };
+    if (lastYou > i) return { state: "answered" };
+    const by = overtakenBy(mission, entry.at) ?? (over(mission) ? "ended" : undefined);
+    return by ? { state: "overtaken", by } : { state: "answered" };
+  });
+};
+
+/**
+ * The Strike Lead waiting on a round `openRound` holds open, answered on its card on the mission
+ * page. Cory's call, 2026-10-30: a round waiting on him is waiting for him, in the inbox and on the
+ * lamp, like anything else.
  */
 const leadRound = (mission: Mission): Question | undefined => {
   const last = openRound(mission);

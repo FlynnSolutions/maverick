@@ -9,7 +9,7 @@
 import { render as renderMarkdown } from "../markdown.js";
 import { foldable } from "../card.js";
 import { showMe } from "../show-me.js";
-import { atReview, isEnded } from "./state.js";
+import { atReview, flyable, isEnded } from "./state.js";
 
 /**
  * leadThread(ctx) → { node, update(view) }
@@ -230,20 +230,22 @@ export const leadThread = (ctx) => {
   };
 
   /** History folded to one line, the line its way back open. */
-  const folded = (line, body) => el("details", { class: "lead-asked" }, el("summary", {}, el("span", { class: "chev" }), line), body);
+  const folded = (line, body) => el("details", { class: "lead-asked" }, el("summary", {}, el("span", { class: "chev" }), line), ...[body].flat());
   /** A round already answered: its questions folded, so the thread reads as the conversation it was. */
   const asked = (entry) => folded(`${plural(entry.questions.length, "question")} asked`,
     el("ol", {}, ...entry.questions.map((q) => el("li", {}, q.question))));
 
+  /** What passed a round nobody answered, as the server names it (`roundsOf`). */
+  const OVERTAKEN_BY = { finished: "the work finished after it was asked", approved: "the plan was fired after it was asked", ended: "the mission ended" };
   /**
-   * A round nobody answered that the mission moved past (`openRound`): said as overtaken and by
-   * what, folded like an answered one, so it is neither waiting on the person nor gone from the
-   * thread. While the composer is there, it says the way to answer it anyway.
+   * A round nobody answered that the mission moved past: said as overtaken and by what, folded like
+   * an answered one, so it is neither waiting on the person nor gone from the thread. While the
+   * composer is there, it says the way to answer it anyway.
    */
-  const overtaken = (entry, by) => el("details", { class: "lead-asked overtaken" },
-    el("summary", {}, `${plural(entry.questions.length, "question")} asked, overtaken: ${by}`),
+  const overtaken = (entry, by) => folded(`${plural(entry.questions.length, "question")} asked, overtaken: ${OVERTAKEN_BY[by]}`, [
     el("ol", {}, ...entry.questions.map((q) => el("li", {}, q.question))),
-    over() ? null : el("p", { class: "lead-hint" }, "Nothing waits on it now. If it still matters, write to the Strike Lead below."));
+    over() ? null : el("p", { class: "lead-hint" }, "Nothing waits on it now. If it still matters, write to the Strike Lead below."),
+  ]);
 
   /** A message past a few paragraphs (a pasted brief, a long plan note) folds to its opening, with the way to the rest under it. */
   const LONG = 600;
@@ -264,42 +266,25 @@ export const leadThread = (ctx) => {
       el("p", { class: "lead-who" }, entry.who, el("span", { class: "lead-tag" }, SENT_BACK_TAG[state]), el("span", { class: "lead-at" }, fmtTime(entry.at))),
       state === "live" ? textOf(entry) : folded(line, textOf(entry)));
   };
-  const bubble = (entry, state) => el("li", { class: `lead-msg ${entry.who === "you" ? "you" : entry.who === "Maverick" ? "sys" : "sl"}${entry.error ? " error" : ""}` },
+  const bubble = (entry, round) => el("li", { class: `lead-msg ${entry.who === "you" ? "you" : entry.who === "Maverick" ? "sys" : "sl"}${entry.error ? " error" : ""}` },
     el("p", { class: "lead-who" }, entry.who === "you" ? "you" : entry.who, el("span", { class: "lead-at" }, fmtTime(entry.at))),
     textOf(entry),
-    !entry.questions?.length ? null
-      : state === "open" ? el("p", { class: "lead-hint" }, "Its question is at the top of this page, waiting on you.")
-        : state === "asked" ? asked(entry) : overtaken(entry, state));
+    !round ? null
+      : round.state === "open" ? el("p", { class: "lead-hint" }, "Its question is at the top of this page, waiting on you.")
+        : round.state === "answered" ? asked(entry) : overtaken(entry, round.by));
 
-  /** Whether this entry's round is still open, as the server says it (`openRound`): it is the one the mission's questions name. */
-  const isOpen = (chat, i) => Boolean(view?.questions?.some((q) => q.id === `round:${chat[i].at}`));
   const over = () => isEnded(view?.status);
-  /** The plan as written now, as the gate reads it: there, and nothing in it stops a Wingman. */
-  const flyable = () => Boolean(view.planDoc?.found && !view.planDoc.parsed?.problems?.length);
   /**
    * Where each send-back stands, by its index: settled once the plan passes (or flew), once a later
    * one replaced it, or once the mission ended. The server checks the plan again before anything
    * flies, so this is only how the history reads.
    */
   const sentBackStates = (chat) => {
-    const fixed = view.approved || flyable();
+    const fixed = view.approved || flyable(view.planDoc);
     const latest = chat.findLastIndex((e) => e.sentBack);
     return (i) => !chat[i].sentBack ? "" : fixed ? "fixed" : i < latest ? "replaced" : over() ? "ended" : "live";
   };
 
-  /**
-   * Where a round stands: open, asked (you have said something since), or overtaken, named by
-   * the stage that passed it, the same stamps `openRound` reads, else the mission's end.
-   */
-  const roundState = (chat, i) => {
-    if (!chat[i].questions?.length) return "";
-    if (isOpen(chat, i)) return "open";
-    if (chat.slice(i + 1).some((entry) => entry.who === "you")) return "asked";
-    const at = chat[i].at;
-    return view.finished > at ? "the work finished after it was asked"
-      : view.approved > at ? "the plan was fired after it was asked"
-        : over() ? `the mission was ${view.status}` : "asked";
-  };
 
   /** Maverick's own line about the flight: a task out, passed or back, a milestone merged. One quiet line each. */
   const note = (u) => el("li", { class: `lead-note ${u.kind}` }, el("span", { class: "lead-at" }, fmtTime(u.at)), el("span", {}, u.text));
@@ -313,19 +298,20 @@ export const leadThread = (ctx) => {
   const paintLog = (chat, updates) => {
     const stateOf = sentBackStates(chat);
     const items = [
-      ...chat.map((entry, i) => ({ key: `c${i}`, at: Date.parse(entry.at), entry, sent: stateOf(i), round: roundState(chat, i) })),
+      ...chat.map((entry, i) => ({ key: `c${i}`, at: Date.parse(entry.at), entry, sent: stateOf(i), round: view.rounds?.[i] })),
       // Keyed by what it says and when, since the server folds a run of the same line into its latest.
       ...updates.map((update) => ({ key: `u${update.at}${update.text}`, at: Date.parse(update.at), update })),
     ].sort((a, b) => a.at - b.at);
     // An overtaken round offers the composer only while there is one, so the mission ending redraws it.
     const ended = over();
+    const sigOf = (item) => `${item.sent}|${item.round?.state}|${item.round?.by}|${item.round ? ended : ""}`;
     let prev = null;
     for (const item of items) {
       let held = placed.get(item.key);
-      if (!held || (item.entry && (held.sent !== item.sent || held.round !== item.round || (item.round && held.ended !== ended)))) {
+      if (!held || (item.entry && held.sig !== sigOf(item))) {
         const node = item.sent ? sentBack(item.entry, item.sent) : item.entry ? bubble(item.entry, item.round) : note(item.update);
         held?.node.replaceWith(node);
-        held = { node, sent: item.sent, round: item.round, ended };
+        held = { node, sig: item.entry ? sigOf(item) : "" };
         placed.set(item.key, held);
       }
       const want = prev ? prev.nextSibling : log.firstChild;
@@ -346,7 +332,8 @@ export const leadThread = (ctx) => {
   const paintFire = () => {
     const doc = view.planDoc ?? {};
     const last = view.chat?.findLast((e) => e.who === "Strike Lead");
-    const ready = !view.approved && last?.planReady && flyable();
+    // Ready to offer, with a check that refuses said under it rather than hidden: the gate's checks are below.
+    const ready = !view.approved && last?.planReady && doc.found && !doc.parsed?.problems?.length;
     const refusing = doc.preflight?.filter((c) => c.refuses) ?? [];
     const failing = doc.preflight?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
     const key = JSON.stringify([ready, refusing.map((c) => c.name), failing.map((c) => c.name), doc.cost, doc.estimate?.minutes]);
@@ -385,10 +372,7 @@ export const leadThread = (ctx) => {
   };
   window.addEventListener("hashchange", () => { scrolledTo = ""; toRound(); });
   /** The open round's size, as the server says it is open. */
-  const openRound = () => {
-    const chat = view?.chat ?? [];
-    return chat.length && isOpen(chat, chat.length - 1) ? chat.at(-1).questions.length : 0;
-  };
+  const openRound = () => (view?.rounds?.at(-1)?.state === "open" ? view.chat.at(-1).questions.length : 0);
   const paintNow = () => {
     const roundOpen = openRound();
     const fireReady = Boolean(fire.querySelector(".lead-fire-btn, .mv-confirm"));

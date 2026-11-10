@@ -261,3 +261,13 @@ test("an agent stopped at a prompt makes a live mission wait for you; other trou
   assert.equal(statusWord({ ...live, trouble: "a merge is held" }, []), "working");
   assert.equal(statusWord({ ...live, status: "abandoned", trouble: "x is waiting on you in its own session" }, []), "done");
 });
+
+test("the server says where every round stands, so the page decides none of it", async () => {
+  const { roundsOf } = await import("../src/questions.ts");
+  const ask = (at: string) => ({ at, who: "Strike Lead" as const, text: "q", questions: [{ id: "q", question: "?", options: ["a"] }] });
+  const chat = [ask("2026-11-05T10:00:00.000Z"), { at: "2026-11-05T10:05:00.000Z", who: "you" as const, text: "a" }, ask("2026-11-05T11:00:00.000Z"), ask("2026-11-05T19:00:00.000Z")];
+  assert.deepEqual(roundsOf({ chat, status: "flying" } as never), [{ state: "answered" }, undefined, { state: "answered" }, { state: "open" }]);
+  assert.deepEqual(roundsOf({ chat, status: "review", approved: "2026-11-05T12:00:00.000Z", finished: "2026-11-05T21:00:00.000Z" } as never).at(-1), { state: "overtaken", by: "finished" });
+  assert.deepEqual(roundsOf({ chat, status: "flying", approved: "2026-11-05T20:00:00.000Z" } as never).at(-1), { state: "overtaken", by: "approved" });
+  assert.deepEqual(roundsOf({ chat: chat.slice(0, 3), status: "closed" } as never).at(-1), { state: "overtaken", by: "ended" });
+});

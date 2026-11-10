@@ -40,7 +40,7 @@ import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead,
 import { DECISION_WORDS, RIO_TOOLS, componentsOver, planOnBranch, rioBrief, screenshotsDir, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, retryable, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
+import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, retryable, roundsOf, statusWord, walkthroughState, type Question, type RoundState, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { agentFor, agentsLaunched, defaultWorkflow, hasStage, workflowOf, type Workflow } from "./workflows.ts";
@@ -2841,7 +2841,7 @@ export type Reading = Finding & { key: string; taskId: string; taskTitle: string
 export type Move = { taskId: string; attempt: number; out?: string; built?: string; reviewed?: string; ended?: string; end?: "passed" | "handed-back" | "retry"; verdict?: string; counts?: FeedEntry["counts"] };
 
 /** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
-export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[]; moves: Move[] };
+export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; rounds: Array<RoundState | undefined>; feed: FeedEntry[]; readings: Reading[]; moves: Move[] };
 
 /**
  * A task's findings as keyed records: every carried line, and for a handed-back task its findings
@@ -3072,7 +3072,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const feed = feedOf(log, mission);
   // The page never reads the pinned template, so it stays on the record and out of every view.
   const { template: _template, ...shown } = mission;
-  return { ...shown, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
+  return { ...shown, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, rounds: roundsOf(mission), feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
@@ -3145,6 +3145,8 @@ export const workspaceMissions = async (project: Project): Promise<WorkspaceMiss
  */
 export const missionQuestions = async (project: Project): Promise<Array<{ id: string; name: string; status: Mission["status"]; word: StatusWord; questions: Question[] }>> =>
   Promise.all((await listMissions(project.id)).map(async (mission) => {
+    // An ended mission asks nothing and is not linked to; its findings need not be read.
+    if (over(mission)) return { id: mission.id, name: mission.name, status: mission.status, word: statusWord(mission), questions: [] };
     const { questions, word } = await asked(mission, retryable, false);
     return { id: mission.id, name: mission.name, status: mission.status, word, questions };
   }));
