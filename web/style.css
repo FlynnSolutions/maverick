@@ -683,6 +683,19 @@ body.ask-open { overflow: hidden; }
 .ask-actions button.danger { background: var(--threat-dim); border-color: var(--threat); color: var(--ink); }
 .ask-actions button.danger:hover { background: var(--threat); color: var(--on-accent); }
 .ask-actions button:disabled { opacity: 0.5; pointer-events: none; }
+/* The ask's cards (choices in app.js): one per row, a radio group; the chosen card is lifted onto --panel with a 2px accent ring, and no dot. */
+.ask-label { margin: 14px 0 6px; font: 600 11px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.ask-choices { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.ask-choice { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-height: var(--control); padding: 10px 12px; border-radius: var(--radius-m); background: var(--steel); box-shadow: 0 0 0 1px var(--seam); cursor: pointer; }
+.ask-choice:hover { background: var(--panel); }
+.ask-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ask-choice[aria-checked="true"] { background: var(--panel); box-shadow: 0 0 0 2px var(--accent); }
+.ask-choice-name { font: 600 13.5px/1.3 var(--display); color: var(--ink); overflow-wrap: anywhere; }
+.ask-choice-says { font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); }
+.ask-choice-note { font: 500 11px/1.4 var(--mono); color: var(--ink-faint); }
+.ask-choice-error { font: 500 11.5px/1.45 var(--mono); color: var(--threat); overflow-wrap: anywhere; }
+.ask-choice[aria-disabled="true"] { cursor: not-allowed; background: transparent; box-shadow: 0 0 0 1px var(--seam-soft); }
+.ask-choice[aria-disabled="true"] .ask-choice-name { color: var(--ink-faint); }
 
 /* ---------- item drawer ---------- */
 
