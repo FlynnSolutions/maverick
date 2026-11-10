@@ -80,12 +80,13 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: on the invented Harbor fixtures `tools/ui-check.mjs` serves, render a full mission flying, a Light mission flying, a Light mission at review, and an older record with no `workflow`. Grade the mission page with ui-audit at 390 and 1280 in light and dark, and put the grade card in the commit message. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
 
-- [~] **The read-only template page**
+- [x] **The read-only template page**
   - touches: web/workflow.html, web/workflow.js, web/workflow.css
   - needs: m1-t2
   - cells: 39
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: 8aac27f
   A new page, `web/workflow.html`, built from cell 39 and closing rule 5, with the flow drawn per `.ui-design/mockups/workflow-editor-round-1.html` picks 1 (left to right, wires), 7 (for-each as splay and rejoin), and 11 (card steps with ports). It is read-only, with no drag, add or delete. `?project=&id=` loads `GET /api/workflows/<id>`, and `?project=&mission=` loads that mission's pinned copy. It shows the crumb, name, description, the unverified sentence when `unverified` is true ("It leaves out review, proof and the walk, so a mission it runs stays on its mission branch, and you take the work from there by hand.", naming only what it actually leaves out), where it comes from (built-in or the project's file), then the flow and the legend. A stage the template leaves out is not drawn. Who runs each stage reads from the template (`agent`, else its slot's name). An unknown id or a broken template says so on the page, with the message. Match the other pages' bar and theme handling (`web/theme.js`, `web/page.js`, the `.bar` header as `web/mission.html` has it) and use only existing tokens. At 390 the flow scrolls sideways inside its frame and the page does not. Do not touch other pages or `src/`.
 
@@ -151,3 +152,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 21:51 m1-t4 Light flies: a built task passes with no review, and the plan, briefs and interview follow the template: pending to flying
 - 2026-11-09 21:51 m1-t6 Template cards in the new-mission dialog: pending to flying
 - 2026-11-09 21:51 m1-t7 The mission page: the template line, the status strip, and a Light result: pending to flying
+- 2026-11-09 22:29 m1-t8 The read-only template page: reviewing to passed (RIO: pass with notes) with 10 notes carried, 1 unverified
