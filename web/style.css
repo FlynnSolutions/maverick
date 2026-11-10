@@ -465,7 +465,8 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .card .meta .tag { color: var(--accent); opacity: 0.8; }
 .card .spawn { grid-area: spawn; align-self: start; margin-left: 8px; color: var(--ink-faint); }
 .card .spawn:hover, .card .spawn:focus-visible { color: var(--accent-hot); }
-.lane.done .card, .card.checked { opacity: 0.6; cursor: default; }
+/* Done sits a surface lower, not faded: opacity took its chips under 4.5:1. */
+.lane.done .card, .card.checked { background: var(--gunmetal); cursor: default; }
 .lane.done .card .num { display: none; }
 .card.checked .title { color: var(--ink-soft); }
 @keyframes settle { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
@@ -857,7 +858,10 @@ body.ask-open { overflow: hidden; }
 /* ---------- release planning on the calendar ---------- */
 
 .strip-title { grid-column: 1 / -1; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 8px 0 0; }
-.releases { grid-column: 1 / -1; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+/* The strip runs past the edge once there are a few releases: its right edge fades, so the cut
+   reads as "more this way", and the end padding keeps the last card clear of the fade. */
+.releases { grid-column: 1 / -1; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.releases::after { content: ""; flex: 0 0 22px; }
 .release-card {
   flex: 0 0 260px;
   min-height: 90px;
