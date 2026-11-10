@@ -576,7 +576,8 @@ export const mountCommandCenter = (root, ctx) => {
 
   const formationTabs = () => {
     const tab = (id, label, count, f) =>
-      dropZone(el("button", { type: "button", class: !archiveOpen && activeFormation === id ? "on" : "",
+      // The tab on show says so to a screen reader too; pressing it again has nowhere else to go.
+      dropZone(el("button", { type: "button", class: !archiveOpen && activeFormation === id ? "on" : "", ...(!archiveOpen && activeFormation === id ? { "aria-current": "true" } : {}),
         title: f ? `${f.name} · drop a strip here to bring it into the flight · right-click to pop out, rename or disband` : "every session in this project · drop a strip here to take it out of its formation",
         oncontextmenu: f ? (e) => { e.preventDefault(); tabMenu(f, e.clientX, e.clientY); } : null,
         onclick: () => showFormation(id) }, label, count != null ? el("b", {}, String(count)) : null),
@@ -586,7 +587,7 @@ export const mountCommandCenter = (root, ctx) => {
       // With the list unreadable there is no count to give, so none is shown rather than a zero.
       tab(null, "Rack", sessionsFailed ? null : mySessions().filter((s) => !finished(s.status)).length + missions.filter((m) => !isEnded(m.status)).length),
       ...formations.filter((f) => liveSlots(f)).map((f) => tab(f.id, missions.some((m) => m.formation === f.id && !isEnded(m.status)) ? `${f.name} crew` : f.name, liveSlots(f), f)),
-      sessionsFailed ? null : el("button", { type: "button", class: `archive-tab${archiveOpen || (activeFormation && formations.some((f) => f.id === activeFormation && !liveSlots(f))) ? " on" : ""}`, title: "everything that has ended in this project", onclick: () => { setArchive(true); activeFormation = null; paint(); } }, "Archive", el("b", {}, String(archived.done.length + archived.over.length + archived.closed.length))),
+      sessionsFailed ? null : el("button", { type: "button", class: `archive-tab${archiveOpen || (activeFormation && formations.some((f) => f.id === activeFormation && !liveSlots(f))) ? " on" : ""}`, ...(archiveOpen ? { "aria-current": "true" } : {}), title: "everything that has ended in this project", onclick: () => { setArchive(true); activeFormation = null; paint(); } }, "Archive", el("b", {}, String(archived.done.length + archived.over.length + archived.closed.length))),
       el("button", { type: "button", class: "new shell", title: "open a shell in this project", onclick: async () => {
         try {
           const t = await post("/api/terminals", { project: ctx.projectId, kind: "shell", cols: 120, rows: 34 });
