@@ -56,7 +56,11 @@ export const leadThread = (ctx) => {
   const composer = el("form", { class: "lead-compose", onsubmit: async (e) => {
     e.preventDefault();
     const text = box.value.trim();
-    if (!text) return box.focus();
+    // Sending nothing says what is missing and moves there, as the round's send does; the server's own words.
+    if (!text) {
+      fail(new Error("say something; an empty reply is not sent"));
+      return box.focus();
+    }
     send.disabled = true;
     send.textContent = "sending";
     try {

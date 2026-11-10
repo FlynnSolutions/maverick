@@ -62,7 +62,7 @@ otherwise; an error toast stays until it is closed.
 | Finding | Jump from a chip | A verdict chip in Progress or a severity chip on a file row unfolds the finding and focuses it | Focus ring on the card | Scrolls into view | GitHub file tree counts |
 | Finding | Group by severity, then area | Built: three buckets, fix first, an area heading inside each | n/a | n/a | Linear group by |
 | Summary | Ask for the three things to read | `summarize` (`summarize again` once written) | Toast; the button says `summarizing...` until it lands | none | n/a |
-| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept | The entry rises into the thread | Devin chat |
+| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept; sending nothing says so under the box and moves to it | The entry rises into the thread | Devin chat |
 | Chat | Answer a round of interview questions | The option buttons and an own-words field per question, then `send answers` | The round folds into "N questions asked" | none | Devin plan questions |
 | Chat | Read a round the mission moved past | Built: it folds into "N questions asked, overtaken" with what passed it; unfolded, its questions and, while the composer is there, that writing to the Strike Lead is the way to answer it anyway | n/a | none | GitHub "Outdated" review comments |
 | Chat | Read the history | `the earlier conversation` unfolds it; a long message folds to its opening with `the whole message` | n/a | none | Linear comments |
