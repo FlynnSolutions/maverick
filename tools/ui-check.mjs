@@ -27,14 +27,25 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = parseArgs({ options: { out: { type: "string" } } }).values.out ?? join(tmpdir(), `maverick-ui-check-${process.pid}`);
 mkdirSync(out, { recursive: true });
 
-/** Polls `check` (sync or async) until it gives something truthy, and gives that, or null after `ms`. Runs in Node and, as UNTIL, in the page. */
+/**
+ * Polls `check` (sync or async) until it gives something truthy, and gives that, or null after `ms`.
+ * A check that throws is tried again: a poll's request the server reset as a page closed is one
+ * miss, not the run's end. Still throwing at the deadline, it throws. Runs in Node and, as UNTIL, in the page.
+ */
 const until = async (check, ms) => {
   const end = Date.now() + ms;
+  let failed = null;
   while (Date.now() < end) {
-    const hit = await check();
-    if (hit) return hit;
+    try {
+      const hit = await check();
+      if (hit) return hit;
+      failed = null;
+    } catch (err) {
+      failed = err;
+    }
     await new Promise((r) => setTimeout(r, 100));
   }
+  if (failed) throw failed;
   return null;
 };
 const UNTIL = `const until = ${until};`;
