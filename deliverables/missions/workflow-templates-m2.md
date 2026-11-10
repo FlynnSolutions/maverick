@@ -104,8 +104,9 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - [~] **The decision entry, the docs and the design system**
   - touches: docs/03-decisions.md, docs/01-architecture.md, docs/02-data-model.md, docs/07-glossary.md, README.md, .ui-design/system.md
   - needs: m1-t4, m1-t5, m1-t6, m1-t7, m1-t8
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: d17c2eb
   Write `## M33: A mission picks its template, and unverified work stays on its branch ✅ built` in `docs/03-decisions.md`, after M32 and in its voice. Cover what was decided (Cory's calls listed in this plan's intro), the shape (ordered stages still, `unverified` asked in one place, the pinned copy decides, review left out settles at `passed`, project templates at `.maverick/workflows/<id>.json` overriding built-ins), what the tests pin and what they do not, the one existing assertion changed and why, and the `landAgain` release fix. Under M32's "Not known", point to M33 for the landing question. Update the architecture row for `workflows.ts`, the data-model rows (`Workflow` gains `name` and `description`; `MissionView.workflow`), and the glossary's "Workflow template" (two built-ins, project templates, unverified). In `README.md`, replace "There is one template, and a person cannot pick another yet." with how to pick, where a project's templates live, and the rule that unverified work never lands by pull request or push. Record the template card, the status strip, the template line and the template page in `.ui-design/system.md`, from the mockup's closing rules. Change no code.
 
   Prove it: every path, function and file the new text names exists on the branch (`grep` each), `npm run lint` passes, and the README section reads true against the code. Results in the commit message.
@@ -179,3 +180,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-10 00:52 m1-t6 Template cards in the new-mission dialog: flying to reviewing
 - 2026-11-10 00:57 m1-t6 Template cards in the new-mission dialog: reviewing to passed (RIO: pass with notes) with 12 notes carried, 2 unverified
 - 2026-11-10 00:57 m1-t9 The decision entry, the docs and the design system: pending to flying
+- 2026-11-10 01:05 m1-t9 The decision entry, the docs and the design system: flying to reviewing
