@@ -11,6 +11,7 @@ import { isEnded, missionWord } from "./mission/state.js";
 import { icon } from "./icons.js";
 import { questionLines } from "./inbox.js";
 import { failed, leave, toast } from "./toast.js";
+import { finished, reviewOwed, stripState } from "./session-word.js";
 
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5, down: 5 };
@@ -19,19 +20,10 @@ const ARCHIVE_PAGE = 30;
 const DAY = 24 * HOUR;
 const OLD_MISSION = 7 * DAY;
 /**
- * A session that has ended. `blocked` is deliberately not here: it is running and stopped at a
- * prompt, which is the loudest thing on the page, not the quietest. Counting it as finished put
- * the same session in "Needs you" and in "Background · done" at once, because those two filters
- * run independently over one list, and painted a lock lamp on a strip marked finished.
- */
-export const finished = (s) => /^(done|exited|stopped|down)$/.test(s ?? "");
-/**
  * The agent's own word about itself, which outranks the registry's read of its process: it has
  * ended, or it is stopped at a prompt. Neither is something a live pid can show.
  */
 const trustAgent = (s) => finished(s) || s === "blocked";
-/** One word per fact in the state column: the registry's words differ by where the session runs, not by what it is doing. */
-const STATE_WORD = { busy: "working", running: "working", waiting: "waiting for you", shell: "idle", done: "ended", exited: "ended" };
 /** The prompt Maverick spawned an agent with: its words, not the person's, so it never reads as `you`. */
 const SPAWN_PROMPT = /^You are (the|a|an|writing|summarizing)\b/;
 const WANTS_YOU = /^(waiting|blocked)$/;
@@ -39,7 +31,6 @@ const WANTS_YOU = /^(waiting|blocked)$/;
 const listedName = (name) => (name && (name.length >= 59 || /[,:;]$/.test(name)) ? `${name.trimEnd()}…` : name);
 /** A session named for a mission: the way the Wingman's record and listing name start. */
 const belongsTo = (m, title) => Boolean(title) && (title.startsWith(`${m.name}: `) || title.startsWith(`${m.name} · `));
-const stateWord = (s) => (s.isShell ? "shell" : STATE_WORD[s.status] ?? s.status);
 
 const age = (ms) => {
   if (!ms) return "";
@@ -143,8 +134,9 @@ export const mountCommandCenter = (root, ctx) => {
 
   const auditChip = (record) => {
     const v = record?.auditView;
-    if (!v || v.verdict === "none") return null;
-    return el("span", { class: `verdict ${v.verdict}${v.decision ? ` ${v.decision}` : ""}` }, v.verdict === "pending" ? `auditing (${v.agentState ?? "…"})` : `${v.verdict}${v.decision ? ` · ${v.decision}` : ""}`);
+    // A review still owed is said in the state column (`stripState`), so the row says it once.
+    if (!v || v.verdict === "none" || v.verdict === "pending") return null;
+    return el("span", { class: `verdict ${v.verdict}${v.decision ? ` ${v.decision}` : ""}` }, `${v.verdict}${v.decision ? ` · ${v.decision}` : ""}`);
   };
 
   /** Where the session lives. Inside a project's own section its name is on the heading already. */
@@ -307,6 +299,7 @@ export const mountCommandCenter = (root, ctx) => {
     const mission = missionOf(s);
     const shown = mission && belongsTo(mission, s.title) ? `Wingman · ${s.title.slice(mission.name.length).replace(/^(: | · )/, "")}` : s.title;
     const name = stripName(shown, () => openIt());
+    const said = stripState(s, record);
     // Inside a formation a strip opens where it sits, so several run at once. In the rack it
     // still goes full screen: sixteen strips have no room to hold a conversation open.
     const expandable = s.isShell || (Boolean(inFormation) && Boolean(s.sessionId));
@@ -339,8 +332,8 @@ export const mountCommandCenter = (root, ctx) => {
         : null,
       chips: [roleChip(record), auditChip(record)],
       // An idle session in Needs you asked you something; in Ready to review it replied. Say which, not just "idle".
-      state: band === "action" ? (asksYou(s) ? "asked you" : "replied") : stateWord(s),
-      note: s.waitingFor,
+      state: band === "action" ? (asksYou(s) ? "asked you" : "replied") : said.state,
+      note: said.note,
       when: age(s.at),
       up: s.elapsed ? `up ${s.elapsed}` : null,
       where: mission?.name ?? whereText(s, true, false),
@@ -370,7 +363,7 @@ export const mountCommandCenter = (root, ctx) => {
         band: "stale",
         name: el("h3", { class: "strip-name" }, record.loop),
         chips: [roleChip(record), auditChip(record)],
-        state: record.status,
+        state: reviewOwed(record) ?? record.status,
         when: record.ended ? age(Date.parse(record.ended)) : "",
         where: record.pr ?? "",
       }),
@@ -779,7 +772,8 @@ export const mountCommandCenter = (root, ctx) => {
     const entries = [
       ...archived.done.map((s) => {
         const named = agents.has(s.claudeId) && !all.names?.[s.sessionId] ? { ...s, title: agents.get(s.claudeId) } : s;
-        return { at: s.at, agent: spawned(s, agents), text: `${named.title} ${stateWord(s)} ${missionOf(s)?.name ?? whereText(s, true, false)}`, draw: () => strip(named, s.record ?? model.byClaudeId.get(s.claudeId), false, "done") };
+        const record = s.record ?? model.byClaudeId.get(s.claudeId);
+        return { at: s.at, agent: spawned(s, agents), text: `${named.title} ${stripState(s, record).state} ${missionOf(s)?.name ?? whereText(s, true, false)}`, draw: () => strip(named, record, false, "done") };
       }),
       ...archived.over.map((m) => ({ at: Date.parse(m.approved ?? m.created), agent: false, text: `${m.name} ${missionWord(m)}`, draw: () => missionRow(m) })),
       ...archived.closed.map((r) => ({ at: Date.parse(r.ended ?? r.started ?? ""), agent: false, text: `${r.loop} ${r.status}`, draw: () => ghost(r) })),

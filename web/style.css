@@ -1316,7 +1316,7 @@ body.ask-open { overflow: hidden; }
 }
 .rack.archive .strip-turn { display: none; }
 .strip.finished .lamp { filter: grayscale(1); }
-.strip.finished :is(.role, .verdict.pending, .verdict.pass) { display: none; }
+.strip.finished :is(.role, .verdict.pass) { display: none; }
 .rack.archive .act:not(.primary-act):not(.end) { visibility: hidden; }
 .rack-col.name { grid-column: 1 / span 2; }
 .archive-formation-name { margin: 0 0 4px; font-family: var(--display); font-size: 14px; font-weight: 600; color: var(--ink-soft); }

@@ -341,6 +341,22 @@ test("a task that already passed is not sent back out", async () => {
   await assert.rejects(() => retryTask(project, "passed", "m1-t1"), /already passed/);
 });
 
+test("a task in the air is not sent out again: the press is refused before anything is stopped, and says to open its session", async () => {
+  for (const status of ["flying", "built", "reviewing"] as const) {
+    const m = await seed(`air-${status}`);
+    Object.assign(m.milestones[0].tasks[0], { status, ...(status === "reviewing" && { review: { claudeId: "rio", file: "/tmp/none.md", started: "2026-01-01T00:00:00Z" } }) });
+    await writeFile(file(`air-${status}`), JSON.stringify(m), "utf8");
+    await assert.rejects(() => retryTask(project, `air-${status}`, "m1-t1"), new RegExp(`already in the air \\(${status}\\); open its session`));
+    const after = (await readMission("p", `air-${status}`))!;
+    assert.equal(after.rev, 1, `${status}: nothing was written`);
+    assert.deepEqual([after.milestones[0].tasks[0].status, after.milestones[0].tasks[0].claudeId, after.milestones[0].tasks[0].attempts], [status, "aaa", 1], `${status}: the agent in the air is still the task's`);
+  }
+  const p = await seed("air-pending");
+  p.milestones[0].tasks[0].status = "pending";
+  await writeFile(file("air-pending"), JSON.stringify(p), "utf8");
+  await assert.rejects(() => retryTask(project, "air-pending", "m1-t1"), /has not flown yet/);
+});
+
 test("a landing held because a repo cannot push recovers once the project sets that repo to merge, without pushing anything", async () => {
   const proj = mkdtempSync(join(tmpdir(), "mv-land-"));
   await writeFile(join(proj, "maverick.json"), JSON.stringify({ missions: { land: "pr", repos: { root: { land: "merge" } } } }), "utf8");

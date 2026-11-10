@@ -40,7 +40,7 @@ import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead,
 import { DECISION_WORDS, RIO_TOOLS, componentsOver, planOnBranch, rioBrief, screenshotsDir, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
+import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, retryable, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { agentFor, agentsLaunched, defaultWorkflow, hasStage, workflowOf, type Workflow } from "./workflows.ts";
@@ -2458,7 +2458,12 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
     if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
     if (mission.status === "paused") throw new Error(`${mission.name} is paused; resume it first, and the retry goes out then`);
     if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
-    if (task.status === "passed") throw new Error(`${task.title} already passed; there is nothing to send back out`);
+    // Checked before anything is stopped: sending out a task in the air stops the agent on it and starts another over it.
+    if (!retryable(task)) {
+      throw new Error(task.status === "passed" ? `${task.title} already passed; there is nothing to send back out`
+        : AIRBORNE.has(task.status) ? `${task.title} is already in the air (${task.status}); open its session from its row in Plan instead`
+        : `${task.title} has not flown yet; it goes out when its turn comes`);
+    }
     task.attempts = MAX_ATTEMPTS - 1;
     return mission;
   });
@@ -3121,7 +3126,7 @@ const mergedStat = (mission: Mission, diffstat: Record<string, string>): string 
 /** The tasks a question reads findings for, and the merged total reads stats for; the rest of a mission is not asked. */
 const askedAbout = (mission: Mission): ((task: MissionTask) => boolean) => {
   const merged = new Set(mission.milestones.filter((m) => m.merged).flatMap((m) => m.tasks));
-  return (task) => task.status === "handed-back" || (task.status === "passed" && merged.has(task));
+  return (task) => retryable(task) || (task.status === "passed" && merged.has(task));
 };
 
 /** Every mission in the project as the workspace draws it, so a row can say what it asks without opening it. */
@@ -3136,6 +3141,6 @@ export const workspaceMissions = async (project: Project): Promise<WorkspaceMiss
 /** What a mission asks, and nothing else: no sweep, no git, findings only for what is handed back. The notification poll reads this. */
 export const missionQuestions = async (project: Project): Promise<Array<{ id: string; name: string; questions: Question[] }>> =>
   Promise.all((await listMissions(project.id)).map(async (mission) => {
-    const { questions } = await asked(mission, (task) => task.status === "handed-back", false);
+    const { questions } = await asked(mission, retryable, false);
     return { id: mission.id, name: mission.name, questions };
   }));

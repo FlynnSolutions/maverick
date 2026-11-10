@@ -188,6 +188,13 @@ const blockerOf = (findings: string | undefined): string | undefined => {
 
 type Answer = Question["answers"][number];
 
+/**
+ * The one state a task is sent out again from: handed back to its person. A task in the air
+ * (flying, built, reviewing) has an agent on it, and its move is to open its session. The
+ * question offers the retry by this, and `retryTask` takes it by this, so the two cannot part.
+ */
+export const retryable = (task: Pick<MissionTask, "status">): boolean => task.status === "handed-back";
+
 const handedBack = (mission: Mission & { findings?: Record<string, string> }, task: MissionTask): Question => {
   const why = blockerOf(mission.findings?.[task.id]) ?? task.note ?? "no reason recorded";
   const retry: Answer = { label: "send it out again", method: "POST", path: `tasks/${task.id}/retry`, primary: true };
@@ -226,7 +233,7 @@ const escalationAnswer = (mission: Mission): Answer | undefined => {
 export const questionsOf = (mission: Mission & { findings?: Record<string, string> }): Question[] => {
   if (over(mission)) return [];
   const out: Question[] = [];
-  for (const m of mission.milestones) for (const t of m.tasks) if (t.status === "handed-back") out.push({ ...handedBack(mission, t), milestone: m.n });
+  for (const m of mission.milestones) for (const t of m.tasks) if (retryable(t)) out.push({ ...handedBack(mission, t), milestone: m.n });
   for (const m of mission.milestones) {
     if (!m.hold) continue;
     const landing = m.hold.kind === "landing";

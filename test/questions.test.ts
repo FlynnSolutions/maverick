@@ -31,6 +31,15 @@ test("a handed-back task asks retry or accept, and quotes the first blocker when
   assert.match(questionsOf(base({ milestones: [ms(1, [task])] }))[0].body, /: the RIO failed it$/);
 });
 
+test("a task in the air is asked nothing: no retry while it flies, is built or is reviewed, only once it is handed back", () => {
+  for (const status of ["flying", "built", "reviewing", "pending", "passed"] as const) {
+    const qs = questionsOf(base({ status: "blocked", milestones: [ms(1, [t("m1-t1", status, { review: { claudeId: "r", file: "f", started: "2026-10-02T00:00:00.000Z" } })])] }));
+    assert.ok(!qs.some((q) => q.taskId === "m1-t1" || q.answers.some((a) => "path" in a && a.path.endsWith("/retry"))), status);
+  }
+  const back = questionsOf(base({ status: "blocked", milestones: [ms(1, [t("m1-t1", "handed-back")])] }));
+  assert.ok(back[0].answers.some((a) => "path" in a && a.path === "tasks/m1-t1/retry"), "handed back, it is offered");
+});
+
 test("a held milestone asks to be released, with the hold's kind; a landing hold offers landing again instead, which is all the server takes", () => {
   const hold = (kind: "collision" | "landing" | "proof", at: string) => ({ kind, reason: `${kind} reason`, at });
   const mission = base({ status: "blocked", milestones: [ms(1, [], { hold: hold("collision", "2026-10-03T00:00:00.000Z") }), ms(2, [], { hold: hold("proof", "2026-10-04T00:00:00.000Z") }), ms(3, [], { hold: hold("landing", "2026-10-05T00:00:00.000Z") })] });

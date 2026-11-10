@@ -114,6 +114,9 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   agent last said, and `open that session`.
 - **One word per fact.** The state column says `working`, `waiting for you`, `idle`; the verb that
   ends a live session is `end`, in every place. `land and close` is the mission's: it ships work.
+  A row says each fact once: an ended session whose review is still owed reads the review
+  (`review blocked`), never `ended` beside an `auditing (blocked)` chip, which read as done and
+  stuck at once (2026-11-04).
 - **Racks are ordered by who needs you, projects included.** A project holding a waiting session
   is drawn before one that is merely busy, and an empty project draws nothing. The page's focal
   element is whatever waits on the pilot, wherever it lives.
