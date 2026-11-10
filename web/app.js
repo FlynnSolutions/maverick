@@ -1303,7 +1303,16 @@ const shipCadenceRow = () => {
   };
   every.addEventListener("change", apply);
   anchor.addEventListener("change", () => { if (Number(every.value)) apply(); });
-  const oneOff = el("input", { type: "date", "aria-label": "one-off ship day", title: "a ship day on its own, outside the cadence" });
+  // A one-off with no day is said under the row, as an empty add is, until a day is picked.
+  const missing = el("p", { class: "add-said", role: "status", id: "one-off-said" });
+  const oneOff = el("input", { type: "date", "aria-label": "one-off ship day", "aria-describedby": missing.id, title: "a ship day on its own, outside the cadence",
+    oninput: () => { oneOff.removeAttribute("aria-invalid"); missing.textContent = ""; } });
+  const addOneOff = () => {
+    if (oneOff.value) return setShipDay("add", oneOff.value);
+    missing.textContent = "Pick the day first, then add it.";
+    oneOff.setAttribute("aria-invalid", "true");
+    oneOff.focus();
+  };
   const next = (shipDays?.occurrences ?? []).find((o) => o.date >= today());
   return el("div", { class: "cal-ships" },
     el("span", { class: "k" }, "Ship days"),
@@ -1313,7 +1322,8 @@ const shipCadenceRow = () => {
     next ? el("span", { class: "muted small mono" }, `next ${fmtDate(next.date, true)}`) : el("span", { class: "muted small" }, "none scheduled"),
     el("span", { class: "spacer" }),
     oneOff,
-    btn("add a one-off", () => { if (oneOff.value) setShipDay("add", oneOff.value); }, "ghost"),
+    btn("add a one-off", addOneOff, "ghost"),
+    missing,
   );
 };
 
@@ -1346,7 +1356,8 @@ const renderCalendar = (trackers) => {
     el("button", { type: "button", class: "ghost icon-btn month-prev", "aria-label": `previous month, ${before}`, title: before, onclick: () => shift(-1) }, icon("chevron")),
     el("h2", {}, current),
     el("button", { type: "button", class: "ghost icon-btn month-next", "aria-label": `next month, ${after}`, title: after, onclick: () => shift(1) }, icon("chevron")),
-    btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"),
+    // Already on this month, today has nowhere to go, so it rests.
+    Object.assign(btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"), { disabled: calendarMonth === today().slice(0, 7) }),
     el("span", { class: "spacer" }),
     el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, or a ship day to move it"),
   );

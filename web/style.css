@@ -388,7 +388,7 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .lane.collapsed .lane-title .label { flex: 0; }
 .group-name { font-size: 11px; color: var(--ink-ghost); margin: 10px 0 4px; padding-left: 2px; }
 .quick-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
-.quick-add input[aria-invalid="true"] { box-shadow: 0 0 0 1px var(--caution); }
+.quick-add input[aria-invalid="true"], .cal-ships input[aria-invalid="true"] { box-shadow: 0 0 0 1px var(--caution); }
 .add-said { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--ink-soft); }
 .add-said:empty { display: none; }
 .quick-add input { flex: 1; min-width: 0; }

@@ -177,11 +177,11 @@ The same items by deadline, with the ship days and the releases. Its question: w
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Month | Go to another, or today | The chevrons either side of the month, `today` | The grid redraws | none | Google Calendar |
+| Month | Go to another, or today | The chevrons either side of the month, `today` (resting while this month is shown) | The grid redraws | none | Google Calendar |
 | Item | Open | Its event on the day (a button) | The item drawer | The drawer slides in | Google Calendar |
 | Item | Set or clear a deadline | Drag onto a day, or onto "without a deadline"; or the drawer | Toast with `undo` | The day flares | Linear due date |
 | Ship day | Open, move, mark shipped, undo, cancel | Its event opens its drawer: `mark shipped`, a date and `move`, `put it back`, `cancel this ship day` (confirmed) | Toast naming the day; the drawer closes only when the write went through | none | Google Calendar event |
-| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast | none | Google Calendar repeat |
+| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast; a one-off with no day marks the date field and says so under the row until a day is picked | none | Google Calendar repeat |
 | Release | Open its slot | Its deploy event | The release drawer | The drawer slides in | Linear cycle |
 | Calendar | On a phone | The days that hold something, as a list, today always among them | n/a | none | Google Calendar schedule view |
 
