@@ -1774,9 +1774,14 @@ export const proved = (mission: Pick<Mission, "proofRequired">, m: Milestone): b
 /** A milestone that is done with: proved, then walked or waived (M28). Nothing builds on, merges after, or is sent past one that is not. */
 export const done = (mission: Pick<Mission, "proofRequired" | "template">, m: Milestone): boolean => proved(mission, m) && !owesWalk(mission, m);
 
-/** Milestones merge in order, and only once sent: a later one whose tasks all passed early still waits for the ones before it to be done. */
+/**
+ * Milestones merge in order, and only once sent: a later one whose tasks all passed early still
+ * waits for the ones before it to be done. And once: a merged milestone merged again on every
+ * pass while it waited on its proof or its walk, restamping `merged`, so the ledger logged the
+ * merge again each minute and the record was rewritten each pass. A walk's fix reopens it.
+ */
 export const mergeable = (mission: Pick<Mission, "milestones" | "proofRequired" | "template">, m: Milestone): boolean =>
-  Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && !m.hold && !undoneBefore(mission, m);
+  !m.merged && Boolean(m.dispatched) && m.tasks.length > 0 && m.tasks.every((t) => t.status === "passed") && !m.conflicts?.length && !m.hold && !undoneBefore(mission, m);
 
 /** Mark a milestone sent and start every task of it that can start; the rest wait on their `needs`. */
 const dispatch = async (project: Project, mission: Mission, m: Milestone): Promise<Mission> => {
@@ -1859,10 +1864,16 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
     },
     // The fork point a worktree already had stands; only one this retry made takes the new one.
     (on, r) => { const t = taskOn(on, task.id); if (t) { t.claudeId = r.claudeId; t.base ??= r.base; } },
-    launchFailed(task.id));
+    launchFailed(task.id)).catch((err) => {
+      // Refused after the Wingman went out: its id is on the fresh record already, so its session
+      // record is still owed before the refusal is passed on. Refused before, nothing went out.
+      if (err instanceof StaleMissionError && task.claudeId) return err;
+      throw err;
+    });
   if (!out) return false;
   if (previous) await patchSession(config.sessionsDir, `bg-${previous}`, { status: "handed-off", ended: new Date().toISOString(), handoff: findings.split("\n")[0] });
   await recordWingman(mission, task);
+  if (out instanceof StaleMissionError) throw out;
   return true;
 };
 
@@ -2262,6 +2273,10 @@ const sweepOnce = async (project: Project): Promise<void> => {
       if (settledWalks || settledSummary) await writeMission(mission).catch((err) => { if (!(err instanceof StaleMissionError)) throw err; });
       continue;
     }
+    // The record as it was read, so a pass that found nothing new writes nothing. Rewriting it on
+    // every pass (and the page's polling makes one every few seconds) bumped `rev` with nothing
+    // moved, and a person's button pressed in that window lost to the sweep for no reason.
+    const read = JSON.stringify(mission);
     try {
       // The project may have set or removed its proof since approval; the record follows the project, within what the template runs.
       mission.proofRequired = Boolean(proofCommand(mission, cfg));
@@ -2277,7 +2292,8 @@ const sweepOnce = async (project: Project): Promise<void> => {
       // The Strike Lead only reaches Claude Code's session registry once its session has done something,
       // which can be well after the formation was made; keep offering it the lead seat.
       await seatTheLead(mission).catch(() => undefined);
-      await writeThenSync(project, mission);
+      // A write earlier in the pass (a claim, the brake before a merge) moved `rev`, so this still writes after one.
+      if (JSON.stringify(mission) !== read) await writeThenSync(project, mission);
       for (const m of mission.milestones) if (m.proof) proving.delete(`${mission.id}/${m.n}`);
     } catch (err) {
       if (!(err instanceof StaleMissionError)) throw err;
@@ -2412,28 +2428,45 @@ export const landAgain = async (project: Project, id: string): Promise<{ mission
   return { mission, landed, failed };
 };
 
-/** Put a blocked task back in the air after Cory has had a look, with one more attempt. */
+/**
+ * Put a blocked task back in the air after Cory has had a look, with one more attempt. A sweep
+ * that writes in between loses to him, as it does in `changeMission`: refused at the claim,
+ * nothing went out and the whole retry is done again on the fresh record; refused after the
+ * Wingman went out, its id is on the fresh record already and only the settle is left to do.
+ */
 export const retryTask = async (project: Project, id: string, taskId: string): Promise<Mission> => {
-  // The checks and the attempt count go through the retried change; the spawn does not, so a
-  // refused write never spawns twice.
-  const mission = await changeMission(project.id, id, (mission) => {
-    const task = taskOn(mission, taskId);
-    if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
-    if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
-    if (mission.status === "paused") throw new Error(`${mission.name} is paused; resume it first, and the retry goes out then`);
-    if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
-    if (task.status === "passed") throw new Error(`${task.title} already passed; there is nothing to send back out`);
-    task.attempts = MAX_ATTEMPTS - 1;
-    return mission;
-  });
-  const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId))!;
-  const task = taskOn(mission, taskId)!;
-  const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
-  // Recorded as handed back already; the person who pressed the button is told why here.
-  if (!(await handBack(project, mission, m, task, findings))) throw new Error(`${task.title} ${task.note}`);
-  settle(mission);
-  await writeMission(mission);
-  return recorded(project, mission, [`${taskId} sent back out by Cory`]);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    // The checks and the attempt count go through the retried change; the spawn does not, so a
+    // refused write never spawns twice.
+    const mission = await changeMission(project.id, id, (mission) => {
+      const task = taskOn(mission, taskId);
+      if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
+      if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
+      if (mission.status === "paused") throw new Error(`${mission.name} is paused; resume it first, and the retry goes out then`);
+      if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
+      if (task.status === "passed") throw new Error(`${task.title} already passed; there is nothing to send back out`);
+      task.attempts = MAX_ATTEMPTS - 1;
+      return mission;
+    });
+    const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId))!;
+    const task = taskOn(mission, taskId)!;
+    const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
+    // The claim's write moves `rev`; a refusal that left it where the change put it was the claim's.
+    const changed = mission.rev;
+    try {
+      await handBack(project, mission, m, task, findings);
+    } catch (err) {
+      if (!(err instanceof StaleMissionError)) throw err;
+      if (mission.rev === changed) {
+        if (attempt === 3) throw err;
+        continue;
+      }
+    }
+    // Recorded as handed back already; the person who pressed the button is told why here.
+    if (task.status === "handed-back") throw new Error(`${task.title} ${task.note}`);
+    return recorded(project, await changeMission(project.id, id, settle), [`${taskId} sent back out by Cory`]);
+  }
+  throw new StaleMissionError(`${id} would not settle long enough to send ${taskId} back out; try again`);
 };
 
 /**
