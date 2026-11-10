@@ -1372,12 +1372,10 @@ body.ask-open { overflow: hidden; }
   cursor: pointer;
   transition: background var(--dur-press) var(--ease-out), box-shadow var(--dur-press) var(--ease-out);
 }
-.strip:hover { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
+.strip:not(.seat, .ghost):hover { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
 .strip.ghost { cursor: default; background: transparent; }
-.strip.ghost:hover { background: transparent; box-shadow: 0 0 0 1px var(--seam-soft); }
 /* A seat held by something with no session to open here (the Strike Lead between turns): a strip that does not offer itself. */
 .strip.seat { cursor: default; }
-.strip.seat:hover { background: var(--steel); }
 
 /* The one grid every strip shares. Columns hold their width; only the name flexes. */
 :root { --strip-cols: 20px minmax(0, 1fr) 180px 175px minmax(230px, 0.5fr) 198px; }
@@ -1459,10 +1457,10 @@ body.ask-open { overflow: hidden; }
 /* Density: what needs you is lifted and louder; what is finished recedes. */
 .strip.full .strip-name { font-size: 15px; font-weight: 600; color: var(--ink); }
 /* The one rack that answers the page's question outranks the one that is merely busy. */
-.rack.needs .strip { background: var(--panel-lifted); box-shadow: 0 0 0 1px color-mix(in srgb, var(--caution) 45%, transparent); }
-.rack.needs .strip:hover { box-shadow: 0 0 0 1px var(--caution), 0 8px 30px var(--shade); }
-.rack.needs .strip-line { min-height: 44px; }
-.rack.needs .strip-name { font-size: 17px; }
+.rack.needs .strip:not(.crew) { background: var(--panel-lifted); box-shadow: 0 0 0 1px color-mix(in srgb, var(--caution) 45%, transparent); }
+.rack.needs .strip:not(.crew):hover { box-shadow: 0 0 0 1px var(--caution), 0 8px 30px var(--shade); }
+.rack.needs .strip:not(.crew) .strip-line { min-height: 44px; }
+.rack.needs .strip:not(.crew) .strip-name { font-size: 17px; }
 .rack.needs .strip-say { padding-bottom: 14px; }
 .rack.needs .strip-say p { font-size: 13.5px; }
 /* The lifted surface is brighter, so its secondary text rises with it: still the readable
@@ -1470,11 +1468,7 @@ body.ask-open { overflow: hidden; }
 .rack.needs .strip-state b, .rack.needs .strip-when, .rack.needs .strip-where, .rack.needs .strip-acts .act, .rack.needs .strip-say .who { color: var(--ink-soft); }
 /* The reticle carries the red; the word saying *why* it is blocked is the brightest text here. */
 .rack.needs .strip-state i { color: var(--ink); }
-/* A mission's crew in Needs you belongs to the mission, not a second thing asking: quiet lines under its one lifted strip. */
-.rack.needs .strip.crew { background: var(--steel); box-shadow: 0 0 0 1px var(--seam-soft); }
-.rack.needs .strip.crew:hover { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-strong); }
-.rack.needs .strip.crew .strip-line { min-height: 40px; }
-.rack.needs .strip.crew .strip-name { font-size: 13.5px; }
+/* A mission's crew in Needs you belongs to the mission, not a second thing asking: quiet lines under its one lifted strip, so none of the lift above reaches them. */
 .strip.finished .strip-name, .strip.ghost .strip-name { color: var(--ink-faint); font-weight: 400; }
 
 

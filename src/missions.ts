@@ -3093,9 +3093,9 @@ export const workspaceMissions = async (project: Project): Promise<WorkspaceMiss
   Promise.all((await listMissions(project.id)).map(async (mission) => {
     const { diffstat, questions, word } = await asked(mission, askedAbout(mission));
     // A row draws none of the chat, and the workspace polls; the conversation stays on the mission page.
-    // Whether the Strike Lead is mid-turn is kept: its formation's lead seat says so.
+    // Whether the Strike Lead is mid-turn is worked out for its formation's lead seat; an ended mission's never is.
     const { chat: _chat, lead: _lead, ...row } = mission;
-    return { ...row, word, questions, diffstat: mergedStat(mission, diffstat), leadBusy: leadBusy(mission) };
+    return { ...row, word, questions, diffstat: mergedStat(mission, diffstat), leadBusy: !over(mission) && leadBusy(mission) };
   }));
 
 /** What a mission asks, and nothing else: no sweep, no git, findings only for what is handed back. The notification poll reads this. */

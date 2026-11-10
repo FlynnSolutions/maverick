@@ -155,17 +155,41 @@ export const mountCommandCenter = (root, ctx) => {
     return [s.kind === "background" ? "background" : s.app ?? "terminal", tty ? s.tty : null, place].filter(Boolean).join(" · ");
   };
 
-  /** The agents a mission's record names by id beyond its tasks: each milestone's walkthrough and conflict resolve, and its summary. */
-  const sideAgents = (m) => [...m.milestones.flatMap((x) => [x.walkthrough?.claudeId, x.resolve?.claudeId]), m.summary?.claudeId].filter(Boolean);
+  /**
+   * Every agent the missions' records name by id, with its mission and whole name: each task's
+   * Wingman and RIO, each milestone's walkthrough and conflict resolve, and the summary. Built once
+   * per paint (`paint` clears it), since every strip asks.
+   */
+  let agentIndex = null;
+  const agentsByMission = () => {
+    if (agentIndex) return agentIndex;
+    agentIndex = new Map();
+    const put = (id, mission, name) => { if (id) agentIndex.set(id, { mission, name }); };
+    for (const m of missions) {
+      for (const x of m.milestones) {
+        for (const t of x.tasks) {
+          put(t.claudeId, m, `Wingman · ${t.title}`);
+          put(t.review?.claudeId, m, `RIO · ${t.title}`);
+        }
+        put(x.walkthrough?.claudeId, m, `walkthrough · ${x.title}`);
+        put(x.resolve?.claudeId, m, `resolve · ${x.title}`);
+      }
+      put(m.summary?.claudeId, m, `summary · ${m.name}`);
+    }
+    return agentIndex;
+  };
   /** The mission a spawned session flies for, if any. */
   const missionOf = (s) => {
+    const known = s.claudeId && agentsByMission().get(s.claudeId)?.mission;
+    if (known) return known;
     const recorded = (s.record ?? model.byClaudeId.get(s.claudeId))?.mission;
     // A RIO has no record, and a retried task keeps only its newest agent's id, so an older one is known by its name.
     const task = (s.title ?? "").replace(/^(RIO|Wingman) · /, "").replace(/…$/, "");
-    return missions.find((m) => m.id === recorded || belongsTo(m, s.title) || s.cwd?.includes(`/worktrees/${m.id}-`)
-      || (s.claudeId && sideAgents(m).includes(s.claudeId)) || s.title === `summary · ${m.name}`
-      || m.milestones.some((x) => x.tasks.some((t) => (s.claudeId && (t.claudeId === s.claudeId || t.review?.claudeId === s.claudeId)) || (task.length > 8 && task !== s.title && t.title.startsWith(task)))));
+    return missions.find((m) => m.id === recorded || belongsTo(m, s.title) || s.cwd?.includes(`/worktrees/${m.id}-`) || s.title === `summary · ${m.name}`
+      || (task.length > 8 && task !== s.title && m.milestones.some((x) => x.tasks.some((t) => t.title.startsWith(task)))));
   };
+  /** When a mission is dated: the day it flew, or the day it was opened. */
+  const missionAt = (m) => Date.parse(m.approved ?? m.created);
   /** A mission's own session, drawn under the mission's row: its name steps in, and every column keeps its x. */
   const crewStrip = (node) => {
     node.classList.add("crew");
@@ -575,9 +599,9 @@ export const mountCommandCenter = (root, ctx) => {
     ]);
 
   const formationTabs = () => {
-    const tab = (id, label, count, f) =>
+    const tab = (id, label, count, f, on = !archiveOpen && activeFormation === id) =>
       // The tab on show says so to a screen reader too; pressing it again has nowhere else to go.
-      dropZone(el("button", { type: "button", class: !archiveOpen && activeFormation === id ? "on" : "", ...(!archiveOpen && activeFormation === id ? { "aria-current": "true" } : {}),
+      dropZone(el("button", { type: "button", class: on ? "on" : "", ...(on ? { "aria-current": "true" } : {}),
         title: f ? `${f.name} · drop a strip here to bring it into the flight · right-click to pop out, rename or disband` : "every session in this project · drop a strip here to take it out of its formation",
         oncontextmenu: f ? (e) => { e.preventDefault(); tabMenu(f, e.clientX, e.clientY); } : null,
         onclick: () => showFormation(id) }, label, count != null ? el("b", {}, String(count)) : null),
@@ -694,14 +718,14 @@ export const mountCommandCenter = (root, ctx) => {
    */
   const strikeLeadStrip = (m) => {
     const over = isEnded(m.status);
-    const status = over ? "done" : m.leadBusy ? "busy" : "idle";
+    const [status, state, note] = over ? ["done", "ended", null] : m.leadBusy ? ["busy", "working", "writing in the mission's chat"] : ["idle", "idle", "between turns"];
     return el("article", { class: `strip seat ${status}${over ? " finished" : " full"}`, "data-key": `lead:${m.id}`, title: `the Strike Lead of ${m.name}` },
       stripLine({
         status,
         band: over ? "done" : "working",
         name: el("h3", { class: "strip-name" }, "Strike Lead"),
-        state: over ? "ended" : m.leadBusy ? "working" : "idle",
-        note: over ? null : m.leadBusy ? "writing in the mission's chat" : "between turns",
+        state,
+        note,
         when: "",
         where: "the mission's chat",
       }));
@@ -714,7 +738,7 @@ export const mountCommandCenter = (root, ctx) => {
     // The seat is the Strike Lead's while it is not a listed session: a lead the person put there is one.
     const strikeLead = f.lead && !lead && mission ? strikeLeadStrip(mission) : null;
     const flight = f.members.map((id) => byId.get(id)).filter(Boolean);
-    const gone = (f.lead && !lead && !strikeLead ? 1 : 0) + f.members.length - flight.length;
+    const gone = (f.lead && !lead && !mission ? 1 : 0) + f.members.length - flight.length;
     const holding = f.pending ?? [];
     const starting = (as) => holding.filter((p) => p.as === as);
     // Once the lead is open it takes a column of its own and the flight becomes the rail beside
@@ -785,15 +809,8 @@ export const mountCommandCenter = (root, ctx) => {
           // The same rule as a formation's flight: past one open strip the rack shares columns.
           el("div", { class: `rack-strips${rows.filter((x) => x.classList.contains("open")).length > 1 ? " grid" : ""}` }, ...rows))
       : null;
-  /** Every session a mission spawned, by id, with the whole task title its 60-character listing name lost. */
-  const missionAgents = () => {
-    const out = new Map();
-    for (const m of missions) for (const t of m.milestones.flatMap((x) => x.tasks)) {
-      if (t.claudeId) out.set(t.claudeId, `Wingman · ${t.title}`);
-      if (t.review?.claudeId) out.set(t.review.claudeId, `RIO · ${t.title}`);
-    }
-    return out;
-  };
+  /** Every session a mission spawned, by id, with the whole name its 60-character listing name lost. */
+  const missionAgents = () => new Map([...agentsByMission()].map(([id, a]) => [id, a.name]));
   const spawned = (s, agents) => agents.has(s.claudeId) || /^(RIO|Wingman|walkthrough|summary|breakdown) ·/.test(s.title) || missions.some((m) => belongsTo(m, s.title));
   /** The bucket a time falls in, which is how a person remembers it. */
   const whenBucket = (at) => {
@@ -812,7 +829,6 @@ export const mountCommandCenter = (root, ctx) => {
     const agents = missionAgents();
     // A mission's agents are its crew, not loose rows beside it: they take the mission's date and
     // follow its row, newest first. `ended` orders inside the group, the mission's own row on top.
-    const missionAt = (m) => Date.parse(m.approved ?? m.created);
     const entries = [
       ...archived.done.map((s) => {
         const named = agents.has(s.claudeId) && !all.names?.[s.sessionId] ? { ...s, title: agents.get(s.claudeId) } : s;
@@ -902,7 +918,7 @@ export const mountCommandCenter = (root, ctx) => {
   }, ...children);
 
 
-  const oldMission = (m) => Date.now() - Date.parse(m.approved ?? m.created) > OLD_MISSION;
+  const oldMission = (m) => Date.now() - missionAt(m) > OLD_MISSION;
   /** A mission's asks under its strip. One past a week folds to a line, so what is old cannot fill the screen over what is live. */
   const missionAsks = (m) => {
     if (!m.questions?.length) return [];
@@ -935,7 +951,7 @@ export const mountCommandCenter = (root, ctx) => {
       name: stripName(m.name, openMission),
       state: missionWord(m),
       note: over ? null : MISSION_SAYS[m.status] ?? null,
-      when: age(Date.parse(m.approved ?? m.created)),
+      when: age(missionAt(m)),
       where: [tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "), m.diffstat].filter(Boolean).join(" · "),
       acts: openAct("open this mission", openMission),
     }), why || held.length ? el("div", { class: "strip-say" },
@@ -1071,6 +1087,7 @@ export const mountCommandCenter = (root, ctx) => {
   };
 
   const paint = () => {
+    agentIndex = null;
     if (!all) return;
     model = assemble(all);
     // One project at a time. Maverick is opened on a project; sessions running somewhere else
