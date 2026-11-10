@@ -26,6 +26,7 @@ import { abandonMission, acceptTask, answerLead, approveMission, closeMission, l
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
+import { templatesFor } from "./src/workflows.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
 import { focusApp, parentChain, processHome } from "./src/processes.ts";
@@ -637,6 +638,17 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (method === "POST" && path === "/api/brainstorms/approve") {
     const body = await readJson<{ project: string; file: string; tracker?: number }>(req);
     return sendJson(res, 200, await approveBreakdown(await projectById(body.project), body.file, body.tracker ?? 0));
+  }
+  // The templates a project offers: the built-ins, then its own files. One is found in that list by
+  // id, never by a path built from the URL; a broken file is a choice with its error, not a 500.
+  if (method === "GET" && path === "/api/workflows") return sendJson(res, 200, await templatesFor((await requireProject(url)).path));
+  const workflowId = path.match(/^\/api\/workflows\/([^/]+)$/);
+  if (method === "GET" && workflowId) {
+    const project = await requireProject(url);
+    const id = decodeURIComponent(workflowId[1]);
+    const choice = (await templatesFor(project.path)).find((c) => c.id === id);
+    if (!choice) return sendJson(res, 404, { error: `no template ${id}` });
+    return sendJson(res, 200, choice);
   }
   if (path === "/api/missions") {
     const project = await requireProject(url);
