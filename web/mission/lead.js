@@ -43,7 +43,6 @@ export const leadThread = (ctx) => {
   ctx.now.append(nowBox);
   const heard = el("p", { class: "lead-heard", role: "status" });
 
-  /* Headed by name, so it is never taken for a Wingman's screen, which is headed as that Wingman's (mission.js). */
   const box = el("textarea", { id: "lead-box", rows: "2", placeholder: "a change, a reason, a word about a task" });
   const send = el("button", { type: "submit", class: "primary" }, "send");
   const fail = (err) => {

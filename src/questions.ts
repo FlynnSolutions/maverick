@@ -21,8 +21,8 @@ export interface Question {
    * `path` is relative to `/api/missions/<id>/`; `body` names the keys the page must supply. Only
    * what the server takes in the mission's state is listed, primary first, so a page renders them
    * as given. Nothing that acts, beyond a link, while the mission is paused and the only move is
-   * resume, which the paused question offers once. An answer with `go` posts nothing: it opens the place on the mission page
-   * where the person acts (`milestone-<n>` for a milestone's walkthrough, `close` for the close,
+   * resume, which the paused question offers once. An answer with `go` posts nothing: it opens the
+   * place on the mission page where the person acts (`milestone-<n>` for a milestone's walkthrough, `close` for the close,
    * `lead-<task id>` for the Strike Lead's box with that task named in it),
    * because walking is done there and closing asks twice there. `link` marks a `go` that only takes
    * the person there, so the mission page dresses it as the link it is; a walk opens its document,

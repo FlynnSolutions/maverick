@@ -167,10 +167,13 @@ const seedRound = (harbor, id) => addToChat(harbor, id, { text: "The survey is b
 const harbor = await startHarbor({ ended: ENDED });
 /**
  * The mission as the server has it, or null for a poll that missed: the first fetch after a page
- * walk reuses a keep-alive socket the server closed while it idled, and fails. A poll's deadline
- * still fails loud.
+ * walk reuses a keep-alive socket the server closed while it idled, and is reset. Only that is
+ * passed over; anything else the server says fails loud.
  */
-const viewOf = (id) => fetch(`${harbor.url}/api/missions/${id}?project=harbor`).then((r) => r.json()).catch(() => null);
+const viewOf = (id) => fetch(`${harbor.url}/api/missions/${id}?project=harbor`).then((r) => r.json(), (err) => {
+  if (/ECONNRESET|UND_ERR_SOCKET|other side closed/.test(`${err.cause?.code ?? ""} ${err.cause?.message ?? ""} ${err.message}`)) return null;
+  throw err;
+});
 let failed = "";
 let missionId = "";
 try {

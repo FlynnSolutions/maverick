@@ -7,7 +7,7 @@ import { inline, inlineNode } from "../markdown.js";
 import { showMe } from "../show-me.js";
 import { answerControls } from "../answers.js";
 import { stopWalkthrough, walkthroughPanel } from "../walkthrough.js";
-import { isEnded } from "./state.js";
+import { isEnded, sessionOf } from "./state.js";
 
 /** The task's lamp and word, the map in /mockups/mission.html; Progress draws the same lamp on its cards. `built` is between the two: the Wingman is done and its RIO is on the way. */
 export const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
@@ -97,15 +97,15 @@ export const mount = (host, view, ctx) => {
     r.why.textContent = why;
     r.why.hidden = !why;
     // Only with an agent behind it: a task that never started has no screen, and a link to one is the dead end it was.
-    const agent = task.claudeId || task.review?.claudeId;
+    const agent = sessionOf(task);
     // The word is rebuilt only when it would read differently, the way the lamp is swapped.
-    const wordKey = JSON.stringify([task.status, task.attempts, Boolean(agent), Boolean(task.claudeId)]);
+    const wordKey = JSON.stringify([task.status, task.attempts, agent?.role]);
     if (wordKey !== r.wordKey) {
       r.wordKey = wordKey;
       r.word.replaceChildren(
         el("b", { class: task.status === "handed-back" ? "needs" : task.status === "passed" ? "ok" : "" }, WORD[task.status] ?? task.status),
         task.attempts ? ` · attempt ${task.attempts}` : "",
-        ...(LIVE.has(task.status) && agent ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, `open its ${task.status === "reviewing" || !task.claudeId ? "RIO" : "Wingman"}'s session`)] : []));
+        ...(LIVE.has(task.status) && agent ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, `open its ${agent.role}'s session`)] : []));
     }
     // The answers are rebuilt only when the question itself changes, so a half-written note survives the next event.
     const question = task.status === "handed-back" ? (current.questions ?? []).find((q) => q.taskId === task.id) : null;

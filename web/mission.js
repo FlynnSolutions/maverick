@@ -56,7 +56,7 @@ import { jetSvg } from "./jet.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { inline, inlineNode, render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
-import { atReview, isEnded, missionWord } from "./mission/state.js";
+import { atReview, isEnded, missionWord, sessionOf } from "./mission/state.js";
 import { toast } from "./toast.js";
 import { showMe } from "./show-me.js";
 import { foldable } from "./card.js";
@@ -223,8 +223,8 @@ const reapSessions = () => {
   for (const [claudeId, held] of watching) if (held !== true && !held.term.element?.isConnected) stopWatching(claudeId);
 };
 
-/** A link to the Strike Lead's box (lead.js lands it) that lands again on a second press, when the hash already names it. */
-const toLead = (a) => {
+/** A link that lands again on a second press: the hash already names its place, so the browser fires nothing. */
+const landsAgain = (a) => {
   a.addEventListener("click", () => { if (a.getAttribute("href") === location.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); });
   return a;
 };
@@ -233,7 +233,7 @@ const toLead = (a) => {
 const allTasks = () => mission.milestones.flatMap((m) => m.tasks);
 const openSession = (taskId, under) => {
   const task = allTasks().find((t) => t.id === taskId);
-  const claudeId = task?.status === "reviewing" ? task.review?.claudeId : task?.claudeId ?? task?.review?.claudeId;
+  const { claudeId, role } = sessionOf(task) ?? {};
   if (!claudeId) {
     toast(`${task?.title ?? taskId} has no session to open`, { error: true });
     return;
@@ -244,11 +244,11 @@ const openSession = (taskId, under) => {
   }
   const screen = el("div", { class: "term" });
   // Typed into, this is the agent's own prompt: headed as whose it is, so a word meant for the Strike Lead is not given to a Wingman.
-  const who = `${taskId}'s ${claudeId === task.review?.claudeId ? "RIO" : "Wingman"}`;
+  const who = `${taskId}'s ${role}`;
   const well = el("div", { class: "mv-session" },
     el("div", { class: "mv-session-head" },
       el("p", { class: "mv-session-who" }, el("b", {}, who), el("span", { class: "muted small mono" }, ` session ${claudeId}`), el("br"),
-        el("span", { class: "muted small" }, `What you type here goes to ${who}, not the Strike Lead. `), toLead(el("a", { href: `#lead-${taskId}` }, "write to the Strike Lead"))),
+        el("span", { class: "muted small" }, `What you type here goes to ${who}, not the Strike Lead. `), landsAgain(el("a", { href: `#lead-${taskId}` }, "write to the Strike Lead"))),
       btn("stop watching", () => { stopWatching(claudeId); well.remove(); }, "ghost")),
     screen);
   under.append(well);
@@ -779,9 +779,8 @@ const boot = async () => {
   if (["ask", "plan", "progress", "result"].includes(target)) document.getElementById(target).scrollIntoView();
   toGate(false);
   window.addEventListener("hashchange", () => toGate(true));
-  // A second press on the lamp names the hash already there, which fires nothing; it should land again.
-  $("#word").addEventListener("click", () => { if ($("#word").getAttribute("href") === location.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); });
-  toLead($("#to-lead"));
+  landsAgain($("#word"));
+  landsAgain($("#to-lead"));
   ctx.thread.land();
   listen();
 };
