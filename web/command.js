@@ -940,7 +940,7 @@ export const mountCommandCenter = (root, ctx) => {
       return failed("read the templates", err);
     }
     const items = templates.map((t) => ({ value: t.id, name: t.name, description: t.description, note: t.unverified ? "unverified: stays on its mission branch" : undefined, error: t.error }));
-    const answer = await ask({ title: "What do you want done?", body: "One line is enough, and one line is all it gets. The Strike Lead will not plan off it: it interviews you first.", confirm: "open the interview", field: { placeholder: "the line you would have opened a session with" }, choices: { items, selected: "mission" } });
+    const answer = await ask({ title: "What do you want done?", body: "One line is enough, and one line is all it gets. The Strike Lead will not plan off it: it interviews you first.", confirm: "open the interview", field: { placeholder: "the line you would open a session with" }, choices: { items, selected: "mission" } });
     if (!answer) return;
     const { text: brief, choice: template } = answer;
     try {
