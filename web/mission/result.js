@@ -10,6 +10,15 @@ const merges = (m) => Object.entries(m.mergeShas ?? {}).map(([repo, sha]) => `${
 const needsWalking = (view, m) => Boolean(view.walk?.[m.n]?.needed);
 const walkState = (view, m) => view.walk?.[m.n]?.state ?? "none";
 const branchOf = (view) => [...new Set((view.repos ?? []).map((r) => r.branch))].join(", ") || "the mission branch";
+/** A template without review, proof or the walk: nothing checked the work, so it stays on its mission branch and has no summary, walk or proof to show. */
+const unverifiedOf = (view) => Boolean(view.workflow?.unverified);
+/** What the template leaves out, named from its flight; a view with no flight names all three. */
+const CHECKS = [["review", "review"], ["proof", "proof"], ["walk", "the walk"]];
+const leftOut = (view) => {
+  const ran = new Set((view.workflow?.flight ?? []).map((s) => s.id));
+  const out = CHECKS.filter(([id]) => !ran.has(id) || !ran.size).map(([, name]) => name);
+  return out.length > 1 ? `${out.slice(0, -1).join(", ")} and ${out.at(-1)}` : out.join("");
+};
 
 /* ---------- reading `git diff --stat` ---------- */
 /** Its last line: "3 files changed, 120 insertions(+), 4 deletions(-)". Either count is left out when it is zero. */
@@ -472,13 +481,16 @@ export const mount = (host, view, ctx) => {
     row.node.focus({ preventScroll: true });
   };
 
-  /** The walk and the proof for each merged milestone, as the review page showed them. */
-  const drawWalks = (v) => v.milestones.filter((m) => m.merged).map((m) => el("li", {},
-    el("span", { class: "d" }, `Milestone ${m.n} · ${m.title}`),
-    el("span", { class: "w" }, needsWalking(v, m) ? "to walk" : ({ walked: "walked", waived: "waived" }[walkState(v, m)] ?? "nothing to walk")),
-    m.proof ? el("span", { class: `w ${m.proof.ok ? "ok" : "bad"}` }, `proof ${m.proof.ok ? "passed" : "failed"} ${fmtTime(m.proof.at)}`) : el("span", { class: "w" }, v.proofRequired ? "no proof yet" : ""),
-    merges(m) ? el("span", { class: "sha" }, `merged as ${merges(m)}`) : null,
-    m.proof ? el("details", {}, el("summary", {}, "the proof's last lines"), el("pre", { class: "rs-proof" }, m.proof.output.split("\n").slice(-20).join("\n"))) : null));
+  /** The walk and the proof for each merged milestone, as the review page showed them; an unverified mission had neither, so only what merged. */
+  const drawWalks = (v) => {
+    const checked = !unverifiedOf(v);
+    return v.milestones.filter((m) => m.merged).map((m) => el("li", {},
+      el("span", { class: "d" }, `Milestone ${m.n} · ${m.title}`),
+      checked ? el("span", { class: "w" }, needsWalking(v, m) ? "to walk" : ({ walked: "walked", waived: "waived" }[walkState(v, m)] ?? "nothing to walk")) : null,
+      !checked ? null : m.proof ? el("span", { class: `w ${m.proof.ok ? "ok" : "bad"}` }, `proof ${m.proof.ok ? "passed" : "failed"} ${fmtTime(m.proof.at)}`) : el("span", { class: "w" }, v.proofRequired ? "no proof yet" : ""),
+      merges(m) ? el("span", { class: "sha" }, `merged as ${merges(m)}`) : null,
+      checked && m.proof ? el("details", {}, el("summary", {}, "the proof's last lines"), el("pre", { class: "rs-proof" }, m.proof.output.split("\n").slice(-20).join("\n"))) : null));
+  };
 
   /** The report: fetched when opened, and a failure is said, not shown as a blank. */
   const reportSection = () => {
@@ -509,9 +521,10 @@ export const mount = (host, view, ctx) => {
     const repos = v.repos ?? [];
     const byPr = repos.some((r) => r.land === "pr");
     const lands = repos.filter((r) => r.land !== "merge");
+    const unverified = unverifiedOf(v);
     const what = lands.length
       ? `Then, per repo: ${lands.map((r) => `${r.label} ${r.land === "push" ? `pushed to ${r.base}` : `a pull request against ${r.base}`}`).join(", ")}.`
-      : "The mission branches are left for the ship.";
+      : unverified ? `The work stays on ${branchOf(v)}.` : "The mission branches are left for the ship.";
     const label = lands.length ? "close it and land the work" : "close the mission and tick its items";
     const acts = el("div", { class: "rs-acts" });
     /* Armed, the focus waits on "not yet", so a held Enter cannot close; disarmed, it comes back to the close. */
@@ -569,7 +582,11 @@ export const mount = (host, view, ctx) => {
         el("span", {}, `${passed.length} of ${tasks.length} tasks passed`),
         ...repos.map((r) => el("span", { title: `lands against ${r.base}` }, `${r.label} · ${r.branch}`)),
         v.finished ? el("span", {}, `finished ${fmtTime(v.finished)}`) : null),
-      el("p", { class: "rs-why" }, closed
+      el("p", { class: "rs-why" }, unverified
+        ? (closed
+            ? `Closed. Its items are ticked in the tracker. This template leaves out ${leftOut(v)}, so the work stays on its mission branch, ${branchOf(v)}, which is where you take it by hand.`
+            : `Every milestone merged onto the mission branch in each repo. This template leaves out ${leftOut(v)}, so nothing checked this work: it stays on its mission branch, ${branchOf(v)}, which is where you take it by hand.`)
+        : closed
         ? (byPr
             ? "Closed. Its items are ticked in the tracker and its pull requests are open below. Maverick has not merged anything and will not: this project's own rules say so."
             : "Closed. Its items are ticked in the tracker and the mission branches are waiting for the ship, which is what merges. Everything below is still here to read.")
@@ -610,8 +627,12 @@ export const mount = (host, view, ctx) => {
     if (holding && v.summary?.started !== before) holding = false;
     const now = atNow(v);
     nowBox.hidden = !now;
-    if (must.parentElement !== (now ? nowBox : mustSlot)) (now ? nowBox : mustSlot).prepend(must);
-    paintMust(v);
+    /* Nothing reviewed an unverified mission's work, so there is no summary of findings to ask for. */
+    if (unverifiedOf(v)) must.remove();
+    else {
+      if (must.parentElement !== (now ? nowBox : mustSlot)) (now ? nowBox : mustSlot).prepend(must);
+      paintMust(v);
+    }
     patch(sum, [merged.map((g) => g.tasks.map((t) => [t.own, t.files])), v.milestones[0]?.title, branchOf(v)], () => drawSum(v, merged));
     patch(files, merged.map(({ m, tasks }) => [m.n, m.title, tasks.map(({ task, own, rows, from, fromFiles }) => [task.title, own, from, fromFiles,
       rows.map((r) => [r, (chipsOf.get(r.path) ?? []).map((c) => [c.key, c.severity, c.kind, c.headline])])])]), () => drawFiles(merged, chipsOf));
@@ -623,9 +644,10 @@ export const mount = (host, view, ctx) => {
     readTools.hidden = !readings.length;
     readings.forEach(paint);
     for (const t of tallies) t.paint();
-    patch(walks, closing ? v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired]) : [], () => (closing ? drawWalks(v) : []));
+    patch(walks, closing ? [unverifiedOf(v), v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired])] : [], () => (closing ? drawWalks(v) : []));
+    walks.setAttribute("aria-label", unverifiedOf(v) ? "Milestones: what merged" : "Milestones: walkthroughs and proofs");
     walks.hidden = !closing;
-    patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status)] : null, () => drawGate(v));
+    patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status), v.workflow] : null, () => drawGate(v));
     toClose();
   };
 
