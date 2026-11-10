@@ -199,3 +199,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-10 11:34 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
 - 2026-11-10 11:35 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
 - 2026-11-10 11:36 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
+- 2026-11-10 11:36 held: milestone 1 (since 2026-11-10T19:36:58.242Z): the proof failed after milestone 1 merged: # skipped 0 | # todo 0 | # duration_ms 305174.25325
