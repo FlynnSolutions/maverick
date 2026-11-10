@@ -351,15 +351,15 @@ proof command are still read from it while a mission flies.
 
 You pick the template when you open the mission: the dialog that asks what you want done shows one
 card per template under the line you type, with **Mission** already chosen, so pressing Enter
-flies the full flight as before. Two are built in: **Mission** (`src/workflows/mission.json`, every
+opens a mission exactly as before. Two are built in: **Mission** (`src/workflows/mission.json`, every
 task reviewed by a RIO, the proof on the merged tree and a walk) and **Light**
 (`src/workflows/light.json`, build and merge with no review, proof or walk). A project can add its
 own, written by hand as JSON, at `<project>/.maverick/workflows/<id>.json`, where the file name is
-the template's `id`; one named like a built-in replaces it for that project. It keeps Mission's
+the template's `id`; a file with a built-in's id replaces it for that project. It keeps Mission's
 stages in Mission's order and may leave out only review, proof, the summary, and the walkthrough
 with the walk; a file that breaks that is shown as a disabled card with the reason, and cannot be
-picked. The mission page says which template it runs under its title, and the name
-opens a read-only page drawing that template as the mission pinned it.
+picked. The mission page says which template it runs under its title, and the name opens a
+read-only page drawing that template as the mission pinned it.
 
 A template that leaves out review, proof or the walk is **unverified**, and its work stays on its
 mission branch: it never lands by pull request or push. The plan gate refuses a plan whose repo is
