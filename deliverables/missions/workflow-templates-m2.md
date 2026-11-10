@@ -75,12 +75,13 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: serve the branch on the invented Harbor project as `tools/ui-check.mjs` does, with a project template and a broken one, and grade the dialog with ui-audit (the `MAVERICK_UI_AUDIT` scripts: `scan.mjs`, then `grade.mjs`) at 390 and 1280 in light and dark. Put the grade card in the commit message and the screenshots where the brief says. Enter with no change opens a Mission. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
 
-- [~] **The mission page: the template line, the status strip, and a Light result**
+- [x] **The mission page: the template line, the status strip, and a Light result**
   - touches: web/mission.js, web/mission.css, web/mission/result.js, web/mission/result.css
   - needs: m1-t3
   - cells: 28, 34
-  - status: reviewing
+  - status: passed
   - attempt: 2
+  - verdict: pass with notes
   - commit: f755041
   Build cells 34 and 28 and follow closing rules 3, 4 and 6. In `renderAsk`, under the `h1`, add the template line in the `.mv-ask-meta` mono style: "runs <a>light</a> · unverified: stays on its mission branch", or "runs <a>mission</a>". The name links to `/workflow.html?project=<id>&mission=<missionId>`. It reads `mission.workflow` from the view (the contract), and an older view without it reads as mission. In the rail, between `#word` and `.mv-anchors`, add the status strip: `mission.workflow.flight` as a list with done, now and next marks and the count, left-out stages not drawn, and at 390 under the word, above the content, as the rail's `display: contents` already orders it. Under an unverified template, the Result section draws no summarize button and no "What I must read" panel, the walks list says nothing about proof or walking, and the closing copy says the work stays on its mission branch, which is where Cory takes it by hand. Use existing tokens only, and no colour for "unverified". Do not touch `web/app.js`, `web/command.js` or `src/`.
 
@@ -169,3 +170,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 23:23 m1-t5 Unverified work can't land: refused at the gate and at landing: flying to reviewing
 - 2026-11-09 23:35 m1-t7 The mission page: the template line, the status strip, and a Light result: flying to reviewing
 - 2026-11-09 23:35 m1-t5 Unverified work can't land: refused at the gate and at landing: reviewing to passed (RIO: pass with notes) with 8 notes carried, 1 unverified
+- 2026-11-09 23:41 m1-t7 The mission page: the template line, the status strip, and a Light result: reviewing to passed (RIO: pass with notes) with 13 notes carried, 2 unverified
