@@ -12,9 +12,10 @@ import { showMe } from "../show-me.js";
 import { atReview, isEnded } from "./state.js";
 
 /**
- * leadThread(ctx) → { node, update(view) }
+ * leadThread(ctx) → { node, update(view), land() }
  *   ctx is the shell's (web/mission.js), mountTerminal included. `update` appends what is new
  *   and never rebuilds a round being answered, so a half-picked round survives every stream event.
+ *   `land` brings the box into view when the page opened on `#lead`, once the box is placed.
  */
 export const leadThread = (ctx) => {
   const { el, btn, post, act, actionUrl, fmtTime, plural, armed, approveWhy, failingNote, projectId } = ctx;
@@ -42,7 +43,8 @@ export const leadThread = (ctx) => {
   ctx.now.append(nowBox);
   const heard = el("p", { class: "lead-heard", role: "status" });
 
-  const box = el("textarea", { rows: "2", placeholder: "write to the Strike Lead", "aria-label": "Message to the Strike Lead" });
+  /* Headed by name, so it is never taken for a Wingman's screen, which is headed as that Wingman's (mission.js). */
+  const box = el("textarea", { id: "lead-box", rows: "2", placeholder: "a change, a reason, a word about a task" });
   const send = el("button", { type: "submit", class: "primary" }, "send");
   const fail = (err) => {
     heard.textContent = err.message;
@@ -53,7 +55,7 @@ export const leadThread = (ctx) => {
     heard.classList.remove("error");
     await post(actionUrl("say"), body);
   };
-  const composer = el("form", { class: "lead-compose", onsubmit: async (e) => {
+  const composer = el("form", { class: "lead-compose", id: "lead", onsubmit: async (e) => {
     e.preventDefault();
     const text = box.value.trim();
     if (!text) return box.focus();
@@ -68,7 +70,7 @@ export const leadThread = (ctx) => {
       send.disabled = false;
       send.textContent = "send";
     }
-  } }, box, send);
+  } }, el("label", { class: "lead-to", for: "lead-box" }, "To the Strike Lead"), el("div", { class: "lead-compose-row" }, box, send));
   // Enter sends, as in every chat; Shift+Enter is a new line.
   box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); composer.requestSubmit(); } });
 
@@ -76,9 +78,10 @@ export const leadThread = (ctx) => {
   const raw = btn("open its session in a terminal", async () => {
     try {
       const term = await post(actionUrl("interview"), {});
-      well.replaceChildren(el("div", { class: "term" }));
+      const screen = el("div", { class: "term" });
+      well.replaceChildren(el("div", { class: "mv-session-head" }, el("span", { class: "muted small" }, "The Strike Lead's own session")), screen);
       well.hidden = false;
-      requestAnimationFrame(() => ctx.mountTerminal(well.firstChild, term.id));
+      requestAnimationFrame(() => ctx.mountTerminal(screen, term.id));
     } catch (err) {
       fail(err);
     }
@@ -325,6 +328,26 @@ export const leadThread = (ctx) => {
     });
   };
   window.addEventListener("hashchange", () => { scrolledTo = ""; toRound(); });
+
+  /**
+   * `#lead` (the rail's "write to the Strike Lead") and `#lead-<task id>` (a blocked task's "ask the
+   * Strike Lead") bring the box into view with the focus in it, the task named in an empty one. A
+   * press is a trip, marked with the way back; a load (the inbox's link) only lands.
+   */
+  let ledTo = "";
+  const toLead = (jumped) => {
+    const hit = location.hash.match(/^#lead(?:-(.+))?$/);
+    if (!hit || !composer.isConnected || composer.hidden || ledTo === location.hash) return;
+    ledTo = location.hash;
+    const taskId = hit[1] ? decodeURIComponent(hit[1]) : "";
+    if (taskId && !box.value.trim()) box.value = `About ${taskId}: `;
+    requestAnimationFrame(() => {
+      if (!jumped || !showMe(composer, { back: taskId ? "back to the question" : "back" })) composer.scrollIntoView({ block: "center" });
+      box.focus({ preventScroll: true });
+      box.setSelectionRange(box.value.length, box.value.length);
+    });
+  };
+  window.addEventListener("hashchange", () => { ledTo = ""; toLead(true); });
   /** The open round's size, as the server says it is open. */
   const openRound = () => {
     const chat = view?.chat ?? [];
@@ -351,7 +374,8 @@ export const leadThread = (ctx) => {
     paintFire();
     paintNow();
     toRound();
+    toLead(false);
   };
 
-  return { node, update };
+  return { node, update, land: () => toLead(false) };
 };

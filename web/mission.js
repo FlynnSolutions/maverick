@@ -223,6 +223,12 @@ const reapSessions = () => {
   for (const [claudeId, held] of watching) if (held !== true && !held.term.element?.isConnected) stopWatching(claudeId);
 };
 
+/** A link to the Strike Lead's box (lead.js lands it) that lands again on a second press, when the hash already names it. */
+const toLead = (a) => {
+  a.addEventListener("click", () => { if (a.getAttribute("href") === location.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  return a;
+};
+
 /** ctx.openSession: the task's session under the element the module passes, with its own way to close. */
 const allTasks = () => mission.milestones.flatMap((m) => m.tasks);
 const openSession = (taskId, under) => {
@@ -237,8 +243,13 @@ const openSession = (taskId, under) => {
     return;
   }
   const screen = el("div", { class: "term" });
+  // Typed into, this is the agent's own prompt: headed as whose it is, so a word meant for the Strike Lead is not given to a Wingman.
+  const who = `${taskId}'s ${claudeId === task.review?.claudeId ? "RIO" : "Wingman"}`;
   const well = el("div", { class: "mv-session" },
-    el("div", { class: "mv-session-head" }, el("span", { class: "muted small mono" }, `session ${claudeId}`), btn("stop watching", () => { stopWatching(claudeId); well.remove(); }, "ghost")),
+    el("div", { class: "mv-session-head" },
+      el("p", { class: "mv-session-who" }, el("b", {}, who), el("span", { class: "muted small mono" }, ` session ${claudeId}`), el("br"),
+        el("span", { class: "muted small" }, `What you type here goes to ${who}, not the Strike Lead. `), toLead(el("a", { href: `#lead-${taskId}` }, "write to the Strike Lead"))),
+      btn("stop watching", () => { stopWatching(claudeId); well.remove(); }, "ghost")),
     screen);
   under.append(well);
   watchSession(screen, claudeId, task.title);
@@ -660,6 +671,8 @@ const paint = () => {
   renderCounts();
   renderControls();
   renderAsk();
+  // An ended mission's Strike Lead takes nothing more, so nothing offers the way to write to it.
+  $("#to-lead").hidden = ended();
   if (!mission.approved) return renderGate();
   if (!modulesUp) return mountModules();
   updateModules();
@@ -768,6 +781,8 @@ const boot = async () => {
   window.addEventListener("hashchange", () => toGate(true));
   // A second press on the lamp names the hash already there, which fires nothing; it should land again.
   $("#word").addEventListener("click", () => { if ($("#word").getAttribute("href") === location.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  toLead($("#to-lead"));
+  ctx.thread.land();
   listen();
 };
 boot().catch((err) => setStatus(err.message, true));

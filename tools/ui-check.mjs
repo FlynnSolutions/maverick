@@ -3,7 +3,8 @@
  * The page check CI runs on every pull request: the app rendered on the invented Harbor project,
  * one real write made through the page, and the tracker read back from the commit it made. Then the
  * command center walked at the size a real project reaches: 130 ended sessions and a live mission.
- * Then a question from the Strike Lead answered from the first screen, and read back from the server.
+ * Then a question from the Strike Lead answered from the first screen, and read back from the server,
+ * and a message written to it from the top of the page in one press, and read back the same way.
  * Then, when a ui-audit is plugged in, its grade on the key states, which must be a complete A.
  *
  *   node tools/ui-check.mjs [--out <dir>]
@@ -121,6 +122,35 @@ writeFileSync(ask, `(async () => {
   return wrote ? "ok: " + sent.textContent : "error: the card did not say the Strike Lead wrote back: " + sent.textContent;
 })()`, "utf8");
 
+const WORD = "Use the long barge.";
+
+/**
+ * Something to tell the Strike Lead, from a cold open at 1280x800: the way to it on the first
+ * screen, one press to its box, headed as its own, focused and marked with the way back; a second
+ * press lands again, and the message sent from there reaches the server.
+ */
+const talk = join(out, "talk.js");
+writeFileSync(talk, `(async () => {
+  ${UNTIL}
+  const link = await until(() => document.querySelector("#to-lead:not([hidden])"), 15000);
+  if (!link) return "error: no way to the Strike Lead in the rail";
+  if (link.getBoundingClientRect().bottom > innerHeight) return "error: the way to the Strike Lead is below the first screen";
+  const box = document.querySelector("#lead-box");
+  for (const press of ["first", "second"]) {
+    if (press === "second") { document.querySelector(".show-me-back").click(); await until(() => document.activeElement === link, 3000); }
+    link.click();
+    if (!(await until(() => document.activeElement === box, 3000))) return "error: the " + press + " press did not put the focus in the Strike Lead's box";
+    const r = box.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > innerHeight) return "error: the box is not in view after the " + press + " press";
+    if (!document.querySelector("#lead.show-me-target")) return "error: the box is not marked after the " + press + " press";
+    if (!document.querySelector(".show-me-back")) return "error: no way back after the " + press + " press";
+  }
+  if (document.querySelector("label[for=lead-box]")?.textContent !== "To the Strike Lead") return "error: the box is not headed as the Strike Lead's";
+  box.value = ${JSON.stringify(WORD)};
+  box.form.requestSubmit();
+  return (await until(() => box.value === "", 10000)) ? "ok" : "error: the message did not go: " + document.querySelector(".lead-heard").textContent;
+})()`, "utf8");
+
 /** Adds to a mission's chat as its record holds it: what the Strike Lead says, written where the server reads it. */
 const addToChat = (harbor, id, entry) => {
   const file = join(harbor.sessions, "missions", "harbor", `${id}.json`);
@@ -135,6 +165,12 @@ const seedRound = (harbor, id) => addToChat(harbor, id, { text: "The survey is b
 
 
 const harbor = await startHarbor({ ended: ENDED });
+/**
+ * The mission as the server has it, or null for a poll that missed: the first fetch after a page
+ * walk reuses a keep-alive socket the server closed while it idled, and fails. A poll's deadline
+ * still fails loud.
+ */
+const viewOf = (id) => fetch(`${harbor.url}/api/missions/${id}?project=harbor`).then((r) => r.json()).catch(() => null);
 let failed = "";
 let missionId = "";
 try {
@@ -173,6 +209,15 @@ try {
     console.log(`the Strike Lead's question answered: ${asked}`);
     if (!answered) failed = "the server has no answer from the card";
     else if (!asked.includes("ok: ")) failed = `the question walk: ${asked}`;
+  }
+  if (!failed) {
+    const talked = execFileSync(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}/mission.html?project=harbor&mission=${missionId}`, "--eval", talk, "--w", "1280", "--h", "800", "--wait", "500"], { encoding: "utf8" }).trim();
+    console.log(`told the Strike Lead from the top of the page: ${talked}`);
+    const heard = await until(async () => (await viewOf(missionId))?.chat.some((entry) => entry.who === "you" && entry.text === WORD), 10000);
+    if (talked !== "ok") failed = `the walk to the Strike Lead: ${talked}`;
+    else if (!heard) failed = "the server has no message from the Strike Lead's box";
+    // The turn the message started ends in the thread first, so it cannot land after the round seeded below and close it.
+    else if (!(await until(async () => { const v = await viewOf(missionId); return v && !v.leadBusy && v.chat.at(-1).who !== "you"; }, 20000))) failed = "the Strike Lead's turn on the message never ended";
     else seedRound(harbor, missionId);
   }
 

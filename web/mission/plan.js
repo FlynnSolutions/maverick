@@ -99,13 +99,13 @@ export const mount = (host, view, ctx) => {
     // Only with an agent behind it: a task that never started has no screen, and a link to one is the dead end it was.
     const agent = task.claudeId || task.review?.claudeId;
     // The word is rebuilt only when it would read differently, the way the lamp is swapped.
-    const wordKey = JSON.stringify([task.status, task.attempts, Boolean(agent)]);
+    const wordKey = JSON.stringify([task.status, task.attempts, Boolean(agent), Boolean(task.claudeId)]);
     if (wordKey !== r.wordKey) {
       r.wordKey = wordKey;
       r.word.replaceChildren(
         el("b", { class: task.status === "handed-back" ? "needs" : task.status === "passed" ? "ok" : "" }, WORD[task.status] ?? task.status),
         task.attempts ? ` · attempt ${task.attempts}` : "",
-        ...(LIVE.has(task.status) && agent ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, "open the session")] : []));
+        ...(LIVE.has(task.status) && agent ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, `open its ${task.status === "reviewing" || !task.claudeId ? "RIO" : "Wingman"}'s session`)] : []));
     }
     // The answers are rebuilt only when the question itself changes, so a half-written note survives the next event.
     const question = task.status === "handed-back" ? (current.questions ?? []).find((q) => q.taskId === task.id) : null;

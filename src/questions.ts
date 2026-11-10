@@ -20,9 +20,10 @@ export interface Question {
   /**
    * `path` is relative to `/api/missions/<id>/`; `body` names the keys the page must supply. Only
    * what the server takes in the mission's state is listed, primary first, so a page renders them
-   * as given. Empty while the mission is paused and the only move is resume, which the paused
-   * question offers once. An answer with `go` posts nothing: it opens the place on the mission page
-   * where the person acts (`milestone-<n>` for a milestone's walkthrough, `close` for the close),
+   * as given. Nothing that acts, beyond a link, while the mission is paused and the only move is
+   * resume, which the paused question offers once. An answer with `go` posts nothing: it opens the place on the mission page
+   * where the person acts (`milestone-<n>` for a milestone's walkthrough, `close` for the close,
+   * `lead-<task id>` for the Strike Lead's box with that task named in it),
    * because walking is done there and closing asks twice there. `link` marks a `go` that only takes
    * the person there, so the mission page dresses it as the link it is; a walk opens its document,
    * so it stays an action.
@@ -192,16 +193,18 @@ const handedBack = (mission: Mission & { findings?: Record<string, string> }, ta
   const why = blockerOf(mission.findings?.[task.id]) ?? task.note ?? "no reason recorded";
   const retry: Answer = { label: "send it out again", method: "POST", path: `tasks/${task.id}/retry`, primary: true };
   const accept: Answer = { label: "accept it over the RIO", method: "POST", path: `tasks/${task.id}/accept`, body: ["note"] };
+  // Neither answer may be the right one (a later task found the bug, a login expired): the Strike Lead is asked in words, the task named.
+  const ask: Answer = { label: "ask the Strike Lead", go: `lead-${task.id}`, link: true };
   const base = { id: `task:${task.id}`, kind: "handed-back" as const, taskId: task.id };
   // No Wingman id: its agent never started, so there is no work to accept, only a launch to fix.
-  if (!task.claudeId) return { ...base, title: `${task.title} never started`, body: why, at: task.started ?? mission.created, answers: mission.status === "paused" ? [] : [retry] };
+  if (!task.claudeId) return { ...base, title: `${task.title} never started`, body: why, at: task.started ?? mission.created, answers: mission.status === "paused" ? [ask] : [retry, ask] };
   return {
     ...base,
     title: `${task.title} came back`,
     body: `${task.title}, attempt ${task.attempts}, the RIO said ${task.verdict ?? "nothing"}: ${why}`,
     at: task.review?.started ?? task.ended ?? mission.created,
     // The server refuses `retry` while paused and says resume first; accept it takes in any state.
-    answers: mission.status === "paused" ? [{ ...accept, primary: true }] : [retry, accept],
+    answers: mission.status === "paused" ? [{ ...accept, primary: true }, ask] : [retry, accept, ask],
   };
 };
 

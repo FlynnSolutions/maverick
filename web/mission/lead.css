@@ -85,7 +85,10 @@ html:has(body.show-me-on) { scroll-padding-bottom: 64px; }
 .lead-fire:empty { display: none; }
 .lead-fire-btn { font: 600 15px var(--sans); }
 
-.lead-compose { display: flex; gap: 8px; align-items: flex-end; }
+/* Headed by name: this box is the Strike Lead's, and a Wingman's screen is headed as the Wingman's. */
+.lead-compose { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; scroll-margin: 16px; }
+.lead-to { font: 600 13px var(--display); color: var(--ink); }
+.lead-compose-row { display: flex; gap: 8px; align-items: flex-end; }
 .lead-compose textarea { flex: 1; min-width: 0; min-height: var(--control); max-height: 40vh; padding: 9px 10px; resize: vertical; background: var(--carbon); border: 1px solid var(--seam); border-radius: 4px; color: var(--ink); font: 13.5px/1.45 var(--sans); }
 .lead-heard { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
 .lead-heard:empty { display: none; }
