@@ -626,9 +626,11 @@ export const mount = (host, view, ctx) => {
     count.textContent = v.status === "closed" ? "closed" : v.status === "review" ? "ready" : merged.length ? "so far" : "not yet";
     if (holding && v.summary?.started !== before) holding = false;
     const now = atNow(v);
-    nowBox.hidden = !now;
-    /* Nothing reviewed an unverified mission's work, so there is no summary of findings to ask for. */
-    if (unverifiedOf(v)) must.remove();
+    /* Nothing reviewed an unverified mission's work: no summary of findings to ask for, and no findings to read. */
+    const checked = !unverifiedOf(v);
+    nowBox.hidden = !now || !checked;
+    readHead.hidden = read.hidden = !checked;
+    if (!checked) must.remove();
     else {
       if (must.parentElement !== (now ? nowBox : mustSlot)) (now ? nowBox : mustSlot).prepend(must);
       paintMust(v);
@@ -641,7 +643,7 @@ export const mount = (host, view, ctx) => {
     const unread = readings.filter((r) => !r.state).length;
     readHead.lastChild.textContent = readings.length ? `${unread} unread · ${readings.length} in all` : "";
     patch(read, [now, readings.map((r) => [r.key, r.severity, r.kind, r.area, r.headline, r.detail, r.taskTitle, r.milestone])], () => drawRead(readings, now));
-    readTools.hidden = !readings.length;
+    readTools.hidden = !readings.length || !checked;
     readings.forEach(paint);
     for (const t of tallies) t.paint();
     patch(walks, closing ? [unverifiedOf(v), v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired])] : [], () => (closing ? drawWalks(v) : []));
