@@ -1342,9 +1342,6 @@ body.ask-open { overflow: hidden; }
 .cc-mission:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
 .cc-mission b { min-width: 0; max-width: 20ch; overflow: hidden; text-overflow: ellipsis; font-weight: inherit; }
 .cc-mission i { font-style: normal; font-size: 12px; font-weight: 400; color: var(--ink-faint); }
-@media (min-width: 840px) {
-  :is(.boards, .cc) > .cc-missions .cc-mission i { position: absolute; left: 0; top: 0; margin: 0; clip-path: inset(50%); pointer-events: none; }
-}
 /* Above the board and the calendar it is the first line, spaced like the ship-day banner under it. */
 .boards > .cc-missions { margin-bottom: 10px; }
 /* On a phone the page opens on what needs you: the tabs scroll in one row and the meter goes under the racks. */
@@ -1358,7 +1355,12 @@ body.ask-open { overflow: hidden; }
   .strip-state b { white-space: nowrap; }
   .bar .brand { min-width: 44px; justify-content: center; }
   .cc-missions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 1px; }
-  .cc-mission b { max-width: none; }
+  /* No chip is wider than most of the screen, so the next one always shows at the edge: the cue that the row scrolls.
+     The word goes under the name, so the name is not cut to make room for it. */
+  .cc-mission { display: inline-grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-content: center; max-width: 55vw; }
+  .cc-mission > svg { grid-row: span 2; }
+  .cc-mission b { max-width: none; line-height: 1.25; }
+  .cc-mission i { grid-column: 2; line-height: 1.2; }
   /* The scroller clips what spills past it, so the focus ring is drawn inside the control. */
   .cc-missions :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .forms { flex-wrap: nowrap; overflow-x: auto; }
