@@ -195,3 +195,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-10 11:31 decision: milestone 1 released by Cory: Proof at 01:18 failed 6 and cancelled 3 of 359 in 405s; names lost to the 4000-character output limit. Three reruns on this merged code on 2026-11-10 passed 359 of 359 in about 155s: a fresh copy, the app environment, and this integration worktree. Likely load or throttling at night, not proven. Cory chose to release and re-prove.
 - 2026-11-10 11:31 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
 - 2026-11-10 11:32 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
+- 2026-11-10 11:33 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
