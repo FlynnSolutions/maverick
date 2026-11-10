@@ -2132,9 +2132,10 @@ const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Pr
     if (inTheAir(m)) for (const task of m.tasks) {
       if (task.status !== "built") continue;
       // A template with no review settles a built task as passed, with no RIO and no verdict, and its note says so, so no line claims a review.
+      // With no RIO to catch it, a run that committed nothing goes back to Cory rather than merging as done.
       if (!hasStage(workflowOf(mission), "review")) {
-        task.status = "passed";
-        task.note = "no review in this template";
+        task.status = task.commits?.length ? "passed" : "handed-back";
+        task.note = task.commits?.length ? "no review in this template" : "its Wingman committed nothing";
         continue;
       }
       if (task.verdict) {

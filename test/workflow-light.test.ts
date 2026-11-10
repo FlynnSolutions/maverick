@@ -95,6 +95,8 @@ const flow = (t: TestContext, id: string, template?: Workflow) => {
   };
   return {
     id, project, root, git, sentinel, record, task, sweep, spawns, wingman,
+    /** A Wingman that finishes having committed nothing. */
+    finish: (taskId: string): void => { finished.add(task(taskId).claudeId!); },
     step: (): void => t.mock.timers.tick(60_000),
     ledger: () => parsePlan(readFileSync(join(integration, `deliverables/missions/${id}.md`), "utf8"), [], [], { walk: false }),
   };
@@ -190,6 +192,25 @@ test("a Light mission flies from the blessing to closed with two Wingmen and not
   ]);
   assert.equal(f.ledger().log.some((l) => /RIO/.test(l)), false);
   assert.equal(f.record().status, "closed");
+});
+
+test("under Light a Wingman that commits nothing is handed back to Cory, not passed, and its milestone does not merge", { timeout: 120_000 }, async (t) => {
+  const f = flow(t, "light-empty", LIGHT);
+  await approveMission(f.project, f.id);
+
+  // The Wingman finishes with nothing on its branch: no RIO would catch that, so the sweep does.
+  f.step();
+  f.finish("m1-t1");
+  await f.sweep();
+  assert.deepEqual([f.task("m1-t1").status, f.task("m1-t1").note, f.task("m1-t1").commits], ["handed-back", "its Wingman committed nothing", []]);
+  assert.equal(f.task("m1-t2").status, "pending", "the task that needs it does not go");
+  f.step();
+  await f.sweep();
+  const after = f.record();
+  assert.equal(after.milestones[0].merged, undefined, "nothing merged");
+  assert.equal(after.status, "blocked", "waiting on Cory");
+  assert.equal(f.spawns().length, 1, "one Wingman and nothing after it");
+  assert.ok(f.ledger().log.includes(`${stamp(1)} m1-t1 Base the lamp: flying to handed-back: its Wingman committed nothing`));
 });
 
 test("a plan with no walk line parses under Light and is refused under mission, at the parser and at the gate", async (t) => {
