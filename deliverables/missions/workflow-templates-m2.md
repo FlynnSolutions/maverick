@@ -54,11 +54,12 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: `test/workflow-light.test.ts` uses `test/flight-harness.ts` and its fake `claude` to fly a pinned-Light mission with one milestone of two tasks, the second needing the first, from `approveMission` to `closeMission` through the real sweep. It asserts literally the ordered spawn list (two Wingmen and nothing else), each task `passed` with no `review`, the milestone merged with no proof, no walkthrough commissioned, the mission reaching `review` and then `closed`, and the ledger lines. A plan with no `_walk:_` line parses under Light and is refused under `mission`. The Light Wingman brief has no RIO promise and the default brief is unchanged. The interview prompt under Light names the stages and the branch. `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, with the results in the commit message.
 
-- [~] **Unverified work can't land: refused at the gate and at landing**
+- [x] **Unverified work can't land: refused at the gate and at landing**
   - touches: src/preflight.ts, src/missions.ts, test/workflow-landing.test.ts
   - needs: m1-t4
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: 63bd0ba
   (1) Preflight. `PreflightInput` gains `unverified?: boolean`, and `rioAgent` becomes optional. `preflightFor` passes `unverified(workflowOf(mission))`, and passes `rioAgent` only when the template reviews, so a Light mission in a project with no `rio.md` is not refused for it. Under `unverified`, every repo in `remote` gets a refusing `landing` check named `unverified landing for <label>`, whose detail says: "<label> is set to land by <pr|push>, but this mission's template leaves out <review, proof, walk>, so its work stays on its mission branch; set <label>'s land to merge in maverick.json, or choose a template that verifies". The default template's checks stay the same names in the same order, and `test/preflight.test.ts` passes unchanged. (2) Landing. `landTheWork` refuses, per repo, any `pr` or `push` landing under an unverified template: it pushes nothing, opens nothing, and adds that repo and reason to `failed`. So `catchUp` holds the milestone on `landing`, and `closeMission` refuses, even when `maverick.json` changed mid-flight and `landAgain` followed it. (3) The release must work. Today `landAgain` on a single-repo mission throws "nothing was waiting to land" once `followLanding` has moved the repo back to `merge`, and that throw discards the change, so the hold can never come off (read from `src/missions.ts`, not yet run). Make a follow to `merge` count as a recovery, so the hold comes off and `settle` runs. The existing test of this path passes unchanged.
 
@@ -167,3 +168,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 23:14 m1-t7 The mission page: the template line, the status strip, and a Light result: reviewing to flying
 - 2026-11-09 23:23 m1-t5 Unverified work can't land: refused at the gate and at landing: flying to reviewing
 - 2026-11-09 23:35 m1-t7 The mission page: the template line, the status strip, and a Light result: flying to reviewing
+- 2026-11-09 23:35 m1-t5 Unverified work can't land: refused at the gate and at landing: reviewing to passed (RIO: pass with notes) with 8 notes carried, 1 unverified
