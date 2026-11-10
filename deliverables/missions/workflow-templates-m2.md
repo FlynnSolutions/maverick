@@ -184,3 +184,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-10 01:05 m1-t9 The decision entry, the docs and the design system: flying to reviewing
 - 2026-11-10 01:11 m1-t9 The decision entry, the docs and the design system: reviewing to passed (RIO: pass with notes) with 7 notes carried
 - 2026-11-10 01:11 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
+- 2026-11-10 01:12 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
