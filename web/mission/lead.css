@@ -84,6 +84,8 @@ html:has(body.show-me-on) { scroll-padding-bottom: 64px; }
 .lead-asked > summary { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
 .lead-asked > summary:hover { color: var(--ink); }
 .lead-asked > ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; color: var(--ink-soft); }
+/* One the mission moved past says how to answer it anyway, under its questions. */
+.lead-asked > .lead-hint { margin-top: 6px; }
 
 .lead-thinking { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
 .lead-thinking[hidden] { display: none; }

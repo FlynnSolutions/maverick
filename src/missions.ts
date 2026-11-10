@@ -2517,8 +2517,8 @@ export const sayToStrikeLead = async (project: Project, id: string, text: string
 
 /** A round of the Strike Lead's questions answered with clicks: said to it as one message, numbered as it asked. */
 export const answerLead = async (project: Project, id: string, picked: Record<string, { options?: string[]; other?: string }>): Promise<{ ok: true }> => {
-  const last = openRound((await missionOr404(project.id, id)).chat);
-  if (!last) throw new Error("there is no round of questions waiting for answers; it may have been answered already");
+  const last = openRound(await missionOr404(project.id, id));
+  if (!last) throw new Error("there is no round of questions waiting for answers; it may have been answered already, or the mission has moved past it");
   return sayToStrikeLead(project, id, answersText(last.questions, picked));
 };
 

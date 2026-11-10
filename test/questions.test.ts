@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Milestone, Mission, MissionTask } from "../src/missions.ts";
-import { questionsOf, statusWord, type Question } from "../src/questions.ts";
+import { openRound, questionsOf, statusWord, type Question } from "../src/questions.ts";
 
 const t = (id: string, status: MissionTask["status"], extra: Partial<MissionTask> = {}): MissionTask => ({ id, title: `title ${id}`, intent: "i", repo: "root", status, attempts: 2, claudeId: "w", ...extra });
 const ms = (n: number, tasks: MissionTask[], extra: Partial<Milestone> = {}): Milestone => ({ n, title: `m${n}`, done: "d", tasks, ...extra });
@@ -231,6 +231,27 @@ test("a round of questions the Strike Lead is waiting on is a question for you, 
   assert.deepEqual(questionsOf(base({ status: "interviewing", chat: [asked, { at: "2026-10-29T20:03:00.000Z", who: "you", text: "stored; the dock" }] })), []);
   assert.deepEqual(questionsOf(base({ status: "interviewing", chat: [{ ...asked, questions: [] }] })), []);
   assert.equal(statusWord(base({ status: "interviewing", chat: [{ ...asked, questions: [] }] })), "working");
+});
+
+test("a round the mission has moved past since it was asked is overtaken, not waiting; one asked in the stage it is in stays open", () => {
+  // workflow-templates-m1: asked how to clear the proof hold, then the proof passed, the milestone merged and the work finished.
+  const asked = { at: "2026-11-05T19:14:50.953Z", who: "Strike Lead" as const, text: "I added no fix task.", questions: [
+    { id: "proof-hold", question: "How do you want to clear this mission's proof hold?", options: ["Release it once Realtime is quiet", "Add a task to harden the waits", "Do both"] },
+  ] };
+  const merged = ms(1, [t("m1-t1", "passed")], { merged: "2026-11-05T21:35:16.509Z", walkthrough: { waived: { note: "no screen", at: "2026-11-05T19:22:00.000Z" } } });
+  const review = base({ status: "review", approved: "2026-11-05T05:11:44.177Z", finished: "2026-11-05T21:35:20.197Z", chat: [asked], milestones: [merged] });
+  assert.deepEqual(questionsOf(review).map((q) => q.kind), ["review"], "only the close is asked: the round is not");
+  assert.equal(openRound(review), undefined);
+  // Still in the stage it was asked in, it waits: flying or held, before the work finished.
+  const flying = base({ status: "blocked", approved: "2026-11-05T05:11:44.177Z", chat: [asked], milestones: [ms(1, [t("m1-t1", "passed")], { hold: { kind: "proof", reason: "failed", at: "2026-11-05T07:55:18.497Z" } })] });
+  assert.ok(questionsOf(flying).some((q) => q.id === `round:${asked.at}`));
+  assert.equal(statusWord(flying), "waiting for you");
+  // A round asked at review is after the work finished, so it is live there.
+  const late = { ...asked, at: "2026-11-05T22:00:00.000Z" };
+  assert.ok(questionsOf({ ...review, chat: [late] }).some((q) => q.id === `round:${late.at}`));
+  // Firing the plan overtakes a round asked while planning; one asked in flight is after it.
+  assert.equal(openRound(base({ status: "flying", approved: "2026-11-05T19:20:00.000Z", chat: [asked] })), undefined);
+  assert.ok(openRound(base({ status: "planned", chat: [asked] })));
 });
 
 test("an agent stopped at a prompt makes a live mission wait for you; other trouble and an ended mission do not", () => {
