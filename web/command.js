@@ -10,6 +10,7 @@ import { lamp } from "./lamp.js";
 import { isEnded, missionWord } from "./mission/state.js";
 import { icon } from "./icons.js";
 import { questionLines } from "./inbox.js";
+import { WANTS_YOU, lampOf, missionHref, missionLinks } from "./mission-links.js";
 import { failed, leave, toast } from "./toast.js";
 import { finished, reviewOwed, stripState } from "./session-word.js";
 
@@ -26,7 +27,6 @@ const OLD_MISSION = 7 * DAY;
 const trustAgent = (s) => finished(s) || s === "blocked";
 /** The prompt Maverick spawned an agent with: its words, not the person's, so it never reads as `you`. */
 const SPAWN_PROMPT = /^You are (the|a|an|writing|summarizing)\b/;
-const WANTS_YOU = /^(waiting|blocked)$/;
 /** The listing cuts a name at 60 characters, so a name that long, or stopped on punctuation, says it was cut. */
 const listedName = (name) => (name && (name.length >= 59 || /[,:;]$/.test(name)) ? `${name.trimEnd()}…` : name);
 /** A session named for a mission: the way the Wingman's record and listing name start. */
@@ -155,7 +155,6 @@ export const mountCommandCenter = (root, ctx) => {
     return missions.find((m) => m.id === recorded || belongsTo(m, s.title) || s.cwd?.includes(`/worktrees/${m.id}-`)
       || m.milestones.some((x) => x.tasks.some((t) => (s.claudeId && (t.claudeId === s.claudeId || t.review?.claudeId === s.claudeId)) || (task.length > 8 && task !== s.title && t.title.startsWith(task)))));
   };
-  const missionHref = (m) => `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(m.id)}`;
   /** A labelled line under a strip: the exchange, an ask's reason. */
   const sayLine = (who, body, cls = "claude") => el("p", { class: cls }, el("span", { class: "who" }, who), body);
 
@@ -815,23 +814,23 @@ export const mountCommandCenter = (root, ctx) => {
       dead.length ? el("nav", { class: "archive-formations", "aria-label": "Finished formations" }, el("span", {}, "Finished formations"), ...dead.map((f) => el("button", { type: "button", class: "rack-verb", onclick: () => showFormation(f.id) }, f.name))) : null);
   };
   /** The way back to every live mission and the way to start one, on the first screen of every tab. */
-  const missionLinks = () =>
-    el("nav", { class: "cc-missions", "aria-label": "Missions" }, el("span", {}, "Missions"),
-      ...missions.filter((m) => !isEnded(m.status)).map((m) => { const wants = lampOf(m); return el("a", { class: `cc-mission${WANTS_YOU.test(wants) ? " wants" : ""}`, href: missionHref(m) }, lamp(wants), m.name, el("i", {}, missionWord(m))); }),
+  const missionNav = () =>
+    missionLinks(el, ctx.projectId, missions,
       el("button", { type: "button", class: "rack-verb", title: "for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve", onclick: newMission }, "open a mission"),
       el("button", { type: "button", class: "rack-verb", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm"));
+  /** A live mission's crew tab opens on the mission it flies for: its tab is named after it, so that is what a person came looking for. */
+  const crewMission = (f) => {
+    const m = missions.find((x) => x.formation === f.id && !isEnded(x.status));
+    return m ? el("section", { class: "cc-project" }, rack("Mission", [missionRow(m)], "crew-mission")) : null;
+  };
   const strips = (sessions, full, band) => sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, band));
 
   /**
-   * Missions live here rather than on the board, because a mission is a bundle of sessions and
-   * this is the page that holds those. The lamp follows the mission's own word, the one its page
-   * shows above the rail: what wants you wears the reticle and sorts above everything else, the
-   * way any other waiting thing does.
+   * Missions live here rather than on the board (which only links to them), because a mission is
+   * a bundle of sessions and this is the page that holds those. The lamp follows the mission's own
+   * word, the one its page shows above the rail: what wants you wears the reticle and sorts above
+   * everything else, the way any other waiting thing does.
    */
-  // The word picks the lamp, except that a mission in review is done with its flying and not with
-  // you: it waits to be walked and closed, so it wears the reticle, not the finished lamp.
-  const WORD_LAMP = { "waiting for you": "blocked", error: "idle", done: "done", working: "busy" };
-  const lampOf = (m) => (m.status === "review" ? "waiting" : WORD_LAMP[m.word] ?? "busy");
   /** What the status says beyond the word, for the note column when nothing has gone wrong. */
   const MISSION_SAYS = {
     interviewing: "the Strike Lead is interviewing you",
@@ -873,7 +872,7 @@ export const mountCommandCenter = (root, ctx) => {
     const passed = tasks.filter((t) => t.status === "passed").length;
     const merged = m.milestones.filter((x) => x.merged).length;
     const status = lampOf(m);
-    const href = missionHref(m);
+    const href = missionHref(ctx.projectId, m);
     const openMission = () => { location.href = href; };
     // What it says of itself fits the state column; a reason is a sentence, and sits under the line.
     const over = isEnded(m.status);
@@ -930,7 +929,7 @@ export const mountCommandCenter = (root, ctx) => {
     if (!brief) return;
     try {
       const { mission } = await post(`/api/missions?project=${encodeURIComponent(ctx.projectId)}`, { name, brief });
-      location.href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(mission.id)}`;
+      location.href = missionHref(ctx.projectId, mission);
     } catch (err) {
       failed("open the mission", err);
     }
@@ -1017,12 +1016,15 @@ export const mountCommandCenter = (root, ctx) => {
     const active = formations.find((f) => f.id === activeFormation);
     if (activeFormation && !active) activeFormation = null;
     const section = archiveOpen ? archiveView() : active ? formationView(active) : projectSection(proj, mine);
-    const sections = section ? [section] : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
+    const sections = section ? [archiveOpen || !active ? null : crewMission(active), section].filter(Boolean) : [el("p", { class: "muted small cc-empty" }, "no sessions in this project")];
     markArrivals(sections);
     const trouble = sessionsFailed ? el("div", { class: "cc-trouble", role: "alert" },
       el("p", {}, `The session list could not be read: ${sessionsFailed.message}. Missions and brainstorms below are current; sessions are not shown.`),
       el("button", { type: "button", onclick: () => load() }, "try again")) : null;
-    root.replaceChildren(...[trouble, archiveOpen ? null : missionLinks(), ...sections].filter(Boolean));
+    const nav = archiveOpen ? null : missionNav();
+    // Over the Rack, a mission waiting on you is also the first row of Needs you below it.
+    nav?.classList.toggle("over-needs", !active);
+    root.replaceChildren(...[trouble, nav, ...sections].filter(Boolean));
     // Every open pane's head carries live state (lamp, status, timing), so they follow the model.
     for (const p of panes.values()) {
       paintHead(p);
