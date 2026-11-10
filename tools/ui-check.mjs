@@ -199,9 +199,9 @@ try {
     seedRound(harbor, missionId);
     const walking = promisify(execFile)(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}/mission.html?project=harbor&mission=${missionId}`, "--eval", ask, "--w", "1280", "--h", "800", "--wait", "500"], { encoding: "utf8" });
     // The answer reaches the server through the page; then the Strike Lead's reply reaches the page through the stream.
-    const answered = await until(async () => (await (await fetch(`${harbor.url}/api/missions/${missionId}?project=harbor`)).json()).chat.some((entry) => entry.who === "you" && entry.text.includes(ANSWER)), 20000);
+    const answered = await until(async () => (await viewOf(missionId))?.chat.some((entry) => entry.who === "you" && entry.text.includes(ANSWER)), 20000);
     // A retry that worked: a reply once the failed turn has landed and the page has had time to show it.
-    if (answered && await until(async () => (await (await fetch(`${harbor.url}/api/missions/${missionId}?project=harbor`)).json()).chat.at(-1).error, 15000)) {
+    if (answered && await until(async () => (await viewOf(missionId))?.chat.at(-1).error, 15000)) {
       await new Promise((r) => setTimeout(r, 2500));
       addToChat(harbor, missionId, { text: "Slack tide it is." });
     }
