@@ -442,3 +442,35 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
   browser that never opened the document is filled from the record, notes included.
 - **Hosted, the document is as tall as itself** (the console sizes the frame to the body), so the
   page has one scroll, and the console's count heading is what stays in view.
+
+## Workflow templates (2026-11-09)
+
+Cory's picks from `.ui-design/mockups/workflow-templates-round-1.html`: cells 22, 28, 34 and 39,
+with the template page's flow drawn per `.ui-design/mockups/workflow-editor-round-1.html` picks 1,
+7 and 11 (M33).
+
+- **The template card is new, and lives only inside `ask()`** (its `choices` option in
+  `web/app.js`, styled as `.ask-choice` in `web/style.css`). One card per row under the line you
+  type: the name, the one-line description, and for an unverified template one mono line,
+  "unverified: stays on its mission branch". The chosen card is lifted onto `--panel` with a 2px
+  accent ring and no radio dot (22 over 21's dot). It is still a radio group to the keyboard and
+  to a screen reader: one Tab stop, arrows move and choose, `aria-checked`. A broken project
+  template is a disabled card with the validator's message in mono `--threat`, and cannot be
+  chosen. Every other `ask()` dialog is unchanged.
+- **The status strip is new, in the rail** (`.mv-flight` in `web/mission.css`), between the status
+  word and the anchors, both reused as they are: every stage the mission's template runs, top to
+  bottom, each done, now or next, with a count on Build and Review ("2 of 3"). At 390 it sits under
+  the status word, above the content, as the rail's `display: contents` orders it.
+- **The template line reuses `.mv-ask-meta`** under the mission's title: "runs light · unverified:
+  stays on its mission branch", or "runs mission". The template's name is the link, to the
+  template page with the mission's pinned copy.
+- **The template page is new and read-only** (`web/workflow.html`): crumb, name, description, the
+  unverified sentence when it applies (naming only what that template leaves out), where it comes
+  from (built-in or the project's file), then the flow and its legend. The flow runs left to right
+  with wires (1), each for-each a box whose tasks splay and rejoin (7), each stage a card step with
+  ports (11). It takes the mission page's bar and theme. At 390 the flow scrolls sideways inside
+  its own frame and the page does not. An unknown id or a broken template says so on the page,
+  with the message.
+- **A left-out stage is never drawn, not even as a ghost** (28 and 39 over 29 and 40), so a Light
+  mission's strip and page are shorter. That a template is unverified is said in words, in the
+  same plain voice in all four places, and no colour carries it.
