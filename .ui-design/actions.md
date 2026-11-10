@@ -147,7 +147,7 @@ to the tracker file, the same write whichever control made it.
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words; the new card is drawn even past the page or a find | The new card settles in | Linear quick add, Trello add a card |
+| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words; the new card is drawn even past the page or a find; an empty add puts the focus in the field and says what it wants | The new card settles in | Linear quick add, Trello add a card |
 | Item | Open | Its title (a button), Enter or a click anywhere on the card | The drawer opens with its heading focused; Escape or the close icon gives focus back | The drawer slides in | Linear issue peek |
 | Item | Find one | `find on the board` over the lanes; it reads each card's title, tags and description and its group's name | Each lane draws only its matches and says `N found`; a lane with none says `Nothing in <lane> says "..."` | none | the Archive's find, Trello filter |
 | Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move`. Under a page or a find a drop lands just after the drawn card above it; a drop outside every group lands at the lane's top, so a lane the find matched nothing in still takes one | Toast with `undo`; the board repaints from the file, keeping the find and the pages, and the moved card stays drawn wherever it landed | The list it landed in flares | Trello, Linear |

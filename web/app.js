@@ -468,7 +468,12 @@ const quickAdd = (tracker, section, label, key) => {
     onsubmit: async (e) => {
       e.preventDefault();
       const title = input.value.trim();
-      if (!title) return;
+      // An empty add says what is missing, in the field it is missing from.
+      if (!title) {
+        input.placeholder = "type the item, then add";
+        input.focus();
+        return;
+      }
       placed = title;
       const ok = await write(`add ${short(title)}`, `Added ${short(title)} to ${label}.`, () => post("/api/items", { project: projectId, tracker: tracker.index, heading: section.heading, name: "", title }));
       await repainted;
