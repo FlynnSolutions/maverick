@@ -80,7 +80,8 @@ mission went dark. Pick a free port for anything you run, and stop only that.
 Commit in small commits with plain lowercase subjects describing what changed.
 
 **Do not grade yourself.** A RIO that did not write this code reviews it after you, runs it,
-and returns a verdict that may contradict you. Your commit messages and your final message
+and returns a verdict that may contradict you, unless your brief says this mission has no RIO.
+Your commit messages and your final message
 should say what you did and, specifically, **what you could not verify**. Claiming something
 works when you did not check it is the one failure that wastes everybody's time twice: once
 when it is believed, and again when the RIO finds out.

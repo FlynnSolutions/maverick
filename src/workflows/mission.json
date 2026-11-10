@@ -1,5 +1,7 @@
 {
   "id": "mission",
+  "name": "Mission",
+  "description": "The full flight: every task reviewed by a RIO, the proof on the merged tree, and a walk before it lands.",
   "stages": [
     { "id": "interview", "kind": "interview" },
     { "id": "plan-gate", "kind": "gate" },
