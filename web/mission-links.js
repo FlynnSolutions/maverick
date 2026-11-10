@@ -14,10 +14,14 @@ export const lampOf = (m) => (m.status === "review" ? "waiting" : WORD_LAMP[m.wo
 
 export const missionHref = (projectId, m) => `/mission.html?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(m.id)}`;
 
-/** One link per live mission, its lamp and its word, then whatever verbs the view adds after them. */
-export const missionLinks = (el, projectId, missions, ...verbs) =>
-  el("nav", { class: "cc-missions", "aria-label": "Missions" }, el("span", {}, "Missions"),
-    ...missions.filter((m) => !isEnded(m.status)).map((m) => {
-      return el("a", { class: "cc-mission", href: missionHref(projectId, m) }, lamp(lampOf(m)), m.name, el("i", {}, missionWord(m)));
-    }),
+/**
+ * One link per live mission, its lamp, its name and its word, then whatever verbs the view adds
+ * after them. The label counts the links, so a row that scrolls on a phone says how many it holds;
+ * with no link to count it names the verbs, which start things.
+ */
+export const missionLinks = (el, projectId, missions, ...verbs) => {
+  const live = missions.filter((m) => !isEnded(m.status));
+  return el("nav", { class: "cc-missions", "aria-label": live.length ? "Missions" : "Start" }, el("span", {}, live.length ? `Missions · ${live.length}` : "Start"),
+    ...live.map((m) => el("a", { class: "cc-mission", href: missionHref(projectId, m), title: `${m.name} · ${missionWord(m)}` }, lamp(lampOf(m)), el("b", {}, m.name), el("i", {}, missionWord(m)))),
     ...verbs);
+};

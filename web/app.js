@@ -577,10 +577,12 @@ const loadBoard = async () => {
     $("#page-title").hidden = view === "workspace";
     $("#page-title").textContent = `${project.name}: ${view}`;
     $("#boards").replaceChildren(
-      ...missionsRow(),
+      // The calendar carries the links beside its grid, so no line above the month pushes this week down.
+      ...missionsTrouble(),
+      ...(view === "calendar" ? [] : liveMissions()),
       ...shipDayBanner(trackers),
       ...(view === "calendar"
-        ? [renderCalendar(trackers)]
+        ? [renderCalendar(trackers, liveMissions())]
         : view === "workspace"
           ? [await renderWorkspace()]
           : [releasesSection(trackers), ...trackers.map(renderBoard)]),
@@ -1204,12 +1206,10 @@ const shipDayBanner = (trackers) => {
  * The way to every live mission, above the board and the calendar. The app reopens on the last
  * view, so a mission in the air has to be one press away from here, not only from the workspace.
  */
-const missionsRow = () => {
-  if (missionsFailed) return [el("div", { class: "cc-trouble", role: "alert" },
-    el("p", {}, `The missions could not be read: ${missionsFailed.message}. A mission in the air is not shown here.`),
-    btn("try again", () => loadBoard()))];
-  return missions.some((m) => !isEnded(m.status)) ? [missionLinks(el, projectId, missions)] : [];
-};
+const liveMissions = () => (missions.some((m) => !isEnded(m.status)) ? [missionLinks(el, projectId, missions)] : []);
+const missionsTrouble = () => (missionsFailed ? [el("div", { class: "cc-trouble", role: "alert" },
+  el("p", {}, `The missions could not be read: ${missionsFailed.message}. A mission in the air is not shown here.`),
+  btn("try again", () => loadBoard()))] : []);
 
 /** The cadence control, under the calendar head: how often this project means to ship. */
 const shipCadenceRow = () => {
@@ -1241,7 +1241,7 @@ const shipCadenceRow = () => {
   );
 };
 
-const renderCalendar = (trackers) => {
+const renderCalendar = (trackers, links = []) => {
   const [y, m] = calendarMonth.split("-").map(Number);
   const first = new Date(Date.UTC(y, m - 1, 1));
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -1274,6 +1274,9 @@ const renderCalendar = (trackers) => {
     el("span", { class: "spacer" }),
     el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, or a ship day to move it"),
   );
+  // Beside the grid, over the undated items: on the first screen at 1280 without a line of its own
+  // above the month. On a phone the column folds away and the row leads the page (style.css).
+  const aside = el("div", { class: "cal-side" }, ...links);
   const grid = el("div", { class: "cal-grid" });
   const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (const d of WEEKDAYS) grid.append(el("div", { class: "cal-dow" }, d));
@@ -1313,6 +1316,7 @@ const renderCalendar = (trackers) => {
       : el("p", { class: "lane-empty muted small" }, "Nothing on the roadmap yet. Items are added on the ", el("a", { href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "board"), ", and dated in their drawer or by dragging them here."));
   dropZone(side, (d) => d.type === "item" && Boolean(d.item.fields.due), (d) => setDue(d.tracker, d.item, ""));
   for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(calEvent("item undated", i.title, "", () => openDrawer(t.index, i)), t, i, s));
+  aside.append(side);
   const key = (cls, words, iconName) => el("span", { class: `cal-key ${cls}` }, iconName ? icon(iconName) : null, words);
   return el(
     "section",
@@ -1322,7 +1326,7 @@ const renderCalendar = (trackers) => {
     head,
     el("div", { class: "cal-legend" }, key("item done", "done", "decision"), key("item overdue", "overdue", "finding"), key("item soon", "due within a week"), key("item", "due later"), key("release", "a release deploys"), key("ship", "ship day"), key("ship now", "ship day, today")),
     grid,
-    side,
+    aside,
   );
 };
 

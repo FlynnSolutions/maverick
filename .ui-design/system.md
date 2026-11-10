@@ -112,16 +112,23 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   the thing at the prompt, and the RIO is not drawn again as a row of its own (2026-11-10).
 - **Missions have a way back on the first screen**: `.cc-missions` (`web/mission-links.js`), one link
   per live mission the tab does not already draw as a strip (the Rack draws every one, a crew tab its
-  own), on every tab but the archive, with the verbs that start a mission or a brainstorm,
-  and the same row, without the verbs, above the Board and the Calendar, because the app reopens on
+  own), on every tab but the archive, with the verbs that start a mission or a brainstorm (labelled
+  `Start` when no link is left to label), and the same row, without the verbs, above the Board and
+  beside the Calendar's grid, because the app reopens on
   the last view (Cory, 2026-11-04: nothing there said a mission was flying). A formation sharing a mission's
   name reads `<name> crew`, because its tab is not the mission's page, and it opens on that mission's
   own strip, in a Mission rack above Oversight: the tab is named after it, so it is what a person came for.
-  The row is one line however many missions fly, so it never pushes the calendar's week down: what
-  does not fit scrolls, and the far edge fades to say there is more (2026-11-10).
+  Every mission is shown or counted (2026-11-10, after a one-line row hid one under a fade): the
+  label reads `Missions · N`; on a pointer's width the chips wrap, each name cut at 20ch with the
+  whole of it and its word in the title and the lamp saying which want you, so four take one line at
+  1280; on a phone it is one scrolling line with the next chip cut by the edge. On the Calendar the
+  missions are a column over the undated items, not a line above the month, so the current week is
+  whole on the first screen at 1280x800; on a phone they lead the page.
 - **An agent holding a live mission shows inside it.** A mission whose agent is stopped at a prompt
   reads `waiting for you` and sits in Needs you (Cory, 2026-11-04), one row: the reason, what the
-  agent last said, and `open that session`.
+  agent last said, and `open that session`. Only there does the mission's row speak for its agents;
+  in Working and on a crew tab the agent has its own row (a strip in Needs you, a Flight row), so
+  the mission's row keeps its own word and does not say them again (2026-11-10).
 - **One word per fact.** The state column says `working`, `waiting for you`, `idle`; the verb that
   ends a live session is `end`, in every place. `land and close` is the mission's: it ships work.
   A row says each fact once: an ended session whose review is still owed reads the review

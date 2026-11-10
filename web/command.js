@@ -338,6 +338,8 @@ export const mountCommandCenter = (root, ctx) => {
       name,
       lead: expandable
         ? el("button", { type: "button", class: "strip-turn", "aria-label": isOpen ? `collapse ${s.title}` : `open ${s.title} here`, "aria-expanded": String(isOpen), title: isOpen ? "collapse back to the strip" : "open this session here, beside the others", onclick: (e) => { e.stopPropagation(); openIt(); } }, icon("chevron"))
+        // In a formation a strip that cannot open in place keeps the chevron's column, so its name lines up with the rest.
+        : inFormation ? el("span", { class: "strip-turn", "aria-hidden": "true" })
         : null,
       chips: [roleChip(record), auditChip(record)],
       // An idle session in Needs you asked you something; in Ready to review it replied. Say which, not just "idle".
@@ -888,7 +890,12 @@ export const mountCommandCenter = (root, ctx) => {
   /** The sessions stopped at a prompt that this mission's row speaks for. */
   const heldBy = (m) => model.sessions.filter((s) => WANTS_YOU.test(s.status ?? "") && missionOf(s)?.id === m.id);
 
-  const missionRow = (m) => {
+  /**
+   * `held` is the agents stopped at a prompt this row speaks for, handed in only by the Rack's Needs
+   * you. Anywhere else those agents have a row of their own (a strip in Needs you, a crew's Flight),
+   * so the mission does not say them a second time.
+   */
+  const missionRow = (m, held = []) => {
     const tasks = m.milestones.flatMap((x) => x.tasks);
     const passed = tasks.filter((t) => t.status === "passed").length;
     const merged = m.milestones.filter((x) => x.merged).length;
@@ -898,7 +905,6 @@ export const mountCommandCenter = (root, ctx) => {
     // What it says of itself fits the state column; a reason is a sentence, and sits under the line.
     const over = isEnded(m.status);
     const why = over ? null : m.escalation ?? m.trouble ?? null;
-    const held = over ? [] : heldBy(m);
     return pageStrip({ status, title: `${m.name} · ${missionWord(m)}`, open: openMission, key: `mission:${m.id}` }, stripLine({
       status,
       name: stripName(m.name, openMission),
@@ -994,11 +1000,12 @@ export const mountCommandCenter = (root, ctx) => {
     const flying = live.filter((m) => !wanting.includes(m));
     // An agent holding a mission in this rack is said on that mission's row: one event, one row.
     // So is a RIO at a prompt on its Wingman's row, and that row on the mission's when the mission holds the RIO.
-    const spokenFor = new Set(wanting.flatMap(heldBy));
+    const heldOf = new Map(wanting.map((m) => [m, heldBy(m)]));
+    const spokenFor = new Set([...heldOf.values()].flat());
     const reviewers = new Map(reviewHeld.map((s) => [s, reviewerAt(s, s.record)]));
     const asked = new Set(reviewers.values());
-    const needs = [...strips(blocked.filter((s) => !spokenFor.has(s) && !asked.has(s)), true, "needs"), ...strips(reviewHeld.filter((s) => !spokenFor.has(reviewers.get(s))), true, "needs"), ...wanting.map(missionRow), ...brainstorms.filter((b) => b.state === WAITING).map(brainstormRow), ...strips(asking, true, "action")];
-    const working = [...strips(busy, true, "working"), ...strips(reviewing, true, "working"), ...formations, ...strips(shells, false, "working"), ...flying.map(missionRow)];
+    const needs = [...strips(blocked.filter((s) => !spokenFor.has(s) && !asked.has(s)), true, "needs"), ...strips(reviewHeld.filter((s) => !spokenFor.has(reviewers.get(s))), true, "needs"), ...wanting.map((m) => missionRow(m, heldOf.get(m))), ...brainstorms.filter((b) => b.state === WAITING).map(brainstormRow), ...strips(asking, true, "action")];
+    const working = [...strips(busy, true, "working"), ...strips(reviewing, true, "working"), ...formations, ...strips(shells, false, "working"), ...flying.map((m) => missionRow(m))];
     const review = strips(replied, true, "action");
     // No project heading: the bar already names the project, and every group carries its own
     // count. Four groups, always in this order, then the brainstorms.

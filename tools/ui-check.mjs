@@ -121,13 +121,16 @@ const reach = join(out, "reach.js");
 const writeReach = (want) => writeFileSync(reach, `(async () => {
   ${UNTIL}
   const crew = new URLSearchParams(location.search).has("formation");
-  const at = await until(() => document.querySelector(crew ? ".rack.crew-mission .strip" : ".boards > .cc-missions .cc-mission"), 15000);
+  const at = await until(() => document.querySelector(crew ? ".rack.crew-mission .strip" : ".boards .cc-missions .cc-mission"), 15000);
   if (!at) return "error: no mission on " + location.search;
   if (!at.textContent.includes(${JSON.stringify(MISSION)})) return "error: the mission shown is not the live one: " + at.textContent;
   if (at.getBoundingClientRect().bottom > innerHeight) return "error: the mission is below the first screen on " + location.search;
-  // The row is one line however many fly, so it never pushes the page under it down.
+  // Every mission is shown or counted: the label says how many the row holds, however many it scrolls past.
   const row = at.closest(".cc-missions");
-  if (row && row.getBoundingClientRect().height > at.getBoundingClientRect().height + 4) return "error: the Missions row takes more than one line on " + location.search;
+  if (row && !row.firstChild.textContent.includes("· " + row.querySelectorAll(".cc-mission").length)) return "error: the Missions label does not count its links: " + row.firstChild.textContent;
+  // The missions never cost the calendar its week: today's whole row is on the first screen.
+  const todayCell = document.querySelector(".cal-cell.today");
+  if (todayCell && innerWidth >= 840 && todayCell.getBoundingClientRect().bottom > innerHeight) return "error: today's week runs below the first screen, its cell ending at " + todayCell.getBoundingClientRect().bottom;
   let went = null;
   navigation.addEventListener("navigate", (e) => { went = e.destination.url; e.preventDefault(); });
   (crew ? at.querySelector(".primary-act") : at).click();
@@ -341,7 +344,7 @@ try {
         { id: "default", steps: [{ waitFor: ".rack.crew-mission .strip", timeout: 15000 }, { wait: 700 }], expect: ".rack.crew-mission .strip" },
       ] },
       { id: "calendar", path: CALENDAR, states: [
-        { id: "default", steps: [{ waitFor: ".boards > .cc-missions", timeout: 15000 }, { wait: 700 }], expect: ".boards > .cc-missions" },
+        { id: "default", steps: [{ waitFor: ".calendar .cc-missions", timeout: 15000 }, { wait: 700 }], expect: ".calendar .cc-missions" },
       ] },
       { id: "mission", path: missionPage(), states: [
         { id: "asked", steps: [{ waitFor: "#round .lead-opt", timeout: 15000 }], expect: "#round .lead-opt",
