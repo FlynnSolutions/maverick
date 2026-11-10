@@ -33,8 +33,9 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - [~] **A mission starts from the chosen template, and its view says which and where it is**
   - touches: src/missions.ts, server.ts, test/workflow-start.test.ts
   - needs: m1-t1, m1-t2
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: c5cc24e
   `startMission` takes an optional template id as a new last parameter and pins `chooseTemplate(project.path, id)`. With no id it chooses `mission`, which for a project with no `.maverick/workflows/` is exactly today's `defaultWorkflow()`. `breakdowns.ts` keeps calling it with no id. `POST /api/missions` passes `body.template` through. `GET /api/workflows/<id>?project=&mission=<missionId>` returns that mission's pinned copy through `workflowOf`, so editing or deleting a project template changes no mission already started. An older record with no `template` reads as `mission`.
 
   `missionView` keeps not sending the raw template, but it gains `workflow` (the contract): id, name, `unverified(...)`, and `flight`, the stages the strip draws. `flight` comes from a pure exported `flightOf(mission)`. Its labels, in order, are Interview, Plan gate, Preflight, Build, Review, Merge, Proof, Land, Walk and Close (walkthrough folds into Walk, and summary is on demand and not drawn). It holds only the stages the pinned template has, each `done`, `now` or `next`, read from the record: `interviewing` is Interview, `planned` is Plan gate, flying reads the first milestone not done (tasks flying or pending is Build, reviewing is Review, every task passed and not merged is Merge, merged and not proved is Proof, a repo landing is Land, owing a walk is Walk), `review` is Close now, and `closed` is all done. Build and Review carry a count ("2 of 3"). Do not touch `web/`, the ledger format, `sweepOnce`, `actOn`, landing or briefs: those are m1-t4's and m1-t5's.
@@ -139,3 +140,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 21:15 m1-t2 The templates a project offers, over the API: reviewing to passed (RIO: pass with notes) with 8 notes carried, 1 unverified
 - 2026-11-09 21:15 m1-t3 A mission starts from the chosen template, and its view says which and where it is: pending to flying
 - 2026-11-09 21:15 m1-t8 The read-only template page: pending to flying
+- 2026-11-09 21:28 m1-t3 A mission starts from the chosen template, and its view says which and where it is: flying to reviewing
