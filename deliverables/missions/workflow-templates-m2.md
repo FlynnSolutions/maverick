@@ -30,11 +30,12 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: `test/workflows-api.test.ts` starts the real server on a free port against temp `SESSION_CONSOLE_*` folders, as `test/http-writes.test.ts` does, with an invented project holding one good and one broken template. It asserts the list (mission, light, the good file and the broken one with its message), one template fetched by id, a 404 for an unknown id, and that `../` in an id is refused. `npm test && npm run lint`, with the results in the commit message.
 
-- [~] **A mission starts from the chosen template, and its view says which and where it is**
+- [x] **A mission starts from the chosen template, and its view says which and where it is**
   - touches: src/missions.ts, server.ts, test/workflow-start.test.ts
   - needs: m1-t1, m1-t2
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: c5cc24e
   `startMission` takes an optional template id as a new last parameter and pins `chooseTemplate(project.path, id)`. With no id it chooses `mission`, which for a project with no `.maverick/workflows/` is exactly today's `defaultWorkflow()`. `breakdowns.ts` keeps calling it with no id. `POST /api/missions` passes `body.template` through. `GET /api/workflows/<id>?project=&mission=<missionId>` returns that mission's pinned copy through `workflowOf`, so editing or deleting a project template changes no mission already started. An older record with no `template` reads as `mission`.
 
@@ -42,10 +43,11 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: `test/workflow-start.test.ts` covers a start with no id pinning the same template as today, a start choosing `light` pinning light, a start on a broken project `mission.json` refused with the validator's message, an edit to the project's file after start leaving the pinned copy unchanged and served by the `mission=` route, `missionView` carrying `workflow` and never `template`, and `flightOf` across every status for both templates. `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, with the results in the commit message.
 
-- [ ] **Light flies: a built task passes with no review, and the plan, briefs and interview follow the template**
+- [~] **Light flies: a built task passes with no review, and the plan, briefs and interview follow the template**
   - touches: src/missions.ts, src/briefs.ts, .claude/agents/wingman.md, test/workflow-light.test.ts
   - needs: m1-t3
-  - status: pending
+  - status: flying
+  - attempt: 1
   Refit, not rewrite (M32): the statuses, `sweepOnce`, `gates` and the ledger format stay. (1) In `actOn`, a `built` task under a template with no `review` stage becomes `passed`, with no RIO spawned. The ledger shows it as `built to passed`. The note says "no review in this template", with no `RIO:` part, so no line claims a review. (2) `parsePlan` takes an optional `{ walk: boolean }` and does not require a `_walk:_` line when `walk` is false. `approveOnce` and `previewPlan` pass whether the pinned template has a walk. The default keeps today's rule. (3) `costOf` and `estimateOf` count a RIO per task only when the template reviews. (4) The Strike Lead's interview prompt, built beside `PLAN_FORMAT`, names the template, lists the stages this mission runs, and says where the work will end up. Under an unverified template it says plainly that there is no review, proof or walk, that the work stays on its mission branch, that the plan must promise none of them and leaves out `_walk:_`, and that a repo set to land by `pr` or `push` will be refused at the gate, which it tells Cory in its first round. Under `mission` the prompt is unchanged. (5) `wingmanBrief` in `src/briefs.ts`, under a template with no review, drops "A RIO that is not you will check the work" and says instead: "No RIO reviews this mission: its template leaves review out, so what you commit is merged as you leave it. Check the list yourself." It keeps the checklist and the proof lines. The default brief is unchanged byte for byte. (6) Make `.claude/agents/wingman.md`'s line 82 paragraph conditional ("unless your brief says this mission has no RIO") and change nothing else. Under Light there is no summary: `summarizeMission` already refuses, so leave it.
 
   Prove it: `test/workflow-light.test.ts` uses `test/flight-harness.ts` and its fake `claude` to fly a pinned-Light mission with one milestone of two tasks, the second needing the first, from `approveMission` to `closeMission` through the real sweep. It asserts literally the ordered spawn list (two Wingmen and nothing else), each task `passed` with no `review`, the milestone merged with no proof, no walkthrough commissioned, the mission reaching `review` and then `closed`, and the ledger lines. A plan with no `_walk:_` line parses under Light and is refused under `mission`. The Light Wingman brief has no RIO promise and the default brief is unchanged. The interview prompt under Light names the stages and the branch. `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, with the results in the commit message.
@@ -58,20 +60,22 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: `test/workflow-landing.test.ts` covers the gate refusing a Light plan with a `pr` repo and a `push` repo, each named, and passing it with `merge`. A Light mission whose `maverick.json` flips to `pr` mid-flight is refused at `landAgain` and at `closeMission`, with no push, no `gh` call (fake `gh` on PATH logging calls) and a landing hold. Setting the project back to `merge` and landing again releases the hold on a single-repo mission. A full `mission` landing by `pr` still lands as today. Then remove the preflight guard, run the test and see the gate cases fail; restore it; remove the landing guard, run the test and see the landing cases fail; restore it. Put both failing outputs in the commit message. `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, with the results in the commit message.
 
-- [ ] **Template cards in the new-mission dialog**
+- [~] **Template cards in the new-mission dialog**
   - touches: web/app.js, web/command.js, web/style.css
   - needs: m1-t3
   - cells: 22
-  - status: pending
+  - status: flying
+  - attempt: 1
   Build cell 22 of `.ui-design/mockups/workflow-templates-round-1.html` and follow its closing rules 1, 2 and 6. `ask()` in `web/app.js` gains an optional `choices` option: a list of `{ value, name, description, note?, error? }` and the selected value. It draws the new template card under the text field, one per row, as a radio group: one Tab stop, arrows move and choose, `aria-checked`, the selected card on `--panel` with a 2px accent ring, and a disabled card for `error` with the message in mono `--threat`. It resolves `{ text, choice }` when choices are given. Every other `ask()` call is untouched and behaves as today. In `web/command.js`, `newMission` fetches `GET /api/workflows?project=` before the second dialog, passes the choices (an unverified one gets the note "unverified: stays on its mission branch") with `mission` selected, and posts `template` with the name and brief. If the fetch fails, say so through `failed()` and do not open the dialog. Styles go in `web/style.css` beside `.ask`, using only existing tokens. Do not touch the mission page, `server.ts` or `src/`.
 
   Prove it: serve the branch on the invented Harbor project as `tools/ui-check.mjs` does, with a project template and a broken one, and grade the dialog with ui-audit (the `MAVERICK_UI_AUDIT` scripts: `scan.mjs`, then `grade.mjs`) at 390 and 1280 in light and dark. Put the grade card in the commit message and the screenshots where the brief says. Enter with no change opens a Mission. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
 
-- [ ] **The mission page: the template line, the status strip, and a Light result**
+- [~] **The mission page: the template line, the status strip, and a Light result**
   - touches: web/mission.js, web/mission.css, web/mission/result.js, web/mission/result.css
   - needs: m1-t3
   - cells: 28, 34
-  - status: pending
+  - status: flying
+  - attempt: 1
   Build cells 34 and 28 and follow closing rules 3, 4 and 6. In `renderAsk`, under the `h1`, add the template line in the `.mv-ask-meta` mono style: "runs <a>light</a> · unverified: stays on its mission branch", or "runs <a>mission</a>". The name links to `/workflow.html?project=<id>&mission=<missionId>`. It reads `mission.workflow` from the view (the contract), and an older view without it reads as mission. In the rail, between `#word` and `.mv-anchors`, add the status strip: `mission.workflow.flight` as a list with done, now and next marks and the count, left-out stages not drawn, and at 390 under the word, above the content, as the rail's `display: contents` already orders it. Under an unverified template, the Result section draws no summarize button and no "What I must read" panel, the walks list says nothing about proof or walking, and the closing copy says the work stays on its mission branch, which is where Cory takes it by hand. Use existing tokens only, and no colour for "unverified". Do not touch `web/app.js`, `web/command.js` or `src/`.
 
   Prove it: on the invented Harbor fixtures `tools/ui-check.mjs` serves, render a full mission flying, a Light mission flying, a Light mission at review, and an older record with no `workflow`. Grade the mission page with ui-audit at 390 and 1280 in light and dark, and put the grade card in the commit message. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
@@ -143,3 +147,7 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 21:15 m1-t8 The read-only template page: pending to flying
 - 2026-11-09 21:28 m1-t3 A mission starts from the chosen template, and its view says which and where it is: flying to reviewing
 - 2026-11-09 21:50 m1-t8 The read-only template page: flying to reviewing
+- 2026-11-09 21:51 m1-t3 A mission starts from the chosen template, and its view says which and where it is: reviewing to passed (RIO: pass with notes) with 11 notes carried, 2 unverified
+- 2026-11-09 21:51 m1-t4 Light flies: a built task passes with no review, and the plan, briefs and interview follow the template: pending to flying
+- 2026-11-09 21:51 m1-t6 Template cards in the new-mission dialog: pending to flying
+- 2026-11-09 21:51 m1-t7 The mission page: the template line, the status strip, and a Light result: pending to flying
