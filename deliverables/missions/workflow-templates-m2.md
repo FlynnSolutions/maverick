@@ -65,12 +65,13 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: `test/workflow-landing.test.ts` covers the gate refusing a Light plan with a `pr` repo and a `push` repo, each named, and passing it with `merge`. A Light mission whose `maverick.json` flips to `pr` mid-flight is refused at `landAgain` and at `closeMission`, with no push, no `gh` call (fake `gh` on PATH logging calls) and a landing hold. Setting the project back to `merge` and landing again releases the hold on a single-repo mission. A full `mission` landing by `pr` still lands as today. Then remove the preflight guard, run the test and see the gate cases fail; restore it; remove the landing guard, run the test and see the landing cases fail; restore it. Put both failing outputs in the commit message. `test/mission-flight.test.ts` passes untouched. `npm test && npm run lint`, with the results in the commit message.
 
-- [~] **Template cards in the new-mission dialog**
+- [x] **Template cards in the new-mission dialog**
   - touches: web/app.js, web/command.js, web/style.css
   - needs: m1-t3
   - cells: 22
-  - status: reviewing
+  - status: passed
   - attempt: 2
+  - verdict: pass with notes
   - commit: ca62a66
   Build cell 22 of `.ui-design/mockups/workflow-templates-round-1.html` and follow its closing rules 1, 2 and 6. `ask()` in `web/app.js` gains an optional `choices` option: a list of `{ value, name, description, note?, error? }` and the selected value. It draws the new template card under the text field, one per row, as a radio group: one Tab stop, arrows move and choose, `aria-checked`, the selected card on `--panel` with a 2px accent ring, and a disabled card for `error` with the message in mono `--threat`. It resolves `{ text, choice }` when choices are given. Every other `ask()` call is untouched and behaves as today. In `web/command.js`, `newMission` fetches `GET /api/workflows?project=` before the second dialog, passes the choices (an unverified one gets the note "unverified: stays on its mission branch") with `mission` selected, and posts `template` with the name and brief. If the fetch fails, say so through `failed()` and do not open the dialog. Styles go in `web/style.css` beside `.ask`, using only existing tokens. Do not touch the mission page, `server.ts` or `src/`.
 
@@ -100,10 +101,11 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: serve the branch on invented Harbor fixtures and grade the page with ui-audit at 390 and 1280 in light and dark for mission, light, a project template and a broken one, with the grade card in the commit message. The grid rule in `.ui-design/system.md` (a 600-character `<pre>` widens nothing) holds. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
 
-- [ ] **The decision entry, the docs and the design system**
+- [~] **The decision entry, the docs and the design system**
   - touches: docs/03-decisions.md, docs/01-architecture.md, docs/02-data-model.md, docs/07-glossary.md, README.md, .ui-design/system.md
   - needs: m1-t4, m1-t5, m1-t6, m1-t7, m1-t8
-  - status: pending
+  - status: flying
+  - attempt: 1
   Write `## M33: A mission picks its template, and unverified work stays on its branch ✅ built` in `docs/03-decisions.md`, after M32 and in its voice. Cover what was decided (Cory's calls listed in this plan's intro), the shape (ordered stages still, `unverified` asked in one place, the pinned copy decides, review left out settles at `passed`, project templates at `.maverick/workflows/<id>.json` overriding built-ins), what the tests pin and what they do not, the one existing assertion changed and why, and the `landAgain` release fix. Under M32's "Not known", point to M33 for the landing question. Update the architecture row for `workflows.ts`, the data-model rows (`Workflow` gains `name` and `description`; `MissionView.workflow`), and the glossary's "Workflow template" (two built-ins, project templates, unverified). In `README.md`, replace "There is one template, and a person cannot pick another yet." with how to pick, where a project's templates live, and the rule that unverified work never lands by pull request or push. Record the template card, the status strip, the template line and the template page in `.ui-design/system.md`, from the mockup's closing rules. Change no code.
 
   Prove it: every path, function and file the new text names exists on the branch (`grep` each), `npm run lint` passes, and the README section reads true against the code. Results in the commit message.
@@ -175,3 +177,5 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-10 00:38 m1-t6 Template cards in the new-mission dialog: flying to reviewing
 - 2026-11-10 00:48 m1-t6 Template cards in the new-mission dialog: reviewing to flying
 - 2026-11-10 00:52 m1-t6 Template cards in the new-mission dialog: flying to reviewing
+- 2026-11-10 00:57 m1-t6 Template cards in the new-mission dialog: reviewing to passed (RIO: pass with notes) with 12 notes carried, 2 unverified
+- 2026-11-10 00:57 m1-t9 The decision entry, the docs and the design system: pending to flying
