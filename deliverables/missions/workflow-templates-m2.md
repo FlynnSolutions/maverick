@@ -9,8 +9,9 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
 - [~] **Templates: Light, a review-optional validator, names, project files and the unverified rule**
   - touches: src/workflows.ts, src/workflows/mission.json, src/workflows/light.json, test/workflows.test.ts, test/workflow-templates.test.ts
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: ad60767
   Grow `src/workflows.ts` (M32) and keep it pure about templates. It reads no mission state, spawns nothing and imports nothing from `src/missions.ts`. Do not touch `src/missions.ts`, `src/preflight.ts`, `server.ts` or `web/`; later tasks wire this in. Match the neighbours: plain TypeScript run directly by Node, lowercase plain comments, no dependency.
 
   Changes. (1) `review` becomes optional in the validator's `TODAY` rules. Everything else stays as it is: interview, plan gate, preflight, build, merge, land and close may not be left out, and walkthrough and walk only together. (2) A workflow may carry optional top-level `name` and `description` strings. Any other unknown field is still refused, and `id` must match `^[a-z0-9][a-z0-9-]*$` because it names a file and reaches a URL. (3) Add `name` and `description` to `src/workflows/mission.json` ("Mission"; "The full flight: every task reviewed by a RIO, the proof on the merged tree, and a walk before it lands.") and change nothing else in it. (4) Ship `src/workflows/light.json`: id `light`, name "Light", description "Explore fast: build and merge, with no review, proof or walk.", stages interview, plan-gate, preflight, milestones (tasks (build), merge, land), close. Find it beside `mission.json` with `new URL(..., import.meta.url)`, as `MISSION_TEMPLATE` does. (5) `unverified(w)` is true when `w` lacks any of `review`, `proof` or `walk`, and this is the only place the question is asked. (6) `builtInWorkflows()` returns mission and light, validated and frozen. (7) `templatesFor(projectPath)` reads `<projectPath>/.maverick/workflows/*.json` and returns the contract's `TemplateChoice[]`: built-ins first, then project files by id. A project file with a built-in's id replaces it in place. A file whose `id` differs from its file name, that is not JSON, or that fails validation becomes a choice with `error` set to the message and no `template`. A missing folder is no project templates, and any other read error throws, naming the folder. (8) `chooseTemplate(projectPath, id = "mission")` returns the chosen choice's template, or throws the choice's error, or throws "no template <id>". So a project whose `mission.json` is broken refuses a start rather than silently running the built-in.
@@ -125,3 +126,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 ## Log
 
 - 2026-11-09 20:58 m1-t1 Templates: Light, a review-optional validator, names, project files and the unverified rule: pending to flying
+- 2026-11-09 21:04 m1-t1 Templates: Light, a review-optional validator, names, project files and the unverified rule: flying to reviewing
