@@ -161,6 +161,7 @@ to the tracker file, the same write whichever control made it.
 | Lane | Fold or unfold | The chevron beside its name; remembered | The chevron turns | The chevron turns | GitHub projects |
 | Lane | See the rest of a long one | It draws 20 cards; `show more` under it draws 20 more, beside `20 of 323` | The cards draw in place and the focus stays on `show more`; it leaves when the lane is all on show | none | the Archive's `show more`, GitHub "load more" |
 | Group | Delete when empty | The close icon beside an empty group's name, then confirm | Toast | none | Trello archive list |
+| Board | Read it again | The refresh icon in the bar | Toast "Read <project> again."; a read that fails says why in the bar | none | Linear refresh |
 | Board | Loading, failing, empty | A lane with nothing in it says what goes there; a board that cannot be read says why in the bar | n/a | none | Linear empty states |
 
 ### Floor rows left out, and why

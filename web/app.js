@@ -639,10 +639,17 @@ const loadBoard = async () => {
           ? [await renderWorkspace()]
           : [releasesSection(trackers), ...trackers.map(renderBoard)]),
     );
-    for (const b of document.querySelectorAll("#view-toggle button")) b.classList.toggle("active", b.dataset.view === view);
+    // The view you are on is the page you are on: pressing it again is meant to do nothing.
+    for (const b of document.querySelectorAll("#view-toggle button")) {
+      b.classList.toggle("active", b.dataset.view === view);
+      if (b.dataset.view === view) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    }
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
+    return true;
   } catch (err) {
     setStatus(err.message, true);
+    return false;
   }
 };
 
@@ -1996,7 +2003,11 @@ const boot = async () => {
   reload.setAttribute("aria-label", "refresh");
   reload.setAttribute("title", "refresh");
   reload.replaceChildren(icon("refresh"));
-  reload.addEventListener("click", () => { loadBoard(); loadRail(true); });
+  // A refresh that finds nothing new still says it looked; one that fails says why on the bar.
+  reload.addEventListener("click", async () => {
+    const [read] = await Promise.all([loadBoard(), loadRail(true)]);
+    if (read) toast(`Read ${project.name} again.`);
+  });
   $("#refresh-live").addEventListener("click", () => loadRail(true));
   let railCollapsed = false;
   try { railCollapsed = localStorage.getItem("console.rail") === "collapsed"; } catch {}
