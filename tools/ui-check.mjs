@@ -2,6 +2,7 @@
 /**
  * The page check CI runs on every pull request: the app rendered on the invented Harbor project,
  * one real write made through the page, and the tracker read back from the commit it made. Then the
+ * board at a real tracker's weight: a card past the first page found, opened and dragged. Then the
  * command center walked at the size a real project reaches: 130 ended sessions and a live mission.
  * Then a question from the Strike Lead answered from the first screen, and read back from the server.
  * Then, when a ui-audit is plugged in, its grade on the key states, which must be a complete A.
@@ -51,6 +52,47 @@ writeFileSync(write, `(async () => {
   form.requestSubmit();
   const toast = await until(() => document.querySelector(".toast"), 10000);
   return toast ? toast.className + ": " + toast.textContent.trim() : "error: no toast after the add";
+})()`, "utf8");
+
+const CARDS = 320;
+const DEEP = "Sound berth 287 and log its depth";
+
+/**
+ * The board at a real tracker's weight, from a cold open at 1280x900: each long lane draws one page
+ * with the way to the rest, and a card deep in the backlog is found, opened, and dragged onto the
+ * roadmap. Answers "ok" or the first thing in the way; the move is read back from the commit.
+ */
+const board = join(out, "board.js");
+writeFileSync(board, `(async () => {
+  ${UNTIL}
+  const lanes = await until(() => document.querySelectorAll(".lane .card").length && document.querySelectorAll(".lane"), 15000);
+  if (!lanes) return "error: no cards on the board";
+  const [backlog, roadmap] = lanes;
+  const cards = (lane) => lane.querySelectorAll(".card").length;
+  if (document.documentElement.scrollHeight > 8000) return "error: the board is " + document.documentElement.scrollHeight + "px tall";
+  if (cards(backlog) !== 20) return "error: the backlog drew " + cards(backlog) + " cards for a page of 20";
+  if (!backlog.querySelector(".lane-foot").textContent.includes("20 of ${CARDS + 2}")) return "error: the backlog does not say how much is on show: " + backlog.querySelector(".lane-foot").textContent;
+  backlog.querySelector(".lane-foot .rack-verb").click();
+  if (cards(backlog) !== 40) return "error: show more drew " + cards(backlog) + " cards";
+  const find = document.querySelector(".board-find");
+  find.value = "berth 287";
+  find.dispatchEvent(new Event("input", { bubbles: true }));
+  const hits = [...document.querySelectorAll(".lane .card")];
+  if (hits.length !== 1 || !hits[0].textContent.includes(${JSON.stringify(DEEP)})) return "error: find showed " + hits.length + " cards for one";
+  hits[0].querySelector(".title").click();
+  const heading = await until(() => document.querySelector(".drawer h2"), 5000);
+  if (!heading || !heading.textContent.includes(${JSON.stringify(DEEP)})) return "error: the found card did not open";
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  if (!(await until(() => !document.querySelector(".drawer:not(.leaving)"), 3000))) return "error: Escape did not close the drawer";
+  // The find matched nothing on the roadmap, so the lane itself takes the drop.
+  const drag = new DataTransfer();
+  hits[0].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: drag }));
+  const over = new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: drag });
+  roadmap.dispatchEvent(over);
+  if (!over.defaultPrevented) return "error: the roadmap takes no drop while the find matches nothing in it";
+  roadmap.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: drag }));
+  const toast = await until(() => [...document.querySelectorAll(".toast")].find((t) => t.textContent.includes("Moved")), 10000);
+  return toast ? "ok: " + toast.textContent.trim() : "error: no toast after the drop";
 })()`, "utf8");
 
 const WORKSPACE = "/?project=harbor&view=workspace";
@@ -134,7 +176,7 @@ const seedRound = (harbor, id) => addToChat(harbor, id, { text: "The survey is b
 ] });
 
 
-const harbor = await startHarbor({ ended: ENDED });
+const harbor = await startHarbor({ ended: ENDED, cards: CARDS });
 let failed = "";
 let missionId = "";
 try {
@@ -147,6 +189,16 @@ try {
   else if (harbor.git("show", "--name-only", "--format=", "HEAD").trim() !== tracker) failed = "the add's commit touched more than the tracker";
   else if (harbor.git("status", "--porcelain")) failed = "the add left the tracker uncommitted";
   else console.log(`committed: ${harbor.git("log", "-1", "--format=%h %s").trim()}`);
+
+  if (!failed) {
+    const walked = execFileSync(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}${BOARD}`, "--eval", board, "--w", "1280", "--h", "900", "--wait", "500"], { encoding: "utf8" }).trim();
+    console.log(`the board walked: ${walked}`);
+    // The drop landed where the roadmap is: between its heading and the next lane's.
+    const file = harbor.git("show", `HEAD:${tracker}`);
+    const at = file.indexOf(`**${DEEP}**`);
+    if (!walked.includes("ok: ")) failed = `the board walk: ${walked}`;
+    else if (!(at > file.indexOf("## 🔥 Priority") && at < file.indexOf("## 🚧 In progress"))) failed = `the dragged card is not on the roadmap in the newest commit: ${harbor.head()}`;
+  }
 
   if (!failed) {
     const started = await fetch(`${harbor.url}/api/missions?project=harbor`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: MISSION, brief: "Dredge the channel to six metres." }) });
@@ -180,11 +232,13 @@ try {
   const audit = process.env.MAVERICK_UI_AUDIT;
   if (!failed && !audit) console.log("ui-audit: no MAVERICK_UI_AUDIT set, grade skipped");
   else if (!failed) {
-    // The key states, after the write: the board with the new card, an item's drawer, the picker,
-    // the command center under its real weight, folded and open, and a question being asked.
+    // The key states, after the write: the board under its real weight with the new card, a find,
+    // an item's drawer, the picker, the command center under its real weight, folded and open, and
+    // a question being asked.
     const manifest = { base: harbor.url, routes: [
       { id: "board", path: BOARD, states: [
         { id: "default", steps: [{ waitFor: ".lane .card", timeout: 15000 }], expect: ".lane .card" },
+        { id: "found", steps: [{ waitFor: ".lane .card", timeout: 15000 }, { eval: "const f = document.querySelector('.board-find'); f.value = 'berth 2'; f.dispatchEvent(new Event('input', { bubbles: true }))" }, { waitFor: ".lane-foot [role=status]:not(:empty)" }], expect: ".lane-foot [role=status]:not(:empty)" },
         { id: "item-drawer", steps: [{ waitFor: ".lane .card", timeout: 15000 }, { click: ".lane .card .title" }, { waitFor: ".drawer", timeout: 12000 }, { wait: 700 }], expect: ".drawer" },
       ] },
       { id: "workspace", path: WORKSPACE, states: [

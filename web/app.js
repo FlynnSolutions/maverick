@@ -215,6 +215,16 @@ const persistCollapsed = () => {
   try { localStorage.setItem("console.collapsed", JSON.stringify([...collapsed])); } catch {}
 };
 
+// A long lane draws its first page and a `show more`, the way the Archive does: the heaviest
+// tracker's Backlog was 311 cards and the page 55,000px. Four lanes share the screen, so a page
+// is shorter than the Archive's. Both are kept across repaints, so a write lands on the same view.
+const LANE_PAGE = 20;
+const laneShown = new Map(); // lane key -> how many cards it draws
+const boardQuery = new Map(); // tracker index -> what the board's find holds
+// The title of the card the last add or move placed. A write never hides the card it touched, so
+// it is drawn past the page and past the find until the find changes.
+let placed = "";
+
 let dragging = null;
 
 // The title is the card's button: Enter opens the drawer, where every verb lives, the move
@@ -390,10 +400,10 @@ const showsInLane = (item, laneId) => {
   return isDevItem(item);
 };
 
-const itemsList = (trackerIndex, section, group, laneId, numbered) => {
+/** A group's cards, `drawn` of its `visible` ones: a page of a long lane, or what a find matched. */
+const itemsList = (trackerIndex, section, group, visible, drawn, numbered) => {
   const list = el("div", { class: "items" });
-  const visible = group.items.filter((item) => showsInLane(item, laneId));
-  visible.forEach((item, i) => list.append(cardFor(trackerIndex, item, numbered ? i + 1 : null, !item.checked)));
+  for (const item of drawn) list.append(cardFor(trackerIndex, item, numbered ? visible.indexOf(item) + 1 : null, !item.checked));
   list.addEventListener("dragover", (e) => {
     if (!dragging || dragging.trackerIndex !== trackerIndex) return;
     e.preventDefault();
@@ -405,12 +415,13 @@ const itemsList = (trackerIndex, section, group, laneId, numbered) => {
     list.classList.remove("over");
     if (!dragging || dragging.trackerIndex !== trackerIndex) return;
     const { item } = dragging;
-    // The drop index counts visible cards; the file move needs the index among ALL items
-    // in the group, so land before the visible neighbour, or at the group's end.
-    const visibleOthers = visible.filter((v) => v.start !== item.start);
-    const neighbour = visibleOthers[dropIndexIn(list, e.clientY)];
+    // The drop index counts the cards drawn; the file move needs the index among ALL items in the
+    // group, which a page or a find may hide some of. So land just after the drawn card above the
+    // drop, or before the first one drawn, or at the group's end when none is.
+    const drawnOthers = drawn.filter((v) => v.start !== item.start);
     const others = group.items.filter((v) => v.start !== item.start);
-    const targetIndex = neighbour ? others.findIndex((v) => v.start === neighbour.start) : others.length;
+    const above = drawnOthers[dropIndexIn(list, e.clientY) - 1];
+    const targetIndex = above ? others.indexOf(above) + 1 : drawnOthers.length ? others.indexOf(drawnOthers[0]) : others.length;
     if (await moveItem(trackerIndex, item, section, group, targetIndex)) flares(list);
   });
   return list;
@@ -418,6 +429,7 @@ const itemsList = (trackerIndex, section, group, laneId, numbered) => {
 
 /** The one move, from a drop or from the drawer: the same write to the tracker either way. Undo moves it back. */
 const moveItem = (trackerIndex, item, section, group, targetIndex, undoing = false) => {
+  placed = item.title;
   const where = group.name ? cleanGroupName(group.name) : laneName(section);
   const run = () => post("/api/move", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, targetHeading: section.heading, targetGroup: group.name, targetIndex });
   if (undoing) return write(`move ${short(item.title)} back`, `Moved ${short(item.title)} back.`, run);
@@ -457,6 +469,7 @@ const quickAdd = (tracker, section, label, key) => {
       e.preventDefault();
       const title = input.value.trim();
       if (!title) return;
+      placed = title;
       const ok = await write(`add ${short(title)}`, `Added ${short(title)} to ${label}.`, () => post("/api/items", { project: projectId, tracker: tracker.index, heading: section.heading, name: "", title }));
       await repainted;
       // The board repainted; the lane's new field takes the focus back, and a refusal keeps the words.
@@ -473,8 +486,16 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
   const key = `${tracker.index}:${laneId}`;
   const isCollapsed = collapsed.has(key);
   const extras = laneId === "shipped" ? doneElsewhere(tracker) : [];
-  const count =
-    sections.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.items.filter((i) => showsInLane(i, laneId)).length, 0), 0) + extras.length;
+  // Each group's cards and, per card, what the find reads: the group's name and the card's title, tags and description.
+  const texts = new Map();
+  const read = (item, where) => texts.set(item, `${where} ${item.title} ${item.tags.join(" ")} ${item.description ?? ""}`.toLowerCase());
+  const laid = sections.map((section) => ({ section, groups: section.groups.map((group) => {
+    const visible = group.items.filter((item) => showsInLane(item, laneId));
+    for (const item of visible) read(item, group.name ? cleanGroupName(group.name) : "");
+    return { group, visible };
+  }) }));
+  for (const item of extras) read(item, "");
+  const count = laid.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.visible.length, 0), 0) + extras.length;
 
   const lane = el("div", { class: `lane ${extraClass}${isCollapsed ? " collapsed" : ""}` });
   lane.append(
@@ -491,47 +512,107 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
       el("span", { class: "count" }, String(count)),
     ),
   );
-  if (isCollapsed) return lane;
+  if (isCollapsed) return { lane, show: () => {} };
   // A new item lands at the top of the lane's first section, outside any group, as one typed line.
   if (laneId !== "shipped" && sections.length) lane.append(quickAdd(tracker, sections[0], label, key));
-  if (!count) lane.append(el("p", { class: "lane-empty muted small" }, LANE_EMPTY[laneId]));
-
-  for (const section of sections) {
-    if (sections.length > 1) lane.append(el("div", { class: "group-name" }, section.heading));
-    const releases = laneId === "priority";
-    for (const group of section.groups) {
-      // Groups are labels, never boxes: the lane stays one runway. An empty group can be deleted.
-      const block = el("div", { class: "group" });
-      if (group.name) {
-        const removable = group.items.length === 0;
-        block.append(el("div", { class: "group-name" }, cleanGroupName(group.name), removable ? el("button", { type: "button", class: "ghost icon-btn", "aria-label": `delete the empty group ${cleanGroupName(group.name)}`, title: "delete this empty group", onclick: async () => {
-          if (!(await ask({ title: `Delete the empty group "${cleanGroupName(group.name)}"?`, confirm: "delete", danger: true }))) return;
-          await write(`delete the group "${cleanGroupName(group.name)}"`, `Deleted the empty group "${cleanGroupName(group.name)}".`, () => api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) }));
-        } }, icon("close")) : null));
-      }
-      block.append(itemsList(tracker.index, section, group, laneId, releases));
-      lane.append(block);
+  const none = el("p", { class: "lane-empty muted small" });
+  const cards = el("div", { class: "lane-cards" });
+  const said = el("span", { class: "muted small", role: "status" });
+  const more = el("button", { type: "button", class: "rack-verb", onclick: () => { laneShown.set(key, (laneShown.get(key) ?? LANE_PAGE) + LANE_PAGE); show(); } }, "show more");
+  const releases = laneId === "priority";
+  // Groups are labels, never boxes: the lane stays one runway. An empty group can be deleted.
+  const groupBlock = (section, group, visible, drawn) => {
+    const block = el("div", { class: "group" });
+    if (group.name) {
+      const removable = group.items.length === 0;
+      block.append(el("div", { class: "group-name" }, cleanGroupName(group.name), removable ? el("button", { type: "button", class: "ghost icon-btn", "aria-label": `delete the empty group ${cleanGroupName(group.name)}`, title: "delete this empty group", onclick: async () => {
+        if (!(await ask({ title: `Delete the empty group "${cleanGroupName(group.name)}"?`, confirm: "delete", danger: true }))) return;
+        await write(`delete the group "${cleanGroupName(group.name)}"`, `Deleted the empty group "${cleanGroupName(group.name)}".`, () => api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) }));
+      } }, icon("close")) : null));
     }
-  }
-  if (extras.length) {
-    lane.append(el("div", { class: "group-name" }, "checked off elsewhere"));
-    const list = el("div", { class: "items" });
-    for (const item of extras) list.append(cardFor(tracker.index, item, null, false));
-    lane.append(list);
-  }
-  return lane;
+    block.append(itemsList(tracker.index, section, group, visible, drawn, releases));
+    return block;
+  };
+  const foot = el("div", { class: "lane-foot" }, more, said);
+  /** The lane's first page, or what the board's find matched, as the Archive draws its rows: only the cards on show are drawn. */
+  const show = () => {
+    const words = (boardQuery.get(tracker.index) ?? "").trim();
+    const q = words.toLowerCase();
+    const limit = laneShown.get(key) ?? LANE_PAGE;
+    let left = limit;
+    let found = 0;
+    /** One group's share of the page: its label and the cards that fit, or nothing when a find matched none of it. */
+    const take = (visible, drawGroup) => {
+      const hits = visible.filter((item) => !q || texts.get(item).includes(q) || item.title === placed);
+      found += hits.length;
+      const drawn = hits.filter((item, i) => i < left || item.title === placed);
+      if (!drawn.length && (q || left <= 0)) return null;
+      left -= drawn.length;
+      return drawGroup(drawn);
+    };
+    const parts = [];
+    for (const { section, groups } of laid) {
+      const blocks = groups.map(({ group, visible }) => take(visible, (drawn) => groupBlock(section, group, visible, drawn))).filter(Boolean);
+      if (blocks.length && laid.length > 1) parts.push(el("div", { class: "group-name" }, section.heading));
+      parts.push(...blocks);
+    }
+    if (extras.length) {
+      parts.push(take(extras, (drawn) => {
+        const list = el("div", { class: "items" });
+        for (const item of drawn) list.append(cardFor(tracker.index, item, null, false));
+        return el("div", { class: "group" }, el("div", { class: "group-name" }, "checked off elsewhere"), list);
+      }));
+    }
+    cards.replaceChildren(...parts.filter(Boolean));
+    more.hidden = found <= limit;
+    if (q) said.textContent = !found ? "" : found > limit ? `${limit} of ${found} found` : `${found} found`;
+    else said.textContent = found > limit ? `${limit} of ${count}` : "";
+    foot.hidden = more.hidden && !said.textContent;
+    none.textContent = !count ? LANE_EMPTY[laneId] : q && !found ? `Nothing in ${label} says "${words}".` : "";
+    none.hidden = !none.textContent;
+  };
+  show();
+  lane.append(none, cards, foot);
+  // A drop that misses every group, as on a lane the find matched nothing in, lands where an add
+  // does: the top of the lane's first section, outside any group.
+  const loose = (e) => dragging?.trackerIndex === tracker.index && sections.length && !e.target.closest(".items");
+  lane.addEventListener("dragover", (e) => {
+    if (!loose(e)) return;
+    e.preventDefault();
+    lane.classList.add("over");
+  });
+  lane.addEventListener("dragleave", (e) => { if (!lane.contains(e.relatedTarget)) lane.classList.remove("over"); });
+  lane.addEventListener("drop", async (e) => {
+    lane.classList.remove("over");
+    if (!loose(e)) return;
+    e.preventDefault();
+    if (await moveItem(tracker.index, dragging.item, sections[0], { name: "" }, 0)) flares(lane);
+  });
+  return { lane, show };
 };
 
 const renderBoard = (tracker) => {
   const lanes = el("div", { class: "lanes" });
-  for (const lane of LANES) lanes.append(renderLane(tracker, lane));
+  const shows = LANES.map((lane) => {
+    const drawn = renderLane(tracker, lane);
+    lanes.append(drawn.lane);
+    return drawn.show;
+  });
   // A collapsed lane is a fixed strip, not a fraction: a fraction grows with the window and
   // never actually gets out of the way.
   lanes.style.setProperty("--lane-widths", LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "36px" : id === "priority" ? "minmax(0, 1.5fr)" : "minmax(0, 1fr)")).join(" "));
+  // A card past a lane's first page is found here, as the Archive finds a finished session.
+  const find = el("input", { type: "text", class: "rack-find board-find", placeholder: "find on the board", "aria-label": "find on the board", value: boardQuery.get(tracker.index) ?? "",
+    oninput: (e) => {
+      boardQuery.set(tracker.index, e.target.value);
+      placed = "";
+      for (const [id] of LANES) laneShown.delete(`${tracker.index}:${id}`);
+      for (const show of shows) show();
+    } });
   return el(
     "section",
     { class: "board" },
-    el("div", { class: "board-title" }, el("h2", {}, tracker.label), el("code", {}, tracker.path.replace(project.path, "").replace(/^\//, ""))),
+    el("div", { class: "board-title" }, el("h2", {}, tracker.label), el("code", {}, tracker.path.replace(project.path, "").replace(/^\//, "")), find),
     lanes,
   );
 };

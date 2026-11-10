@@ -356,7 +356,8 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .mono { font-family: var(--mono); font-size: 12px; }
 .small { font-size: 11px; }
 
-.board-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.board-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 10px; margin-bottom: 10px; }
+.board-title .board-find { align-self: center; flex: 1 1 220px; margin-left: auto; }
 .board-title h2 { font-family: var(--display); font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
 .board-title code { font-family: var(--mono); font-size: 11px; color: var(--ink-ghost); }
 
@@ -389,6 +390,9 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .quick-add { display: flex; gap: 8px; margin: 0 0 8px; }
 .quick-add input { flex: 1; min-width: 0; }
 .lane-empty { margin: 0 0 8px; padding-left: 2px; }
+/* A long lane's way to the rest (the Archive's `show more` row), and a lane taking a drop outside its groups. */
+.lane-foot { margin-top: 8px; }
+.lane.over { outline: 1px solid var(--accent-glow); outline-offset: 4px; border-radius: var(--radius-m); }
 .items { min-height: 32px; border-radius: var(--radius-m); transition: background 120ms var(--ease-out), box-shadow 120ms var(--ease-out); }
 .items.over { background: var(--accent-dim); box-shadow: inset 0 0 0 1px var(--accent-glow), 0 0 24px var(--accent-dim); }
 
@@ -1300,7 +1304,7 @@ body.ask-open { overflow: hidden; }
 .rack-col, .cc-missions > span, .archive-formations > span, .archive-when { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
 .rack-find { max-width: 360px; }
 .rack.archive > button.rack-verb { align-self: flex-start; }
-.archive-tools, .archive-formations { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.archive-tools, .archive-formations, .lane-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .archive-formations > span, .archive-when { margin: 8px 0 0; }
 /* A finished row carries no signal: no live colour on the lamp, and no role chip taking the name's room. */
 .rack.archive .lamp { display: none; }

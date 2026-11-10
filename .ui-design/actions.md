@@ -147,9 +147,10 @@ to the tracker file, the same write whichever control made it.
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words | The new card settles in | Linear quick add, Trello add a card |
+| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words; the new card is drawn even past the page or a find | The new card settles in | Linear quick add, Trello add a card |
 | Item | Open | Its title (a button), Enter or a click anywhere on the card | The drawer opens with its heading focused; Escape or the close icon gives focus back | The drawer slides in | Linear issue peek |
-| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move` | Toast with `undo`; the board repaints from the file | The list it landed in flares | Trello, Linear |
+| Item | Find one | `find on the board` over the lanes; it reads each card's title, tags and description and its group's name | Each lane draws only its matches and says `N found`; a lane with none says `Nothing in <lane> says "..."` | none | the Archive's find, Trello filter |
+| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move`. Under a page or a find a drop lands just after the drawn card above it; a drop outside every group lands at the lane's top, so a lane the find matched nothing in still takes one | Toast with `undo`; the board repaints from the file, keeping the find and the pages, and the moved card stays drawn wherever it landed | The list it landed in flares | Trello, Linear |
 | Item | Reorder in its group (the runway) | Drag; or the drawer's `move up` and `move down` | Toast with `undo` | as above | Trello, Jira rank |
 | Item | Plan for a release | Drag onto a release card; or the drawer's `release` select | Toast with `undo` | The card flares | Linear cycles |
 | Item | Set or clear a deadline | The drawer's date and `set` or `clear`; or drag onto a calendar day | Toast with `undo` | none | Linear due date |
@@ -158,13 +159,14 @@ to the tracker file, the same write whichever control made it.
 | Item | Remove | `remove`, with the reason asked for | Toast; it moves to the tracker's Removed section with the date and reason | none | Linear archive with reason |
 | Item | Plan it, spawn on it | `plan it` (the primary on an unplanned item), `spawn` (the primary on a planned one, or on the card) | The session opens in the workspace | none | Linear "start working" |
 | Lane | Fold or unfold | The chevron beside its name; remembered | The chevron turns | The chevron turns | GitHub projects |
+| Lane | See the rest of a long one | It draws 20 cards; `show more` under it draws 20 more, beside `20 of 323` | The cards draw in place and the focus stays on `show more`; it leaves when the lane is all on show | none | the Archive's `show more`, GitHub "load more" |
 | Group | Delete when empty | The close icon beside an empty group's name, then confirm | Toast | none | Trello archive list |
 | Board | Loading, failing, empty | A lane with nothing in it says what goes there; a board that cannot be read says why in the bar | n/a | none | Linear empty states |
 
 ### Floor rows left out, and why
 
-- **Bulk select and act**: the board is a runway of a few dozen items moved one at a time; the tracker file is where bulk edits are made.
-- **Search and filter**: the lanes are the filter, and the tracker is a file the person's editor already searches.
+- **Bulk select and act**: items are moved one at a time, even on a backlog of hundreds; the tracker file is where bulk edits are made.
+- **Filter by field (tag, size, date)**: the lanes are the filter, and the find reads the tags, so `ops` or `large` finds those cards; a filter panel is more than a runway needs.
 - **Undo for remove**: remove asks for a reason first and keeps the item in the Removed section, where it can be moved back.
 
 ## The calendar (`web/index.html?view=calendar`, `web/app.js`)
