@@ -22,8 +22,9 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - [~] **The templates a project offers, over the API**
   - touches: server.ts, test/workflows-api.test.ts
   - needs: m1-t1
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 50a847a
   Add `GET /api/workflows?project=<id>`, which returns `templatesFor(project.path)` as `TemplateChoice[]`, and `GET /api/workflows/<templateId>?project=<id>`, which returns one choice with its `template`, or 404 naming the id. Resolve the project with `requireProject`, as the mission routes do. Look a template up in the list `templatesFor` returns, and never build a path from the URL. Put the routes beside `/api/missions` in `server.ts` and match its style. Do not touch `src/missions.ts` or `web/`. The mission's pinned copy is m1-t3's. A broken template file must not break the list: it is a choice with `error`, and the route answers 200.
 
   Prove it: `test/workflows-api.test.ts` starts the real server on a free port against temp `SESSION_CONSOLE_*` folders, as `test/http-writes.test.ts` does, with an invented project holding one good and one broken template. It asserts the list (mission, light, the good file and the broken one with its message), one template fetched by id, a 404 for an unknown id, and that `../` in an id is refused. `npm test && npm run lint`, with the results in the commit message.
@@ -131,3 +132,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 21:04 m1-t1 Templates: Light, a review-optional validator, names, project files and the unverified rule: flying to reviewing
 - 2026-11-09 21:07 m1-t1 Templates: Light, a review-optional validator, names, project files and the unverified rule: reviewing to passed (RIO: pass with notes) with 9 notes carried
 - 2026-11-09 21:07 m1-t2 The templates a project offers, over the API: pending to flying
+- 2026-11-09 21:11 m1-t2 The templates a project offers, over the API: flying to reviewing
