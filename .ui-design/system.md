@@ -456,3 +456,9 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
 - **A picked option is ringed, not filled.** Filled is the primary's dress, and send is the one primary.
 - **Names (Cory, 2026-11-09):** the rail's first anchor is "The brief", so it is not read as the Strike Lead's
   question; the summary at review is "What you must read", in the voice the page speaks in.
+- **A fixed send-back is history (2026-11-09).** Maverick's "cannot be flown" message carries where it
+  stands beside its name: `not fixed yet` in threat while the plan still fails, `checked again below`
+  once a later one replaced it or the mission ended, `fixed` in hud once the plan passes, folded to one line. Cory read an
+  old list of problems over the Fire button as Maverick offering to fire a plan that could not fly.
+- **A table's label column has a cap.** The preflight's name column is `fit-content(22ch)`: one long
+  name wraps in its cell instead of pushing every detail out and leaving a gap after each short one.
