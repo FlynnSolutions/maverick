@@ -154,3 +154,17 @@ test("Maverick's lines in the chat are the moves worth a text, said plainly, and
     "milestone 1 (a) is on the mission branch",
   ]);
 });
+
+test("the chat's updates are said once per run, without a raw stamp or a test runner's tail", () => {
+  const at = (m: number) => `2026-11-05T13:3${m}:00.000Z`;
+  const line = (m: number, text: string): FeedEntry => ({ at: at(m), who: "Maverick", kind: "response", text } as FeedEntry);
+  const feed = [
+    line(1, "milestone 1 (Flow) is on the mission branch"),
+    line(2, "milestone 1 (Flow) is on the mission branch"),
+    { ...line(3, "milestone 1 (since 2026-11-05T07:55:18.497Z): the proof failed after milestone 1 merged: # skipped 0 | # todo 0"), kind: "error" } as FeedEntry,
+  ];
+  assert.deepEqual(updatesOf(feed, { milestones: [] }).map((u) => [u.at, u.text]), [
+    [at(2), "milestone 1 (Flow) is on the mission branch"],
+    [at(3), "milestone 1: the proof failed after milestone 1 merged"],
+  ]);
+});

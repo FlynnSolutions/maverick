@@ -442,3 +442,17 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
   browser that never opened the document is filled from the record, notes included.
 - **Hosted, the document is as tall as itself** (the console sizes the frame to the body), so the
   page has one scroll, and the console's count heading is what stays in view.
+
+## Asks (2026-11-06)
+
+- **A question is answered where it is asked.** The Strike Lead's open round is a card in `#now`:
+  the question as its heading, its context, the options, own words, send. Nothing on the page
+  points at it instead, and the thread's message says only that the question is at the top. The
+  inbox's "answer it" and the lamp land on the card with its first control focused.
+- **A jump is dressed as a link** (`button.lead-link`). The primary commits something.
+- **Evidence is one press away, with the way back** (`web/show-me.js`): the conversation opens, the
+  message is marked in the caution colour until the way back is taken, and the back button sits bottom
+  left, clear of the toasts, with room under the page's end while it is up.
+- **A picked option is ringed, not filled.** Filled is the primary's dress, and send is the one primary.
+- **Names (Cory, 2026-11-09):** the rail's first anchor is "The brief", so it is not read as the Strike Lead's
+  question; the summary at review is "What you must read", in the voice the page speaks in.

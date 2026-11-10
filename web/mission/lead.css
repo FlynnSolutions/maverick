@@ -1,13 +1,15 @@
 /* The Strike Lead's chat (web/mission/lead.js): the thread, a round of questions as cards whose
    answers are buttons, the button that fires the mission, and the composer. Every class is
-   `lead-`. A round waiting on you is the loud thing on the page, so it wears the caution ring. */
+   `lead-`. A round waiting on you is the first and loudest thing on the page: a card in the top
+   slot, in the caution ring, holding the question, what it needs and the answer. */
 
 .lead { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 
 .lead-log { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
-.lead-msg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.lead-msg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .lead-who { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--ink); display: flex; gap: 8px; align-items: baseline; }
-.lead-at { font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.lead-note .lead-at { min-width: 8ch; }
+.lead-at { flex: none; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 .lead-text { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink-soft); overflow-wrap: anywhere; }
 .lead-text > :first-child { margin-top: 0; }
 .lead-text > :last-child { margin-bottom: 0; }
@@ -32,18 +34,42 @@
 /* A round: one card per question, the question first and largest, the answers as buttons under it. */
 .lead-round { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 4px; }
 .lead-qs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-.lead-q { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px 14px; background: var(--caution-dim); border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--caution); }
-.lead-ask { margin: 0; display: flex; gap: 10px; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.lead-card { position: relative; padding: 14px 16px; background: var(--caution-dim); border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--caution); scroll-margin-top: 12px; }
+/* Landed on from the lamp or the inbox: the ring flares once, so a press that moves nothing still shows where it went. */
+.lead-card.landed::after { content: ""; position: absolute; inset: -4px; border-radius: inherit; box-shadow: 0 0 0 3px var(--caution); pointer-events: none; animation: lead-landed 480ms var(--ease-out) forwards; }
+/* Held, then let go: a flash too short to see is the press that seemed to do nothing. */
+@keyframes lead-landed { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .lead-card.landed::after { animation: none; } }
+.lead-card.sent { background: var(--panel); box-shadow: 0 0 0 1px var(--seam-soft); }
+.lead-card .lead-at { color: var(--ink-soft); }
+.lead-card .lead-heard.error { color: color-mix(in srgb, var(--threat) 72%, var(--ink)); font-weight: 500; }
+.lead-q { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.lead-q + .lead-q { padding-top: 14px; box-shadow: inset 0 1px 0 var(--seam-soft); }
+.lead-context { max-width: var(--measure); font-size: 13.5px; line-height: 1.55; color: var(--ink); }
+.lead-context.fold-cut.folded p { margin: 0; }
+.lead-context > :first-child { margin-top: 0; }
+.lead-context > :last-child { margin-bottom: 0; }
+.lead-sent { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink); outline: none; }
+button.lead-link { justify-self: start; padding: 0 2px; color: var(--accent-hot); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+button.lead-link:hover { background: transparent; color: var(--accent-hot); }
+.show-me-target { outline: 2px solid var(--caution); outline-offset: 6px; border-radius: var(--radius-s); }
+body.show-me-on { padding-bottom: 72px; }
+html:has(body.show-me-on) { scroll-padding-bottom: 64px; }
+/* On a phone the way back is a bar of its own across the bottom, with the toasts above it. */
+@media (max-width: 600px) {
+  button.show-me-back { left: 0; right: 0; bottom: 0; width: auto; min-height: 48px; border-radius: 0; }
+  body.show-me-on .toasts { bottom: 60px; }
+}
+.show-me-back { position: fixed; left: 16px; bottom: 16px; z-index: 50; min-height: var(--control); padding: 0 14px; font: 500 13px var(--sans); color: var(--carbon); background: var(--caution); border: 0; border-radius: var(--radius-s); box-shadow: 0 2px 8px var(--shade); }
+.lead-ask { margin: 0; display: flex; gap: 10px; font: 600 16px/1.35 var(--display); color: var(--ink); }
 .lead-n { flex: none; font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--ink-soft); padding-top: 2px; font-variant-numeric: tabular-nums; }
 .lead-opts { display: flex; flex-wrap: wrap; gap: 8px; }
 .lead-opt { font: 500 13px var(--sans); text-align: left; background: var(--panel); color: var(--ink); border: 0; border-radius: var(--radius-s); box-shadow: 0 0 0 1px var(--seam-strong); cursor: pointer; }
 .lead-opt:hover { box-shadow: 0 0 0 1px var(--ink-faint); }
-.lead-opt[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 1px var(--accent); }
+.lead-opt[aria-pressed="true"] { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 2px var(--accent); }
 .lead-q .mv-note { height: var(--control); }
 .lead-compose textarea::placeholder { color: var(--ink-faint); }
 .lead-hint { margin: 0; max-width: var(--measure); font-size: 12.5px; color: var(--ink-soft); }
-.lead-why > summary { display: inline-flex; align-items: center; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
-.lead-why > p { margin: 4px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
 .lead-round-foot { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .lead-round-foot button, .lead-compose button { font: 500 13px var(--sans); }
 
@@ -77,7 +103,7 @@ button.lead-raw, .lead .mv-session-head button { padding: 0 10px; font-size: 12.
   .lead-msg.you { max-width: 100%; }
 }
 
-.lead-earlier { justify-self: start; padding: 0 8px; font-size: 12.5px; color: var(--accent-hot); }
+button.lead-earlier, button.lead-raw { justify-self: start; padding: 0; font-size: 12.5px; color: var(--accent-hot); }
 
 /* A new entry rises into the thread as it lands. Not on the first paint, and not an entry the fold
    is only showing again: those were already there. */

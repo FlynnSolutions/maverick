@@ -129,7 +129,7 @@ export const mount = (host, view, ctx) => {
   const mustBody = el("div", { class: "rs-must-body" });
   const summarizeBtn = btn("summarize", () => summarize());
   const must = el("div", { class: "rs-must", tabindex: "-1" },
-    el("h2", {}, "What I must read", mustAt), mustBody, el("div", { class: "rs-acts" }, summarizeBtn));
+    el("h2", {}, "What you must read", mustAt), mustBody, el("div", { class: "rs-acts" }, summarizeBtn));
   const sum = el("div", { class: "rs-sum" });
   const files = el("ul", { class: "rs-files", "aria-label": "What merged, by task" });
   const filesAt = el("span", { class: "n" });

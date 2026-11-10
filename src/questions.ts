@@ -23,9 +23,13 @@ export interface Question {
    * as given. Empty while the mission is paused and the only move is resume, which the paused
    * question offers once. An answer with `go` posts nothing: it opens the place on the mission page
    * where the person acts (`milestone-<n>` for a milestone's walkthrough, `close` for the close),
-   * because walking is done there and closing asks twice there.
+   * because walking is done there and closing asks twice there. `link` marks a `go` that only takes
+   * the person there, so the mission page dresses it as the link it is; a walk opens its document,
+   * so it stays an action.
    */
-  answers: Array<{ label: string; primary?: boolean } & ({ method: "POST"; path: string; body?: string[] } | { go: string })>;
+  answers: Array<{ label: string; primary?: boolean } & ({ method: "POST"; path: string; body?: string[] } | { go: string; link?: true })>;
+  /** How many things it asks, when that is more than one: a round of the Strike Lead's questions. */
+  count?: number;
 }
 
 export type StatusWord = "working" | "waiting for you" | "error" | "done";
@@ -144,9 +148,9 @@ const closeQuestion = (mission: Mission): Question => ({
   id: "review",
   kind: "review",
   title: "ready to close",
-  body: `Every milestone is walked or waived. Closing ticks the tracker and lands the work.${strandedNote(mission)}`,
+  body: `Every milestone is walked or waived. The close is one last look at the report, and it says what happens to the branches.${strandedNote(mission)}`,
   at: mission.finished ?? mission.created,
-  answers: [{ label: "land and close", go: "close", primary: true }],
+  answers: [{ label: "go to the close", go: "close", link: true, primary: true }],
 });
 
 /**
@@ -171,7 +175,8 @@ const leadRound = (mission: Mission): Question | undefined => {
     title: `the Strike Lead is asking ${n === 1 ? "a question" : `${n} questions`}`,
     body: last.questions.map((q) => q.question).join(" "),
     at: last.at,
-    answers: [{ label: "answer in the chat", go: "round", primary: true }],
+    count: n,
+    answers: [{ label: "answer it", go: "round", link: true, primary: true }],
   };
 };
 
@@ -266,7 +271,7 @@ export const questionsOf = (mission: Mission & { findings?: Record<string, strin
     title: "the plan is ready to fly",
     body: mission.brief,
     at: lastLead.at,
-    answers: [{ label: "read the terms and fire", go: "gate", primary: true }],
+    answers: [{ label: "read the terms and fire", go: "gate", link: true, primary: true }],
   });
   const left = toWalk(mission);
   if (left.length) out.push(walkQuestion(mission, left));

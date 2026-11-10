@@ -58,7 +58,7 @@ test("an escalation, a pause and the gate each ask their own question", () => {
   const ready = [{ at: "2026-10-02T00:00:00.000Z", who: "Strike Lead" as const, text: "Planned.", planReady: true }];
   const [gate] = questionsOf(base({ status: "planned", chat: ready }));
   assert.equal(gate.kind, "gate");
-  assert.deepEqual(gate.answers, [{ label: "read the terms and fire", go: "gate", primary: true }], "approving is asked twice on the page, never in one press from a list");
+  assert.deepEqual(gate.answers, [{ label: "read the terms and fire", go: "gate", link: true, primary: true }], "approving is asked twice on the page, never in one press from a list");
   assert.deepEqual(questionsOf(base({ status: "planned", chat: [{ ...ready[0], planReady: undefined }] })), [], "a plan the Strike Lead is still fixing waits on it, not on the person");
 });
 
@@ -135,7 +135,7 @@ test("a mission at review asks for each walkthrough still to walk, how far throu
   const done = base({ status: "review", milestones: [ms(1, [built], { merged: at(1), walkthrough: walked(2, ["pass", "pass"]) })] });
   const [close] = questionsOf(done);
   assert.deepEqual([close.id, close.kind, close.title], ["review", "review", "ready to close"]);
-  assert.deepEqual(close.answers, [{ label: "land and close", go: "close", primary: true }]);
+  assert.deepEqual(close.answers, [{ label: "go to the close", go: "close", link: true, primary: true }]);
 });
 
 test("a mission in flight asks for the walk of every merged milestone waiting on it, and never the close", () => {
@@ -206,7 +206,7 @@ test("a task that never launched says so and offers only to send it out again: t
   assert.deepEqual(questionsOf(base({ status: "paused", milestones: [ms(1, [task])] })).find((x) => x.kind === "handed-back")!.answers, [], "paused: resume first");
 });
 
-test("a round of questions the Strike Lead is waiting on is a question for you, answered in the chat", () => {
+test("a round of questions the Strike Lead is waiting on is a question for you, answered on its card", () => {
   const asked = { at: "2026-10-29T20:02:00.000Z", who: "Strike Lead" as const, text: "two questions", questions: [
     { id: "q1", question: "Stored or computed?", options: ["stored", "computed"] },
     { id: "q2", question: "Which surface first?", options: ["dock", "notifications"] },
@@ -216,7 +216,7 @@ test("a round of questions the Strike Lead is waiting on is a question for you, 
   assert.equal(q.kind, "lead");
   assert.equal(q.title, "the Strike Lead is asking 2 questions");
   assert.equal(q.body, "Stored or computed? Which surface first?");
-  assert.deepEqual(q.answers, [{ label: "answer in the chat", go: "round", primary: true }]);
+  assert.deepEqual(q.answers, [{ label: "answer it", go: "round", link: true, primary: true }]);
   assert.equal(statusWord(mission), "waiting for you", "the lamp says so");
   // Answered (anything said after it), or a turn with no questions, asks nothing.
   assert.deepEqual(questionsOf(base({ status: "interviewing", chat: [asked, { at: "2026-10-29T20:03:00.000Z", who: "you", text: "stored; the dock" }] })), []);

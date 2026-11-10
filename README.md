@@ -305,7 +305,7 @@ a mission into main**: the ship wizard does, with you in it phase by phase.
 ### What you see while it flies
 
 A mission has its own page with four fixed anchors down the left, the same before, during and
-after the flight: **The ask** (what you asked for), **Plan** (one step per milestone, a row per
+after the flight: **The brief** (what you asked for), **Plan** (one step per milestone, a row per
 task with what it is for), **Progress** (what has happened, read from the ledger as a feed) and
 **Result** (the merged diff first, task by task, then the second gate). Above them is one word for
 where the mission stands: **working**, **waiting for you**, **error** or **done**. The page
