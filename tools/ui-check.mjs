@@ -81,9 +81,11 @@ writeFileSync(walk, `(async () => {
   ${UNTIL}
   const tab = await until(() => document.querySelector(".archive-tab"), 15000);
   if (!tab) return "error: no Archive tab";
-  const link = document.querySelector(".cc-mission");
-  if (!link || !link.textContent.includes(${JSON.stringify(MISSION)})) return "error: no link to the mission";
-  if (link.getBoundingClientRect().bottom > innerHeight) return "error: the mission link is below the first screen";
+  // The Rack draws every live mission as a strip, so the Missions row does not link it a second time.
+  if (document.querySelector(".cc-mission")) return "error: the Missions row repeats a mission the Rack draws: " + document.querySelector(".cc-mission").textContent;
+  const link = [...document.querySelectorAll(".rack .strip")].find((s) => s.querySelector(".strip-name")?.textContent === ${JSON.stringify(MISSION)});
+  if (!link) return "error: no strip for the mission on the Rack";
+  if (link.getBoundingClientRect().top > innerHeight) return "error: the mission's strip is below the first screen";
   if (tab.getBoundingClientRect().bottom > innerHeight) return "error: the Archive tab is below the first screen";
   if (!tab.textContent.includes(${JSON.stringify(String(ENDED))})) return "error: the archive does not count the ended sessions: " + tab.textContent;
   if (document.querySelector(".rack.archive")) return "error: the archive is open on arrival";
