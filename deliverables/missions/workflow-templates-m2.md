@@ -77,8 +77,9 @@ _walk: Open a mission on the invented project from the mission branch's server a
   - touches: web/mission.js, web/mission.css, web/mission/result.js, web/mission/result.css
   - needs: m1-t3
   - cells: 28, 34
-  - status: flying
+  - status: reviewing
   - attempt: 1
+  - commit: 53babf1
   Build cells 34 and 28 and follow closing rules 3, 4 and 6. In `renderAsk`, under the `h1`, add the template line in the `.mv-ask-meta` mono style: "runs <a>light</a> · unverified: stays on its mission branch", or "runs <a>mission</a>". The name links to `/workflow.html?project=<id>&mission=<missionId>`. It reads `mission.workflow` from the view (the contract), and an older view without it reads as mission. In the rail, between `#word` and `.mv-anchors`, add the status strip: `mission.workflow.flight` as a list with done, now and next marks and the count, left-out stages not drawn, and at 390 under the word, above the content, as the rail's `display: contents` already orders it. Under an unverified template, the Result section draws no summarize button and no "What I must read" panel, the walks list says nothing about proof or walking, and the closing copy says the work stays on its mission branch, which is where Cory takes it by hand. Use existing tokens only, and no colour for "unverified". Do not touch `web/app.js`, `web/command.js` or `src/`.
 
   Prove it: on the invented Harbor fixtures `tools/ui-check.mjs` serves, render a full mission flying, a Light mission flying, a Light mission at review, and an older record with no `workflow`. Grade the mission page with ui-audit at 390 and 1280 in light and dark, and put the grade card in the commit message. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
@@ -161,3 +162,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 22:47 m1-t4 Light flies: a built task passes with no review, and the plan, briefs and interview follow the template: flying to reviewing
 - 2026-11-09 22:59 m1-t4 Light flies: a built task passes with no review, and the plan, briefs and interview follow the template: reviewing to passed (RIO: pass with notes) with 13 notes carried, 1 unverified
 - 2026-11-09 22:59 m1-t5 Unverified work can't land: refused at the gate and at landing: pending to flying
+- 2026-11-09 23:02 m1-t7 The mission page: the template line, the status strip, and a Light result: flying to reviewing
