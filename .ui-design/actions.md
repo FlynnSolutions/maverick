@@ -49,7 +49,7 @@ otherwise; an error toast stays until it is closed.
 | Milestone | Release a hold | The hold's question in `#now`, with a note | Toast | as Question | Buildkite unblock |
 | Milestone | Walk the walkthrough | The walkthrough under its step; answers save as they are given | "last saved" line under the frame | none | GitHub viewed checkbox |
 | Milestone | Waive the walk | A note and `waive it` under the walkthrough | Toast | none | GitHub admin merge, with a reason |
-| Task | Retry or accept a handed-back task | The question's buttons in `#now`, and the same row under the task in Plan | Toast | as Question | Buildkite retry, GitHub re-run |
+| Task | Retry or accept a handed-back task | The question's buttons in `#now`, and the same row under the task in Plan. Only a handed-back task is asked; a task in the air (flying, built, reviewing) offers `open the session` on its row instead, and the server refuses a retry on it before anything is stopped | Toast; a press on a task already in the air is an error toast saying to open its session | as Question | Buildkite retry, GitHub re-run |
 | Task | Open its agent's session | `open the session` on a live task's row; `stop watching` closes it | The terminal mounts under the row | none | Buildkite live log, Devin shell |
 | Task | See every attempt | The task's card in Progress, one line per attempt with its verdict linked to its findings | n/a | Lines rise as they land | GitHub Actions attempt selector |
 | Task | See every automatic move | `show every move` under each milestone in Progress | n/a | none | Buildkite step log |
@@ -101,6 +101,7 @@ brainstorms. A session or a mission is one strip in one group. What an action di
 | Session | Answer a permission prompt | The prompt's choices as buttons in its open pane, the terminal still under it | The pane clears the card | none | Claude Code |
 | Session | Write to it | The composer in its open pane; Enter sends | Toast "sent"; an error toast names what failed | The turn lands in the conversation | Claude desktop |
 | Session | Start one, or a shell | `New session` in the bar; the terminal icon beside the tabs | The new strip rises in | Rises in | Warp |
+| Session | See where its review stands | The State column: once the session has ended with its review still owed, the review is the state (`in review`, `review blocked`, `review gave no verdict`); while it runs, the review is the note beside its own word. A verdict chip appears only once the verdict is written | The word changes on the next paint | none | GitHub checks on a merged PR |
 | Formation | Group sessions | Drag a strip onto a tab; every drag also has its right-click menu path | Toast naming where it went | none | Linear move to |
 | Formation | Make, rename, disband, pop out | `+` beside the tabs; the tab's own right-click menu | Toast; disband asks first | none | Chrome tab groups |
 | Brainstorm | Start one, open one | `brainstorm` on its heading; `open` in its row | The breakdown page | none | n/a |
