@@ -21,6 +21,17 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 .mv-word.caution { background: var(--caution-dim); color: var(--caution); }
 .mv-word.hud { background: var(--hud-dim); color: var(--hud); }
 .mv-word.threat { background: var(--threat-dim); color: var(--threat); }
+/* Where the mission is in its template, under the word: one row per stage it runs, the stage it
+   is on lit in the accent and the ones behind it marked in the done colour. A left-out stage is
+   simply not a row, so no colour or strike ever says "unverified". */
+.mv-flight { list-style: none; margin: -6px 0 16px; padding: 0 10px; display: grid; grid-template-columns: minmax(0, 1fr); }
+.mv-flight li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 24px; font-size: 12.5px; color: var(--ink-faint); }
+.mv-flight .m { width: 8px; height: 8px; justify-self: center; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink-ghost); }
+.mv-flight li.done { color: var(--ink-soft); }
+.mv-flight li.done .m { background: var(--hud); box-shadow: none; }
+.mv-flight li.now { color: var(--ink); font-weight: 600; }
+.mv-flight li.now .m { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.mv-flight .x { font: 11px var(--mono); color: var(--ink-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
 /* Each anchor is a full control, 8px from the next. */
 .mv-anchors { display: flex; flex-direction: column; gap: 8px; }
 .mv-rail a.mv-nav { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: var(--control); padding: 0 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--ink-soft); text-decoration: none; }
@@ -74,6 +85,11 @@ html { scroll-padding-top: 70px; }
 .mv-ask h1 { margin: 0 0 6px; font: 600 22px/1.35 var(--display); letter-spacing: 0.01em; color: var(--ink); }
 .mv-ask .mv-ask-brief { margin: 0 0 8px; font-size: 15px; line-height: 1.55; color: var(--ink); max-width: 66ch; }
 .mv-ask .mv-ask-meta { margin: 0; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+/* The template line is the meta line's style, under the title: a fact about the mission, its name the way to the template page. */
+.mv-ask .mv-template { margin: 0 0 10px; }
+.mv-template a { color: var(--ink-soft); text-decoration: underline; text-underline-offset: 2px; }
+.mv-template a:hover { color: var(--ink); }
+.mv-template a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
 /* Before the blessing the Plan section is the chat (web/mission/lead.js), then the gate and what it
    is approving, stacked with space between them. Only the gate is a panel; the rest are headed blocks. */
@@ -99,6 +115,7 @@ html { scroll-padding-top: 70px; }
   .mv-page { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .mv-rail, .mv-content { display: contents; }
   .mv-word { order: 1; margin: 0 0 12px; justify-self: start; }
+  .mv-flight { order: 1; margin: 0 0 16px; padding: 0; }
   .mv-now { order: 2; }
   .mv-anchors { order: 3; flex-direction: row; flex-wrap: wrap; margin: 0 0 24px; }
   .mv-rail a.mv-nav { flex: 1 1 140px; background: var(--steel); }

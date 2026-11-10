@@ -333,6 +333,27 @@ const renderTrouble = () => {
   fill($("#trouble"), trouble ? el("p", { class: troubleBroken(trouble) ? "mv-fail" : "mv-warn" }, trouble, recoveryOf(trouble)) : null);
 };
 
+/**
+ * Where the mission is in its template: every stage it runs, top to bottom, done, now or next,
+ * with the count on a stage that has one. A stage the template leaves out is not in the flight,
+ * so it is not drawn. It sits under the word, in the rail's own markup order, so at a phone's
+ * width it falls under the word above the content with no order of its own to keep.
+ */
+let flightKey = null;
+const flightList = el("ol", { class: "mv-flight", "aria-label": "Where the mission is in its template", hidden: true });
+$("#word").after(flightList);
+const renderFlight = () => {
+  const flight = flown().flight ?? [];
+  const key = JSON.stringify(flight);
+  if (key === flightKey) return;
+  flightKey = key;
+  flightList.hidden = !flight.length;
+  fill(flightList, ...flight.map((s) => el("li", { class: s.state, ...(s.state === "now" ? { "aria-current": "step" } : {}) },
+    el("span", { class: "m", role: "img", "aria-label": s.state }),
+    el("span", { class: "l" }, s.label),
+    s.count ? el("span", { class: "x" }, s.count) : null)));
+};
+
 const count = (id, label, needs = false) => {
   const n = $(`#rail a[href="#${id}"] .n`);
   n.textContent = label;
@@ -444,15 +465,26 @@ const briefOf = (brief) => {
   p.classList.add("mv-ask-brief");
   return brief.length <= BRIEF_FOLD ? p : foldable({ el, btn }, p, { more: "the whole brief", height: "6.4em" });
 };
+/** The template the mission runs. A view from before templates has no `workflow`, and its mission ran the default. */
+const flown = () => mission.workflow ?? { id: "mission", name: "Mission", unverified: false, flight: [] };
+/** Which template, as a fact about the mission in the meta line's voice, and where unverified work ends up said in words. */
+const templateLine = () => {
+  const w = flown();
+  return el("p", { class: "mv-ask-meta mv-template" }, "runs ",
+    el("a", { href: `/workflow.html?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(missionId)}`, title: `the ${w.name} template, as this mission pinned it` }, w.id),
+    w.unverified ? " · unverified: stays on its mission branch" : null);
+};
 let askKey = "";
 const renderAsk = () => {
-  const key = JSON.stringify([mission.name, mission.brief, mission.created, mission.approved, mission.planCommit]);
+  const w = flown();
+  const key = JSON.stringify([mission.name, mission.brief, mission.created, mission.approved, mission.planCommit, w.id, w.name, w.unverified]);
   if (key === askKey) return;
   askKey = key;
   $("#crumb").replaceChildren(text(`${projectName} · Mission `), el("b", {}, mission.name));
   $("#ask").removeAttribute("aria-busy");
   fill($("#ask"),
     el("h1", {}, mission.name),
+    templateLine(),
     briefOf(mission.brief),
     el("p", { class: "mv-ask-meta" }, [
       `opened ${fmtTime(mission.created)}`,
@@ -648,6 +680,7 @@ const paint = () => {
   ctx.thread.update(mission);
   renderWord();
   renderTrouble();
+  renderFlight();
   renderCounts();
   renderControls();
   renderAsk();
