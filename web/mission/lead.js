@@ -230,20 +230,45 @@ export const leadThread = (ctx) => {
     el("summary", {}, `${plural(entry.questions.length, "question")} asked`),
     el("ol", {}, ...entry.questions.map((q) => el("li", {}, q.question))));
 
+  /**
+   * A round nobody answered that the mission moved past (`openRound`): said as overtaken and by
+   * what, folded like an answered one, so it is neither waiting on the person nor gone from the
+   * thread. While the composer is there, it says the way to answer it anyway.
+   */
+  const overtaken = (entry, by) => el("details", { class: "lead-asked overtaken" },
+    el("summary", {}, `${plural(entry.questions.length, "question")} asked, overtaken: ${by}`),
+    el("ol", {}, ...entry.questions.map((q) => el("li", {}, q.question))),
+    over() ? null : el("p", { class: "lead-hint" }, "Nothing waits on it now. If it still matters, write to the Strike Lead below."));
+
   /** A message past a few paragraphs (a pasted brief, a long plan note) folds to its opening, with the way to the rest under it. */
   const LONG = 600;
   const textOf = (entry) => {
     const body = el("div", { class: "lead-text" }, renderMarkdown(entry.text, { project: projectId }));
     return entry.text.length <= LONG ? body : foldable(ctx, body, { more: "the whole message", height: "9.5em" });
   };
-  const bubble = (entry, open) => el("li", { class: `lead-msg ${entry.who === "you" ? "you" : entry.who === "Maverick" ? "sys" : "sl"}${entry.error ? " error" : ""}` },
+  const bubble = (entry, state) => el("li", { class: `lead-msg ${entry.who === "you" ? "you" : entry.who === "Maverick" ? "sys" : "sl"}${entry.error ? " error" : ""}` },
     el("p", { class: "lead-who" }, entry.who === "you" ? "you" : entry.who, el("span", { class: "lead-at" }, fmtTime(entry.at))),
     textOf(entry),
-    entry.questions?.length ? (open ? el("p", { class: "lead-hint" }, "Its question is at the top of this page, waiting on you.") : asked(entry)) : null);
+    !entry.questions?.length ? null
+      : state === "open" ? el("p", { class: "lead-hint" }, "Its question is at the top of this page, waiting on you.")
+        : state === "asked" ? asked(entry) : overtaken(entry, state));
 
   /** Whether this entry's round is still open, as the server says it (`openRound`): it is the one the mission's questions name. */
   const isOpen = (chat, i) => Boolean(view?.questions?.some((q) => q.id === `round:${chat[i].at}`));
   const over = () => isEnded(view?.status);
+  /**
+   * Where a round stands: open, asked (you have said something since), or overtaken, named by
+   * the stage that passed it, the same stamps `openRound` reads, else the mission's end.
+   */
+  const roundState = (chat, i) => {
+    if (!chat[i].questions?.length) return "";
+    if (isOpen(chat, i)) return "open";
+    if (chat.slice(i + 1).some((entry) => entry.who === "you")) return "asked";
+    const at = chat[i].at;
+    return view.finished > at ? "the work finished after it was asked"
+      : view.approved > at ? "the plan was fired after it was asked"
+        : over() ? `the mission was ${view.status}` : "asked";
+  };
 
   /** Maverick's own line about the flight: a task out, passed or back, a milestone merged. One quiet line each. */
   const note = (u) => el("li", { class: `lead-note ${u.kind}` }, el("span", { class: "lead-at" }, fmtTime(u.at)), el("span", {}, u.text));
@@ -256,17 +281,19 @@ export const leadThread = (ctx) => {
   const placed = new Map();
   const paintLog = (chat, updates) => {
     const items = [
-      ...chat.map((entry, i) => ({ key: `c${i}`, at: Date.parse(entry.at), entry, open: isOpen(chat, i) })),
+      ...chat.map((entry, i) => ({ key: `c${i}`, at: Date.parse(entry.at), entry, state: roundState(chat, i) })),
       // Keyed by what it says and when, since the server folds a run of the same line into its latest.
       ...updates.map((update) => ({ key: `u${update.at}${update.text}`, at: Date.parse(update.at), update })),
     ].sort((a, b) => a.at - b.at);
+    // An overtaken round offers the composer only while there is one, so the mission ending redraws it.
+    const ended = over();
     let prev = null;
     for (const item of items) {
       let held = placed.get(item.key);
-      if (!held || (item.entry && held.open !== item.open)) {
-        const node = item.entry ? bubble(item.entry, item.open) : note(item.update);
+      if (!held || (item.entry && (held.state !== item.state || (item.state && held.ended !== ended)))) {
+        const node = item.entry ? bubble(item.entry, item.state) : note(item.update);
         held?.node.replaceWith(node);
-        held = { node, open: item.open };
+        held = { node, state: item.state, ended };
         placed.set(item.key, held);
       }
       const want = prev ? prev.nextSibling : log.firstChild;

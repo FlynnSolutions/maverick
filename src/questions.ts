@@ -154,19 +154,34 @@ const closeQuestion = (mission: Mission): Question => ({
 });
 
 /**
+ * The Strike Lead's round still waiting for answers: its last word, when that word asked something
+ * and the mission has not moved past the stage it was asked in since. The one definition; the chat
+ * answers it and the page reads it off the questions.
+ *
+ * The stages are the ones the record stamps: the plan fired (`approved`) and the work finished
+ * (`finished`). Each is a line nothing asked before it can cross: a flying mission is the plan as
+ * fired, and the Strike Lead cannot change it; a mission at review takes no new work. A round asked
+ * before either is overtaken, not answered: the page still shows it in the conversation, said as
+ * overtaken, and the person can still write to the Strike Lead about it, but it is not waiting on
+ * them. A round asked at review is after both, so it stays open. Nothing finer is used (a hold
+ * clearing, a milestone merging, flying turning blocked), because a round does not say what it is
+ * about, and a question about the next milestone is still live after this one merges.
+ */
+export const openRound = (mission: Pick<Mission, "chat" | "approved" | "finished">): (ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) | undefined => {
+  const last = mission.chat?.at(-1);
+  if (last?.who !== "Strike Lead" || !last.questions?.length) return undefined;
+  if ([mission.approved, mission.finished].some((stage) => stage !== undefined && stage > last.at)) return undefined;
+  return last as ChatEntry & { questions: NonNullable<ChatEntry["questions"]> };
+};
+
+/**
  * The Strike Lead waiting on its own round of questions: its last word asked them and nothing has
  * been said since, the same rule the chat uses to keep a round open. It is answered in the chat,
  * so the answer goes there rather than posting anything. Cory's call, 2026-10-30: a round waiting
  * on him is waiting for him, in the inbox and on the lamp, like anything else.
  */
-/** The Strike Lead's round still waiting for answers: its last word, when that word asked something. The one definition; the chat answers it and the page reads it off the questions. */
-export const openRound = (chat: ChatEntry[] | undefined): (ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) | undefined => {
-  const last = chat?.at(-1);
-  return last?.who === "Strike Lead" && last.questions?.length ? (last as ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) : undefined;
-};
-
 const leadRound = (mission: Mission): Question | undefined => {
-  const last = openRound(mission.chat);
+  const last = openRound(mission);
   if (!last) return undefined;
   const n = last.questions.length;
   return {
