@@ -8,6 +8,8 @@ import { finished, mountCommandCenter } from "./command.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
+import { missionLinks } from "./mission-links.js";
+import { isEnded } from "./mission/state.js";
 import { attempt, failed, leave, toast } from "./toast.js";
 import * as claudeUsage from "./providers/claude.js";
 
@@ -537,6 +539,8 @@ const renderBoard = (tracker) => {
 };
 
 let lastTrackers = [];
+let missions = []; // every mission's status and word, for the board's and calendar's links
+let missionsFailed = null;
 const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
@@ -544,13 +548,21 @@ const loadBoard = async () => {
     if ($("#status").textContent === "loading") { $("#status").textContent = ""; $("#status").classList.remove("loading"); }
     // The workspace does not need releases (a GitHub round trip); the board and calendar do.
     if (!releasesData && view !== "workspace") releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
-    // Every view carries the ship-day banner, so the schedule is not calendar-only.
-    [ships, shipDays] = await Promise.all([api(`/api/ships?project=${encodeURIComponent(projectId)}`), api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`)]);
+    // Every view carries the ship-day banner, so the schedule is not calendar-only. The board and
+    // the calendar also carry the way to each live mission (the light read: no sweep, no git); the
+    // workspace draws its own.
+    missionsFailed = null;
+    [ships, shipDays, missions] = await Promise.all([
+      api(`/api/ships?project=${encodeURIComponent(projectId)}`),
+      api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`),
+      view === "workspace" ? [] : api(`/api/questions?project=${encodeURIComponent(projectId)}`).then((q) => q.missions, (err) => { missionsFailed = err; return []; }),
+    ]);
     $("#project").classList.toggle("workspace-view", view === "workspace");
     // The workspace draws its own h1; the board and the calendar name themselves for a screen reader.
     $("#page-title").hidden = view === "workspace";
     $("#page-title").textContent = `${project.name}: ${view}`;
     $("#boards").replaceChildren(
+      ...missionsRow(),
       ...shipDayBanner(trackers),
       ...(view === "calendar"
         ? [renderCalendar(trackers)]
@@ -1171,6 +1183,17 @@ const shipDayBanner = (trackers) => {
     btn("mark shipped", () => setShipDay("ship", live.origin, { version })),
     btn("push it back", () => openShipDayDrawer(live, trackers), "ghost"),
   )];
+};
+
+/**
+ * The way to every live mission, above the board and the calendar. The app reopens on the last
+ * view, so a mission in the air has to be one press away from here, not only from the workspace.
+ */
+const missionsRow = () => {
+  if (missionsFailed) return [el("div", { class: "cc-trouble", role: "alert" },
+    el("p", {}, `The missions could not be read: ${missionsFailed.message}. A mission in the air is not shown here.`),
+    btn("try again", () => loadBoard()))];
+  return missions.some((m) => !isEnded(m.status)) ? [missionLinks(el, projectId, missions)] : [];
 };
 
 /** The cadence control, under the calendar head: how often this project means to ship. */

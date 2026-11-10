@@ -15,7 +15,7 @@ import { tempRepo } from "./fixtures.ts";
 const dir = mkdtempSync(join(tmpdir(), "mv-workspace-"));
 process.env.SESSION_CONSOLE_SESSIONS = dir;
 mkdirSync(join(dir, "missions", "w"), { recursive: true });
-const { workspaceMissions } = await import("../src/missions.ts");
+const { missionQuestions, workspaceMissions } = await import("../src/missions.ts");
 
 const project = { id: "w", name: "W", path: "/tmp", trackers: [] } as never;
 const { dir: repo, git } = tempRepo("mv-workspace-repo");
@@ -90,4 +90,14 @@ test("only passed tasks of a merged milestone are counted", async () => {
   const m = (await workspaceMissions(project)).find((x) => x.id === "partial");
   assert.ok(m);
   assert.equal(m.diffstat, "+3 −1");
+});
+
+test("the light read carries each mission's status and word, the same word the workspace shows", async () => {
+  await seed("light", [{ n: 1, title: "one", done: "d", tasks: [task("t1", "passed"), task("t3", "handed-back", { verdict: "fail", note: "n" })] }]);
+  const light = (await missionQuestions(project)).find((x) => x.id === "light");
+  const full = (await workspaceMissions(project)).find((x) => x.id === "light");
+  assert.ok(light && full);
+  assert.equal(light.status, "flying");
+  assert.equal(light.word, full.word);
+  assert.equal(light.word, "waiting for you");
 });

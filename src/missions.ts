@@ -3097,9 +3097,13 @@ export const workspaceMissions = async (project: Project): Promise<WorkspaceMiss
     return { ...row, word, questions, diffstat: mergedStat(mission, diffstat) };
   }));
 
-/** What a mission asks, and nothing else: no sweep, no git, findings only for what is handed back. The notification poll reads this. */
-export const missionQuestions = async (project: Project): Promise<Array<{ id: string; name: string; questions: Question[] }>> =>
+/**
+ * What a mission asks, and its status and word, and nothing else: no sweep, no git, findings only
+ * for what is handed back. The notification poll reads this, and so do the board's and the
+ * calendar's links to each live mission.
+ */
+export const missionQuestions = async (project: Project): Promise<Array<{ id: string; name: string; status: Mission["status"]; word: StatusWord; questions: Question[] }>> =>
   Promise.all((await listMissions(project.id)).map(async (mission) => {
-    const { questions } = await asked(mission, (task) => task.status === "handed-back", false);
-    return { id: mission.id, name: mission.name, questions };
+    const { questions, word } = await asked(mission, (task) => task.status === "handed-back", false);
+    return { id: mission.id, name: mission.name, status: mission.status, word, questions };
   }));

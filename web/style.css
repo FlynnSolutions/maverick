@@ -1327,11 +1327,14 @@ body.ask-open { overflow: hidden; }
 .cc-mission { display: inline-flex; max-width: 100%; overflow-wrap: anywhere; align-items: center; gap: 8px; min-height: var(--control); padding: 0 10px; border-radius: var(--radius-s); background: var(--panel); box-shadow: 0 0 0 1px var(--seam); color: var(--ink); font-size: 13px; font-weight: 500; text-decoration: none; }
 .cc-mission:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
 .cc-mission i { font-style: normal; font-size: 12px; font-weight: 400; color: var(--ink-faint); }
+/* Above the board and the calendar it is the first line, spaced like the ship-day banner under it. */
+.boards > .cc-missions { margin-bottom: 14px; }
 /* On a phone the page opens on what needs you: the tabs scroll in one row and the meter goes under the racks. */
 @media (max-width: 839px) {
   .bar .wm, #new-session span { display: none; }
-  /* A mission waiting on you is the first row below, so its link would only say it twice. */
-  .cc-mission.wants { display: none; }
+  /* Over the Rack a mission waiting on you is the first row below, so its link would only say it
+     twice. A formation tab draws no Needs you, so there the link stays. */
+  .cc-missions.over-needs .cc-mission.wants { display: none; }
   .strip-state i { display: none; }
   .bar .status:empty { display: none; }
   .bar .tools { order: 1; margin-left: auto; }
@@ -1339,7 +1342,7 @@ body.ask-open { overflow: hidden; }
   .strip-acts .act { box-shadow: inset 0 0 0 1px var(--seam); }
   .strip-state b { white-space: nowrap; }
   .bar .brand { min-width: 44px; justify-content: center; }
-  .cc-missions > span { display: none; }
+  .workspace .cc-missions > span { display: none; }
   .forms { flex-wrap: nowrap; overflow-x: auto; }
   .forms button { flex: 0 0 auto; white-space: nowrap; }
   .workspace { display: flex; flex-direction: column; }

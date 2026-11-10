@@ -3,6 +3,7 @@
  * The page check CI runs on every pull request: the app rendered on the invented Harbor project,
  * one real write made through the page, and the tracker read back from the commit it made. Then the
  * command center walked at the size a real project reaches: 130 ended sessions and a live mission.
+ * Then that mission reached in one press from the Board, the Calendar and its crew tab, at 1280 and 390.
  * Then a question from the Strike Lead answered from the first screen, and read back from the server.
  * Then, when a ui-audit is plugged in, its grade on the key states, which must be a complete A.
  *
@@ -40,6 +41,7 @@ const UNTIL = `const until = ${until};`;
 
 const TITLE = "Survey the breakwater";
 const BOARD = "/?project=harbor&view=board";
+const CALENDAR = "/?project=harbor&view=calendar";
 
 /** Submit the first lane's quick-add as a person would, and report the toast the board answers with. */
 const write = join(out, "write.js");
@@ -96,6 +98,26 @@ writeFileSync(walk, `(async () => {
   return rows().length === 60 ? "ok" : "error: show more drew " + rows().length + " rows";
 })()`, "utf8");
 
+/**
+ * A live mission reached in one press from wherever the app reopens: the Board, the Calendar and the
+ * mission's own crew tab each show it on the first screen, and one press goes to its page (held at
+ * the door, so the walk can read where it was going).
+ */
+const reach = join(out, "reach.js");
+const writeReach = (want) => writeFileSync(reach, `(async () => {
+  ${UNTIL}
+  const crew = new URLSearchParams(location.search).has("formation");
+  const at = await until(() => document.querySelector(crew ? ".rack.crew-mission .strip" : ".boards > .cc-missions .cc-mission"), 15000);
+  if (!at) return "error: no mission on " + location.search;
+  if (!at.textContent.includes(${JSON.stringify(MISSION)})) return "error: the mission shown is not the live one: " + at.textContent;
+  if (at.getBoundingClientRect().bottom > innerHeight) return "error: the mission is below the first screen on " + location.search;
+  let went = null;
+  navigation.addEventListener("navigate", (e) => { went = e.destination.url; e.preventDefault(); });
+  (crew ? at.querySelector(".primary-act") : at).click();
+  const to = await until(() => went, 3000);
+  return to && new URL(to).pathname + new URL(to).search === ${JSON.stringify(want)} ? "ok" : "error: the press went to " + to;
+})()`, "utf8");
+
 const ANSWER = "At slack tide";
 
 /**
@@ -121,13 +143,15 @@ writeFileSync(ask, `(async () => {
   return wrote ? "ok: " + sent.textContent : "error: the card did not say the Strike Lead wrote back: " + sent.textContent;
 })()`, "utf8");
 
-/** Adds to a mission's chat as its record holds it: what the Strike Lead says, written where the server reads it. */
-const addToChat = (harbor, id, entry) => {
+/** Changes a mission's record where the server reads it: `change` gives the fields to replace. */
+const setMission = (harbor, id, change) => {
   const file = join(harbor.sessions, "missions", "harbor", `${id}.json`);
   const mission = JSON.parse(readFileSync(file, "utf8"));
-  mission.chat = [...(mission.chat ?? []), { at: new Date().toISOString(), who: "Strike Lead", ...entry }];
-  writeFileSync(file, `${JSON.stringify(mission, null, 2)}\n`, "utf8");
+  writeFileSync(file, `${JSON.stringify({ ...mission, ...change(mission) }, null, 2)}\n`, "utf8");
 };
+/** Adds to a mission's chat as its record holds it: what the Strike Lead says. */
+const addToChat = (harbor, id, entry) =>
+  setMission(harbor, id, (mission) => ({ chat: [...(mission.chat ?? []), { at: new Date().toISOString(), who: "Strike Lead", ...entry }] }));
 /** A round the Strike Lead is waiting on. */
 const seedRound = (harbor, id) => addToChat(harbor, id, { text: "The survey is back, and the tide decides the plan.", questions: [
   { id: "tide", question: "Dredge at slack tide or at night?", options: [ANSWER, "At night"], context: "Slack tide is safer for the barge. Night keeps the channel open by day." },
@@ -135,10 +159,18 @@ const seedRound = (harbor, id) => addToChat(harbor, id, { text: "The survey is b
 
 
 const harbor = await startHarbor({ ended: ENDED });
+/**
+ * A page walked in headless Chrome: its script's answer. Run without blocking this loop, so the
+ * server's kept-alive sockets are seen to close while it walks, and the next request opens a fresh one.
+ */
+const cdp = async (path, script, w, h) =>
+  (await promisify(execFile)(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}${path}`, "--eval", script, "--w", String(w), "--h", String(h), "--wait", "500"], { encoding: "utf8" })).stdout.trim();
 let failed = "";
 let missionId = "";
+let crewId = "";
+const missionPage = () => `/mission.html?project=harbor&mission=${missionId}`;
 try {
-  const said = execFileSync(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}${BOARD}`, "--eval", write, "--w", "1280", "--h", "900", "--wait", "500"], { encoding: "utf8" }).trim();
+  const said = await cdp(BOARD, write, 1280, 900);
   console.log(`write through the page: ${said}`);
   // What the board promises is the line in the file, committed: read the tracker as HEAD has it.
   const tracker = relative(harbor.repo, harbor.tracker);
@@ -154,14 +186,22 @@ try {
     else missionId = (await started.json()).mission.id;
   }
   if (!failed) {
-    const walked = execFileSync(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}${WORKSPACE}`, "--eval", walk, "--w", "1280", "--h", "800", "--wait", "500"], { encoding: "utf8" }).trim();
+    // Its crew: a formation, as the approval makes one, named in the record.
+    const made = await fetch(`${harbor.url}/api/formations?project=harbor`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: MISSION }) });
+    if (!made.ok) failed = `the crew formation was not made: ${made.status} ${await made.text()}`;
+    else {
+      crewId = (await made.json()).id;
+      setMission(harbor, missionId, () => ({ formation: crewId }));
+    }
+  }
+  if (!failed) {
+    const walked = await cdp(WORKSPACE, walk, 1280, 800);
     console.log(`the command center walked: ${walked}`);
     if (!walked.endsWith("ok")) failed = `the command center walk: ${walked}`;
   }
-
   if (!failed) {
     seedRound(harbor, missionId);
-    const walking = promisify(execFile)(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}/mission.html?project=harbor&mission=${missionId}`, "--eval", ask, "--w", "1280", "--h", "800", "--wait", "500"], { encoding: "utf8" });
+    const walking = cdp(missionPage(), ask, 1280, 800);
     // The answer reaches the server through the page; then the Strike Lead's reply reaches the page through the stream.
     const answered = await until(async () => (await (await fetch(`${harbor.url}/api/missions/${missionId}?project=harbor`)).json()).chat.some((entry) => entry.who === "you" && entry.text.includes(ANSWER)), 20000);
     // A retry that worked: a reply once the failed turn has landed and the page has had time to show it.
@@ -169,11 +209,20 @@ try {
       await new Promise((r) => setTimeout(r, 2500));
       addToChat(harbor, missionId, { text: "Slack tide it is." });
     }
-    const asked = (await walking).stdout.trim();
+    const asked = await walking;
     console.log(`the Strike Lead's question answered: ${asked}`);
     if (!answered) failed = "the server has no answer from the card";
     else if (!asked.includes("ok: ")) failed = `the question walk: ${asked}`;
     else seedRound(harbor, missionId);
+  }
+  if (!failed) {
+    writeReach(missionPage());
+    for (const [w, h] of [[1280, 800], [390, 844]]) for (const path of [BOARD, CALENDAR, `${WORKSPACE}&formation=${crewId}`]) {
+      if (failed) break;
+      const reached = await cdp(path, reach, w, h);
+      console.log(`the mission reached from ${path} at ${w}: ${reached}`);
+      if (reached !== "ok") failed = `reaching the mission from ${path} at ${w}: ${reached}`;
+    }
   }
 
   // A board that cannot save is not graded; the failure above is the result.
@@ -191,7 +240,13 @@ try {
         { id: "heavy", steps: [{ waitFor: ".archive-tab", timeout: 15000 }, { wait: 700 }], expect: ".archive-tab" },
         { id: "archive", steps: [{ waitFor: ".archive-tab", timeout: 15000 }, { click: ".archive-tab" }, { waitFor: ".rack.archive .strip", timeout: 5000 }], expect: ".rack.archive .strip" },
       ] },
-      { id: "mission", path: `/mission.html?project=harbor&mission=${missionId}`, states: [
+      { id: "crew", path: `${WORKSPACE}&formation=${crewId}`, states: [
+        { id: "default", steps: [{ waitFor: ".rack.crew-mission .strip", timeout: 15000 }, { wait: 700 }], expect: ".rack.crew-mission .strip" },
+      ] },
+      { id: "calendar", path: CALENDAR, states: [
+        { id: "default", steps: [{ waitFor: ".boards > .cc-missions", timeout: 15000 }, { wait: 700 }], expect: ".boards > .cc-missions" },
+      ] },
+      { id: "mission", path: missionPage(), states: [
         { id: "asked", steps: [{ waitFor: "#round .lead-opt", timeout: 15000 }], expect: "#round .lead-opt",
           moments: [{ id: "answer-the-strike-lead", ask: "#round h2", context: "#round .lead-context", answer: "#round .lead-round-foot .primary" }] },
       ] },
