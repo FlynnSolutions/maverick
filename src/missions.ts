@@ -333,6 +333,8 @@ const writeMission = async (mission: Mission): Promise<Mission> => {
   if (onDisk && (onDisk.rev ?? 0) !== (mission.rev ?? 0)) {
     throw new StaleMissionError(`${mission.name} changed underneath this write (rev ${mission.rev ?? 0}, disk ${onDisk.rev ?? 0})`);
   }
+  // Nothing moved: a write would only bump `rev`, and a person's button pressed meanwhile would lose to it for nothing.
+  if (onDisk && JSON.stringify({ ...onDisk, rev: 0 }) === JSON.stringify({ ...mission, rev: 0 })) return mission;
   const next = { ...mission, rev: (mission.rev ?? 0) + 1 };
   await mkdir(missionsDir(next.project), { recursive: true });
   await writeFile(missionPath(next.project, next.id), `${JSON.stringify(next, null, 2)}\n`, "utf8");
@@ -352,18 +354,25 @@ const missionOr404 = async (projectId: string, id: string): Promise<Mission> => 
  * in between, the whole thing is done again against the new record rather than merged, because
  * a retry here is cheap and a half-applied change is not.
  */
-const changeMission = async <T>(projectId: string, id: string, change: (mission: Mission) => Promise<T> | T): Promise<T> => {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+const changeMission = <T>(projectId: string, id: string, change: (mission: Mission) => Promise<T> | T): Promise<T> =>
+  retryStale(`${id} would not settle long enough to change; try again`, async () => {
     const mission = await missionOr404(projectId, id);
+    const result = await change(mission);
+    await writeMission(mission);
+    return result;
+  });
+
+/** A person's action, done again from the top while a sweep keeps writing under it; a few tries, then the reason. */
+const STALE_TRIES = 4;
+const retryStale = async <T>(gaveUp: string, attempt: () => Promise<T>): Promise<T> => {
+  for (let n = 1; n <= STALE_TRIES; n += 1) {
     try {
-      const result = await change(mission);
-      await writeMission(mission);
-      return result;
+      return await attempt();
     } catch (err) {
-      if (!(err instanceof StaleMissionError) || attempt === 3) throw err;
+      if (!(err instanceof StaleMissionError) || n === STALE_TRIES) throw err;
     }
   }
-  throw new StaleMissionError(`${id} would not settle long enough to change; try again`);
+  throw new StaleMissionError(gaveUp);
 };
 
 /** Exposed for the store's tests, which need to write a deliberately stale copy. */
@@ -1709,7 +1718,8 @@ const launch = async (project: Project, mission: Mission, m: Milestone, task: Mi
     const repo = missionRepo(mission, task);
     ({ worktree: task.worktree, branch: task.branch } = taskLayout(project, cfg, mission.id, task, repo));
     task.base = await cutWorktree(repo, task, cfg);
-    const out = await claimed(mission,
+    let refused: StaleMissionError | undefined;
+  const out = await claimed(mission,
       () => { task.status = "flying"; task.claudeId = undefined; task.started = new Date().toISOString(); task.attempts = 1; },
       () => spawnBackgroundAgent(task.worktree!, `${mission.name} · ${task.title}`, wingmanBrief(briefContext(project, mission, m, task, repo, cfg)), agentFor(workflowOf(mission), "build", cfg)),
       (on, claudeId) => { const t = taskOn(on, task.id); if (t) t.claudeId = claudeId; },
@@ -1838,13 +1848,17 @@ const forget = (task: MissionTask): void => {
   task.carried = undefined;
 };
 
-/** Put a task back out with the RIO's findings, in the worktree it already has. */
-const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<boolean> => {
+/**
+ * Put a task back out with the RIO's findings, in the worktree it already has. A refusal is passed
+ * on; `task.claudeId` says which kind: set, the Wingman went out and only the record is behind.
+ */
+const handBack = async (project: Project, mission: Mission, m: Milestone, task: MissionTask, findings: string): Promise<void> => {
   const previous = task.claudeId;
   const cfg = await missionConfigFor(project.path);
   const repo = missionRepo(mission, task);
   // The record is about to forget both, and the verdict is read: nothing reads either again.
   for (const id of [previous, task.review?.claudeId]) if (id) await stopAgent(id);
+  let refused: StaleMissionError | undefined;
   const out = await claimed(mission,
     () => {
       task.sessionId = undefined;
@@ -1867,14 +1881,14 @@ const handBack = async (project: Project, mission: Mission, m: Milestone, task: 
     launchFailed(task.id)).catch((err) => {
       // Refused after the Wingman went out: its id is on the fresh record already, so its session
       // record is still owed before the refusal is passed on. Refused before, nothing went out.
-      if (err instanceof StaleMissionError && task.claudeId) return err;
-      throw err;
+      if (!(err instanceof StaleMissionError && task.claudeId)) throw err;
+      refused = err;
+      return true;
     });
-  if (!out) return false;
+  if (!out) return;
   if (previous) await patchSession(config.sessionsDir, `bg-${previous}`, { status: "handed-off", ended: new Date().toISOString(), handoff: findings.split("\n")[0] });
   await recordWingman(mission, task);
-  if (out instanceof StaleMissionError) throw out;
-  return true;
+  if (refused) throw refused;
 };
 
 /** An agent absent from the listing is only believed gone once it has had time to appear in it. */
@@ -2434,10 +2448,10 @@ export const landAgain = async (project: Project, id: string): Promise<{ mission
  * nothing went out and the whole retry is done again on the fresh record; refused after the
  * Wingman went out, its id is on the fresh record already and only the settle is left to do.
  */
-export const retryTask = async (project: Project, id: string, taskId: string): Promise<Mission> => {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    // The checks and the attempt count go through the retried change; the spawn does not, so a
-    // refused write never spawns twice.
+export const retryTask = (project: Project, id: string, taskId: string): Promise<Mission> =>
+  retryStale(`${id} would not settle long enough to send ${taskId} back out; try again`, async () => {
+    // The checks and the attempt count go through the retried change; a refusal after the spawn
+    // is not retried (see below), so a Wingman never goes out twice.
     const mission = await changeMission(project.id, id, (mission) => {
       const task = taskOn(mission, taskId);
       if (!task) throw new Error(`no task "${taskId}" on ${mission.name}`);
@@ -2451,23 +2465,16 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
     const m = mission.milestones.find((x) => x.tasks.some((t) => t.id === taskId))!;
     const task = taskOn(mission, taskId)!;
     const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
-    // The claim's write moves `rev`; a refusal that left it where the change put it was the claim's.
-    const changed = mission.rev;
     try {
       await handBack(project, mission, m, task, findings);
     } catch (err) {
-      if (!(err instanceof StaleMissionError)) throw err;
-      if (mission.rev === changed) {
-        if (attempt === 3) throw err;
-        continue;
-      }
+      // Refused at the claim, nothing went out: the whole retry runs again on the fresh record.
+      if (!(err instanceof StaleMissionError) || !task.claudeId) throw err;
     }
     // Recorded as handed back already; the person who pressed the button is told why here.
     if (task.status === "handed-back") throw new Error(`${task.title} ${task.note}`);
     return recorded(project, await changeMission(project.id, id, settle), [`${taskId} sent back out by Cory`]);
-  }
-  throw new StaleMissionError(`${id} would not settle long enough to send ${taskId} back out; try again`);
-};
+  });
 
 /**
  * Pause, do not end. Nothing new is spawned; what is running finishes and is recorded; the

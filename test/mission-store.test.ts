@@ -67,8 +67,12 @@ test("a write carrying the current revision is accepted, and moves the caller on
   assert.equal((await read("rev")).rev, 2, "a write bumps the revision");
   assert.equal(fresh.rev, 2, "and the caller's object moves with it");
   // Without that, a second write from the same object would be refused as stale.
+  fresh.trouble = "noted again";
   await __writeMissionForTest(fresh);
   assert.equal((await read("rev")).rev, 3);
+  // A write that changes nothing is not made, so it moves nobody's revision.
+  await __writeMissionForTest(fresh);
+  assert.equal((await read("rev")).rev, 3, "an unchanged record is not rewritten");
 });
 
 test("a record written before revisions existed is still writable", async () => {
@@ -77,6 +81,7 @@ test("a record written before revisions existed is still writable", async () => 
   await writeFile(file("legacy"), JSON.stringify(m), "utf8");
   const fresh = (await readMission("p", "legacy"))!;
   assert.equal(fresh.rev, undefined);
+  fresh.trouble = "noted";
   await __writeMissionForTest(fresh);
   assert.equal((await read("legacy")).rev, 1, "it joins the scheme rather than being rejected by it");
 });
