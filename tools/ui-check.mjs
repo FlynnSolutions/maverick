@@ -56,43 +56,58 @@ writeFileSync(write, `(async () => {
 
 const CARDS = 320;
 const DEEP = "Sound berth 287 and log its depth";
+const AIMED = "Sound berth 4 and log its depth";
+const AIMED_AT = "Sound berth 45 and log its depth";
 
 /**
  * The board at a real tracker's weight, from a cold open at 1280x900: each long lane draws one page
  * with the way to the rest, and a card deep in the backlog is found, opened, and dragged onto the
- * roadmap. Answers "ok" or the first thing in the way; the move is read back from the commit.
+ * roadmap. Then, under a find that hides the cards between them, one card is dropped on another and
+ * lands just before it. Answers "ok" or the first thing in the way; both moves are read back from the commits.
  */
 const board = join(out, "board.js");
 writeFileSync(board, `(async () => {
   ${UNTIL}
-  const lanes = await until(() => document.querySelectorAll(".lane .card").length && document.querySelectorAll(".lane"), 15000);
-  if (!lanes) return "error: no cards on the board";
-  const [backlog, roadmap] = lanes;
-  const cards = (lane) => lane.querySelectorAll(".card").length;
+  const lanes = () => document.querySelectorAll(".lane");
+  if (!(await until(() => document.querySelector(".lane .card"), 15000))) return "error: no cards on the board";
+  const [backlog, roadmap] = lanes();
+  const cards = (lane) => [...lane.querySelectorAll(".card")];
+  const find = (words) => { const box = document.querySelector(".board-find"); box.value = words; box.dispatchEvent(new Event("input", { bubbles: true })); };
+  const drop = (card, list, y) => {
+    const drag = new DataTransfer();
+    card.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: drag }));
+    list.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: drag }));
+    list.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: drag, clientY: y }));
+  };
+  const toasted = (words) => until(() => [...document.querySelectorAll(".toast")].find((t) => t.textContent.includes(words)), 10000);
   if (document.documentElement.scrollHeight > 8000) return "error: the board is " + document.documentElement.scrollHeight + "px tall";
-  if (cards(backlog) !== 20) return "error: the backlog drew " + cards(backlog) + " cards for a page of 20";
-  if (!backlog.querySelector(".lane-foot").textContent.includes("20 of ${CARDS + 2}")) return "error: the backlog does not say how much is on show: " + backlog.querySelector(".lane-foot").textContent;
+  if (cards(backlog).length !== 20) return "error: the backlog drew " + cards(backlog).length + " cards for a page of 20";
+  const total = backlog.querySelector(".lane-title .count").textContent;
+  if (backlog.querySelector(".lane-foot [role=status]").textContent !== "20 of " + total) return "error: the backlog does not say how much is on show: " + backlog.querySelector(".lane-foot").textContent;
   backlog.querySelector(".lane-foot .rack-verb").click();
-  if (cards(backlog) !== 40) return "error: show more drew " + cards(backlog) + " cards";
-  const find = document.querySelector(".board-find");
-  find.value = "berth 287";
-  find.dispatchEvent(new Event("input", { bubbles: true }));
-  const hits = [...document.querySelectorAll(".lane .card")];
-  if (hits.length !== 1 || !hits[0].textContent.includes(${JSON.stringify(DEEP)})) return "error: find showed " + hits.length + " cards for one";
+  if (cards(backlog).length !== 40) return "error: show more drew " + cards(backlog).length + " cards";
+  find("berth 287");
+  const hits = await until(() => (document.querySelectorAll(".lane .card").length === 1 ? [...document.querySelectorAll(".lane .card")] : null), 3000);
+  if (!hits || !hits[0].textContent.includes(${JSON.stringify(DEEP)})) return "error: find did not narrow the board to one card";
   hits[0].querySelector(".title").click();
   const heading = await until(() => document.querySelector(".drawer h2"), 5000);
   if (!heading || !heading.textContent.includes(${JSON.stringify(DEEP)})) return "error: the found card did not open";
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   if (!(await until(() => !document.querySelector(".drawer:not(.leaving)"), 3000))) return "error: Escape did not close the drawer";
-  // The find matched nothing on the roadmap, so the lane itself takes the drop.
-  const drag = new DataTransfer();
-  hits[0].dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: drag }));
-  const over = new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: drag });
-  roadmap.dispatchEvent(over);
-  if (!over.defaultPrevented) return "error: the roadmap takes no drop while the find matches nothing in it";
-  roadmap.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: drag }));
-  const toast = await until(() => [...document.querySelectorAll(".toast")].find((t) => t.textContent.includes("Moved")), 10000);
-  return toast ? "ok: " + toast.textContent.trim() : "error: no toast after the drop";
+  // The find matched nothing on the roadmap, and its group's list is still there to take the drop.
+  const target = roadmap.querySelector(".items");
+  if (!target) return "error: the roadmap has no list to drop on while the find matches nothing in it";
+  drop(hits[0], target, target.getBoundingClientRect().bottom);
+  const first = await toasted("Moved");
+  if (!first) return "error: no toast after the drop on the roadmap";
+  // The repaint keeps the find; now drop one found card on another, with unfound cards between them.
+  if (!(await until(() => document.querySelector(".lane") !== backlog, 10000))) return "error: the board did not repaint after the move";
+  find("berth 4");
+  const aimed = await until(() => { const all = cards(lanes()[0]); const a = all.find((c) => c.textContent.includes(${JSON.stringify(AIMED)})); const b = all.find((c) => c.textContent.includes(${JSON.stringify(AIMED_AT)})); return a && b && all.length < 20 ? [a, b] : null; }, 3000);
+  if (!aimed) return "error: the find did not narrow the backlog to the berths with a 4";
+  drop(aimed[0], aimed[1].closest(".items"), aimed[1].getBoundingClientRect().top + 2);
+  const second = await toasted(${JSON.stringify(AIMED.slice(0, 20))});
+  return second ? "ok: " + first.textContent.trim() + " | " + second.textContent.trim() : "error: no toast after the drop under the find";
 })()`, "utf8");
 
 const WORKSPACE = "/?project=harbor&view=workspace";
@@ -193,11 +208,14 @@ try {
   if (!failed) {
     const walked = execFileSync(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}${BOARD}`, "--eval", board, "--w", "1280", "--h", "900", "--wait", "500"], { encoding: "utf8" }).trim();
     console.log(`the board walked: ${walked}`);
-    // The drop landed where the roadmap is: between its heading and the next lane's.
+    // The first drop landed on the roadmap, between its heading and the next lane's; the second just
+    // before the card it was dropped on, so the next item after it in the file is that card.
     const file = harbor.git("show", `HEAD:${tracker}`);
     const at = file.indexOf(`**${DEEP}**`);
+    const after = file.slice(file.indexOf(`**${AIMED}**`)).split("\n").slice(1).find((line) => line.startsWith("- ["));
     if (!walked.includes("ok: ")) failed = `the board walk: ${walked}`;
     else if (!(at > file.indexOf("## 🔥 Priority") && at < file.indexOf("## 🚧 In progress"))) failed = `the dragged card is not on the roadmap in the newest commit: ${harbor.head()}`;
+    else if (!after?.includes(`**${AIMED_AT}**`)) failed = `the card dropped under the find did not land where it was aimed; the next item is: ${after}`;
   }
 
   if (!failed) {
@@ -238,7 +256,7 @@ try {
     const manifest = { base: harbor.url, routes: [
       { id: "board", path: BOARD, states: [
         { id: "default", steps: [{ waitFor: ".lane .card", timeout: 15000 }], expect: ".lane .card" },
-        { id: "found", steps: [{ waitFor: ".lane .card", timeout: 15000 }, { eval: "const f = document.querySelector('.board-find'); f.value = 'berth 2'; f.dispatchEvent(new Event('input', { bubbles: true }))" }, { waitFor: ".lane-foot [role=status]:not(:empty)" }], expect: ".lane-foot [role=status]:not(:empty)" },
+        { id: "found", steps: [{ waitFor: ".lane .card", timeout: 15000 }, { eval: "const f = document.querySelector('.board-find'); f.value = 'berth 2'; f.dispatchEvent(new Event('input', { bubbles: true }))" }, { wait: 500 }], expect: ".lane-foot [role=status]:not(:empty)" },
         { id: "item-drawer", steps: [{ waitFor: ".lane .card", timeout: 15000 }, { click: ".lane .card .title" }, { waitFor: ".drawer", timeout: 12000 }, { wait: 700 }], expect: ".drawer" },
       ] },
       { id: "workspace", path: WORKSPACE, states: [

@@ -108,12 +108,15 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   it. Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
 - **A long lane is paged the way the Archive is.** Each lane draws 20 cards, `show more` under it
   draws 20 more beside `20 of 323`, and `find on the board` over the lanes draws only the matches
-  (title, tags, description, group name). Display only: the tracker is untouched, and the pages and
-  the find survive a write's repaint. A write never hides the card it placed: an add or a move keeps
-  that card drawn past the page and the find until the find changes. A drop outside every group
-  lands where an add does, so a lane the find matched nothing in still takes one. Done
-  is paged like Backlog: it is the same problem. The heaviest real tracker drew 55,000px and 1,015
-  focus stops; paged it is 4,400px and 200 (2026-11-09).
+  (title, tags, description, group name). The pager, the find box and the match rule live in
+  `web/paged-find.js`, and the Archive moves onto it next. Display only: the tracker is untouched,
+  and the pages and the find survive a write's repaint. A write never hides the card it placed: the
+  lane's page is raised to reach it, and a find that would hide it is cleared with a toast saying so,
+  so `20 of N` is always true. A card carries its place in its group's full list, so a drop under a
+  page or a find lands on the card it was aimed at; a group the find hid all of is drawn but stands by,
+  coming up as a drop target only while a card is carried. Done is paged like Backlog: it is the same
+  problem. The heaviest real tracker drew 55,000px and 1,015 focus stops; paged it is 4,400px and 200
+  (2026-11-09).
 - **Missions have a way back on the first screen**: `.cc-missions`, one link per live mission on
   every tab but the archive, with the verbs that start a mission or a brainstorm. A formation sharing a mission's
   name reads `<name> crew`, because its tab is not the mission's page.
