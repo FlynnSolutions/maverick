@@ -7,10 +7,11 @@ Composable workflows, milestone 2 (follows M32, PR #61). When Cory opens a missi
 _done when: on the mission branch, `npm test && npm run lint` and `node tools/ui-check.mjs` pass; `git diff main...HEAD -- test/` changes no existing line except the word `"review"` dropped from the "may not be left out" list in `test/workflows.test.ts`, and `test/mission-flight.test.ts` is untouched; `test/workflow-light.test.ts` flies a Light mission through the real sweep to closed with only Wingmen spawned (no RIO, proof, walkthrough or summary); `test/workflow-landing.test.ts` proves the plan gate and landing each refuse an unverified `pr` or `push` repo, and fails when either guard is removed; ui-audit grades the new-mission dialog, the mission page (full and Light) and the template page A at 390 and 1280 wide in light and dark; and one real Light mission flown from the mission branch's own server closes with its work on its mission branch and nothing pushed._
 _walk: Open a mission on the invented project from the mission branch's server and see four cards (Mission selected with the accent ring, Light with its unverified line, a project template, and a broken project file disabled with its validator message), then press Enter without changing anything and see a Mission open exactly as today; Pick Light for a one-task mission and answer the interview, and see the Strike Lead say there is no review, proof or walk and that the work stays on its mission branch, and see the plan fire with no walk line; Watch it fly: the status strip in the rail lists Interview, Plan gate, Preflight, Build, Merge, Land and Close and lights each in turn, one Wingman runs and no RIO, the mission reaches review and closes with one click, and the commit is on the mission branch with nothing pushed; Read the line under the Light mission's title ("runs light · unverified: stays on its mission branch"), click it, and see the template page draw only the stages Light runs; Open a full Mission's page and see "runs mission", every stage in the strip, and its template page; Set the invented project's maverick.json to land by pr, take a Light plan to the gate, and see preflight refuse it naming the repo and why; Edit a project template after a mission started from it, and see that mission's template page still show the copy it pinned; Read the ui-audit cards for the new-mission dialog, the mission page and the template page, A at 390 and 1280 in light and dark_
 
-- [~] **Templates: Light, a review-optional validator, names, project files and the unverified rule**
+- [x] **Templates: Light, a review-optional validator, names, project files and the unverified rule**
   - touches: src/workflows.ts, src/workflows/mission.json, src/workflows/light.json, test/workflows.test.ts, test/workflow-templates.test.ts
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: ad60767
   Grow `src/workflows.ts` (M32) and keep it pure about templates. It reads no mission state, spawns nothing and imports nothing from `src/missions.ts`. Do not touch `src/missions.ts`, `src/preflight.ts`, `server.ts` or `web/`; later tasks wire this in. Match the neighbours: plain TypeScript run directly by Node, lowercase plain comments, no dependency.
 
@@ -18,10 +19,11 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   In `test/workflows.test.ts`, change exactly one thing: drop `"review"` from the list in "each stage that may not be left out is refused by name". No other line in any existing test changes. Prove it: new `test/workflow-templates.test.ts` covers light loading and being unverified, mission being verified, leaving out each of review, proof and walk making a template unverified, `name` and `description` accepted, a bad id refused, an unknown field still refused, a project override, a broken file and a mismatched id each listed with their messages, a missing folder, and `chooseTemplate`'s three outcomes, using invented projects in temp folders. Then `git diff main -- test/workflows.test.ts` shows the one word, and `npm test && npm run lint` pass, with the results in the commit message.
 
-- [ ] **The templates a project offers, over the API**
+- [~] **The templates a project offers, over the API**
   - touches: server.ts, test/workflows-api.test.ts
   - needs: m1-t1
-  - status: pending
+  - status: flying
+  - attempt: 1
   Add `GET /api/workflows?project=<id>`, which returns `templatesFor(project.path)` as `TemplateChoice[]`, and `GET /api/workflows/<templateId>?project=<id>`, which returns one choice with its `template`, or 404 naming the id. Resolve the project with `requireProject`, as the mission routes do. Look a template up in the list `templatesFor` returns, and never build a path from the URL. Put the routes beside `/api/missions` in `server.ts` and match its style. Do not touch `src/missions.ts` or `web/`. The mission's pinned copy is m1-t3's. A broken template file must not break the list: it is a choice with `error`, and the route answers 200.
 
   Prove it: `test/workflows-api.test.ts` starts the real server on a free port against temp `SESSION_CONSOLE_*` folders, as `test/http-writes.test.ts` does, with an invented project holding one good and one broken template. It asserts the list (mission, light, the good file and the broken one with its message), one template fetched by id, a 404 for an unknown id, and that `../` in an id is refused. `npm test && npm run lint`, with the results in the commit message.
@@ -127,3 +129,5 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
 - 2026-11-09 20:58 m1-t1 Templates: Light, a review-optional validator, names, project files and the unverified rule: pending to flying
 - 2026-11-09 21:04 m1-t1 Templates: Light, a review-optional validator, names, project files and the unverified rule: flying to reviewing
+- 2026-11-09 21:07 m1-t1 Templates: Light, a review-optional validator, names, project files and the unverified rule: reviewing to passed (RIO: pass with notes) with 9 notes carried
+- 2026-11-09 21:07 m1-t2 The templates a project offers, over the API: pending to flying
