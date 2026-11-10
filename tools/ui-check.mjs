@@ -4,6 +4,7 @@
  * one real write made through the page, and the tracker read back from the commit it made. Then the
  * command center walked at the size a real project reaches: 130 ended sessions and a live mission.
  * Then a question from the Strike Lead answered from the first screen, and read back from the server.
+ * Then a plan sent back and since fixed, read as settled above the fire, and one still failing read as live.
  * Then, when a ui-audit is plugged in, its grade on the key states, which must be a complete A.
  *
  *   node tools/ui-check.mjs [--out <dir>]
@@ -133,6 +134,57 @@ const seedRound = (harbor, id) => addToChat(harbor, id, { text: "The survey is b
   { id: "tide", question: "Dredge at slack tide or at night?", options: [ANSWER, "At night"], context: "Slack tide is safer for the barge. Night keeps the channel open by day." },
 ] });
 
+const SURVEY = "Chart the breakwater";
+/** A plan Harbor's Strike Lead could write: it parses clean, and its one person-only step is a long line. */
+const SURVEY_PLAN = (done) => `# Mission: ${SURVEY}
+
+Sound the breakwater and chart it.
+
+## Milestone 1: the breakwater is charted
+${done ? "\n_done when: every stretch of the breakwater has a depth on the chart._" : ""}
+_walk: open the chart and read the depth at the lighthouse._
+
+- [ ] **Sound the breakwater**
+  Sound each stretch and write its depth into the chart file.
+
+## Preflight
+
+- human: walk the breakwater with the harbor master at low water and sign the survey sheet before anything is charted
+`;
+/** Maverick's own send-back, worded as the server words it. */
+const sendBack = (problems) => ({ who: "Maverick", sentBack: true, text: `The plan cannot be flown as written. Fix these in the plan, then say it is ready again:\n${problems.map((p) => `- ${p}`).join("\n")}` });
+
+/** Still failing: the send-back the Strike Lead is on reads as live, its problems in sight; the one before it as checked again; no fire. */
+const sentBackLive = join(out, "sent-back-live.js");
+writeFileSync(sentBackLive, `(async () => {
+  ${UNTIL}
+  const live = await until(() => document.querySelector(".lead-msg.sent-back.live"), 15000);
+  if (!live) return "error: the failing plan's send-back does not read as live";
+  if (!live.querySelector(".lead-text li")?.checkVisibility()) return "error: the live send-back hides its problems";
+  if (document.querySelectorAll(".lead-msg.sent-back.live").length !== 1) return "error: more than one send-back reads as live";
+  if (!document.querySelector(".lead-msg.sent-back.replaced")) return "error: the earlier send-back does not say it was checked again";
+  return document.querySelector(".lead-fire-btn") ? "error: Fire is offered on a plan that cannot fly" : "ok";
+})()`, "utf8");
+
+/** Fixed: every send-back reads as settled, folded, above a Fire that is there; a long check name leaves no gap in the list. */
+const sentBackFixed = join(out, "sent-back-fixed.js");
+writeFileSync(sentBackFixed, `(async () => {
+  ${UNTIL}
+  const fire = await until(() => document.querySelector(".lead-fire-btn"), 15000);
+  if (!fire) return "error: no Fire under the ready message";
+  const backs = [...document.querySelectorAll(".lead-msg.sent-back")];
+  if (backs.length !== 2) return "error: " + backs.length + " send-backs in the thread, not 2";
+  const unsettled = backs.find((li) => !li.classList.contains("fixed"));
+  if (unsettled) return "error: a send-back still reads as " + unsettled.className;
+  if (backs.some((li) => [...li.querySelectorAll(".lead-text li")].some((p) => p.checkVisibility()))) return "error: a fixed send-back still shows its problems";
+  if (!(backs.at(-1).compareDocumentPosition(fire) & Node.DOCUMENT_POSITION_FOLLOWING)) return "error: the fire is not under the send-back";
+  const list = document.querySelector(".mv-preflight ul");
+  const rows = [...list.children].map((li) => ({ name: li.children[1].getBoundingClientRect(), detail: li.children[2].getBoundingClientRect() }));
+  const long = rows.reduce((a, b) => (b.name.height > a.name.height ? b : a));
+  if (long.name.height < 30) return "error: the long check name did not wrap: " + long.name.width + "px wide";
+  const column = rows[0].detail.left - rows[0].name.left;
+  return column > list.getBoundingClientRect().width / 3 ? "error: the names take " + Math.round(column) + "px before every detail" : "ok";
+})()`, "utf8");
 
 const harbor = await startHarbor({ ended: ENDED });
 let failed = "";
@@ -176,6 +228,35 @@ try {
     else seedRound(harbor, missionId);
   }
 
+  let surveyId = "";
+  if (!failed) {
+    const started = await fetch(`${harbor.url}/api/missions?project=harbor`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: SURVEY, brief: "Sound the breakwater and chart it." }) });
+    if (!started.ok) failed = `the survey mission did not start: ${started.status} ${await started.text()}`;
+    else surveyId = (await started.json()).mission.id;
+  }
+  if (!failed) {
+    const view = async () => (await fetch(`${harbor.url}/api/missions/${surveyId}?project=harbor`)).json();
+    // The Strike Lead's first turn writes the record too; the chat is added to once it has.
+    await until(async () => !(await view()).leadBusy, 15000);
+    const { plan } = await view();
+    const writePlan = (done) => { mkdirSync(dirname(join(harbor.repo, plan)), { recursive: true }); writeFileSync(join(harbor.repo, plan), SURVEY_PLAN(done), "utf8"); };
+    const look = (script) => execFileSync(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}/mission.html?project=harbor&mission=${surveyId}`, "--eval", script, "--w", "1280", "--h", "800", "--wait", "500"], { encoding: "utf8" }).trim();
+    writePlan(false);
+    addToChat(harbor, surveyId, sendBack(["milestone 1 has no done criterion", "\"Sound the breakwater\" names no chart file"]));
+    addToChat(harbor, surveyId, { text: "I named the chart file; the plan is ready again." });
+    addToChat(harbor, surveyId, sendBack(["milestone 1 has no done criterion"]));
+    const live = look(sentBackLive);
+    console.log(`a plan still sent back: ${live}`);
+    if (live !== "ok") failed = `the live send-back: ${live}`;
+    else {
+      writePlan(true);
+      addToChat(harbor, surveyId, { text: "Milestone 1 has its done line; the plan is ready.", planReady: true });
+      const fixed = look(sentBackFixed);
+      console.log(`a plan sent back and since fixed: ${fixed}`);
+      if (fixed !== "ok") failed = `the fixed send-back: ${fixed}`;
+    }
+  }
+
   // A board that cannot save is not graded; the failure above is the result.
   const audit = process.env.MAVERICK_UI_AUDIT;
   if (!failed && !audit) console.log("ui-audit: no MAVERICK_UI_AUDIT set, grade skipped");
@@ -194,6 +275,9 @@ try {
       { id: "mission", path: `/mission.html?project=harbor&mission=${missionId}`, states: [
         { id: "asked", steps: [{ waitFor: "#round .lead-opt", timeout: 15000 }], expect: "#round .lead-opt",
           moments: [{ id: "answer-the-strike-lead", ask: "#round h2", context: "#round .lead-context", answer: "#round .lead-round-foot .primary" }] },
+      ] },
+      { id: "mission-ready", path: `/mission.html?project=harbor&mission=${surveyId}`, states: [
+        { id: "sent-back-fixed", steps: [{ waitFor: ".lead-fire-btn", timeout: 15000 }], expect: ".lead-msg.sent-back.fixed" },
       ] },
       { id: "picker", path: "/?pick=1", states: [
         { id: "default", steps: [{ waitFor: "#picker:not([hidden]) .project-list li", timeout: 15000 }], expect: "#picker:not([hidden]) .project-list li" },

@@ -23,6 +23,8 @@ the Strike Lead, and the plan document stays the source.
 | Strike Lead | Open its session | "open its session in a terminal" | A live terminal opens under the thread | None | Claude Code, Codex |
 | Mission | Go to what is waiting | The "waiting for you" lamp in the rail | Lands on it with its control focused: the gate's approve before approval, an open round's first option, the questions after; a second press lands again | Scroll into view, nothing else moves | Linear inbox, GitHub notifications |
 | Plan with problems | Have them fixed | Nothing to press: the problems go to the Strike Lead; the person can write to it if it stalls | The problems list in the gate, with what each one needs | None | (Maverick's own) |
+| Plan sent back | Read where it stands | Nothing to press: Maverick's send-back in the thread says "not fixed yet" while the plan still fails, "checked again below" once a later one replaced it, "not fixed before it ended" on an ended mission, and "fixed" once the plan passes; a settled one folds to one line, and the line opens its list | The tag beside "Maverick", and the problems out of sight above the fire once they are fixed | None; the bubble redraws in place when the plan changes | GitHub "outdated" review comment, Linear resolved thread |
+| Plan preflight | Read the host checks | The list under the gate's approve: status, name, detail | Every detail starts at one x; a name past the column's cap wraps in its cell rather than pushing every detail out | None | GitHub checks list |
 
 Undo: approving is not undoable (it writes the tracker and spawns agents), so it is guarded by
 the second press instead; a message to the Strike Lead is answered rather than retracted.

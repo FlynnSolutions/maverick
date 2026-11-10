@@ -225,9 +225,10 @@ export const leadThread = (ctx) => {
     askBox.setAttribute("aria-label", open ? "The Strike Lead is asking" : "Your answer");
   };
 
+  /** History folded to one line, the line its way back open. */
+  const folded = (line, body) => el("details", { class: "lead-asked" }, el("summary", {}, el("span", { class: "chev" }), line), body);
   /** A round already answered: its questions folded, so the thread reads as the conversation it was. */
-  const asked = (entry) => el("details", { class: "lead-asked" },
-    el("summary", {}, `${plural(entry.questions.length, "question")} asked`),
+  const asked = (entry) => folded(`${plural(entry.questions.length, "question")} asked`,
     el("ol", {}, ...entry.questions.map((q) => el("li", {}, q.question))));
 
   /** A message past a few paragraphs (a pasted brief, a long plan note) folds to its opening, with the way to the rest under it. */
@@ -235,6 +236,19 @@ export const leadThread = (ctx) => {
   const textOf = (entry) => {
     const body = el("div", { class: "lead-text" }, renderMarkdown(entry.text, { project: projectId }));
     return entry.text.length <= LONG ? body : foldable(ctx, body, { more: "the whole message", height: "9.5em" });
+  };
+  /** A plan Maverick sent back, by where it stands: still being fixed, fixed, replaced by a later one, or left when the mission ended. */
+  const SENT_BACK_TAG = { live: "not fixed yet", fixed: "fixed", replaced: "checked again below", ended: "not fixed before it ended" };
+  /**
+   * A send-back says where it stands beside its name. Settled, it folds to one line, so its list
+   * of problems never sits above the fire as if it still held.
+   */
+  const sentBack = (entry, state) => {
+    const problems = entry.text.split("\n").filter((line) => line.startsWith("- ")).length;
+    const line = `what it was sent back for, ${plural(problems, "problem")}${state === "fixed" ? "; the plan passes its checks now" : ""}`;
+    return el("li", { class: `lead-msg sys sent-back ${state}` },
+      el("p", { class: "lead-who" }, entry.who, el("span", { class: "lead-tag" }, SENT_BACK_TAG[state]), el("span", { class: "lead-at" }, fmtTime(entry.at))),
+      state === "live" ? textOf(entry) : folded(line, textOf(entry)));
   };
   const bubble = (entry, open) => el("li", { class: `lead-msg ${entry.who === "you" ? "you" : entry.who === "Maverick" ? "sys" : "sl"}${entry.error ? " error" : ""}` },
     el("p", { class: "lead-who" }, entry.who === "you" ? "you" : entry.who, el("span", { class: "lead-at" }, fmtTime(entry.at))),
@@ -244,6 +258,18 @@ export const leadThread = (ctx) => {
   /** Whether this entry's round is still open, as the server says it (`openRound`): it is the one the mission's questions name. */
   const isOpen = (chat, i) => Boolean(view?.questions?.some((q) => q.id === `round:${chat[i].at}`));
   const over = () => isEnded(view?.status);
+  /** The plan as written now, as the gate reads it: there, and nothing in it stops a Wingman. */
+  const flyable = () => Boolean(view.planDoc?.found && !view.planDoc.parsed?.problems?.length);
+  /**
+   * Where each send-back stands, by its index: settled once the plan passes (or flew), once a later
+   * one replaced it, or once the mission ended. The server checks the plan again before anything
+   * flies, so this is only how the history reads.
+   */
+  const sentBackStates = (chat) => {
+    const fixed = view.approved || flyable();
+    const latest = chat.findLastIndex((e) => e.sentBack);
+    return (i) => !chat[i].sentBack ? "" : fixed ? "fixed" : i < latest ? "replaced" : over() ? "ended" : "live";
+  };
 
   /** Maverick's own line about the flight: a task out, passed or back, a milestone merged. One quiet line each. */
   const note = (u) => el("li", { class: `lead-note ${u.kind}` }, el("span", { class: "lead-at" }, fmtTime(u.at)), el("span", {}, u.text));
@@ -255,18 +281,19 @@ export const leadThread = (ctx) => {
    */
   const placed = new Map();
   const paintLog = (chat, updates) => {
+    const stateOf = sentBackStates(chat);
     const items = [
-      ...chat.map((entry, i) => ({ key: `c${i}`, at: Date.parse(entry.at), entry, open: isOpen(chat, i) })),
+      ...chat.map((entry, i) => ({ key: `c${i}`, at: Date.parse(entry.at), entry, open: isOpen(chat, i), state: stateOf(i) })),
       // Keyed by what it says and when, since the server folds a run of the same line into its latest.
       ...updates.map((update) => ({ key: `u${update.at}${update.text}`, at: Date.parse(update.at), update })),
     ].sort((a, b) => a.at - b.at);
     let prev = null;
     for (const item of items) {
       let held = placed.get(item.key);
-      if (!held || (item.entry && held.open !== item.open)) {
-        const node = item.entry ? bubble(item.entry, item.open) : note(item.update);
+      if (!held || (item.entry && (held.open !== item.open || held.state !== item.state))) {
+        const node = item.state ? sentBack(item.entry, item.state) : item.entry ? bubble(item.entry, item.open) : note(item.update);
         held?.node.replaceWith(node);
-        held = { node, open: item.open };
+        held = { node, open: item.open, state: item.state };
         placed.set(item.key, held);
       }
       const want = prev ? prev.nextSibling : log.firstChild;
@@ -287,7 +314,7 @@ export const leadThread = (ctx) => {
   const paintFire = () => {
     const doc = view.planDoc ?? {};
     const last = view.chat?.findLast((e) => e.who === "Strike Lead");
-    const ready = !view.approved && last?.planReady && doc.found && !doc.parsed?.problems?.length;
+    const ready = !view.approved && last?.planReady && flyable();
     const refusing = doc.preflight?.filter((c) => c.refuses) ?? [];
     const failing = doc.preflight?.filter((c) => c.status === "fail" && !c.refuses) ?? [];
     const key = JSON.stringify([ready, refusing.map((c) => c.name), failing.map((c) => c.name), doc.cost, doc.estimate?.minutes]);
