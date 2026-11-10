@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { landFor, missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
@@ -308,8 +308,30 @@ export const listMissions = async (projectId: string): Promise<Mission[]> => {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
-  const all = await Promise.all(names.filter((n) => n.endsWith(".json")).map(async (n) => JSON.parse(await readFile(join(missionsDir(projectId), n), "utf8")) as Mission));
-  return all.sort((a, b) => b.created.localeCompare(a.created));
+  const all = await Promise.all(names.filter((n) => n.endsWith(".json")).map((n) => listed(projectId, n.slice(0, -".json".length))));
+  return all.filter((m): m is Mission => m !== null).sort((a, b) => b.created.localeCompare(a.created));
+};
+
+/**
+ * One record of a listing. Every project's listing feeds the gate's estimate, so a record that
+ * will not read or parse used to fail every mission view in every project; it is left out and
+ * named in the log instead, once until it changes. Its own page still fails loud, through
+ * `readMission`. A record removed since the folder was read is simply gone.
+ */
+const unreadable = new Map<string, string>();
+const listed = (projectId: string, id: string): Promise<Mission | null> => {
+  const path = missionPath(projectId, id);
+  return readMission(projectId, id).then(
+    (mission) => {
+      unreadable.delete(path);
+      return mission;
+    },
+    (err: Error) => {
+      if (unreadable.get(path) !== err.message) console.error(`mission record ${path} left out of every listing until it reads:`, err.message);
+      unreadable.set(path, err.message);
+      return null;
+    },
+  );
 };
 
 /**
@@ -335,7 +357,18 @@ const writeMission = async (mission: Mission): Promise<Mission> => {
   }
   const next = { ...mission, rev: (mission.rev ?? 0) + 1 };
   await mkdir(missionsDir(next.project), { recursive: true });
-  await writeFile(missionPath(next.project, next.id), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  // Written beside the record and renamed over it, so a reader sees the old record or the new one
+  // and never a mix. Written in place, two overlapping writes left the tail of the longer one
+  // after the shorter. The name ends in `.tmp`, which a listing never reads.
+  const path = missionPath(next.project, next.id);
+  const temp = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temp, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    await rename(temp, path);
+  } catch (err) {
+    await rm(temp, { force: true });
+    throw err;
+  }
   // The caller keeps working with the object it already holds, so it has to move with it.
   mission.rev = next.rev;
   return mission;
@@ -905,10 +938,13 @@ export const DEFAULT_LINK_MINUTES = 15;
 const PACE_TTL_MS = 5 * 60_000;
 const paceRead = new Map<string, { at: number; pace: Promise<Pace | null> }>();
 export const measuredPace = (maxAgeMs = PACE_TTL_MS): Promise<Pace | null> => {
-  const hit = paceRead.get(config.sessionsDir);
+  const key = config.sessionsDir;
+  const hit = paceRead.get(key);
   if (hit && Date.now() - hit.at < maxAgeMs) return hit.pace;
   const pace = readPace();
-  paceRead.set(config.sessionsDir, { at: Date.now(), pace });
+  paceRead.set(key, { at: Date.now(), pace });
+  // Only a reading is kept: a failure kept for the TTL outlived its repair by five minutes.
+  pace.catch(() => { if (paceRead.get(key)?.pace === pace) paceRead.delete(key); });
   return pace;
 };
 const readPace = async (): Promise<Pace | null> => {
