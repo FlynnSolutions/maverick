@@ -137,7 +137,9 @@ html { scroll-padding-top: 70px; }
    detail out and leaving a gap after each short one. */
 .mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; display: grid; grid-template-columns: 42px fit-content(22ch) minmax(0, 1fr); gap: 3px 8px; }
 .mv-preflight li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
-.mv-preflight li strong { overflow-wrap: anywhere; }
+/* A name wraps at its spaces and nowhere else: each word may be an identifier a person checks by its
+   exact spelling (MAVERICK_STAGING_DEPLOY_TOKEN, workflow-templates-staging), and the longest sets the column. */
+.mv-preflight li strong span { white-space: nowrap; }
 .mv-preflight .pf-detail { max-width: 48ch; overflow-wrap: anywhere; }
 .mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }

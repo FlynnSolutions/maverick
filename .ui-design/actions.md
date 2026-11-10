@@ -97,7 +97,7 @@ brainstorms. A session or a mission is one strip in one group. What an action di
 | Mission | Answer with a note | The note field above the answers; an answer that needs one refuses empty and says so | Hint under the answers | none | Buildkite block step |
 | Mission | Open it | `open` in its row, a click anywhere on the strip, or Enter on it | The mission page | none | Linear |
 | Mission | Open it from its crew tab | The tab named `<name> crew` opens on the mission's own strip, in a Mission rack above Oversight; `open`, a click on it, or Enter | The mission page | none | GitHub Actions run's "view workflow" |
-| Mission | Open it from any tab | Its link in the Missions row at the top of every tab but the Archive | The mission page | none | Linear sidebar |
+| Mission | Open it from any tab | Its strip on the Rack and on its crew tab; its link in the Missions row of any other crew tab | The mission page | none | Linear sidebar |
 | Mission | Open where an answer acts | An answer with a place (walk, close, answer the interview) opens the mission page there | The mission page at that place | none | GitHub "review changes" |
 | Mission | Start one | `open a mission` under the racks: a name, then the line, in two asks | The mission page, on its interview | none | Devin new session |
 | Session | Open it | A click on its strip, or Enter: full screen in the rack, in place inside a formation | The conversation and composer | none | Warp, iTerm tabs |
@@ -107,6 +107,7 @@ brainstorms. A session or a mission is one strip in one group. What an action di
 | Session | Write to it | The composer in its open pane; Enter sends | Toast "sent"; an error toast names what failed | The turn lands in the conversation | Claude desktop |
 | Session | Start one, or a shell | `New session` in the bar; the terminal icon beside the tabs | The new strip rises in | Rises in | Warp |
 | Session | See where its review stands | The State column: once the session has ended with its review still owed, the review is the state (`in review`, `review blocked`, `review gave no verdict`); while it runs, the review is the note beside its own word. A verdict chip appears only once the verdict is written | The word changes on the next paint | none | GitHub checks on a merged PR |
+| Session | Reach a blocked review | The Wingman's row in Needs you reads `review blocked`, `its RIO is at a prompt`, with what the RIO asked under it; `open`, a click or Enter opens the RIO. No `remove` while the review is owed | The RIO's conversation, full screen | none | GitHub "re-run failed jobs" |
 | Formation | Group sessions | Drag a strip onto a tab; every drag also has its right-click menu path | Toast naming where it went | none | Linear move to |
 | Formation | Make, rename, disband, pop out | `+` beside the tabs; the tab's own right-click menu | Toast; disband asks first | none | Chrome tab groups |
 | Brainstorm | Start one, open one | `brainstorm` on its heading; `open` in its row | The breakdown page | none | n/a |
@@ -165,7 +166,7 @@ to the tracker file, the same write whichever control made it.
 | Item | Plan it, spawn on it | `plan it` (the primary on an unplanned item), `spawn` (the primary on a planned one, or on the card) | The session opens in the workspace | none | Linear "start working" |
 | Lane | Fold or unfold | The chevron beside its name; remembered | The chevron turns | The chevron turns | GitHub projects |
 | Group | Delete when empty | The close icon beside an empty group's name, then confirm | Toast | none | Trello archive list |
-| Mission | See one is live, and open it | Its link in the Missions row above the releases: lamp, name and word; nothing is drawn when no mission is live | The mission page | none | Linear sidebar, GitHub Actions "in progress" |
+| Mission | See one is live, and open it | Its link in the Missions row above the releases: lamp, name and word, one line that scrolls under a faded edge; nothing is drawn when no mission is live | The mission page | none | Linear sidebar, GitHub Actions "in progress" |
 | Mission | The missions cannot be read | A red line naming why, with `try again`; the board still draws | The board reloads | none | n/a |
 | Board | Loading, failing, empty | A lane with nothing in it says what goes there; a board that cannot be read says why in the bar | n/a | none | Linear empty states |
 

@@ -24,6 +24,16 @@ export const reviewOwed = (record) => {
   return finished(v.agentState) ? "review gave no verdict" : "in review";
 };
 
+/** An owed review that cannot go on without the person: its reviewer is stopped at a prompt, or ended with no verdict. */
+export const reviewWantsYou = (record) => Boolean(reviewOwed(record)) && reviewOwed(record) !== "in review";
+
+/**
+ * What belongs with what has ended: a session that has ended and owes nothing. One whose review is
+ * still owed is not done, so it is filed by its review: a review that wants the person is in Needs
+ * you, one still running is work. A Wingman read `review blocked` from the Archive, styled finished.
+ */
+export const settled = (s, record) => finished(s.status) && !reviewOwed(record);
+
 /**
  * A strip's state and note. A session whose review is still owed is not done, whatever its own
  * agent says: a Wingman read `done` beside `auditing (blocked)` while its RIO sat on an expired
@@ -32,6 +42,7 @@ export const reviewOwed = (record) => {
  */
 export const stripState = (s, record) => {
   const owed = reviewOwed(record);
-  if (owed && finished(s.status)) return { state: owed, note: s.waitingFor };
+  // A reviewer at a prompt is the RIO the strip's open reaches, so the note says whose prompt it is.
+  if (owed && finished(s.status)) return { state: owed, note: owed === "review blocked" ? "its RIO is at a prompt" : s.waitingFor };
   return { state: stateWord(s), note: [s.waitingFor, owed].filter(Boolean).join(" · ") || undefined };
 };

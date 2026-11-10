@@ -106,13 +106,19 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   lists the person's own sessions; what the missions spawned is one toggle away, and find searches
   both. Rows are drawn only while it shows. A formation with nothing live leaves the tab row for
   it. Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
+  An ended session whose review is still owed has not ended: a review stopped at a prompt or gone
+  without a verdict sits in Needs you, one still running in Working, never in the archive, never
+  greyed, and with no `remove` (it would drop the review). A blocked review's `open` reaches its RIO,
+  the thing at the prompt, and the RIO is not drawn again as a row of its own (2026-11-10).
 - **Missions have a way back on the first screen**: `.cc-missions` (`web/mission-links.js`), one link
-  per live mission on every tab but the archive, with the verbs that start a mission or a brainstorm,
+  per live mission the tab does not already draw as a strip (the Rack draws every one, a crew tab its
+  own), on every tab but the archive, with the verbs that start a mission or a brainstorm,
   and the same row, without the verbs, above the Board and the Calendar, because the app reopens on
   the last view (Cory, 2026-11-04: nothing there said a mission was flying). A formation sharing a mission's
   name reads `<name> crew`, because its tab is not the mission's page, and it opens on that mission's
   own strip, in a Mission rack above Oversight: the tab is named after it, so it is what a person came for.
-  On a phone a waiting mission's link hides only over the Rack, where Needs you already shows it.
+  The row is one line however many missions fly, so it never pushes the calendar's week down: what
+  does not fit scrolls, and the far edge fades to say there is more (2026-11-10).
 - **An agent holding a live mission shows inside it.** A mission whose agent is stopped at a prompt
   reads `waiting for you` and sits in Needs you (Cory, 2026-11-04), one row: the reason, what the
   agent last said, and `open that session`.
@@ -469,3 +475,6 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
   old list of problems over the Fire button as Maverick offering to fire a plan that could not fly.
 - **A table's label column has a cap.** The preflight's name column is `fit-content(22ch)`: one long
   name wraps in its cell instead of pushing every detail out and leaving a gap after each short one.
+  It wraps at its spaces only: each word may be an identifier read by its exact spelling, so a word
+  is never split (`MAVERICK_STAGING_DEPL` / `OY_TOKEN`, 2026-11-10), and the longest word is the
+  column's floor.

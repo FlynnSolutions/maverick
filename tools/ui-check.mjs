@@ -123,6 +123,9 @@ const writeReach = (want) => writeFileSync(reach, `(async () => {
   if (!at) return "error: no mission on " + location.search;
   if (!at.textContent.includes(${JSON.stringify(MISSION)})) return "error: the mission shown is not the live one: " + at.textContent;
   if (at.getBoundingClientRect().bottom > innerHeight) return "error: the mission is below the first screen on " + location.search;
+  // The row is one line however many fly, so it never pushes the page under it down.
+  const row = at.closest(".cc-missions");
+  if (row && row.getBoundingClientRect().height > at.getBoundingClientRect().height + 4) return "error: the Missions row takes more than one line on " + location.search;
   let went = null;
   navigation.addEventListener("navigate", (e) => { went = e.destination.url; e.preventDefault(); });
   (crew ? at.querySelector(".primary-act") : at).click();

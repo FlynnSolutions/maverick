@@ -12,7 +12,7 @@ import { icon } from "./icons.js";
 import { questionLines } from "./inbox.js";
 import { WANTS_YOU, lampOf, missionHref, missionLinks } from "./mission-links.js";
 import { failed, leave, toast } from "./toast.js";
-import { finished, reviewOwed, stripState } from "./session-word.js";
+import { finished, reviewOwed, reviewWantsYou, settled, stripState } from "./session-word.js";
 
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5, down: 5 };
@@ -172,7 +172,10 @@ export const mountCommandCenter = (root, ctx) => {
   const asksYou = (s) => /\?\s*$/.test(plain(s.lastReply));
 
   const endButton = (s, cls = "danger", long = false) =>
-    s.isShell
+    // An ended session whose review is still owed has nothing to end, and removing its record would drop the review.
+    finished(s.status) && reviewOwed(s.record)
+      ? el("span", {})
+    : s.isShell
       ? el("button", { type: "button", class: cls, title: `close the shell "${s.title}"`, onclick: async (e) => {
           e.stopPropagation();
           if (!(await askEnd(false, `the shell "${s.title}"`))) return;
@@ -289,6 +292,10 @@ export const mountCommandCenter = (root, ctx) => {
       el("span", { class: "strip-where", title: where }, where),
       el("div", { class: "strip-acts" }, ...acts));
 
+  /** The RIO an ended session's review is stopped in, when it is listed: what that session's open reaches. */
+  const reviewerAt = (s, record) =>
+    finished(s.status) && reviewOwed(record) === "review blocked" ? model.sessions.find((x) => x.claudeId === record.audit?.claudeId) ?? null : null;
+
   /** One session as a flight progress strip. `wide` carries the last exchange under the line. */
   const strip = (s, record, wide = false, band = "") => {
     // The name is the strip's control: Enter and a screen reader reach it as a button, and a
@@ -299,13 +306,16 @@ export const mountCommandCenter = (root, ctx) => {
     const shown = mission && belongsTo(mission, s.title) ? `Wingman · ${s.title.slice(mission.name.length).replace(/^(: | · )/, "")}` : s.title;
     const name = stripName(shown, () => openIt());
     const said = stripState(s, record);
+    // A review stopped at a prompt is the RIO's to answer, so the strip opens the RIO and wears its lamp.
+    const reviewer = reviewerAt(s, record);
+    const status = reviewer ? reviewer.status : s.status;
     // Inside a formation a strip opens where it sits, so several run at once. In the rack it
     // still goes full screen: sixteen strips have no room to hold a conversation open.
-    const expandable = s.isShell || (Boolean(inFormation) && Boolean(s.sessionId));
+    const expandable = !reviewer && (s.isShell || (Boolean(inFormation) && Boolean(s.sessionId)));
     const isOpen = expandable && opened.has(s.key);
-    const openIt = () => (expandable ? toggleOpen(s.key) : openFull(s));
+    const openIt = () => (reviewer ? openFull(reviewer) : expandable ? toggleOpen(s.key) : openFull(s));
     const node = el("article", {
-      class: `strip ${s.status}${s.isShell ? " is-shell" : ""}${finished(s.status) ? " finished" : ""}${wide ? " full" : ""}${isOpen ? " open" : ""}`,
+      class: `strip ${status}${s.isShell ? " is-shell" : ""}${settled(s, record) ? " finished" : ""}${wide ? " full" : ""}${isOpen ? " open" : ""}`,
       "data-key": s.key,
       title: s.title,
       // A session with no id has nothing a formation could hold on to, so it stays put.
@@ -323,7 +333,7 @@ export const mountCommandCenter = (root, ctx) => {
       onclick: (e) => { if (!e.target.closest("button, input, .cc-pane")) openIt(); },
     },
     stripLine({
-      status: s.status,
+      status,
       band,
       name,
       lead: expandable
@@ -336,10 +346,11 @@ export const mountCommandCenter = (root, ctx) => {
       when: age(s.at),
       up: s.elapsed ? `up ${s.elapsed}` : null,
       where: mission?.name ?? whereText(s, true, false),
-      acts: [s.sessionId ? renameButton(s, name) : disabledRename(), terminalButton(s), endButton(s, "ghost act end")],
+      acts: [s.sessionId ? renameButton(s, name) : disabledRename(), terminalButton(reviewer ?? s), endButton(s, "ghost act end")],
     }),
-    // An open strip shows the conversation itself; the one-line excerpt would only repeat it.
-    isOpen ? null : wide ? say(s) : null);
+    // An open strip shows the conversation itself; the one-line excerpt would only repeat it. A
+    // blocked review's line is what its RIO asked.
+    isOpen ? null : wide ? say(reviewer ?? s) : null);
     if (isOpen) node.append(paneFor(s).node);
     return node;
   };
@@ -569,7 +580,7 @@ export const mountCommandCenter = (root, ctx) => {
       (d) => d.from !== id, (d) => moveTo(d, id));
     return el("div", { class: "forms" },
       // With the list unreadable there is no count to give, so none is shown rather than a zero.
-      tab(null, "Rack", sessionsFailed ? null : mySessions().filter((s) => !finished(s.status)).length + missions.filter((m) => !isEnded(m.status)).length),
+      tab(null, "Rack", sessionsFailed ? null : mySessions().filter((s) => !settled(s, s.record)).length + missions.filter((m) => !isEnded(m.status)).length),
       ...formations.filter((f) => liveSlots(f)).map((f) => tab(f.id, missions.some((m) => m.formation === f.id && !isEnded(m.status)) ? `${f.name} crew` : f.name, liveSlots(f), f)),
       sessionsFailed ? null : el("button", { type: "button", class: `archive-tab${archiveOpen || (activeFormation && formations.some((f) => f.id === activeFormation && !liveSlots(f))) ? " on" : ""}`, ...(archiveOpen ? { "aria-current": "true" } : {}), title: "everything that has ended in this project", onclick: () => { setArchive(true); activeFormation = null; paint(); } }, "Archive", el("b", {}, String(archived.done.length + archived.over.length + archived.closed.length))),
       el("button", { type: "button", class: "new shell", title: "open a shell in this project", onclick: async () => {
@@ -617,7 +628,7 @@ export const mountCommandCenter = (root, ctx) => {
   };
   /** A formation's sessions still running: one with none is finished, and lives in the archive. */
   const liveSlots = (f) => {
-    const live = new Set(mySessions().filter((s) => s.sessionId && !finished(s.status)).map((s) => s.sessionId));
+    const live = new Set(mySessions().filter((s) => s.sessionId && !settled(s, s.record)).map((s) => s.sessionId));
     return [f.lead, ...f.members].filter((id) => live.has(id)).length + (f.pending?.length ?? 0);
   };
   /** Leave the archive for a formation's tab, or for the rack with none. */
@@ -725,7 +736,8 @@ export const mountCommandCenter = (root, ctx) => {
           ? el("div", { class: `rack-strips${flight.filter((x) => opened.has(x.key)).length > 1 ? " grid" : ""}` }, ...flight.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "working")), ...starting("member").map(startingSlot))
           : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet. Drop a strip here, or start one.")),
         (d) => d.from === f.id && d.sessionId === f.lead, (d) => demote(f, d.sessionId)),
-      gone ? el("p", { class: "muted small cc-empty" }, `${gone} session${gone === 1 ? " is" : "s are"} no longer running; the formation keeps the slot.`) : null,
+      // A slot whose session has left the listing is not a row above, so the count says "more" and where it went.
+      gone ? el("p", { class: "muted small cc-empty" }, `${gone} more session${gone === 1 ? "" : "s"} flew in this formation and ${gone === 1 ? "is" : "are"} gone from the session list; the formation keeps ${gone === 1 ? "its slot" : "their slots"}.`) : null,
       // No instructions here. Dragging a strip is learned the first time and the line was then
       // permanent furniture at the bottom of every formation; the tab titles still say it.
       el("div", { class: "forms-foot" },
@@ -762,7 +774,7 @@ export const mountCommandCenter = (root, ctx) => {
   };
   /** What has ended, in this project. Formations with nothing live are here too, off the tab row. */
   const archiveParts = (proj, sessions) => ({
-    done: sessions.filter((s) => finished(s.status)),
+    done: sessions.filter((s) => settled(s, s.record)),
     over: missions.filter((m) => isEnded(m.status)),
     closed: [...model.parents.keys()].map((id) => model.records.find((r) => r.id === id)).filter((r) => r && recordInProject(proj, r) && !formationAlive(r)),
   });
@@ -814,14 +826,19 @@ export const mountCommandCenter = (root, ctx) => {
       el("section", { class: "rack archive", "aria-label": "Archive" }, head, none, list, more),
       dead.length ? el("nav", { class: "archive-formations", "aria-label": "Finished formations" }, el("span", {}, "Finished formations"), ...dead.map((f) => el("button", { type: "button", class: "rack-verb", onclick: () => showFormation(f.id) }, f.name))) : null);
   };
-  /** The way back to every live mission and the way to start one, on the first screen of every tab. */
-  const missionNav = () =>
-    missionLinks(el, ctx.projectId, missions,
+  /**
+   * The way back to every live mission and the way to start one, on the first screen of every tab.
+   * A mission already drawn as a strip on the tab is not linked again: the Rack draws every live
+   * one, and a crew tab its own (one thing, one place).
+   */
+  const missionNav = (active) =>
+    missionLinks(el, ctx.projectId, active ? missions.filter((m) => m !== crewMissionOf(active)) : [],
       el("button", { type: "button", class: "rack-verb", title: "for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve", onclick: newMission }, "open a mission"),
       el("button", { type: "button", class: "rack-verb", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm"));
   /** A live mission's crew tab opens on the mission it flies for: its tab is named after it, so that is what a person came looking for. */
+  const crewMissionOf = (f) => missions.find((x) => x.formation === f.id && !isEnded(x.status));
   const crewMission = (f) => {
-    const m = missions.find((x) => x.formation === f.id && !isEnded(x.status));
+    const m = crewMissionOf(f);
     return m ? el("section", { class: "cc-project" }, rack("Mission", [missionRow(m)], "crew-mission")) : null;
   };
   const strips = (sessions, full, band) => sessions.map((s) => strip(s, s.record ?? model.byClaudeId.get(s.claudeId), full, band));
@@ -837,7 +854,7 @@ export const mountCommandCenter = (root, ctx) => {
     interviewing: "the Strike Lead is interviewing you",
     planned: "waiting on your approval",
     flying: "flying",
-    blocked: "needs you",
+    // blocked adds nothing here: its word already says it wants you, and its reason sits under the line.
     paused: "paused",
     review: "ready to walk and close",
   };
@@ -888,7 +905,8 @@ export const mountCommandCenter = (root, ctx) => {
       where: [tasks.length ? `${passed}/${tasks.length} tasks · ${merged}/${m.milestones.length} milestones` : (m.repos ?? []).map((r) => r.label).join(" · "), m.diffstat].filter(Boolean).join(" · "),
       acts: openAct("open this mission", openMission),
     }), why || held.length ? el("div", { class: "strip-say" },
-      sayLine("why", el("span", {}, why, ...held.map((x) => el("button", { type: "button", class: "rack-verb say-verb", onclick: () => openFull(x) }, "open that session")))),
+      // With no reason of its own, the row says which agent holds it, so `open that session` names where it goes.
+      sayLine("why", el("span", {}, why ?? `${held.length === 1 ? held[0].title : `${held.length} sessions`} ${held.length === 1 ? "is" : "are"} stopped at a prompt.`, ...held.map((x) => el("button", { type: "button", class: "rack-verb say-verb", onclick: () => openFull(x) }, "open that session")))),
       ...held.filter((x) => x.lastReply).map((x) => sayLine("claude", text(clip(plain(x.lastReply), 260))))) : null, ...missionAsks(m));
   };
 
@@ -952,6 +970,10 @@ export const mountCommandCenter = (root, ctx) => {
     const blocked = loose.filter(is("waiting", "blocked"));
     const busy = loose.filter(is("busy", "running"));
     const idle = loose.filter((s) => !blocked.includes(s) && !busy.includes(s) && !finished(s.status) && !shells.includes(s));
+    // An ended session still owed a review is filed by the review: one that wants you, or one still at work.
+    const owed = loose.filter((s) => finished(s.status) && reviewOwed(s.record));
+    const reviewHeld = owed.filter((s) => reviewWantsYou(s.record));
+    const reviewing = owed.filter((s) => !reviewHeld.includes(s));
     // Between turns for under an hour is a conversation you are in the middle of; it is your move.
     const recent = idle.filter((s) => s.at && Date.now() - s.at <= HOUR);
     // Of those, the ones Claude ended on a question want an answer; the rest want reading.
@@ -968,9 +990,12 @@ export const mountCommandCenter = (root, ctx) => {
     const wanting = live.filter((m) => (m.questions?.length || m.word === "waiting for you" || m.word === "error" || m.status === "review")).sort((a, b) => oldMission(a) - oldMission(b));
     const flying = live.filter((m) => !wanting.includes(m));
     // An agent holding a mission in this rack is said on that mission's row: one event, one row.
+    // So is a RIO at a prompt on its Wingman's row, and that row on the mission's when the mission holds the RIO.
     const spokenFor = new Set(wanting.flatMap(heldBy));
-    const needs = [...strips(blocked.filter((s) => !spokenFor.has(s)), true, "needs"), ...wanting.map(missionRow), ...brainstorms.filter((b) => b.state === WAITING).map(brainstormRow), ...strips(asking, true, "action")];
-    const working = [...strips(busy, true, "working"), ...formations, ...strips(shells, false, "working"), ...flying.map(missionRow)];
+    const reviewers = new Map(reviewHeld.map((s) => [s, reviewerAt(s, s.record)]));
+    const asked = new Set(reviewers.values());
+    const needs = [...strips(blocked.filter((s) => !spokenFor.has(s) && !asked.has(s)), true, "needs"), ...strips(reviewHeld.filter((s) => !spokenFor.has(reviewers.get(s))), true, "needs"), ...wanting.map(missionRow), ...brainstorms.filter((b) => b.state === WAITING).map(brainstormRow), ...strips(asking, true, "action")];
+    const working = [...strips(busy, true, "working"), ...strips(reviewing, true, "working"), ...formations, ...strips(shells, false, "working"), ...flying.map(missionRow)];
     const review = strips(replied, true, "action");
     // No project heading: the bar already names the project, and every group carries its own
     // count. Four groups, always in this order, then the brainstorms.
@@ -978,7 +1003,7 @@ export const mountCommandCenter = (root, ctx) => {
       "section",
       { class: "cc-project" },
       // With the session list unreadable, "no sessions" would be a claim the page cannot make.
-      !sessionsFailed && !sessions.some((s) => !finished(s.status)) && !formations.length && !live.length
+      !sessionsFailed && !sessions.some((s) => !settled(s, s.record)) && !formations.length && !live.length
         ? emptyStart("No sessions in this project.", el("button", { type: "button", class: "primary", onclick: () => openTerminal({ kind: "new", title: `claude · ${ctx.project?.name ?? ctx.projectId}` }) }, "start a session"))
         : null,
       rack("Needs you", needs, "needs"),
@@ -1022,9 +1047,7 @@ export const mountCommandCenter = (root, ctx) => {
     const trouble = sessionsFailed ? el("div", { class: "cc-trouble", role: "alert" },
       el("p", {}, `The session list could not be read: ${sessionsFailed.message}. Missions and brainstorms below are current; sessions are not shown.`),
       el("button", { type: "button", onclick: () => load() }, "try again")) : null;
-    const nav = archiveOpen ? null : missionNav();
-    // Over the Rack, a mission waiting on you is also the first row of Needs you below it.
-    nav?.classList.toggle("over-needs", !active);
+    const nav = archiveOpen ? null : missionNav(active);
     root.replaceChildren(...[trouble, nav, ...sections].filter(Boolean));
     // Every open pane's head carries live state (lamp, status, timing), so they follow the model.
     for (const p of panes.values()) {
