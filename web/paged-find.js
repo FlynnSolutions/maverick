@@ -18,7 +18,7 @@ const button = (className, text, onclick) => {
 };
 
 /**
- * A find box, in the Archive's dress, with its way out: a clear control on the field while it holds
+ * A find box, in the Archive's dress, with its way out: a clear control beside the field, live while it holds
  * something, and Escape in the field. `onFind(words)` runs once the typing pauses, and at once on a clear.
  * Gives `{ node, input, clear }`; `clear()` empties it and puts the focus back in the field.
  */
@@ -33,7 +33,7 @@ export const findBox = ({ label, value = "", onFind, pause = 120 }) => {
   node.className = "find-box";
   node.append(input, out);
   let timer = 0;
-  const said = () => { out.hidden = !input.value; };
+  const said = () => { out.disabled = !input.value; };
   const clear = () => {
     window.clearTimeout(timer);
     input.value = "";

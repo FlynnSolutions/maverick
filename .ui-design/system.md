@@ -109,7 +109,7 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **A long lane is paged the way the Archive is.** Each lane draws 20 cards, and `show more` under it
   draws 20 more beside `20 shown`; the foot is there only while there is more. `find on the board`
   over the lanes draws only the matches (title, tags, description, group name), and the lane's head
-  says how many: `14 of 323`. A find always has its way out: the clear control in the field, Escape,
+  says how many: `14 of 323`. A find always has its way out: the clear control beside the field, Escape,
   and `clear the find` on a lane it matched nothing in. The pager, the find box and the match rule
   live in `web/paged-find.js`, and the Archive moves onto it next. Display only: the tracker is
   untouched, and the pages and the find survive a write's repaint. A write never hides the card it

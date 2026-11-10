@@ -1321,10 +1321,9 @@ body.ask-open { overflow: hidden; }
 .rack-head > h2 { grid-column: 1 / span 2; margin-left: -14px; }
 .rack-col, .cc-missions > span, .archive-formations > span, .archive-when { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
 .rack-find { max-width: 360px; }
-/* A find's way out sits in the field's own right end, so the field keeps its seat. */
-.find-box { position: relative; max-width: 360px; }
-.find-box .rack-find { width: 100%; max-width: none; padding-right: 44px; }
-.find-box .find-clear { position: absolute; top: 0; right: 0; }
+/* A find's way out stands right beside its field, a target of its own. */
+.find-box { display: flex; gap: 8px; max-width: 360px; }
+.find-box .rack-find { flex: 1; min-width: 0; max-width: none; }
 .rack.archive > button.rack-verb { align-self: flex-start; }
 .archive-tools, .archive-formations, .lane-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .archive-formations > span, .archive-when { margin: 8px 0 0; }
