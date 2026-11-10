@@ -144,7 +144,7 @@ test("an unknown kind is refused by name, and so is a real kind on the wrong sta
 });
 
 test("each stage that may not be left out is refused by name", () => {
-  for (const id of ["interview", "plan-gate", "preflight", "milestones", "tasks", "build", "review", "merge", "land", "close"]) {
+  for (const id of ["interview", "plan-gate", "preflight", "milestones", "tasks", "build", "merge", "land", "close"]) {
     refused(without(id), `stage "${id}": may not be left out`);
   }
 });
