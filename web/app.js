@@ -545,6 +545,15 @@ let missionsFailed = null;
 // Read again only when this old, so folding a lane or turning a month does not re-read every mission.
 const MISSIONS_FRESH_MS = 15000;
 let missionsAt = 0;
+/** The view on show is marked on its button, and at once on a press: the view's data can take seconds to arrive. */
+const markView = () => {
+  for (const b of document.querySelectorAll("#view-toggle button")) {
+    b.classList.toggle("active", b.dataset.view === view);
+    if (b.dataset.view === view) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  }
+};
+
 const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
@@ -576,7 +585,7 @@ const loadBoard = async () => {
           ? [await renderWorkspace()]
           : [releasesSection(trackers), ...trackers.map(renderBoard)]),
     );
-    for (const b of document.querySelectorAll("#view-toggle button")) b.classList.toggle("active", b.dataset.view === view);
+    markView();
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
   } catch (err) {
     setStatus(err.message, true);
@@ -1881,6 +1890,7 @@ const boot = async () => {
     b.addEventListener("click", () => {
       view = b.dataset.view;
       try { localStorage.setItem("console.view", view); } catch {}
+      markView();
       loadBoard();
     });
   }
