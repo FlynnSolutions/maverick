@@ -1,0 +1,28 @@
+{
+  "id": "light",
+  "name": "Light",
+  "description": "Explore fast: build and merge, with no review, proof or walk.",
+  "stages": [
+    { "id": "interview", "kind": "interview" },
+    { "id": "plan-gate", "kind": "gate" },
+    { "id": "preflight", "kind": "preflight" },
+    {
+      "id": "milestones",
+      "kind": "for-each",
+      "over": "milestones",
+      "stages": [
+        {
+          "id": "tasks",
+          "kind": "for-each",
+          "over": "tasks",
+          "stages": [
+            { "id": "build", "kind": "agent", "slot": "wingmanAgent" }
+          ]
+        },
+        { "id": "merge", "kind": "merge" },
+        { "id": "land", "kind": "land" }
+      ]
+    },
+    { "id": "close", "kind": "close" }
+  ]
+}
