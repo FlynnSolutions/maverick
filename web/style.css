@@ -794,6 +794,12 @@ body.ask-open { overflow: hidden; }
 .cal-cell.today { box-shadow: 0 0 0 1px var(--accent-glow), 0 0 18px var(--accent-dim); }
 .cal-day { font-family: var(--mono); font-size: 11px; color: var(--ink-ghost); margin-bottom: 4px; }
 .cal-wd { display: none; }
+/* The missions beside the grid: one to a line, the whole name and its word, over the undated items. */
+@media (min-width: 721px) {
+  .cal-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .cal-side .cc-missions { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+  .cal-side .cc-mission b { max-width: none; flex: 1; }
+}
 .cal-head .month-prev .icon { transform: rotate(90deg); }
 .cal-head .month-next .icon { transform: rotate(-90deg); }
 /* A phone reads the month as a list of the days that hold something, today always among them. */
@@ -801,6 +807,9 @@ body.ask-open { overflow: hidden; }
   .calendar { grid-template-columns: minmax(0, 1fr); }
   .cal-head h2 { min-width: 0; }
   .cal-head > .muted { display: none; }
+  /* The side column folds into the page: the missions lead it, the undated items stay last. */
+  .cal-side { display: contents; }
+  .cal-side .cc-missions { order: -1; }
   .cal-grid { grid-template-columns: minmax(0, 1fr); }
   .cal-dow, .cal-cell.pad, .cal-cell:not(.today):not(:has(.cal-event)) { display: none; }
   .cal-cell { min-height: 0; }
@@ -1053,7 +1062,8 @@ body.ask-open { overflow: hidden; }
 .board-releases { margin-bottom: 20px; }
 .board-releases .strip-title, .calendar .strip-title { margin: 0 0 8px; }
 .calendar > .releases { margin-bottom: 4px; }
-.calendar > .board-releases { grid-column: 1 / -1; }
+/* Inside the calendar its grid gap is the spacing; the board's margin on top of it cost this week its last row. */
+.calendar > .board-releases { grid-column: 1 / -1; margin-bottom: 0; }
 .cal-head { margin-top: 12px; }
 
 /* ---------- 8px rhythm audit (HIG layout.md: align, group, consistent margins) ---------- */
@@ -1316,22 +1326,27 @@ body.ask-open { overflow: hidden; }
 }
 .rack.archive .strip-turn { display: none; }
 .strip.finished .lamp { filter: grayscale(1); }
-.strip.finished :is(.role, .verdict.pending, .verdict.pass) { display: none; }
+.strip.finished :is(.role, .verdict.pass) { display: none; }
 .rack.archive .act:not(.primary-act):not(.end) { visibility: hidden; }
 .rack-col.name { grid-column: 1 / span 2; }
 .archive-formation-name { margin: 0 0 4px; font-family: var(--display); font-size: 14px; font-weight: 600; color: var(--ink-soft); }
 .archive-none { margin: 24px 0; font-size: 14px; color: var(--ink-soft); }
 .rack.archive .strip-name { color: var(--ink-soft); font-weight: 400; }
-/* The way back to a mission, on the first screen of every tab. */
-.cc-missions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: -10px; }
-.cc-mission { display: inline-flex; max-width: 100%; overflow-wrap: anywhere; align-items: center; gap: 8px; min-height: var(--control); padding: 0 10px; border-radius: var(--radius-s); background: var(--panel); box-shadow: 0 0 0 1px var(--seam); color: var(--ink); font-size: 13px; font-weight: 500; text-decoration: none; }
+/* The way back to a mission, on the first screen of every tab. Every mission shows: on a pointer's
+   width the chips wrap, each name cut at one width (the whole of it, and the word, in its title) so
+   four take one line at 1280 and the lamp says which want you; on a phone it is one line that
+   scrolls, the label counting what it holds and the next chip cut by the edge. */
+.cc-missions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cc-missions > * { flex: 0 0 auto; }
+.cc-mission { display: inline-flex; max-width: 100%; white-space: nowrap; align-items: center; gap: 8px; min-height: var(--control); padding: 0 10px; border-radius: var(--radius-s); background: var(--panel); box-shadow: 0 0 0 1px var(--seam); color: var(--ink); font-size: 13px; font-weight: 500; text-decoration: none; }
 .cc-mission:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
+.cc-mission b { min-width: 0; max-width: 20ch; overflow: hidden; text-overflow: ellipsis; font-weight: inherit; }
 .cc-mission i { font-style: normal; font-size: 12px; font-weight: 400; color: var(--ink-faint); }
+/* Above the board and the calendar it is the first line, spaced like the ship-day banner under it. */
+.boards > .cc-missions { margin-bottom: 10px; }
 /* On a phone the page opens on what needs you: the tabs scroll in one row and the meter goes under the racks. */
 @media (max-width: 839px) {
   .bar .wm, #new-session span { display: none; }
-  /* A mission waiting on you is the first row below, so its link would only say it twice. */
-  .cc-mission.wants { display: none; }
   .strip-state i { display: none; }
   .bar .status:empty { display: none; }
   .bar .tools { order: 1; margin-left: auto; }
@@ -1339,7 +1354,15 @@ body.ask-open { overflow: hidden; }
   .strip-acts .act { box-shadow: inset 0 0 0 1px var(--seam); }
   .strip-state b { white-space: nowrap; }
   .bar .brand { min-width: 44px; justify-content: center; }
-  .cc-missions > span { display: none; }
+  .cc-missions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 1px; }
+  /* No chip is wider than most of the screen, so the next one always shows at the edge: the cue that the row scrolls.
+     The word goes under the name, so the name is not cut to make room for it. */
+  .cc-mission { display: inline-grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-content: center; max-width: 55vw; }
+  .cc-mission > svg { grid-row: span 2; }
+  .cc-mission b { max-width: none; line-height: 1.25; }
+  .cc-mission i { grid-column: 2; line-height: 1.2; }
+  /* The scroller clips what spills past it, so the focus ring is drawn inside the control. */
+  .cc-missions :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .forms { flex-wrap: nowrap; overflow-x: auto; }
   .forms button { flex: 0 0 auto; white-space: nowrap; }
   .workspace { display: flex; flex-direction: column; }

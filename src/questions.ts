@@ -154,19 +154,56 @@ const closeQuestion = (mission: Mission): Question => ({
 });
 
 /**
- * The Strike Lead waiting on its own round of questions: its last word asked them and nothing has
- * been said since, the same rule the chat uses to keep a round open. It is answered in the chat,
- * so the answer goes there rather than posting anything. Cory's call, 2026-10-30: a round waiting
- * on him is waiting for him, in the inbox and on the lamp, like anything else.
+ * The Strike Lead's round still waiting for answers: its last word, when that word asked something
+ * and the mission has not moved past the stage it was asked in since. The one definition; the chat
+ * answers it and the page reads it off the questions.
+ *
+ * The stages are the ones the record stamps: the plan fired (`approved`) and the work finished
+ * (`finished`). Each is a line nothing asked before it can cross: a flying mission is the plan as
+ * fired, and the Strike Lead cannot change it; a mission at review takes no new work. A round asked
+ * before either is overtaken, not answered: the page still shows it in the conversation, said as
+ * overtaken, and the person can still write to the Strike Lead about it, but it is not waiting on
+ * them. A round asked at review is after both, so it stays open. Nothing finer is used (a hold
+ * clearing, a milestone merging, flying turning blocked), because a round does not say what it is
+ * about, and a question about the next milestone is still live after this one merges.
  */
-/** The Strike Lead's round still waiting for answers: its last word, when that word asked something. The one definition; the chat answers it and the page reads it off the questions. */
-export const openRound = (chat: ChatEntry[] | undefined): (ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) | undefined => {
-  const last = chat?.at(-1);
-  return last?.who === "Strike Lead" && last.questions?.length ? (last as ChatEntry & { questions: NonNullable<ChatEntry["questions"]> }) : undefined;
+type Round = ChatEntry & { questions: NonNullable<ChatEntry["questions"]> };
+/** The stage that passed a round asked at `at`, by what the record stamps; the words are the page's. */
+const overtakenBy = (mission: Pick<Mission, "approved" | "finished">, at: string): "finished" | "approved" | undefined =>
+  mission.finished !== undefined && mission.finished > at ? "finished" : mission.approved !== undefined && mission.approved > at ? "approved" : undefined;
+export const openRound = (mission: Pick<Mission, "chat" | "approved" | "finished">): Round | undefined => {
+  const last = mission.chat?.at(-1);
+  if (last?.who !== "Strike Lead" || !last.questions?.length || overtakenBy(mission, last.at)) return undefined;
+  return last as Round;
 };
 
+/**
+ * Where every round in the chat stands, by the rule `openRound` keeps: open, answered (the person
+ * has said something since), or overtaken, by the stage that passed it or by the mission ending.
+ * The page draws these as they come; it decides none of them.
+ */
+export type RoundState = { state: "open" | "answered" | "overtaken"; by?: "finished" | "approved" | "ended" };
+export const roundsOf = (mission: Pick<Mission, "chat" | "approved" | "finished" | "status">): Array<RoundState | undefined> => {
+  const chat = mission.chat ?? [];
+  // An ended mission asks nothing (`questionsOf`), so its last round is overtaken by the end, not open.
+  const open = over(mission) ? undefined : openRound(mission);
+  const lastYou = chat.findLastIndex((entry) => entry.who === "you");
+  return chat.map((entry, i): RoundState | undefined => {
+    if (!entry.questions?.length) return undefined;
+    if (entry === open) return { state: "open" };
+    if (lastYou > i) return { state: "answered" };
+    const by = overtakenBy(mission, entry.at) ?? (over(mission) ? "ended" : undefined);
+    return by ? { state: "overtaken", by } : { state: "answered" };
+  });
+};
+
+/**
+ * The Strike Lead waiting on a round `openRound` holds open, answered on its card on the mission
+ * page. Cory's call, 2026-10-30: a round waiting on him is waiting for him, in the inbox and on the
+ * lamp, like anything else.
+ */
 const leadRound = (mission: Mission): Question | undefined => {
-  const last = openRound(mission.chat);
+  const last = openRound(mission);
   if (!last) return undefined;
   const n = last.questions.length;
   return {
@@ -187,6 +224,13 @@ const blockerOf = (findings: string | undefined): string | undefined => {
 };
 
 type Answer = Question["answers"][number];
+
+/**
+ * The one state a task is sent out again from: handed back to its person. A task in the air
+ * (flying, built, reviewing) has an agent on it, and its move is to open its session. The
+ * question offers the retry by this, and `retryTask` takes it by this, so the two cannot part.
+ */
+export const retryable = (task: Pick<MissionTask, "status">): boolean => task.status === "handed-back";
 
 const handedBack = (mission: Mission & { findings?: Record<string, string> }, task: MissionTask): Question => {
   const why = blockerOf(mission.findings?.[task.id]) ?? task.note ?? "no reason recorded";
@@ -226,7 +270,7 @@ const escalationAnswer = (mission: Mission): Answer | undefined => {
 export const questionsOf = (mission: Mission & { findings?: Record<string, string> }): Question[] => {
   if (over(mission)) return [];
   const out: Question[] = [];
-  for (const m of mission.milestones) for (const t of m.tasks) if (t.status === "handed-back") out.push({ ...handedBack(mission, t), milestone: m.n });
+  for (const m of mission.milestones) for (const t of m.tasks) if (retryable(t)) out.push({ ...handedBack(mission, t), milestone: m.n });
   for (const m of mission.milestones) {
     if (!m.hold) continue;
     const landing = m.hold.kind === "landing";

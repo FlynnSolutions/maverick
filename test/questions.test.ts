@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Milestone, Mission, MissionTask } from "../src/missions.ts";
-import { questionsOf, statusWord, type Question } from "../src/questions.ts";
+import { openRound, questionsOf, statusWord, type Question } from "../src/questions.ts";
 
 const t = (id: string, status: MissionTask["status"], extra: Partial<MissionTask> = {}): MissionTask => ({ id, title: `title ${id}`, intent: "i", repo: "root", status, attempts: 2, claudeId: "w", ...extra });
 const ms = (n: number, tasks: MissionTask[], extra: Partial<Milestone> = {}): Milestone => ({ n, title: `m${n}`, done: "d", tasks, ...extra });
@@ -29,6 +29,15 @@ test("a handed-back task asks retry or accept, and quotes the first blocker when
   ]);
   // Without findings the task's own note is the reason.
   assert.match(questionsOf(base({ milestones: [ms(1, [task])] }))[0].body, /: the RIO failed it$/);
+});
+
+test("a task in the air is asked nothing: no retry while it flies, is built or is reviewed, only once it is handed back", () => {
+  for (const status of ["flying", "built", "reviewing", "pending", "passed"] as const) {
+    const qs = questionsOf(base({ status: "blocked", milestones: [ms(1, [t("m1-t1", status, { review: { claudeId: "r", file: "f", started: "2026-10-02T00:00:00.000Z" } })])] }));
+    assert.ok(!qs.some((q) => q.taskId === "m1-t1" || q.answers.some((a) => "path" in a && a.path.endsWith("/retry"))), status);
+  }
+  const back = questionsOf(base({ status: "blocked", milestones: [ms(1, [t("m1-t1", "handed-back")])] }));
+  assert.ok(back[0].answers.some((a) => "path" in a && a.path === "tasks/m1-t1/retry"), "handed back, it is offered");
 });
 
 test("a held milestone asks to be released, with the hold's kind; a landing hold offers landing again instead, which is all the server takes", () => {
@@ -224,10 +233,41 @@ test("a round of questions the Strike Lead is waiting on is a question for you, 
   assert.equal(statusWord(base({ status: "interviewing", chat: [{ ...asked, questions: [] }] })), "working");
 });
 
+test("a round the mission has moved past since it was asked is overtaken, not waiting; one asked in the stage it is in stays open", () => {
+  // workflow-templates-m1: asked how to clear the proof hold, then the proof passed, the milestone merged and the work finished.
+  const asked = { at: "2026-11-05T19:14:50.953Z", who: "Strike Lead" as const, text: "I added no fix task.", questions: [
+    { id: "proof-hold", question: "How do you want to clear this mission's proof hold?", options: ["Release it once Realtime is quiet", "Add a task to harden the waits", "Do both"] },
+  ] };
+  const merged = ms(1, [t("m1-t1", "passed")], { merged: "2026-11-05T21:35:16.509Z", walkthrough: { waived: { note: "no screen", at: "2026-11-05T19:22:00.000Z" } } });
+  const review = base({ status: "review", approved: "2026-11-05T05:11:44.177Z", finished: "2026-11-05T21:35:20.197Z", chat: [asked], milestones: [merged] });
+  assert.deepEqual(questionsOf(review).map((q) => q.kind), ["review"], "only the close is asked: the round is not");
+  assert.equal(openRound(review), undefined);
+  // Still in the stage it was asked in, it waits: flying or held, before the work finished.
+  const flying = base({ status: "blocked", approved: "2026-11-05T05:11:44.177Z", chat: [asked], milestones: [ms(1, [t("m1-t1", "passed")], { hold: { kind: "proof", reason: "failed", at: "2026-11-05T07:55:18.497Z" } })] });
+  assert.ok(questionsOf(flying).some((q) => q.id === `round:${asked.at}`));
+  assert.equal(statusWord(flying), "waiting for you");
+  // A round asked at review is after the work finished, so it is live there.
+  const late = { ...asked, at: "2026-11-05T22:00:00.000Z" };
+  assert.ok(questionsOf({ ...review, chat: [late] }).some((q) => q.id === `round:${late.at}`));
+  // Firing the plan overtakes a round asked while planning; one asked in flight is after it.
+  assert.equal(openRound(base({ status: "flying", approved: "2026-11-05T19:20:00.000Z", chat: [asked] })), undefined);
+  assert.ok(openRound(base({ status: "planned", chat: [asked] })));
+});
+
 test("an agent stopped at a prompt makes a live mission wait for you; other trouble and an ended mission do not", () => {
   const live = { status: "flying", milestones: [] } as unknown as Parameters<typeof statusWord>[0];
   assert.equal(statusWord({ ...live, trouble: "the RIO on x is waiting on you in its own session" }, []), "waiting for you");
   assert.equal(statusWord({ ...live, trouble: "x is waiting on you in its own session" }, []), "waiting for you");
   assert.equal(statusWord({ ...live, trouble: "a merge is held" }, []), "working");
   assert.equal(statusWord({ ...live, status: "abandoned", trouble: "x is waiting on you in its own session" }, []), "done");
+});
+
+test("the server says where every round stands, so the page decides none of it", async () => {
+  const { roundsOf } = await import("../src/questions.ts");
+  const ask = (at: string) => ({ at, who: "Strike Lead" as const, text: "q", questions: [{ id: "q", question: "?", options: ["a"] }] });
+  const chat = [ask("2026-11-05T10:00:00.000Z"), { at: "2026-11-05T10:05:00.000Z", who: "you" as const, text: "a" }, ask("2026-11-05T11:00:00.000Z"), ask("2026-11-05T19:00:00.000Z")];
+  assert.deepEqual(roundsOf({ chat, status: "flying" } as never), [{ state: "answered" }, undefined, { state: "answered" }, { state: "open" }]);
+  assert.deepEqual(roundsOf({ chat, status: "review", approved: "2026-11-05T12:00:00.000Z", finished: "2026-11-05T21:00:00.000Z" } as never).at(-1), { state: "overtaken", by: "finished" });
+  assert.deepEqual(roundsOf({ chat, status: "flying", approved: "2026-11-05T20:00:00.000Z" } as never).at(-1), { state: "overtaken", by: "approved" });
+  assert.deepEqual(roundsOf({ chat: chat.slice(0, 3), status: "closed" } as never).at(-1), { state: "overtaken", by: "ended" });
 });

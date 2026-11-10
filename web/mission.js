@@ -494,16 +494,26 @@ const reposBand = (repos) => {
 /** A check's detail as the markdown sets it: a `backticked` command reads as code. */
 const pfDetail = (detail) => inlineNode("span", detail, { project: projectId, attrs: { class: "pf-detail" } });
 
+/**
+ * A check's name keeps the column's 22ch cap: it wraps at its spaces and after an identifier's own
+ * separators (_ - / .), so MAVERICK_STAGING_DEPLOY_TOKEN breaks as MAVERICK_STAGING_ / DEPLOY_TOKEN,
+ * never mid-word.
+ */
+const breakable = (name) => name.split(/(?<=[_\-/.])/).flatMap((part, i) => [i ? el("wbr") : null, part]);
+
 /** What the host can and cannot give the mission, checked before the person approves and leaves. */
 const preflightBand = (checks) => {
   if (!checks?.length) return null;
   const failed = checks.filter((c) => c.status === "fail").length;
-  const warned = checks.filter((c) => c.status === "warn").length;
+  const warned = checks.filter((c) => c.status === "warn");
+  const yours = checks.filter((c) => c.status === "human").length;
   const refusing = checks.some((c) => c.refuses);
+  // The lines this check leaves to you, said in the number there are, and not at all when there are none.
+  const confirm = yours ? ` ${yours === 1 ? "The line marked yours is" : "The lines marked yours are"} for you to confirm.` : "";
   return el("div", { class: "mv-preflight" },
     // The warning itself is said once, beside the button (failingNote, or the refusal in its place); here it is the list's heading.
-    el("p", { class: failed || warned ? "cost-note" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${plural(warned, "thing")} this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
-    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), pfDetail(c.detail)))));
+    el("p", { class: failed || warned.length ? "cost-note" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned.length ? `This check cannot settle ${warned.map((c) => c.name).join(", ")}: read ${warned.length === 1 ? "it" : "them"} before approving.${confirm}` : `The host has what the plan says it needs.${confirm}`),
+    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, ...breakable(c.name)), pfDetail(c.detail)))));
 };
 
 const costBand = (cost, estimate) => el("div", { class: "mv-band" },

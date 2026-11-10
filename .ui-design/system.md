@@ -106,14 +106,34 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   lists the person's own sessions; what the missions spawned is one toggle away, and find searches
   both. Rows are drawn only while it shows. A formation with nothing live leaves the tab row for
   it. Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
-- **Missions have a way back on the first screen**: `.cc-missions`, one link per live mission on
-  every tab but the archive, with the verbs that start a mission or a brainstorm. A formation sharing a mission's
-  name reads `<name> crew`, because its tab is not the mission's page.
+  An ended session whose review is still owed has not ended: a review stopped at a prompt or gone
+  without a verdict sits in Needs you, one still running in Working, never in the archive, never
+  greyed, and with no `remove` (it would drop the review). A blocked review's `open` reaches its RIO,
+  the thing at the prompt, and the RIO is not drawn again as a row of its own (2026-11-10).
+- **Missions have a way back on the first screen**: `.cc-missions` (`web/mission-links.js`), one link
+  per live mission the tab does not already draw as a strip (the Rack draws every one, a crew tab its
+  own), on every tab but the archive, with the verbs that start a mission or a brainstorm (labelled
+  `Start` when no link is left to label), and the same row, without the verbs, above the Board and
+  beside the Calendar's grid, because the app reopens on
+  the last view (Cory, 2026-11-04: nothing there said a mission was flying). A formation sharing a mission's
+  name reads `<name> crew`, because its tab is not the mission's page, and it opens on that mission's
+  own strip, in a Mission rack above Oversight: the tab is named after it, so it is what a person came for.
+  Every mission is shown or counted (2026-11-10, after a one-line row hid one under a fade): the
+  label reads `Missions · N`; on a pointer's width the chips wrap, each name cut at 20ch with the
+  whole of it and its word in the title and the lamp saying which want you, so four take one line at
+  1280; on a phone it is one scrolling line with the next chip cut by the edge. On the Calendar the
+  missions are a column over the undated items, not a line above the month, so the current week is
+  whole on the first screen at 1280x800; on a phone they lead the page.
 - **An agent holding a live mission shows inside it.** A mission whose agent is stopped at a prompt
   reads `waiting for you` and sits in Needs you (Cory, 2026-11-04), one row: the reason, what the
-  agent last said, and `open that session`.
+  agent last said, and `open that session`. Only there does the mission's row speak for its agents;
+  in Working and on a crew tab the agent has its own row (a strip in Needs you, a Flight row), so
+  the mission's row keeps its own word and does not say them again (2026-11-10).
 - **One word per fact.** The state column says `working`, `waiting for you`, `idle`; the verb that
   ends a live session is `end`, in every place. `land and close` is the mission's: it ships work.
+  A row says each fact once: an ended session whose review is still owed reads the review
+  (`review blocked`), never `ended` beside an `auditing (blocked)` chip, which read as done and
+  stuck at once (2026-11-04).
 - **Racks are ordered by who needs you, projects included.** A project holding a waiting session
   is drawn before one that is merely busy, and an empty project draws nothing. The page's focal
   element is whatever waits on the pilot, wherever it lives.
@@ -456,3 +476,12 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
 - **A picked option is ringed, not filled.** Filled is the primary's dress, and send is the one primary.
 - **Names (Cory, 2026-11-09):** the rail's first anchor is "The brief", so it is not read as the Strike Lead's
   question; the summary at review is "What you must read", in the voice the page speaks in.
+- **A fixed send-back is history (2026-11-09).** Maverick's "cannot be flown" message carries where it
+  stands beside its name: `not fixed yet` in threat while the plan still fails, `checked again below`
+  once a later one replaced it or the mission ended, `fixed` in hud once the plan passes, folded to one line. Cory read an
+  old list of problems over the Fire button as Maverick offering to fire a plan that could not fly.
+- **A table's label column has a cap.** The preflight's name column is `fit-content(22ch)`: one long
+  name wraps in its cell instead of pushing every detail out and leaving a gap after each short one.
+  It wraps at its spaces only: each word may be an identifier read by its exact spelling, so a word
+  is never split (`MAVERICK_STAGING_DEPL` / `OY_TOKEN`, 2026-11-10), and the longest word is the
+  column's floor.

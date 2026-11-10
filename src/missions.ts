@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { config } from "./config.ts";
 import { landFor, missionConfigFor, type Landing, type MissionConfig } from "./project-config.ts";
@@ -40,7 +40,7 @@ import { BACKLOG, FIELD_LINE, MARKER, PRIORITY, addItem, allItems, documentHead,
 import { DECISION_WORDS, RIO_TOOLS, componentsOver, planOnBranch, rioBrief, screenshotsDir, summaryBrief, wingmanBrief, type BriefContext } from "./briefs.ts";
 import { parseRequirements, preflight, refuses, type Check, type Requirement } from "./preflight.ts";
 import { reportFor } from "./report.ts";
-import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, statusWord, walkthroughState, type Question, type StatusWord } from "./questions.ts";
+import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, retryable, roundsOf, statusWord, walkthroughState, type Question, type RoundState, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
 import { agentFor, agentsLaunched, defaultWorkflow, hasStage, workflowOf, type Workflow } from "./workflows.ts";
@@ -308,8 +308,30 @@ export const listMissions = async (projectId: string): Promise<Mission[]> => {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
-  const all = await Promise.all(names.filter((n) => n.endsWith(".json")).map(async (n) => JSON.parse(await readFile(join(missionsDir(projectId), n), "utf8")) as Mission));
-  return all.sort((a, b) => b.created.localeCompare(a.created));
+  const all = await Promise.all(names.filter((n) => n.endsWith(".json")).map((n) => listed(projectId, n.slice(0, -".json".length))));
+  return all.filter((m): m is Mission => m !== null).sort((a, b) => b.created.localeCompare(a.created));
+};
+
+/**
+ * One record of a listing. Every project's listing feeds the gate's estimate, so a record that
+ * will not read or parse used to fail every mission view in every project; it is left out and
+ * named in the log instead, once until it changes. Its own page still fails loud, through
+ * `readMission`. A record removed since the folder was read is simply gone.
+ */
+const unreadable = new Map<string, string>();
+const listed = (projectId: string, id: string): Promise<Mission | null> => {
+  const path = missionPath(projectId, id);
+  return readMission(projectId, id).then(
+    (mission) => {
+      unreadable.delete(path);
+      return mission;
+    },
+    (err: Error) => {
+      if (unreadable.get(path) !== err.message) console.error(`mission record ${path} left out of every listing until it reads:`, err.message);
+      unreadable.set(path, err.message);
+      return null;
+    },
+  );
 };
 
 /**
@@ -335,7 +357,18 @@ const writeMission = async (mission: Mission): Promise<Mission> => {
   }
   const next = { ...mission, rev: (mission.rev ?? 0) + 1 };
   await mkdir(missionsDir(next.project), { recursive: true });
-  await writeFile(missionPath(next.project, next.id), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  // Written beside the record and renamed over it, so a reader sees the old record or the new one
+  // and never a mix. Written in place, two overlapping writes left the tail of the longer one
+  // after the shorter. The name ends in `.tmp`, which a listing never reads.
+  const path = missionPath(next.project, next.id);
+  const temp = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temp, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    await rename(temp, path);
+  } catch (err) {
+    await rm(temp, { force: true });
+    throw err;
+  }
   // The caller keeps working with the object it already holds, so it has to move with it.
   mission.rev = next.rev;
   return mission;
@@ -905,10 +938,13 @@ export const DEFAULT_LINK_MINUTES = 15;
 const PACE_TTL_MS = 5 * 60_000;
 const paceRead = new Map<string, { at: number; pace: Promise<Pace | null> }>();
 export const measuredPace = (maxAgeMs = PACE_TTL_MS): Promise<Pace | null> => {
-  const hit = paceRead.get(config.sessionsDir);
+  const key = config.sessionsDir;
+  const hit = paceRead.get(key);
   if (hit && Date.now() - hit.at < maxAgeMs) return hit.pace;
   const pace = readPace();
-  paceRead.set(config.sessionsDir, { at: Date.now(), pace });
+  paceRead.set(key, { at: Date.now(), pace });
+  // Only a reading is kept: a failure kept for the TTL outlived its repair by five minutes.
+  pace.catch(() => { if (paceRead.get(key)?.pace === pace) paceRead.delete(key); });
   return pace;
 };
 const readPace = async (): Promise<Pace | null> => {
@@ -2422,7 +2458,12 @@ export const retryTask = async (project: Project, id: string, taskId: string): P
     if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; it cannot be put back in the air`);
     if (mission.status === "paused") throw new Error(`${mission.name} is paused; resume it first, and the retry goes out then`);
     if (!task.worktree) throw new Error(`${task.title} never got a worktree; it cannot be retried`);
-    if (task.status === "passed") throw new Error(`${task.title} already passed; there is nothing to send back out`);
+    // Checked before anything is stopped: sending out a task in the air stops the agent on it and starts another over it.
+    if (!retryable(task)) {
+      throw new Error(task.status === "passed" ? `${task.title} already passed; there is nothing to send back out`
+        : AIRBORNE.has(task.status) ? `${task.title} is already in the air (${task.status}); open its session from its row in Plan instead`
+        : `${task.title} has not flown yet; it goes out when its turn comes`);
+    }
     task.attempts = MAX_ATTEMPTS - 1;
     return mission;
   });
@@ -2476,8 +2517,8 @@ export const sayToStrikeLead = async (project: Project, id: string, text: string
 
 /** A round of the Strike Lead's questions answered with clicks: said to it as one message, numbered as it asked. */
 export const answerLead = async (project: Project, id: string, picked: Record<string, { options?: string[]; other?: string }>): Promise<{ ok: true }> => {
-  const last = openRound((await missionOr404(project.id, id)).chat);
-  if (!last) throw new Error("there is no round of questions waiting for answers; it may have been answered already");
+  const last = openRound(await missionOr404(project.id, id));
+  if (!last) throw new Error("there is no round of questions waiting for answers; it may have been answered already, or the mission has moved past it");
   return sayToStrikeLead(project, id, answersText(last.questions, picked));
 };
 
@@ -2800,7 +2841,7 @@ export type Reading = Finding & { key: string; taskId: string; taskTitle: string
 export type Move = { taskId: string; attempt: number; out?: string; built?: string; reviewed?: string; ended?: string; end?: "passed" | "handed-back" | "retry"; verdict?: string; counts?: FeedEntry["counts"] };
 
 /** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
-export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; feed: FeedEntry[]; readings: Reading[]; moves: Move[] };
+export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; rounds: Array<RoundState | undefined>; feed: FeedEntry[]; readings: Reading[]; moves: Move[] };
 
 /**
  * A task's findings as keyed records: every carried line, and for a handed-back task its findings
@@ -3031,7 +3072,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const feed = feedOf(log, mission);
   // The page never reads the pinned template, so it stays on the record and out of every view.
   const { template: _template, ...shown } = mission;
-  return { ...shown, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
+  return { ...shown, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, rounds: roundsOf(mission), feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
@@ -3085,7 +3126,7 @@ const mergedStat = (mission: Mission, diffstat: Record<string, string>): string 
 /** The tasks a question reads findings for, and the merged total reads stats for; the rest of a mission is not asked. */
 const askedAbout = (mission: Mission): ((task: MissionTask) => boolean) => {
   const merged = new Set(mission.milestones.filter((m) => m.merged).flatMap((m) => m.tasks));
-  return (task) => task.status === "handed-back" || (task.status === "passed" && merged.has(task));
+  return (task) => retryable(task) || (task.status === "passed" && merged.has(task));
 };
 
 /** Every mission in the project as the workspace draws it, so a row can say what it asks without opening it. */
@@ -3097,9 +3138,15 @@ export const workspaceMissions = async (project: Project): Promise<WorkspaceMiss
     return { ...row, word, questions, diffstat: mergedStat(mission, diffstat) };
   }));
 
-/** What a mission asks, and nothing else: no sweep, no git, findings only for what is handed back. The notification poll reads this. */
-export const missionQuestions = async (project: Project): Promise<Array<{ id: string; name: string; questions: Question[] }>> =>
+/**
+ * What a mission asks, and its status and word, and nothing else: no sweep, no git, findings only
+ * for what is handed back. The notification poll reads this, and so do the board's and the
+ * calendar's links to each live mission.
+ */
+export const missionQuestions = async (project: Project): Promise<Array<{ id: string; name: string; status: Mission["status"]; word: StatusWord; questions: Question[] }>> =>
   Promise.all((await listMissions(project.id)).map(async (mission) => {
-    const { questions } = await asked(mission, (task) => task.status === "handed-back", false);
-    return { id: mission.id, name: mission.name, questions };
+    // An ended mission asks nothing and is not linked to; its findings need not be read.
+    if (over(mission)) return { id: mission.id, name: mission.name, status: mission.status, word: statusWord(mission), questions: [] };
+    const { questions, word } = await asked(mission, retryable, false);
+    return { id: mission.id, name: mission.name, status: mission.status, word, questions };
   }));

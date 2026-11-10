@@ -24,6 +24,13 @@
 .lead-msg.sys .lead-text { font-size: 13px; }
 .lead-msg.error .lead-who { color: var(--threat); }
 .lead-msg.error .lead-text { color: var(--ink); }
+/* A plan sent back says where it stands beside its name: red while it holds, green once fixed, plain once checked again or ended. */
+.lead-tag { font-family: var(--mono); font-size: 11px; font-weight: 400; }
+.lead-msg.sent-back.live .lead-tag { color: var(--threat); }
+.lead-msg.sent-back.live .lead-text li::marker { color: var(--threat); }
+.lead-msg.sent-back.fixed .lead-tag { color: var(--hud); }
+.lead-msg.sent-back:is(.replaced, .ended) .lead-tag { color: var(--ink-soft); }
+.lead-msg.sent-back .lead-asked > .lead-text { margin-top: 6px; }
 
 /* Maverick's line about the flight: quiet, one line, the time first; a task back for you or a failure is not quiet. */
 .lead-note { display: flex; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.45; color: var(--ink-soft); }
@@ -74,8 +81,11 @@ html:has(body.show-me-on) { scroll-padding-bottom: 64px; }
 .lead-round-foot button, .lead-compose button { font: 500 13px var(--sans); }
 
 /* An answered round, folded. */
-.lead-asked > summary { display: inline-flex; align-items: center; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
+.lead-asked > summary { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
+.lead-asked > summary:hover { color: var(--ink); }
 .lead-asked > ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; color: var(--ink-soft); }
+/* One the mission moved past says how to answer it anyway, under its questions. */
+.lead-asked > .lead-hint { margin-top: 6px; }
 
 .lead-thinking { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
 .lead-thinking[hidden] { display: none; }

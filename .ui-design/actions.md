@@ -23,6 +23,8 @@ the Strike Lead, and the plan document stays the source.
 | Strike Lead | Open its session | "open its session in a terminal" | A live terminal opens under the thread | None | Claude Code, Codex |
 | Mission | Go to what is waiting | The "waiting for you" lamp in the rail | Lands on it with its control focused: the gate's approve before approval, an open round's first option, the questions after; a second press lands again | Scroll into view, nothing else moves | Linear inbox, GitHub notifications |
 | Plan with problems | Have them fixed | Nothing to press: the problems go to the Strike Lead; the person can write to it if it stalls | The problems list in the gate, with what each one needs | None | (Maverick's own) |
+| Plan sent back | Read where it stands | Nothing to press: Maverick's send-back in the thread says "not fixed yet" while the plan still fails, "checked again below" once a later one replaced it, "not fixed before it ended" on an ended mission, and "fixed" once the plan passes; a settled one folds to one line, and the line opens its list | The tag beside "Maverick", and the problems out of sight above the fire once they are fixed | None; the bubble redraws in place when the plan changes | GitHub "outdated" review comment, Linear resolved thread |
+| Plan preflight | Read the host checks | The list under the gate's approve: status, name, detail | Every detail starts at one x; a name past the column's cap wraps in its cell rather than pushing every detail out | None | GitHub checks list |
 
 Undo: approving is not undoable (it writes the tracker and spawns agents), so it is guarded by
 the second press instead; a message to the Strike Lead is answered rather than retracted.
@@ -49,7 +51,7 @@ otherwise; an error toast stays until it is closed.
 | Milestone | Release a hold | The hold's question in `#now`, with a note | Toast | as Question | Buildkite unblock |
 | Milestone | Walk the walkthrough | The walkthrough under its step; answers save as they are given | "last saved" line under the frame | none | GitHub viewed checkbox |
 | Milestone | Waive the walk | A note and `waive it` under the walkthrough | Toast | none | GitHub admin merge, with a reason |
-| Task | Retry or accept a handed-back task | The question's buttons in `#now`, and the same row under the task in Plan | Toast | as Question | Buildkite retry, GitHub re-run |
+| Task | Retry or accept a handed-back task | The question's buttons in `#now`, and the same row under the task in Plan. Only a handed-back task is asked; a task in the air (flying, built, reviewing) offers `open the session` on its row instead, and the server refuses a retry on it before anything is stopped | Toast; a press on a task already in the air is an error toast saying to open its session | as Question | Buildkite retry, GitHub re-run |
 | Task | Open its agent's session | `open the session` on a live task's row; `stop watching` closes it | The terminal mounts under the row | none | Buildkite live log, Devin shell |
 | Task | See every attempt | The task's card in Progress, one line per attempt with its verdict linked to its findings | n/a | Lines rise as they land | GitHub Actions attempt selector |
 | Task | See every automatic move | `show every move` under each milestone in Progress | n/a | none | Buildkite step log |
@@ -62,8 +64,9 @@ otherwise; an error toast stays until it is closed.
 | Finding | Jump from a chip | A verdict chip in Progress or a severity chip on a file row unfolds the finding and focuses it | Focus ring on the card | Scrolls into view | GitHub file tree counts |
 | Finding | Group by severity, then area | Built: three buckets, fix first, an area heading inside each | n/a | n/a | Linear group by |
 | Summary | Ask for the three things to read | `summarize` (`summarize again` once written) | Toast; the button says `summarizing...` until it lands | none | n/a |
-| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept | The entry rises into the thread | Devin chat |
+| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept; sending nothing says so under the box and moves to it | The entry rises into the thread | Devin chat |
 | Chat | Answer a round of interview questions | The option buttons and an own-words field per question, then `send answers` | The round folds into "N questions asked" | none | Devin plan questions |
+| Chat | Read a round the mission moved past | Built: it folds into "N questions asked, overtaken" with what passed it; unfolded, its questions and, while the composer is there, that writing to the Strike Lead is the way to answer it anyway | n/a | none | GitHub "Outdated" review comments |
 | Chat | Read the history | `the earlier conversation` unfolds it; a long message folds to its opening with `the whole message` | n/a | none | Linear comments |
 | Chat | Open the Strike Lead's raw session | `open its session in a terminal` | The terminal mounts in place | none | Devin shell |
 | Plan document | Read it | `read the plan document` opens the file | n/a | none | GitHub file view |
@@ -93,6 +96,8 @@ brainstorms. A session or a mission is one strip in one group. What an action di
 | Mission | Answer its question where it sits | The answer buttons under the question in its strip, primary first, the same routes the mission page posts | Toast naming the mission and the answer; an error toast stays until closed | A strip new since the last paint rises in | Linear inbox, GitHub notifications |
 | Mission | Answer with a note | The note field above the answers; an answer that needs one refuses empty and says so | Hint under the answers | none | Buildkite block step |
 | Mission | Open it | `open` in its row, a click anywhere on the strip, or Enter on it | The mission page | none | Linear |
+| Mission | Open it from its crew tab | The tab named `<name> crew` opens on the mission's own strip, in a Mission rack above Oversight; `open`, a click on it, or Enter | The mission page | none | GitHub Actions run's "view workflow" |
+| Mission | Open it from any tab | Its strip on the Rack and on its crew tab; its link in the Missions row of any other crew tab | The mission page | none | Linear sidebar |
 | Mission | Open where an answer acts | An answer with a place (walk, close, answer the interview) opens the mission page there | The mission page at that place | none | GitHub "review changes" |
 | Mission | Start one | `open a mission` under the racks: a name, then the line, in two asks | The mission page, on its interview | none | Devin new session |
 | Session | Open it | A click on its strip, or Enter: full screen in the rack, in place inside a formation | The conversation and composer | none | Warp, iTerm tabs |
@@ -101,6 +106,8 @@ brainstorms. A session or a mission is one strip in one group. What an action di
 | Session | Answer a permission prompt | The prompt's choices as buttons in its open pane, the terminal still under it | The pane clears the card | none | Claude Code |
 | Session | Write to it | The composer in its open pane; Enter sends | Toast "sent"; an error toast names what failed | The turn lands in the conversation | Claude desktop |
 | Session | Start one, or a shell | `New session` in the bar; the terminal icon beside the tabs | The new strip rises in | Rises in | Warp |
+| Session | See where its review stands | The State column: once the session has ended with its review still owed, the review is the state (`in review`, `review blocked`, `review gave no verdict`); while it runs, the review is the note beside its own word. A verdict chip appears only once the verdict is written | The word changes on the next paint | none | GitHub checks on a merged PR |
+| Session | Reach a blocked review | The Wingman's row in Needs you reads `review blocked`, `its RIO is at a prompt`, with what the RIO asked under it; `open`, a click or Enter opens the RIO. No `remove` while the review is owed | The RIO's conversation, full screen | none | GitHub "re-run failed jobs" |
 | Formation | Group sessions | Drag a strip onto a tab; every drag also has its right-click menu path | Toast naming where it went | none | Linear move to |
 | Formation | Make, rename, disband, pop out | `+` beside the tabs; the tab's own right-click menu | Toast; disband asks first | none | Chrome tab groups |
 | Brainstorm | Start one, open one | `brainstorm` on its heading; `open` in its row | The breakdown page | none | n/a |
@@ -159,6 +166,8 @@ to the tracker file, the same write whichever control made it.
 | Item | Plan it, spawn on it | `plan it` (the primary on an unplanned item), `spawn` (the primary on a planned one, or on the card) | The session opens in the workspace | none | Linear "start working" |
 | Lane | Fold or unfold | The chevron beside its name; remembered | The chevron turns | The chevron turns | GitHub projects |
 | Group | Delete when empty | The close icon beside an empty group's name, then confirm | Toast | none | Trello archive list |
+| Mission | See one is live, and open it | Its link in the Missions row above the releases, `Missions · N`: lamp and name (cut at 20ch, the whole and the word in its title), chips that wrap; on a phone one line that scrolls, the next chip cut by the edge; nothing is drawn when no mission is live | The mission page | none | Linear sidebar, GitHub Actions "in progress" |
+| Mission | The missions cannot be read | A red line naming why, with `try again`; the board still draws | The board reloads | none | n/a |
 | Board | Loading, failing, empty | A lane with nothing in it says what goes there; a board that cannot be read says why in the bar | n/a | none | Linear empty states |
 
 ### Floor rows left out, and why
@@ -179,6 +188,7 @@ The same items by deadline, with the ship days and the releases. Its question: w
 | Ship day | Open, move, mark shipped, undo, cancel | Its event opens its drawer: `mark shipped`, a date and `move`, `put it back`, `cancel this ship day` (confirmed) | Toast naming the day; the drawer closes only when the write went through | none | Google Calendar event |
 | Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast | none | Google Calendar repeat |
 | Release | Open its slot | Its deploy event | The release drawer | The drawer slides in | Linear cycle |
+| Mission | See one is live, and open it | The same links, one to a line with their words, beside the grid over the undated items; on a phone they lead the page | The mission page | none | Linear sidebar |
 | Calendar | On a phone | The days that hold something, as a list, today always among them | n/a | none | Google Calendar schedule view |
 
 ### Floor rows left out, and why

@@ -4,6 +4,7 @@
 // posts, so the workspace and the page cannot offer different answers to one question.
 
 import { answerControls } from "./answers.js";
+import { missionHref } from "./mission-links.js";
 import { toast } from "./toast.js";
 
 /**
@@ -18,7 +19,7 @@ import { toast } from "./toast.js";
 export const questionLines = (mission, ctx) => {
   const { el } = ctx;
   const btn = (label, onclick, cls = "") => el("button", { type: "button", class: cls, onclick }, label);
-  const href = `/mission.html?project=${encodeURIComponent(ctx.projectId)}&mission=${encodeURIComponent(mission.id)}`;
+  const href = missionHref(ctx.projectId, mission);
   return mission.questions.map((q) => {
     const { buttons, note, hint } = answerControls(q, { el, btn, open: (go) => { location.href = `${href}#${go}`; }, submit: async (a, body) => {
       try {
