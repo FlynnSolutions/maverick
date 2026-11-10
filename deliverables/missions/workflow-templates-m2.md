@@ -19,20 +19,22 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   In `test/workflows.test.ts`, change exactly one thing: drop `"review"` from the list in "each stage that may not be left out is refused by name". No other line in any existing test changes. Prove it: new `test/workflow-templates.test.ts` covers light loading and being unverified, mission being verified, leaving out each of review, proof and walk making a template unverified, `name` and `description` accepted, a bad id refused, an unknown field still refused, a project override, a broken file and a mismatched id each listed with their messages, a missing folder, and `chooseTemplate`'s three outcomes, using invented projects in temp folders. Then `git diff main -- test/workflows.test.ts` shows the one word, and `npm test && npm run lint` pass, with the results in the commit message.
 
-- [~] **The templates a project offers, over the API**
+- [x] **The templates a project offers, over the API**
   - touches: server.ts, test/workflows-api.test.ts
   - needs: m1-t1
-  - status: reviewing
+  - status: passed
   - attempt: 1
+  - verdict: pass with notes
   - commit: 50a847a
   Add `GET /api/workflows?project=<id>`, which returns `templatesFor(project.path)` as `TemplateChoice[]`, and `GET /api/workflows/<templateId>?project=<id>`, which returns one choice with its `template`, or 404 naming the id. Resolve the project with `requireProject`, as the mission routes do. Look a template up in the list `templatesFor` returns, and never build a path from the URL. Put the routes beside `/api/missions` in `server.ts` and match its style. Do not touch `src/missions.ts` or `web/`. The mission's pinned copy is m1-t3's. A broken template file must not break the list: it is a choice with `error`, and the route answers 200.
 
   Prove it: `test/workflows-api.test.ts` starts the real server on a free port against temp `SESSION_CONSOLE_*` folders, as `test/http-writes.test.ts` does, with an invented project holding one good and one broken template. It asserts the list (mission, light, the good file and the broken one with its message), one template fetched by id, a 404 for an unknown id, and that `../` in an id is refused. `npm test && npm run lint`, with the results in the commit message.
 
-- [ ] **A mission starts from the chosen template, and its view says which and where it is**
+- [~] **A mission starts from the chosen template, and its view says which and where it is**
   - touches: src/missions.ts, server.ts, test/workflow-start.test.ts
   - needs: m1-t1, m1-t2
-  - status: pending
+  - status: flying
+  - attempt: 1
   `startMission` takes an optional template id as a new last parameter and pins `chooseTemplate(project.path, id)`. With no id it chooses `mission`, which for a project with no `.maverick/workflows/` is exactly today's `defaultWorkflow()`. `breakdowns.ts` keeps calling it with no id. `POST /api/missions` passes `body.template` through. `GET /api/workflows/<id>?project=&mission=<missionId>` returns that mission's pinned copy through `workflowOf`, so editing or deleting a project template changes no mission already started. An older record with no `template` reads as `mission`.
 
   `missionView` keeps not sending the raw template, but it gains `workflow` (the contract): id, name, `unverified(...)`, and `flight`, the stages the strip draws. `flight` comes from a pure exported `flightOf(mission)`. Its labels, in order, are Interview, Plan gate, Preflight, Build, Review, Merge, Proof, Land, Walk and Close (walkthrough folds into Walk, and summary is on demand and not drawn). It holds only the stages the pinned template has, each `done`, `now` or `next`, read from the record: `interviewing` is Interview, `planned` is Plan gate, flying reads the first milestone not done (tasks flying or pending is Build, reviewing is Review, every task passed and not merged is Merge, merged and not proved is Proof, a repo landing is Land, owing a walk is Walk), `review` is Close now, and `closed` is all done. Build and Review carry a count ("2 of 3"). Do not touch `web/`, the ledger format, `sweepOnce`, `actOn`, landing or briefs: those are m1-t4's and m1-t5's.
@@ -73,11 +75,12 @@ _walk: Open a mission on the invented project from the mission branch's server a
 
   Prove it: on the invented Harbor fixtures `tools/ui-check.mjs` serves, render a full mission flying, a Light mission flying, a Light mission at review, and an older record with no `workflow`. Grade the mission page with ui-audit at 390 and 1280 in light and dark, and put the grade card in the commit message. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
 
-- [ ] **The read-only template page**
+- [~] **The read-only template page**
   - touches: web/workflow.html, web/workflow.js, web/workflow.css
   - needs: m1-t2
   - cells: 39
-  - status: pending
+  - status: flying
+  - attempt: 1
   A new page, `web/workflow.html`, built from cell 39 and closing rule 5, with the flow drawn per `.ui-design/mockups/workflow-editor-round-1.html` picks 1 (left to right, wires), 7 (for-each as splay and rejoin), and 11 (card steps with ports). It is read-only, with no drag, add or delete. `?project=&id=` loads `GET /api/workflows/<id>`, and `?project=&mission=` loads that mission's pinned copy. It shows the crumb, name, description, the unverified sentence when `unverified` is true ("It leaves out review, proof and the walk, so a mission it runs stays on its mission branch, and you take the work from there by hand.", naming only what it actually leaves out), where it comes from (built-in or the project's file), then the flow and the legend. A stage the template leaves out is not drawn. Who runs each stage reads from the template (`agent`, else its slot's name). An unknown id or a broken template says so on the page, with the message. Match the other pages' bar and theme handling (`web/theme.js`, `web/page.js`, the `.bar` header as `web/mission.html` has it) and use only existing tokens. At 390 the flow scrolls sideways inside its frame and the page does not. Do not touch other pages or `src/`.
 
   Prove it: serve the branch on invented Harbor fixtures and grade the page with ui-audit at 390 and 1280 in light and dark for mission, light, a project template and a broken one, with the grade card in the commit message. The grid rule in `.ui-design/system.md` (a 600-character `<pre>` widens nothing) holds. `node tools/ui-check.mjs`, `npm test && npm run lint`, with the results in the commit message. Report the grade; do not judge it.
@@ -133,3 +136,6 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-09 21:07 m1-t1 Templates: Light, a review-optional validator, names, project files and the unverified rule: reviewing to passed (RIO: pass with notes) with 9 notes carried
 - 2026-11-09 21:07 m1-t2 The templates a project offers, over the API: pending to flying
 - 2026-11-09 21:11 m1-t2 The templates a project offers, over the API: flying to reviewing
+- 2026-11-09 21:15 m1-t2 The templates a project offers, over the API: reviewing to passed (RIO: pass with notes) with 8 notes carried, 1 unverified
+- 2026-11-09 21:15 m1-t3 A mission starts from the chosen template, and its view says which and where it is: pending to flying
+- 2026-11-09 21:15 m1-t8 The read-only template page: pending to flying
