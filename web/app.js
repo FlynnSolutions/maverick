@@ -4,7 +4,8 @@
 import { jetSvg } from "./jet.js";
 import { PROJECT_PROPS, applyProjectTheme } from "./theme.js";
 import { strike, loading, missile, flares, flyby } from "./afterburner.js";
-import { finished, mountCommandCenter } from "./command.js";
+import { mountCommandCenter } from "./command.js";
+import { finished, reviewOwed } from "./session-word.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
@@ -1605,7 +1606,7 @@ const renderSessions = (records, live) => {
       for (const c of children) {
         const v = c.auditView ?? { verdict: "none" };
         const agent = live.backgroundAgents.find((a) => a.id === c.claudeId);
-        const chip = el("span", { class: `verdict ${v.verdict}${v.decision ? ` ${v.decision}` : ""}` }, v.verdict === "none" ? "not audited" : v.verdict === "pending" ? `auditing (${v.agentState ?? "…"})` : `${v.verdict}${v.decision ? ` · ${v.decision}` : ""}`);
+        const chip = el("span", { class: `verdict ${v.verdict}${v.decision ? ` ${v.decision}` : ""}` }, v.verdict === "none" ? "not audited" : v.verdict === "pending" ? reviewOwed(c) : `${v.verdict}${v.decision ? ` · ${v.decision}` : ""}`);
         ul.append(
           sessionRow(
             agent?.state ?? c.status,
