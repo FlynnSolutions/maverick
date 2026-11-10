@@ -18,7 +18,6 @@ export const missionHref = (projectId, m) => `/mission.html?project=${encodeURIC
 export const missionLinks = (el, projectId, missions, ...verbs) =>
   el("nav", { class: "cc-missions", "aria-label": "Missions" }, el("span", {}, "Missions"),
     ...missions.filter((m) => !isEnded(m.status)).map((m) => {
-      const wants = lampOf(m);
-      return el("a", { class: `cc-mission${WANTS_YOU.test(wants) ? " wants" : ""}`, href: missionHref(projectId, m) }, lamp(wants), m.name, el("i", {}, missionWord(m)));
+      return el("a", { class: "cc-mission", href: missionHref(projectId, m) }, lamp(lampOf(m)), m.name, el("i", {}, missionWord(m)));
     }),
     ...verbs);

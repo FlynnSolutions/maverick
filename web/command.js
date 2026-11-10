@@ -12,7 +12,7 @@ import { icon } from "./icons.js";
 import { questionLines } from "./inbox.js";
 import { WANTS_YOU, lampOf, missionHref, missionLinks } from "./mission-links.js";
 import { failed, leave, toast } from "./toast.js";
-import { finished, reviewOwed, reviewWantsYou, settled, stripState } from "./session-word.js";
+import { finished, owesReview, reviewBlocked, reviewOwed, reviewWantsYou, settled, stripState } from "./session-word.js";
 
 const NEAR_BOTTOM = 80;
 const rank = { waiting: 0, blocked: 0, busy: 1, running: 1, shell: 2, idle: 3, done: 4, exited: 5, stopped: 5, down: 5 };
@@ -173,7 +173,7 @@ export const mountCommandCenter = (root, ctx) => {
 
   const endButton = (s, cls = "danger", long = false) =>
     // An ended session whose review is still owed has nothing to end, and removing its record would drop the review.
-    finished(s.status) && reviewOwed(s.record)
+    owesReview(s, s.record)
       ? el("span", {})
     : s.isShell
       ? el("button", { type: "button", class: cls, title: `close the shell "${s.title}"`, onclick: async (e) => {
@@ -294,7 +294,7 @@ export const mountCommandCenter = (root, ctx) => {
 
   /** The RIO an ended session's review is stopped in, when it is listed: what that session's open reaches. */
   const reviewerAt = (s, record) =>
-    finished(s.status) && reviewOwed(record) === "review blocked" ? model.sessions.find((x) => x.claudeId === record.audit?.claudeId) ?? null : null;
+    finished(s.status) && reviewBlocked(record) ? sessionByClaudeId(record.audit?.claudeId) : null;
 
   /** One session as a flight progress strip. `wide` carries the last exchange under the line. */
   const strip = (s, record, wide = false, band = "") => {
@@ -307,13 +307,13 @@ export const mountCommandCenter = (root, ctx) => {
     const name = stripName(shown, () => openIt());
     const said = stripState(s, record);
     // A review stopped at a prompt is the RIO's to answer, so the strip opens the RIO and wears its lamp.
-    const reviewer = reviewerAt(s, record);
-    const status = reviewer ? reviewer.status : s.status;
+    const target = reviewerAt(s, record) ?? s;
+    const status = target.status;
     // Inside a formation a strip opens where it sits, so several run at once. In the rack it
     // still goes full screen: sixteen strips have no room to hold a conversation open.
-    const expandable = !reviewer && (s.isShell || (Boolean(inFormation) && Boolean(s.sessionId)));
+    const expandable = target === s && (s.isShell || (Boolean(inFormation) && Boolean(s.sessionId)));
     const isOpen = expandable && opened.has(s.key);
-    const openIt = () => (reviewer ? openFull(reviewer) : expandable ? toggleOpen(s.key) : openFull(s));
+    const openIt = () => (expandable ? toggleOpen(s.key) : openFull(target));
     const node = el("article", {
       class: `strip ${status}${s.isShell ? " is-shell" : ""}${settled(s, record) ? " finished" : ""}${wide ? " full" : ""}${isOpen ? " open" : ""}`,
       "data-key": s.key,
@@ -346,11 +346,11 @@ export const mountCommandCenter = (root, ctx) => {
       when: age(s.at),
       up: s.elapsed ? `up ${s.elapsed}` : null,
       where: mission?.name ?? whereText(s, true, false),
-      acts: [s.sessionId ? renameButton(s, name) : disabledRename(), terminalButton(reviewer ?? s), endButton(s, "ghost act end")],
+      acts: [s.sessionId ? renameButton(s, name) : disabledRename(), terminalButton(target), endButton(s, "ghost act end")],
     }),
     // An open strip shows the conversation itself; the one-line excerpt would only repeat it. A
     // blocked review's line is what its RIO asked.
-    isOpen ? null : wide ? say(reviewer ?? s) : null);
+    isOpen ? null : wide ? say(target) : null);
     if (isOpen) node.append(paneFor(s).node);
     return node;
   };
@@ -379,7 +379,8 @@ export const mountCommandCenter = (root, ctx) => {
       }),
       record.handoff ? el("div", { class: "strip-say" }, el("p", { class: "claude" }, el("span", { class: "who" }, "handoff"), text(clip(record.handoff, 240)))) : null);
 
-  const sessionForRecord = (r) => (r.claudeId ? model.sessions.find((s) => s.claudeId === r.claudeId) : model.sessions.find((s) => s.sessionId === r.id)) ?? null;
+  const sessionByClaudeId = (id) => (id ? model.sessions.find((s) => s.claudeId === id) ?? null : null);
+  const sessionForRecord = (r) => (r.claudeId ? sessionByClaudeId(r.claudeId) : model.sessions.find((s) => s.sessionId === r.id) ?? null);
 
   /** A lead and the sessions it watches: the lead's own strip, then its wings indented under it. */
   const formation = (parentRecord, used) => {
@@ -737,7 +738,7 @@ export const mountCommandCenter = (root, ctx) => {
           : el("p", { class: "muted small cc-empty" }, "Nothing flying with it yet. Drop a strip here, or start one.")),
         (d) => d.from === f.id && d.sessionId === f.lead, (d) => demote(f, d.sessionId)),
       // A slot whose session has left the listing is not a row above, so the count says "more" and where it went.
-      gone ? el("p", { class: "muted small cc-empty" }, `${gone} more session${gone === 1 ? "" : "s"} flew in this formation and ${gone === 1 ? "is" : "are"} gone from the session list; the formation keeps ${gone === 1 ? "its slot" : "their slots"}.`) : null,
+      gone ? el("p", { class: "muted small cc-empty" }, gone === 1 ? "1 more session flew in this formation and is gone from the session list; the formation keeps its slot." : `${gone} more sessions flew in this formation and are gone from the session list; the formation keeps their slots.`) : null,
       // No instructions here. Dragging a strip is learned the first time and the line was then
       // permanent furniture at the bottom of every formation; the tab titles still say it.
       el("div", { class: "forms-foot" },
@@ -831,10 +832,12 @@ export const mountCommandCenter = (root, ctx) => {
    * A mission already drawn as a strip on the tab is not linked again: the Rack draws every live
    * one, and a crew tab its own (one thing, one place).
    */
-  const missionNav = (active) =>
-    missionLinks(el, ctx.projectId, active ? missions.filter((m) => m !== crewMissionOf(active)) : [],
+  const missionNav = (active) => {
+    const own = active && crewMissionOf(active);
+    return missionLinks(el, ctx.projectId, active ? missions.filter((m) => m !== own) : [],
       el("button", { type: "button", class: "rack-verb", title: "for work too big for one session and too shaped to hand over cold: the Strike Lead interviews you, plans it into milestones, and flies it once you approve", onclick: newMission }, "open a mission"),
       el("button", { type: "button", class: "rack-verb", title: "sit the CAG down: one conversation, many ideas, one dated document under deliverables/brainstorms/", onclick: brainstorm }, "brainstorm"));
+  };
   /** A live mission's crew tab opens on the mission it flies for: its tab is named after it, so that is what a person came looking for. */
   const crewMissionOf = (f) => missions.find((x) => x.formation === f.id && !isEnded(x.status));
   const crewMission = (f) => {
@@ -971,7 +974,7 @@ export const mountCommandCenter = (root, ctx) => {
     const busy = loose.filter(is("busy", "running"));
     const idle = loose.filter((s) => !blocked.includes(s) && !busy.includes(s) && !finished(s.status) && !shells.includes(s));
     // An ended session still owed a review is filed by the review: one that wants you, or one still at work.
-    const owed = loose.filter((s) => finished(s.status) && reviewOwed(s.record));
+    const owed = loose.filter((s) => owesReview(s, s.record));
     const reviewHeld = owed.filter((s) => reviewWantsYou(s.record));
     const reviewing = owed.filter((s) => !reviewHeld.includes(s));
     // Between turns for under an hour is a conversation you are in the middle of; it is your move.
