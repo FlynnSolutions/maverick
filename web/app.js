@@ -8,6 +8,7 @@ import { finished, mountCommandCenter } from "./command.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
+import { findBox, matches, pager, query } from "./paged-find.js";
 import { attempt, failed, leave, toast } from "./toast.js";
 import * as claudeUsage from "./providers/claude.js";
 
@@ -215,16 +216,25 @@ const persistCollapsed = () => {
   try { localStorage.setItem("console.collapsed", JSON.stringify([...collapsed])); } catch {}
 };
 
+// A long lane draws its first page and a `show more`, the way the Archive does: the heaviest
+// tracker's Backlog was 311 cards and the page 55,000px. Four lanes share the screen, so a page
+// is shorter than the Archive's. Both are kept across repaints, so a write lands on the same view.
+const LANE_PAGE = 20;
+const laneShown = new Map(); // lane key -> how many cards it draws
+const boardQuery = new Map(); // tracker index -> what the board's find holds
+
 let dragging = null;
 
 // The title is the card's button: Enter opens the drawer, where every verb lives, the move
-// included. A click anywhere else on the card opens it too; a drag moves it.
-const cardFor = (trackerIndex, item, number, draggable = true) =>
+// included. A click anywhere else on the card opens it too; a drag moves it. `at` is the card's
+// place among all its group's items, drawn or not, which is where a drop on it lands.
+const cardFor = (trackerIndex, item, number, draggable = true, at = null) =>
   el(
     "div",
     {
       class: `card${item.checked ? " checked" : ""}`,
       draggable: draggable ? "true" : "false",
+      ...(at === null ? {} : { "data-at": String(at) }),
       onmouseenter: (e) => scheduleHover(e.currentTarget, item),
       onmouseleave: hideHover,
       ondragstart: (e) => {
@@ -320,13 +330,16 @@ const fileHref = (path) => `/files?project=${encodeURIComponent(projectId)}&path
  * One write from the board or the calendar, through `attempt`: the bar says what is under way
  * while it runs. Resolves true when the write went through, so a drawer closes only then, without
  * waiting for the board to repaint from the file; `repainted` is that repaint, for a caller that
- * needs the new board.
+ * needs the new board. `onRead(trackers)`, when the write went through, runs on the file as read
+ * back and before it is drawn, so the view can be moved to what the write touched.
  */
 let repainted = Promise.resolve();
-const write = async (what, done, run, undo = null) => {
+let beforeDraw = null;
+const write = async (what, done, run, undo = null, onRead = null) => {
   setStatus(`${what}…`);
   const ok = Boolean(await attempt({ what, done, run, undo }));
   setStatus("");
+  beforeDraw = ok ? onRead : null;
   repainted = loadBoard();
   return ok;
 };
@@ -369,7 +382,7 @@ const EVENT_ICONS = { done: "decision", overdue: "finding" };
 /** One thing on a day: a button, so it is reached and opened from the keyboard like anything else. */
 const calEvent = (cls, label, words, onclick) => {
   const said = words ? `${label}, ${words}` : label;
-  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, onclick }, label);
+  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, "data-reveals-full-text": "", onclick }, el("span", {}, label));
 };
 
 const dueChip = (item) => {
@@ -378,10 +391,27 @@ const dueChip = (item) => {
   return el("span", { class: `chip due ${dueState(due, item.checked)}`, title: `due ${fmtDate(due)}` }, `due ${fmtDate(due, true)}`);
 };
 
-const dropIndexIn = (list, y) => {
-  const cards = [...list.querySelectorAll(".card:not(.dragging)")];
-  const idx = cards.findIndex((c) => y < c.getBoundingClientRect().top + c.offsetHeight / 2);
-  return idx < 0 ? cards.length : idx;
+/**
+ * One drop target: `accepts(e)` gives what is being dragged when this node takes it, and nothing
+ * otherwise; `onDrop(that, e)` makes the write and answers true for the landing to flare. `landing`
+ * is the class lit while something is held over it, cleared only when the pointer leaves the node
+ * itself, not when it crosses into a child.
+ */
+const dropZone = (node, accepts, onDrop, landing = "over") => {
+  node.addEventListener("dragover", (e) => {
+    if (!accepts(e)) return;
+    e.preventDefault();
+    node.classList.add(landing);
+  });
+  node.addEventListener("dragleave", (e) => { if (!node.contains(e.relatedTarget)) node.classList.remove(landing); });
+  node.addEventListener("drop", async (e) => {
+    node.classList.remove(landing);
+    const that = accepts(e);
+    if (!that) return;
+    e.preventDefault();
+    if (await onDrop(that, e)) flares(node);
+  });
+  return node;
 };
 
 const showsInLane = (item, laneId) => {
@@ -390,35 +420,71 @@ const showsInLane = (item, laneId) => {
   return isDevItem(item);
 };
 
-const itemsList = (trackerIndex, section, group, laneId, numbered) => {
-  const list = el("div", { class: "items" });
-  const visible = group.items.filter((item) => showsInLane(item, laneId));
-  visible.forEach((item, i) => list.append(cardFor(trackerIndex, item, numbered ? i + 1 : null, !item.checked)));
-  list.addEventListener("dragover", (e) => {
-    if (!dragging || dragging.trackerIndex !== trackerIndex) return;
-    e.preventDefault();
-    list.classList.add("over");
-  });
-  list.addEventListener("dragleave", () => list.classList.remove("over"));
-  list.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    list.classList.remove("over");
-    if (!dragging || dragging.trackerIndex !== trackerIndex) return;
-    const { item } = dragging;
-    // The drop index counts visible cards; the file move needs the index among ALL items
-    // in the group, so land before the visible neighbour, or at the group's end.
-    const visibleOthers = visible.filter((v) => v.start !== item.start);
-    const neighbour = visibleOthers[dropIndexIn(list, e.clientY)];
-    const others = group.items.filter((v) => v.start !== item.start);
-    const targetIndex = neighbour ? others.findIndex((v) => v.start === neighbour.start) : others.length;
-    if (await moveItem(trackerIndex, item, section, group, targetIndex)) flares(list);
-  });
-  return list;
+/** A group's name as the board shows it, or "" for the items under a section's heading. */
+const groupLabel = (group) => (group.name ? cleanGroupName(group.name) : "");
+
+/**
+ * A lane's groups in the order it draws them. Each card carries `n`, its number among the group's
+ * cards on the board, and `at`, its place among all the group's items, drawn or not, which is the
+ * index a drop on it moves to. The Done lane ends with what was checked off elsewhere, read-only.
+ */
+const laneRuns = (tracker, laneId) => {
+  const runs = tracker.sections.filter((s) => s.column === laneId).flatMap((section) => section.groups.map((group) => ({
+    section, group, label: groupLabel(group), heading: groupLabel(group),
+    cards: group.items.flatMap((item, at) => (showsInLane(item, laneId) ? [{ item, at }] : [])).map((card, i) => ({ ...card, n: i + 1 })),
+  })));
+  const extras = laneId === "shipped" ? doneElsewhere(tracker) : [];
+  if (extras.length) runs.push({ section: null, group: null, label: "", heading: "checked off elsewhere", cards: extras.map((item) => ({ item, at: null, n: null })) });
+  return runs;
 };
+/** What the board's find reads on a card: its group's name, its title, its tags and its description. */
+const cardText = (run, { item }) => `${run.label} ${item.title} ${item.tags.join(" ")} ${item.description ?? ""}`;
+
+/** A group's list, and the drop that lands on the card under the pointer, or just after the last one drawn. */
+const itemsList = (trackerIndex, section, group) => {
+  const list = el("div", { class: "items" });
+  return dropZone(list, () => (dragging?.trackerIndex === trackerIndex ? dragging : null), ({ item }, e) => {
+    const cards = [...list.querySelectorAll(".card:not(.dragging)")];
+    const before = cards.find((c) => e.clientY < c.getBoundingClientRect().top + c.offsetHeight / 2);
+    let at = group.items.length;
+    if (before) at = Number(before.dataset.at);
+    else if (cards.length) at = Number(cards.at(-1).dataset.at) + 1;
+    // The move counts places without the card it moves, so one moved down its own group lands a place earlier.
+    const from = group.items.findIndex((v) => v.start === item.start);
+    if (from >= 0 && from < at) at -= 1;
+    return moveItem(trackerIndex, item, section, group, at);
+  });
+};
+
+/**
+ * After a write, the card it placed is on the page: its lane draws far enough down to reach it, and a
+ * find that would hide it is cleared. Runs on the file as read back, before it is drawn. The write's
+ * own toast says the find was cleared (`clearsFind`), so its undo is not pushed off by a second toast.
+ */
+const keepInView = (trackerIndex, is) => (trackers) => {
+  const tracker = trackers.find((t) => t.index === trackerIndex);
+  for (const [laneId] of tracker ? LANES : []) {
+    const cards = laneRuns(tracker, laneId).flatMap((run) => run.cards.map((card) => ({ run, card })));
+    const hit = cards.find(({ card }) => is(card.item));
+    if (!hit) continue;
+    let q = query(boardQuery.get(trackerIndex) ?? "");
+    if (!matches(cardText(hit.run, hit.card), q)) {
+      boardQuery.delete(trackerIndex);
+      q = "";
+    }
+    const place = cards.filter(({ run, card }) => matches(cardText(run, card), q)).indexOf(hit);
+    const key = `${trackerIndex}:${laneId}`;
+    laneShown.set(key, Math.max(laneShown.get(key) ?? LANE_PAGE, Math.ceil((place + 1) / LANE_PAGE) * LANE_PAGE));
+    return;
+  }
+};
+
+/** The words a write's toast adds when the board's find would hide the card it lands as `text`. */
+const clearsFind = (trackerIndex, text) => (matches(text, query(boardQuery.get(trackerIndex) ?? "")) ? "" : " The find is cleared, so it is on show.");
 
 /** The one move, from a drop or from the drawer: the same write to the tracker either way. Undo moves it back. */
 const moveItem = (trackerIndex, item, section, group, targetIndex, undoing = false) => {
-  const where = group.name ? cleanGroupName(group.name) : laneName(section);
+  const where = groupLabel(group) || laneName(section);
   const run = () => post("/api/move", { project: projectId, tracker: trackerIndex, itemStart: item.start, itemFirstLine: item.firstLine, targetHeading: section.heading, targetGroup: group.name, targetIndex });
   if (undoing) return write(`move ${short(item.title)} back`, `Moved ${short(item.title)} back.`, run);
   // The undo keeps where it came from as plain words, not the old board's objects.
@@ -429,7 +495,8 @@ const moveItem = (trackerIndex, item, section, group, targetIndex, undoing = fal
     if (now && back) moveItem(trackerIndex, now, { heading: back.heading }, { name: back.name }, back.at, true);
     else failed(`move ${short(item.title)} back`, new Error("it is no longer on the board"));
   };
-  return write(`move ${short(item.title)}`, `Moved ${short(item.title)} to ${where}, #${targetIndex + 1}.`, run, undo);
+  const cleared = clearsFind(trackerIndex, cardText({ label: groupLabel(group) }, { item }));
+  return write(`move ${short(item.title)}`, `Moved ${short(item.title)} to ${where}, #${targetIndex + 1}.${cleared}`, run, undo, keepInView(trackerIndex, (i) => i.firstLine === item.firstLine));
 };
 const laneName = (section) => LANES.find(([id]) => id === section.column)?.[1] ?? section.heading;
 
@@ -449,15 +516,28 @@ const LANE_EMPTY = {
 };
 
 const quickAdd = (tracker, section, label, key) => {
-  const input = el("input", { type: "text", placeholder: "add an item", "aria-label": `new item in ${label}`, autocomplete: "off" });
+  // An empty add is said in readable words under the field, as the mission page's empty answer is, and the next keystroke takes it back.
+  const said = el("p", { class: "add-said", role: "status", id: `add-said-${key.replace(/\W/g, "-")}` });
+  const input = el("input", { type: "text", placeholder: "add an item", "aria-label": `new item in ${label}`, "aria-describedby": said.id, autocomplete: "off",
+    oninput: () => { input.removeAttribute("aria-invalid"); said.textContent = ""; } });
   return el("form", {
     class: "quick-add",
     "data-lane": key,
     onsubmit: async (e) => {
       e.preventDefault();
       const title = input.value.trim();
-      if (!title) return;
-      const ok = await write(`add ${short(title)}`, `Added ${short(title)} to ${label}.`, () => post("/api/items", { project: projectId, tracker: tracker.index, heading: section.heading, name: "", title }));
+      if (!title) {
+        said.textContent = `Type the item first, then add it to ${label}.`;
+        input.setAttribute("aria-invalid", "true");
+        input.focus();
+        return;
+      }
+      // The new item is the first under the section's heading, outside any group.
+      const added = (trackers) => {
+        const first = trackers.find((t) => t.index === tracker.index)?.sections.find((s) => s.heading === section.heading)?.groups.find((g) => !g.name)?.items[0];
+        if (first) keepInView(tracker.index, (i) => i === first)(trackers);
+      };
+      const ok = await write(`add ${short(title)}`, `Added ${short(title)} to ${label}.${clearsFind(tracker.index, title)}`, () => post("/api/items", { project: projectId, tracker: tracker.index, heading: section.heading, name: "", title }), null, added);
       await repainted;
       // The board repainted; the lane's new field takes the focus back, and a refusal keeps the words.
       const again = document.querySelector(`.quick-add[data-lane="${key}"] input`);
@@ -465,18 +545,19 @@ const quickAdd = (tracker, section, label, key) => {
       if (!ok) again.value = title;
       again.focus();
     },
-  }, input, el("button", { type: "submit" }, "add"));
+  }, input, el("button", { type: "submit" }, "add"), said);
 };
 
-const renderLane = (tracker, [laneId, label, extraClass]) => {
+const renderLane = (tracker, [laneId, label, extraClass], clearFind) => {
   const sections = tracker.sections.filter((s) => s.column === laneId);
   const key = `${tracker.index}:${laneId}`;
   const isCollapsed = collapsed.has(key);
-  const extras = laneId === "shipped" ? doneElsewhere(tracker) : [];
-  const count =
-    sections.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.items.filter((i) => showsInLane(i, laneId)).length, 0), 0) + extras.length;
+  const runs = laneRuns(tracker, laneId);
+  const count = runs.reduce((n, run) => n + run.cards.length, 0);
 
   const lane = el("div", { class: `lane ${extraClass}${isCollapsed ? " collapsed" : ""}` });
+  // The head says how many the lane holds, and under a find how many of those it matched.
+  const counted = el("span", { class: "count" }, String(count));
   lane.append(
     el(
       "h3",
@@ -488,50 +569,95 @@ const renderLane = (tracker, [laneId, label, extraClass]) => {
         loadBoard();
       }),
       el("span", { class: "label" }, label),
-      el("span", { class: "count" }, String(count)),
+      counted,
     ),
   );
-  if (isCollapsed) return lane;
+  if (isCollapsed) return { lane, show: () => {} };
   // A new item lands at the top of the lane's first section, outside any group, as one typed line.
   if (laneId !== "shipped" && sections.length) lane.append(quickAdd(tracker, sections[0], label, key));
-  if (!count) lane.append(el("p", { class: "lane-empty muted small" }, LANE_EMPTY[laneId]));
-
-  for (const section of sections) {
-    if (sections.length > 1) lane.append(el("div", { class: "group-name" }, section.heading));
-    const releases = laneId === "priority";
-    for (const group of section.groups) {
-      // Groups are labels, never boxes: the lane stays one runway. An empty group can be deleted.
-      const block = el("div", { class: "group" });
-      if (group.name) {
-        const removable = group.items.length === 0;
-        block.append(el("div", { class: "group-name" }, cleanGroupName(group.name), removable ? el("button", { type: "button", class: "ghost icon-btn", "aria-label": `delete the empty group ${cleanGroupName(group.name)}`, title: "delete this empty group", onclick: async () => {
-          if (!(await ask({ title: `Delete the empty group "${cleanGroupName(group.name)}"?`, confirm: "delete", danger: true }))) return;
-          await write(`delete the group "${cleanGroupName(group.name)}"`, `Deleted the empty group "${cleanGroupName(group.name)}".`, () => api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) }));
-        } }, icon("close")) : null));
+  const numbered = laneId === "priority";
+  // Groups are labels, never boxes: the lane stays one runway. An empty group can be deleted.
+  const groupBlock = ({ section, group, heading: name }) => {
+    const list = group ? itemsList(tracker.index, section, group) : el("div", { class: "items" });
+    if (!name) return { block: el("div", { class: "group" }, list), list };
+    const remove = group?.items.length === 0 ? el("button", { type: "button", class: "ghost icon-btn", "aria-label": `delete the empty group ${name}`, title: "delete this empty group", onclick: async () => {
+      if (!(await ask({ title: `Delete the empty group "${name}"?`, confirm: "delete", danger: true }))) return;
+      await write(`delete the group "${name}"`, `Deleted the empty group "${name}".`, () => api("/api/groups", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: projectId, tracker: tracker.index, heading: section.heading, name: group.name }) }));
+    } }, icon("close")) : null;
+    return { block: el("div", { class: "group" }, el("div", { class: "group-name" }, name, remove), list), list };
+  };
+  const body = el("div");
+  const page = pager({ page: LANE_PAGE, onMore: (to) => { laneShown.set(key, to); drawTo(to); tell(); }, footClass: "lane-foot" });
+  page.none.className = "lane-empty muted small";
+  // What the lane draws for the find it holds: per group, the cards that match, and how many of them are drawn.
+  let shown = [];
+  let drawn = 0;
+  let q = "";
+  const sectioned = new Set(runs.map((run) => run.section).filter(Boolean)).size > 1;
+  /**
+   * Draw on to `limit` cards, carrying on from where the last page stopped: a group's label and list
+   * are drawn when the page reaches it. A group the find matched none of is not drawn, so a drop
+   * lands only among what is on show and nothing moves when a card is picked up.
+   */
+  const drawTo = (limit) => {
+    let section;
+    for (const run of shown) {
+      if (q && !run.hits.length) continue;
+      if (!run.list) {
+        if (drawn >= limit) break;
+        if (sectioned && run.section && run.section !== section) body.append(el("div", { class: "group-name" }, run.section.heading));
+        Object.assign(run, groupBlock(run));
+        body.append(run.block);
       }
-      block.append(itemsList(tracker.index, section, group, laneId, releases));
-      lane.append(block);
+      section = run.section ?? section;
+      const next = run.hits.slice(run.drawn, run.drawn + Math.max(0, limit - drawn));
+      for (const { item, at, n } of next) run.list.append(cardFor(tracker.index, item, numbered ? n : null, !item.checked, at));
+      run.drawn += next.length;
+      drawn += next.length;
     }
-  }
-  if (extras.length) {
-    lane.append(el("div", { class: "group-name" }, "checked off elsewhere"));
-    const list = el("div", { class: "items" });
-    for (const item of extras) list.append(cardFor(tracker.index, item, null, false));
-    lane.append(list);
-  }
-  return lane;
+  };
+  const tell = () => {
+    const found = shown.reduce((n, run) => n + run.hits.length, 0);
+    counted.textContent = q ? `${found} of ${count}` : String(count);
+    counted.title = q ? `${found} of the ${count} in ${label} match the find` : "";
+    page.tell({ found, empty: count ? `Nothing in ${label} says "${(boardQuery.get(tracker.index) ?? "").trim()}".` : LANE_EMPTY[laneId], clear: count ? clearFind : null });
+  };
+  /** The lane drawn again for the find it now holds, from its first page, as the Archive draws its rows: only the cards on show are drawn. */
+  const show = () => {
+    q = query(boardQuery.get(tracker.index) ?? "");
+    page.at.shown = laneShown.get(key) ?? LANE_PAGE;
+    shown = runs.map((run) => ({ ...run, hits: q ? run.cards.filter((card) => matches(cardText(run, card), q)) : run.cards, drawn: 0 }));
+    drawn = 0;
+    body.replaceChildren();
+    drawTo(page.at.shown);
+    tell();
+  };
+  show();
+  lane.append(page.none, body, page.foot);
+  return { lane, show };
 };
 
 const renderBoard = (tracker) => {
+  // A card past a lane's first page is found here, as the Archive finds a finished session.
+  const find = findBox({ label: "find on the board", value: boardQuery.get(tracker.index) ?? "", onFind: (words) => {
+    boardQuery.set(tracker.index, words);
+    for (const [id] of LANES) laneShown.delete(`${tracker.index}:${id}`);
+    for (const show of shows) show();
+  } });
+  find.node.classList.add("board-find");
   const lanes = el("div", { class: "lanes" });
-  for (const lane of LANES) lanes.append(renderLane(tracker, lane));
+  const shows = LANES.map((lane) => {
+    const drawn = renderLane(tracker, lane, find.clear);
+    lanes.append(drawn.lane);
+    return drawn.show;
+  });
   // A collapsed lane is a fixed strip, not a fraction: a fraction grows with the window and
   // never actually gets out of the way.
   lanes.style.setProperty("--lane-widths", LANES.map(([id]) => (collapsed.has(`${tracker.index}:${id}`) ? "36px" : id === "priority" ? "minmax(0, 1.5fr)" : "minmax(0, 1fr)")).join(" "));
   return el(
     "section",
     { class: "board" },
-    el("div", { class: "board-title" }, el("h2", {}, tracker.label), el("code", {}, tracker.path.replace(project.path, "").replace(/^\//, ""))),
+    el("div", { class: "board-title" }, el("h2", {}, tracker.label), el("code", {}, tracker.path.replace(project.path, "").replace(/^\//, "")), find.node),
     lanes,
   );
 };
@@ -541,6 +667,8 @@ const loadBoard = async () => {
   try {
     const trackers = await api(`/api/board?project=${encodeURIComponent(projectId)}`);
     lastTrackers = trackers;
+    beforeDraw?.(trackers);
+    beforeDraw = null;
     if ($("#status").textContent === "loading") { $("#status").textContent = ""; $("#status").classList.remove("loading"); }
     // The workspace does not need releases (a GitHub round trip); the board and calendar do.
     if (!releasesData && view !== "workspace") releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
@@ -558,10 +686,17 @@ const loadBoard = async () => {
           ? [await renderWorkspace()]
           : [releasesSection(trackers), ...trackers.map(renderBoard)]),
     );
-    for (const b of document.querySelectorAll("#view-toggle button")) b.classList.toggle("active", b.dataset.view === view);
+    // The view you are on is the page you are on: pressing it again is meant to do nothing.
+    for (const b of document.querySelectorAll("#view-toggle button")) {
+      b.classList.toggle("active", b.dataset.view === view);
+      if (b.dataset.view === view) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    }
     if (!trackers.length) $("#boards").append(el("p", { class: "muted" }, "No tracker file the console recognises (CHECKLIST.md, PUNCHLIST.md, TODO.md)."));
+    return true;
   } catch (err) {
     setStatus(err.message, true);
+    return false;
   }
 };
 
@@ -669,7 +804,7 @@ const moveRow = (trackerIndex, item) => {
   if (!here) return null;
   const places = lastTrackers[trackerIndex].sections.filter((s) => s.column).flatMap((section) => section.groups.map((group) => ({ section, group })));
   const where = el("select", { id: "drawer-move" }, ...places.map(({ section, group }, i) =>
-    el("option", { value: String(i), ...(group === here.group ? { selected: "" } : {}) }, `${laneName(section)}${group.name ? ` / ${cleanGroupName(group.name)}` : ""}`)));
+    el("option", { value: String(i), ...(group === here.group ? { selected: "" } : {}) }, `${laneName(section)}${group.name ? ` / ${groupLabel(group)}` : ""}`)));
   const go = async (section, group, index) => closeIf(await moveItem(trackerIndex, item, section, group, index));
   const up = btn("move up", () => go(here.section, here.group, here.at - 1), "ghost");
   const down = btn("move down", () => go(here.section, here.group, here.at + 1), "ghost");
@@ -847,23 +982,8 @@ const draggable = (node, payload) => {
 const draggableItem = (node, tracker, item, section) => draggable(node, { type: "item", tracker, item, section });
 const draggableShip = (node, occ) => draggable(node, { type: "ship", occ });
 
-const dropZone = (node, accepts, onDrop) => {
-  node.addEventListener("dragover", (e) => {
-    if (!calDrag || !accepts(calDrag)) return;
-    e.preventDefault();
-    node.classList.add("over");
-  });
-  node.addEventListener("dragleave", () => node.classList.remove("over"));
-  node.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    node.classList.remove("over");
-    if (!calDrag || !accepts(calDrag)) return;
-    const drag = calDrag;
-    calDrag = null;
-    if (await onDrop(drag)) flares(node);
-  });
-  return node;
-};
+/** A calendar drop target takes what the calendar is dragging when `takes` says it may. */
+const calendarDrag = (takes) => () => (calDrag && takes(calDrag) ? calDrag : null);
 
 let releasesData = null;
 /** After a write the releases depend on, the next paint reads them again (a GitHub round trip, so only then). */
@@ -906,7 +1026,6 @@ const setItemRelease = (tracker, item, slotKey) => {
 };
 
 /** A slot card accepts a card dragged from the board (dragging) or from the calendar (calDrag). */
-const acceptsAnyItemDrag = () => (calDrag && calDrag.type === "item") || dragging;
 const draggedItem = () => (calDrag && calDrag.type === "item" ? { tracker: calDrag.tracker, item: calDrag.item } : dragging ? { tracker: lastTrackers[dragging.trackerIndex], item: dragging.item } : null);
 
 
@@ -988,17 +1107,11 @@ const slotCard = (slot, trackers) => {
   const label = existing ? (existing.finished ? "shipped" : `continue shipping · ${shipProgress(existing).done}/${shipProgress(existing).total}`) : `ship ${slot.label}`;
   card.append(el("div", { class: "cta-slot" },
     slot.key === "next" ? btn(label, (e) => { e.stopPropagation(); startTheShip(slot.label.replace(/^v/, "")); }, "primary") : el("span", { class: "muted small" }, "drop cards here to plan")));
-  card.addEventListener("dragover", (e) => { if (!acceptsAnyItemDrag()) return; e.preventDefault(); card.classList.add("over"); });
-  card.addEventListener("dragleave", () => card.classList.remove("over"));
-  card.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    card.classList.remove("over");
-    const d = draggedItem();
+  return dropZone(card, draggedItem, (d) => {
     calDrag = null;
     dragging = null;
-    if (d && (await setItemRelease(d.tracker, d.item, slot.key))) flares(card);
+    return setItemRelease(d.tracker, d.item, slot.key);
   });
-  return card;
 };
 
 const openSlotDrawer = (slot, trackers) => {
@@ -1188,7 +1301,16 @@ const shipCadenceRow = () => {
   };
   every.addEventListener("change", apply);
   anchor.addEventListener("change", () => { if (Number(every.value)) apply(); });
-  const oneOff = el("input", { type: "date", "aria-label": "one-off ship day", title: "a ship day on its own, outside the cadence" });
+  // A one-off with no day is said under the row, as an empty add is, until a day is picked.
+  const missing = el("p", { class: "add-said", role: "status", id: "one-off-said" });
+  const oneOff = el("input", { type: "date", "aria-label": "one-off ship day", "aria-describedby": missing.id, title: "a ship day on its own, outside the cadence",
+    oninput: () => { oneOff.removeAttribute("aria-invalid"); missing.textContent = ""; } });
+  const addOneOff = () => {
+    if (oneOff.value) return setShipDay("add", oneOff.value);
+    missing.textContent = "Pick the day first, then add it.";
+    oneOff.setAttribute("aria-invalid", "true");
+    oneOff.focus();
+  };
   const next = (shipDays?.occurrences ?? []).find((o) => o.date >= today());
   return el("div", { class: "cal-ships" },
     el("span", { class: "k" }, "Ship days"),
@@ -1198,7 +1320,8 @@ const shipCadenceRow = () => {
     next ? el("span", { class: "muted small mono" }, `next ${fmtDate(next.date, true)}`) : el("span", { class: "muted small" }, "none scheduled"),
     el("span", { class: "spacer" }),
     oneOff,
-    btn("add a one-off", () => { if (oneOff.value) setShipDay("add", oneOff.value); }, "ghost"),
+    btn("add a one-off", addOneOff, "ghost"),
+    missing,
   );
 };
 
@@ -1231,7 +1354,8 @@ const renderCalendar = (trackers) => {
     el("button", { type: "button", class: "ghost icon-btn month-prev", "aria-label": `previous month, ${before}`, title: before, onclick: () => shift(-1) }, icon("chevron")),
     el("h2", {}, current),
     el("button", { type: "button", class: "ghost icon-btn month-next", "aria-label": `next month, ${after}`, title: after, onclick: () => shift(1) }, icon("chevron")),
-    btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"),
+    // Already on this month, today has nowhere to go, so it rests.
+    Object.assign(btn("today", () => { calendarMonth = today().slice(0, 7); loadBoard(); }, "ghost"), { disabled: calendarMonth === today().slice(0, 7) }),
     el("span", { class: "spacer" }),
     el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, or a ship day to move it"),
   );
@@ -1254,13 +1378,13 @@ const renderCalendar = (trackers) => {
       const node = e.kind === "release"
         ? calEvent("release", `${e.title} deploys`, "", () => openSlotDrawer(e.slot, trackers))
         : calEvent(`item ${state}`, e.title, EVENT_WORDS[state], () => openDrawer(e.tracker.index, e.item));
-      if (EVENT_ICONS[state]) node.prepend(icon(EVENT_ICONS[state]));
+      if (EVENT_ICONS[state]) node.firstElementChild.prepend(icon(EVENT_ICONS[state]));
       if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
       cell.append(node);
     }
     dropZone(
       cell,
-      (d) => (d.type === "item" ? d.item.fields.due !== date : d.type === "ship" ? d.occ.date !== date : false),
+      calendarDrag((d) => (d.type === "item" ? d.item.fields.due !== date : d.type === "ship" ? d.occ.date !== date : false)),
       (d) => (d.type === "ship"
         ? setShipDay("move", d.occ.origin, { to: date })
         : setDue(d.tracker, d.item, date)),
@@ -1272,7 +1396,7 @@ const renderCalendar = (trackers) => {
     undated.length || events.some((e) => e.kind === "item")
       ? el("div", { class: "muted small" }, "drop a dated item here to clear its deadline")
       : el("p", { class: "lane-empty muted small" }, "Nothing on the roadmap yet. Items are added on the ", el("a", { href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "board"), ", and dated in their drawer or by dragging them here."));
-  dropZone(side, (d) => d.type === "item" && Boolean(d.item.fields.due), (d) => setDue(d.tracker, d.item, ""));
+  dropZone(side, calendarDrag((d) => d.type === "item" && Boolean(d.item.fields.due)), (d) => setDue(d.tracker, d.item, ""));
   for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(calEvent("item undated", i.title, "", () => openDrawer(t.index, i)), t, i, s));
   const key = (cls, words, iconName) => el("span", { class: `cal-key ${cls}` }, iconName ? icon(iconName) : null, words);
   return el(
@@ -1709,25 +1833,18 @@ const uploadDrop = async (file) => {
 };
 const quotePath = (p) => (/\s/.test(p) ? `"${p}"` : p);
 const acceptDrops = (host, onPaths) => {
-  host.addEventListener("dragover", (e) => {
-    if (!e.dataTransfer?.types.includes("Files")) return;
-    e.preventDefault();
-    host.classList.add("dropping");
-  });
-  host.addEventListener("dragleave", () => host.classList.remove("dropping"));
-  host.addEventListener("drop", async (e) => {
-    host.classList.remove("dropping");
-    if (!e.dataTransfer?.files.length) return;
-    e.preventDefault();
+  // Files are named on the way over and handed over on the drop.
+  dropZone(host, (e) => (e.type === "drop" ? e.dataTransfer?.files.length && e.dataTransfer.files : e.dataTransfer?.types.includes("Files")), async (files) => {
     try {
       const paths = [];
-      for (const f of e.dataTransfer.files) paths.push(await uploadDrop(f));
+      for (const f of files) paths.push(await uploadDrop(f));
       onPaths(paths.map(quotePath));
       toast(`${paths.length} file${paths.length === 1 ? "" : "s"} attached.`);
     } catch (err) {
       failed("attach the dropped files", err);
     }
-  });
+    return false;
+  }, "dropping");
 };
 
 /** Starting a session or a shell is an action: what it did is a toast, and a failure names it. */
@@ -1915,7 +2032,11 @@ const boot = async () => {
   reload.setAttribute("aria-label", "refresh");
   reload.setAttribute("title", "refresh");
   reload.replaceChildren(icon("refresh"));
-  reload.addEventListener("click", () => { loadBoard(); loadRail(true); });
+  // A refresh that finds nothing new still says it looked; one that fails says why on the bar.
+  reload.addEventListener("click", async () => {
+    const [read] = await Promise.all([loadBoard(), loadRail(true)]);
+    if (read) toast(`Read ${project.name} again.`);
+  });
   $("#refresh-live").addEventListener("click", () => loadRail(true));
   let railCollapsed = false;
   try { railCollapsed = localStorage.getItem("console.rail") === "collapsed"; } catch {}

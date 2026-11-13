@@ -2,6 +2,7 @@
 /**
  * The page check CI runs on every pull request: the app rendered on the invented Harbor project,
  * one real write made through the page, and the tracker read back from the commit it made. Then the
+ * board at a real tracker's weight: a card past the first page found, opened and dragged. Then the
  * command center walked at the size a real project reaches: 130 ended sessions and a live mission.
  * Then a question from the Strike Lead answered from the first screen, and read back from the server.
  * Then, when a ui-audit is plugged in, its grade on the key states, which must be a complete A.
@@ -51,6 +52,119 @@ writeFileSync(write, `(async () => {
   form.requestSubmit();
   const toast = await until(() => document.querySelector(".toast"), 10000);
   return toast ? toast.className + ": " + toast.textContent.trim() : "error: no toast after the add";
+})()`, "utf8");
+
+const CARDS = 320;
+const DEEP = "Sound berth 287 and log its depth";
+const AIMED = "Sound berth 4 and log its depth";
+const AIMED_AT = "Sound berth 45 and log its depth";
+
+/**
+ * The board at a real tracker's weight, from a cold open at 1280x900, every write made through the
+ * page. Each long lane draws one page with the way to the rest. A card past the page is found and
+ * opened; the find clears from its field. A card moved out of what the find shows clears the find,
+ * says so, and is on show; its undo puts it back. A card pushed past the page by "move down" stays on
+ * show. Under a find, one card dropped on another lands just before it. An empty add says so and
+ * takes it back at the next key. Answers "ok" and what the toasts said, or the first thing in the
+ * way; where the cards landed is read back from the commits.
+ */
+const board = join(out, "board.js");
+writeFileSync(board, `(async () => {
+  ${UNTIL}
+  const lanes = () => document.querySelectorAll(".lane");
+  const backlog = () => lanes()[0];
+  const cards = (lane) => [...lane.querySelectorAll(".card")];
+  const titled = (lane, words) => cards(lane).find((c) => c.querySelector(".title").textContent === words);
+  const box = () => document.querySelector(".board-find input");
+  const find = (words) => { box().value = words; box().dispatchEvent(new Event("input", { bubbles: true })); };
+  const drop = (card, list, y) => {
+    const drag = new DataTransfer();
+    card.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: drag }));
+    list.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: drag }));
+    list.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: drag, clientY: y }));
+  };
+  const toasted = (words) => until(() => [...document.querySelectorAll(".toast:not(.leaving)")].find((t) => t.textContent.includes(words)), 10000);
+  /** Opens a card's drawer and gives the drawer. */
+  const open = async (card) => { card.querySelector(".title").click(); return until(() => document.querySelector(".drawer:not(.leaving)"), 5000); };
+  /** Waits for the board drawn after a write. */
+  const repainted = (before) => until(() => backlog() !== before && backlog(), 10000);
+  const said = [];
+
+  if (!(await until(() => document.querySelector(".lane .card"), 15000))) return "error: no cards on the board";
+  if (document.documentElement.scrollHeight > 8000) return "error: the board is " + document.documentElement.scrollHeight + "px tall";
+  if (cards(backlog()).length !== 20) return "error: the backlog drew " + cards(backlog()).length + " cards for a page of 20";
+  if (backlog().querySelector(".lane-foot [role=status]").textContent !== "20 shown") return "error: the backlog does not say how much is on show: " + backlog().querySelector(".lane-foot").textContent;
+  backlog().querySelector(".lane-foot .rack-verb").click();
+  if (cards(backlog()).length !== 40) return "error: show more drew " + cards(backlog()).length + " cards";
+
+  // Find a card past the page, open it, and clear the find from its field.
+  find("berth 287");
+  if (!(await until(() => cards(backlog()).length === 1, 3000))) return "error: find did not narrow the backlog to one card";
+  const total = backlog().querySelector(".lane-title .count").textContent;
+  if (!/^1 of \\d+$/.test(total)) return "error: under the find the backlog's head says " + total;
+  if (!backlog().querySelector(".lane-foot").hidden) return "error: a lane with everything on show still has a foot";
+  if (!(await open(cards(backlog())[0]))?.textContent.includes(${JSON.stringify(DEEP)})) return "error: the found card did not open";
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  if (!(await until(() => !document.querySelector(".drawer:not(.leaving)"), 3000))) return "error: Escape did not close the drawer";
+  if (lanes()[2].querySelector(".lane-empty button")?.textContent !== "clear the find") return "error: a lane the find matched nothing in offers no way out";
+  box().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  if (box().value || cards(backlog()).length !== 20) return "error: Escape in the field did not clear the find";
+
+  // Move a found card out of what the find shows: the find is cleared, said in the move's toast, and the card is on show; undo puts it back.
+  find("survey run 12");
+  const deep = await until(() => titled(backlog(), ${JSON.stringify(DEEP)}), 3000);
+  if (!deep) return "error: the find on a group's name did not show its cards";
+  const drawer = await open(deep);
+  const lane = drawer.querySelector("#drawer-move");
+  lane.value = [...lane.options].find((o) => o.textContent.startsWith("Roadmap")).value;
+  lane.dispatchEvent(new Event("change"));
+  let before = backlog();
+  [...drawer.querySelectorAll("button")].find((b) => b.textContent === "move").click();
+  const moved = await toasted("The find is cleared");
+  if (!moved) return "error: moving a card out of the find did not say the find was cleared";
+  said.push(moved.querySelector("p").textContent);
+  if (!(await repainted(before))) return "error: the board did not repaint after the move";
+  if (box().value) return "error: the find was not cleared";
+  if (!titled(lanes()[1], ${JSON.stringify(DEEP)})) return "error: the moved card is not on show on the roadmap";
+  before = backlog();
+  [...moved.querySelectorAll("button")].find((b) => b.textContent === "undo").click();
+  const back = await toasted("back");
+  if (!back) return "error: undo said nothing";
+  said.push(back.querySelector("p").textContent);
+  if (!(await repainted(before))) return "error: the board did not repaint after the undo";
+
+  // Push the page's last card past the page: the lane draws on to keep it on show.
+  if (cards(backlog()).length !== 20) return "error: after the undo the backlog drew " + cards(backlog()).length + " cards";
+  const last = cards(backlog()).at(-1);
+  const pushedTitle = last.querySelector(".title").textContent;
+  const pushing = await open(last);
+  before = backlog();
+  [...pushing.querySelectorAll("button")].find((b) => b.textContent === "move down").click();
+  const pushed = await toasted("Moved " + JSON.stringify(pushedTitle));
+  if (!pushed) return "error: move down said nothing";
+  said.push(pushed.querySelector("p").textContent);
+  if (!(await repainted(before))) return "error: the board did not repaint after move down";
+  if (cards(backlog()).slice(0, 20).some((c) => c.querySelector(".title").textContent === pushedTitle)) return "error: move down did not push the card past the page";
+  if (!titled(backlog(), pushedTitle)) return "error: the card pushed past the page is not on show";
+
+  // Under a find, drop one card on another, with unfound cards between them.
+  find("berth 4");
+  const aimed = await until(() => { const a = titled(backlog(), ${JSON.stringify(AIMED)}); const b = titled(backlog(), ${JSON.stringify(AIMED_AT)}); return a && b && cards(backlog()).length < 20 ? [a, b] : null; }, 3000);
+  if (!aimed) return "error: the find did not narrow the backlog to the berths with a 4";
+  drop(aimed[0], aimed[1].closest(".items"), aimed[1].getBoundingClientRect().top + 2);
+  const landed = await toasted(${JSON.stringify(AIMED.slice(0, 20))});
+  if (!landed) return "error: no toast after the drop under the find";
+  said.push(landed.querySelector("p").textContent);
+
+  // An empty add says what it wants, and the next key takes it back.
+  const add = document.querySelector(".quick-add");
+  add.requestSubmit();
+  const input = add.querySelector("input");
+  if (input.getAttribute("aria-invalid") !== "true" || !add.querySelector(".add-said").textContent) return "error: an empty add said nothing";
+  input.value = "x";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  if (input.hasAttribute("aria-invalid") || add.querySelector(".add-said").textContent) return "error: typing did not take the empty add's words back";
+  return "ok: " + said.join(" | ");
 })()`, "utf8");
 
 const WORKSPACE = "/?project=harbor&view=workspace";
@@ -134,7 +248,7 @@ const seedRound = (harbor, id) => addToChat(harbor, id, { text: "The survey is b
 ] });
 
 
-const harbor = await startHarbor({ ended: ENDED });
+const harbor = await startHarbor({ ended: ENDED, cards: CARDS });
 let failed = "";
 let missionId = "";
 try {
@@ -147,6 +261,19 @@ try {
   else if (harbor.git("show", "--name-only", "--format=", "HEAD").trim() !== tracker) failed = "the add's commit touched more than the tracker";
   else if (harbor.git("status", "--porcelain")) failed = "the add left the tracker uncommitted";
   else console.log(`committed: ${harbor.git("log", "-1", "--format=%h %s").trim()}`);
+
+  if (!failed) {
+    const walked = execFileSync(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}${BOARD}`, "--eval", board, "--w", "1280", "--h", "900", "--wait", "500"], { encoding: "utf8" }).trim();
+    console.log(`the board walked: ${walked}`);
+    // The card moved to the roadmap is back in its group after the undo, and the card dropped under
+    // the find landed just before the one it was dropped on, so the next item after it is that card.
+    const file = harbor.git("show", `HEAD:${tracker}`);
+    const at = file.indexOf(`**${DEEP}**`);
+    const after = file.slice(file.indexOf(`**${AIMED}**`)).split("\n").slice(1).find((line) => line.startsWith("- ["));
+    if (!walked.includes("ok: ")) failed = `the board walk: ${walked}`;
+    else if (!(at > file.indexOf("### Survey run 12") && at < file.indexOf("### Survey run 13"))) failed = `the undo did not put the moved card back in its group: ${harbor.head()}`;
+    else if (!after?.includes(`**${AIMED_AT}**`)) failed = `the card dropped under the find did not land where it was aimed; the next item is: ${after}`;
+  }
 
   if (!failed) {
     const started = await fetch(`${harbor.url}/api/missions?project=harbor`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: MISSION, brief: "Dredge the channel to six metres." }) });
@@ -180,11 +307,13 @@ try {
   const audit = process.env.MAVERICK_UI_AUDIT;
   if (!failed && !audit) console.log("ui-audit: no MAVERICK_UI_AUDIT set, grade skipped");
   else if (!failed) {
-    // The key states, after the write: the board with the new card, an item's drawer, the picker,
-    // the command center under its real weight, folded and open, and a question being asked.
+    // The key states, after the write: the board under its real weight with the new card, a find,
+    // an item's drawer, the picker, the command center under its real weight, folded and open, and
+    // a question being asked.
     const manifest = { base: harbor.url, routes: [
       { id: "board", path: BOARD, states: [
         { id: "default", steps: [{ waitFor: ".lane .card", timeout: 15000 }], expect: ".lane .card" },
+        { id: "found", steps: [{ waitFor: ".lane .card", timeout: 15000 }, { eval: "const f = document.querySelector('.board-find input'); f.value = 'berth 2'; f.dispatchEvent(new Event('input', { bubbles: true }))" }, { wait: 500 }], expect: ".lane-foot [role=status]:not(:empty)" },
         { id: "item-drawer", steps: [{ waitFor: ".lane .card", timeout: 15000 }, { click: ".lane .card .title" }, { waitFor: ".drawer", timeout: 12000 }, { wait: 700 }], expect: ".drawer" },
       ] },
       { id: "workspace", path: WORKSPACE, states: [

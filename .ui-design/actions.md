@@ -147,9 +147,11 @@ to the tracker file, the same write whichever control made it.
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words | The new card settles in | Linear quick add, Trello add a card |
+| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words; the new card is on show (a find that would hide it is cleared, and the toast says so); an empty add marks the field invalid, says what it wants in a line under it, and the next keystroke takes that back | The new card settles in | Linear quick add, Trello add a card |
 | Item | Open | Its title (a button), Enter or a click anywhere on the card | The drawer opens with its heading focused; Escape or the close icon gives focus back | The drawer slides in | Linear issue peek |
-| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move` | Toast with `undo`; the board repaints from the file | The list it landed in flares | Trello, Linear |
+| Item | Find one | `find on the board` over the lanes; it reads each card's title, tags and description and its group's name | Once the typing pauses, each lane draws only its matches and its head reads `14 of 323`; a lane with none says `Nothing in <lane> says "..."` with `clear the find` | none | the Archive's find, Trello filter |
+| Item | Leave a find | The clear control beside the field, Escape in the field, or a lane's `clear the find` | The whole board is back from its first page, the focus in the field | none | GitHub, Linear filter clear |
+| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move`. Under a page or a find a drop lands just before the card it is dropped on, or just after the last one drawn, and only among what is on show: picking a card up never moves the targets. A group the find hid all of is reached by the drawer's `lane` select, or by leaving the find | Toast with `undo`; the board repaints from the file, keeping the find and the pages, and the lane draws far enough to show the moved card (a find that would hide it is cleared, and the toast says so) | The list it landed in flares | Trello, Linear |
 | Item | Reorder in its group (the runway) | Drag; or the drawer's `move up` and `move down` | Toast with `undo` | as above | Trello, Jira rank |
 | Item | Plan for a release | Drag onto a release card; or the drawer's `release` select | Toast with `undo` | The card flares | Linear cycles |
 | Item | Set or clear a deadline | The drawer's date and `set` or `clear`; or drag onto a calendar day | Toast with `undo` | none | Linear due date |
@@ -158,13 +160,15 @@ to the tracker file, the same write whichever control made it.
 | Item | Remove | `remove`, with the reason asked for | Toast; it moves to the tracker's Removed section with the date and reason | none | Linear archive with reason |
 | Item | Plan it, spawn on it | `plan it` (the primary on an unplanned item), `spawn` (the primary on a planned one, or on the card) | The session opens in the workspace | none | Linear "start working" |
 | Lane | Fold or unfold | The chevron beside its name; remembered | The chevron turns | The chevron turns | GitHub projects |
+| Lane | See the rest of a long one | It draws 20 cards; `show more` under it draws 20 more, beside `20 shown`. The head says how many the lane holds, so the foot shows only while there is more | The next cards are added below and the focus stays on `show more`; it leaves when the lane is all on show | none | the Archive's `show more`, GitHub "load more" |
 | Group | Delete when empty | The close icon beside an empty group's name, then confirm | Toast | none | Trello archive list |
+| Board | Read it again | The refresh icon in the bar | Toast "Read <project> again."; a read that fails says why in the bar | none | Linear refresh |
 | Board | Loading, failing, empty | A lane with nothing in it says what goes there; a board that cannot be read says why in the bar | n/a | none | Linear empty states |
 
 ### Floor rows left out, and why
 
-- **Bulk select and act**: the board is a runway of a few dozen items moved one at a time; the tracker file is where bulk edits are made.
-- **Search and filter**: the lanes are the filter, and the tracker is a file the person's editor already searches.
+- **Bulk select and act**: items are moved one at a time, even on a backlog of hundreds; the tracker file is where bulk edits are made.
+- **Filter by field (tag, size, date)**: the lanes are the filter, and the find reads the tags, so `ops` or `large` finds those cards; a filter panel is more than a runway needs.
 - **Undo for remove**: remove asks for a reason first and keeps the item in the Removed section, where it can be moved back.
 
 ## The calendar (`web/index.html?view=calendar`, `web/app.js`)
@@ -173,11 +177,11 @@ The same items by deadline, with the ship days and the releases. Its question: w
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Month | Go to another, or today | The chevrons either side of the month, `today` | The grid redraws | none | Google Calendar |
+| Month | Go to another, or today | The chevrons either side of the month, `today` (resting while this month is shown) | The grid redraws | none | Google Calendar |
 | Item | Open | Its event on the day (a button) | The item drawer | The drawer slides in | Google Calendar |
 | Item | Set or clear a deadline | Drag onto a day, or onto "without a deadline"; or the drawer | Toast with `undo` | The day flares | Linear due date |
 | Ship day | Open, move, mark shipped, undo, cancel | Its event opens its drawer: `mark shipped`, a date and `move`, `put it back`, `cancel this ship day` (confirmed) | Toast naming the day; the drawer closes only when the write went through | none | Google Calendar event |
-| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast | none | Google Calendar repeat |
+| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast; a one-off with no day marks the date field and says so under the row until a day is picked | none | Google Calendar repeat |
 | Release | Open its slot | Its deploy event | The release drawer | The drawer slides in | Linear cycle |
 | Calendar | On a phone | The days that hold something, as a list, today always among them | n/a | none | Google Calendar schedule view |
 
