@@ -460,7 +460,8 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .runway .card .num { color: var(--ink-soft); }
 /* The title is the card's button, dressed as its text. */
 .card .title { grid-area: title; display: flex; align-items: center; padding: 0; border: 0; background: none; box-shadow: none; color: inherit; font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
-.card .title span { line-height: 1.35; overflow-wrap: break-word; }
+/* Wraps at words; only a token too long for the card (an identifier, a path) breaks inside itself, so it never runs past the card. */
+.card .title span { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
 .card .title:hover { background: none; color: var(--ink); }
 .card .meta { grid-area: meta; display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
 .card .meta .tag { color: var(--accent); opacity: 0.8; }
