@@ -382,7 +382,7 @@ const EVENT_ICONS = { done: "decision", overdue: "finding" };
 /** One thing on a day: a button, so it is reached and opened from the keyboard like anything else. */
 const calEvent = (cls, label, words, onclick) => {
   const said = words ? `${label}, ${words}` : label;
-  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, onclick }, el("span", {}, label));
+  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, "data-reveals-full-text": "", onclick }, el("span", {}, label));
 };
 
 const dueChip = (item) => {
