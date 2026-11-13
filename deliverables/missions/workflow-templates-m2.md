@@ -203,3 +203,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-12 16:03 decision: milestone 1 released by Cory: Proof failed again inside the app (2 failed, 1 cancelled, 305s) while three reruns outside it pass. maverick.json proof temporarily writes the full test output to a file so the failing names are kept; restored after this run. Cory chose this.
 - 2026-11-12 16:03 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
 - 2026-11-12 16:04 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
+- 2026-11-12 16:05 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
