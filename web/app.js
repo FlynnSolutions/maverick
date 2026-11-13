@@ -36,8 +36,6 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 const text = (s) => document.createTextNode(s);
-/** A title that wraps at its spaces and, inside an identifier or a path, after its own `_ - / .`, never mid-word. */
-const breakable = (s) => s.split(/(?<=[_\-/.])(?=\S)/).flatMap((part, i) => (i ? [el("wbr"), part] : [part]));
 
 let statusTimer = null;
 const setStatus = (msg, isError = false) => {
@@ -256,7 +254,7 @@ const cardFor = (trackerIndex, item, number, draggable = true, at = null) =>
       },
     },
     number === null ? null : el("span", { class: "num" }, String(number)),
-    el("button", { type: "button", class: "title", onfocus: hideHover }, el("span", {}, ...breakable(item.title))),
+    el("button", { type: "button", class: "title", onfocus: hideHover }, el("span", {}, item.title)),
     el("div", { class: "meta" }, releaseChip(item), dueChip(item), ...tagChips(item), item.unplanned ? el("span", { class: "chip unplanned", title: "on the roadmap with no plan: a plan: field that names a real file" }, "unplanned") : null, createdOf(item) ? el("span", { class: "since", title: `${item.created ? "created" : "entry last changed"} ${fmtDate(createdOf(item))}` }, fmtDate(createdOf(item), true)) : null),
     item.checked
       ? null
@@ -384,7 +382,7 @@ const EVENT_ICONS = { done: "decision", overdue: "finding" };
 /** One thing on a day: a button, so it is reached and opened from the keyboard like anything else. */
 const calEvent = (cls, label, words, onclick) => {
   const said = words ? `${label}, ${words}` : label;
-  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, onclick }, el("span", {}, ...breakable(label)));
+  return el("button", { type: "button", class: `cal-event ${cls}`, title: said, "aria-label": said, onclick }, el("span", {}, label));
 };
 
 const dueChip = (item) => {
@@ -1380,7 +1378,7 @@ const renderCalendar = (trackers) => {
       const node = e.kind === "release"
         ? calEvent("release", `${e.title} deploys`, "", () => openSlotDrawer(e.slot, trackers))
         : calEvent(`item ${state}`, e.title, EVENT_WORDS[state], () => openDrawer(e.tracker.index, e.item));
-      if (EVENT_ICONS[state]) node.prepend(icon(EVENT_ICONS[state]));
+      if (EVENT_ICONS[state]) node.firstElementChild.prepend(icon(EVENT_ICONS[state]));
       if (e.item && !e.item.checked) draggableItem(node, e.tracker, e.item, e.section);
       cell.append(node);
     }

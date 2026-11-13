@@ -121,10 +121,12 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   judge measured lanes growing from 2,727 to 4,540px at dragstart). It is reached from the drawer's
   `lane` select, or by leaving the find. Done is paged like Backlog. The heaviest real tracker drew
   55,000px and 1,015 focus stops; paged it is about 4,300px and 200 (2026-11-09).
-- **A title wraps at its words.** Card titles and calendar events wrap at spaces, and inside an
-  identifier or a path after its own `_ - / .` (a `<wbr>`), never letter by letter. Four lanes need
-  about 200px each for that, so a board narrower than 960px (1280 with the sessions rail open) sets
-  them two by two.
+- **The four lanes are one row, and a title wraps at its words** (Cory, 2026-11-12): at 1280 with
+  the sessions rail open, In progress is on the first screen. Card titles and calendar events wrap
+  at spaces (`overflow-wrap: break-word`), so only a word too long for its line breaks inside it. No
+  `<wbr>`: a break point inserted in the text splits the name a screen reader reads ("SRQ_ RELEVANT_").
+  A calendar event stops at three lines with the whole title in its tooltip, and its icon sits in the
+  first line, so one long title cannot push today's week below the first screen.
 - **Missions have a way back on the first screen**: `.cc-missions`, one link per live mission on
   every tab but the archive, with the verbs that start a mission or a brainstorm. A formation sharing a mission's
   name reads `<name> crew`, because its tab is not the mission's page.
@@ -407,7 +409,7 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 
 ## Browser surfaces
 
-`::selection` accent-dim; caret accent; thin scrollbars in `--cold`; underline offset 2px on
+`::selection` accent-dim; caret accent; placeholders in `--ink-faint` (4.9:1 light, 6.4:1 dark), never the browser gray; thin scrollbars in `--cold`; underline offset 2px on
 markdown links; `prefers-reduced-motion` silences lamps, panel entrances and meter transitions
 (the jet flyby is the one authored moment that stays).
 
