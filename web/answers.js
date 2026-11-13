@@ -23,8 +23,8 @@ export const answerControls = (question, { el, btn, submit, open = goHere }) => 
   const answers = question.answers;
   const wanted = answers.some((a) => a.body?.length);
   const note = wanted ? el("input", { type: "text", class: "mv-note", placeholder: "why, in a line; kept in the ledger", "aria-label": `Note for: ${question.title}` }) : null;
-  // A question with nothing the server would take is what a paused mission leaves on every question but the pause.
-  const hint = el("span", { class: "mv-hint", role: "status" }, answers.length ? "" : "resume the mission first");
+  // A question with nothing the server would take is what a paused mission leaves on every question but the pause; a link, which only goes somewhere, is offered even then.
+  const hint = el("span", { class: "mv-hint", role: "status" }, answers.some((a) => !a.link) ? "" : "resume the mission first");
   const buttons = answers.map((a) => btn(a.label, async () => {
     if (a.go) return open(a.go);
     const said = note?.value.trim() ?? "";

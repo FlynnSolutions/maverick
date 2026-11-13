@@ -50,7 +50,7 @@ otherwise; an error toast stays until it is closed.
 | Milestone | Walk the walkthrough | The walkthrough under its step; answers save as they are given | "last saved" line under the frame | none | GitHub viewed checkbox |
 | Milestone | Waive the walk | A note and `waive it` under the walkthrough | Toast | none | GitHub admin merge, with a reason |
 | Task | Retry or accept a handed-back task | The question's buttons in `#now`, and the same row under the task in Plan | Toast | as Question | Buildkite retry, GitHub re-run |
-| Task | Open its agent's session | `open the session` on a live task's row; `stop watching` closes it | The terminal mounts under the row | none | Buildkite live log, Devin shell |
+| Task | Open its agent's session | `open its Wingman's session` (`its RIO's` while reviewing) on a live task's row; `stop watching` closes it | The terminal mounts under the row, headed as that agent's, saying what is typed goes to it and not the Strike Lead, with `write to the Strike Lead` beside it | none | Buildkite live log, Devin shell |
 | Task | See every attempt | The task's card in Progress, one line per attempt with its verdict linked to its findings | n/a | Lines rise as they land | GitHub Actions attempt selector |
 | Task | See every automatic move | `show every move` under each milestone in Progress | n/a | none | Buildkite step log |
 | Finding | Read why | The finding's head row opens its detail | n/a | none | GitHub review thread |
@@ -62,10 +62,12 @@ otherwise; an error toast stays until it is closed.
 | Finding | Jump from a chip | A verdict chip in Progress or a severity chip on a file row unfolds the finding and focuses it | Focus ring on the card | Scrolls into view | GitHub file tree counts |
 | Finding | Group by severity, then area | Built: three buckets, fix first, an area heading inside each | n/a | n/a | Linear group by |
 | Summary | Ask for the three things to read | `summarize` (`summarize again` once written) | Toast; the button says `summarizing...` until it lands | none | n/a |
-| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept | The entry rises into the thread | Devin chat |
+| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept; sending nothing says so under the box and puts the focus in it | The entry rises into the thread | Devin chat |
+| Chat | Go to the Strike Lead from anywhere | `write to the Strike Lead` in the rail, under the four anchors (sticky at 1280, above the anchors at 390) | The composer, headed "To the Strike Lead", is marked and its box takes focus; `back` (or Escape) returns to the press; a second press lands again | Scrolls there and back; reduced motion jumps | Linear "comment" shortcut, GitHub "go to thread" |
+| Chat | Ask the Strike Lead about a blocked task | `ask the Strike Lead` on a handed-back task's question (in `#now`, in Plan, and in the inbox, which opens the page there) | As above, with "About <task id>: " in an empty box and `back to the question` | As above | Buildkite "ask in Slack" |
 | Chat | Answer a round of interview questions | The option buttons and an own-words field per question, then `send answers` | The round folds into "N questions asked" | none | Devin plan questions |
 | Chat | Read the history | `the earlier conversation` unfolds it; a long message folds to its opening with `the whole message` | n/a | none | Linear comments |
-| Chat | Open the Strike Lead's raw session | `open its session in a terminal` | The terminal mounts in place | none | Devin shell |
+| Chat | Open the Strike Lead's raw session | `open its session in a terminal` | The terminal mounts in place, headed as the Strike Lead's own session | none | Devin shell |
 | Plan document | Read it | `read the plan document` opens the file | n/a | none | GitHub file view |
 | Diff by file | See what merged | `the files, by task` unfolds the tree: per task, its files or their directories, lines changed | n/a | none | GitHub file tree |
 | Report | Read it | `the report` unfolds it; `raw markdown` opens the file | A load error says so in place | none | Buildkite annotations |

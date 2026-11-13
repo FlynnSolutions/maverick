@@ -456,3 +456,8 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
 - **A picked option is ringed, not filled.** Filled is the primary's dress, and send is the one primary.
 - **Names (Cory, 2026-11-09):** the rail's first anchor is "The brief", so it is not read as the Strike Lead's
   question; the summary at review is "What you must read", in the voice the page speaks in.
+- **Writing to an agent says which one.** The Strike Lead's box is headed "To the Strike Lead"; a
+  Wingman's or RIO's screen is headed as that agent's and says what is typed goes to it, with the way
+  to the Strike Lead beside it. The way to the box is one press from the rail (`#lead`) and from a
+  blocked task's question (`#lead-<task>`, the task named in an empty box), and it lands as a
+  show-me trip with the way back.
