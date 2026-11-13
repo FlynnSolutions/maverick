@@ -212,3 +212,4 @@ _walk: Open a mission on the invented project from the mission branch's server a
 - 2026-11-12 18:34 decision: milestone 1 released by Cory: A second Maverick server (pid 99128, Oct 16 code, port 8767) was sweeping the same records and running every proof a second time at once; Cory had it stopped. Re-proving with one sweeper.
 - 2026-11-12 18:34 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
 - 2026-11-12 18:35 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
+- 2026-11-12 18:36 merged: milestone 1 (Pick a template, fly Light, and keep unverified work on its branch) is on the mission branch
