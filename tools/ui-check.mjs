@@ -56,11 +56,13 @@ writeFileSync(write, `(async () => {
 const WORKSPACE = "/?project=harbor&view=workspace";
 const ENDED = 130;
 const MISSION = "Dredge the channel";
+const CREW = "Sound the channel";
 
 /**
  * What a person comes to the command center for, from a cold open at 1280x800: the way back to the
- * mission on the first screen, the finished sessions out of the way but findable, labelled columns,
- * controls a pointer's size. Answers "ok" or the first thing in the way.
+ * mission on the first screen, the mission's own session under its row and nowhere else, the
+ * finished sessions out of the way but findable, labelled columns, controls a pointer's size.
+ * Answers "ok" or the first thing in the way.
  */
 const walk = join(out, "walk.js");
 writeFileSync(walk, `(async () => {
@@ -71,6 +73,11 @@ writeFileSync(walk, `(async () => {
   if (!link || !link.textContent.includes(${JSON.stringify(MISSION)})) return "error: no link to the mission";
   if (link.getBoundingClientRect().bottom > innerHeight) return "error: the mission link is below the first screen";
   if (tab.getBoundingClientRect().bottom > innerHeight) return "error: the Archive tab is below the first screen";
+  const crew = await until(() => document.querySelector(".cc-crew"), 5000);
+  if (!crew) return "error: the mission's own session is not drawn under its row";
+  if (!crew.firstElementChild.textContent.includes(${JSON.stringify(MISSION)})) return "error: the crew is not under the mission's row: " + crew.firstElementChild.textContent;
+  if (!crew.querySelector(".strip.crew")?.textContent.includes(${JSON.stringify(CREW)})) return "error: the mission's session is not in its crew";
+  if ([...document.querySelectorAll("#project .strip:not(.crew)")].some((s) => s.textContent.includes(${JSON.stringify(CREW)}))) return "error: the mission's session is also loose in a rack";
   if (!tab.textContent.includes(${JSON.stringify(String(ENDED))})) return "error: the archive does not count the ended sessions: " + tab.textContent;
   if (document.querySelector(".rack.archive")) return "error: the archive is open on arrival";
   if (document.documentElement.scrollHeight > 1600) return "error: the page is " + document.documentElement.scrollHeight + "px tall with the archive shut";
@@ -152,6 +159,15 @@ try {
     const started = await fetch(`${harbor.url}/api/missions?project=harbor`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: MISSION, brief: "Dredge the channel to six metres." }) });
     if (!started.ok) failed = `the mission did not start: ${started.status} ${await started.text()}`;
     else missionId = (await started.json()).mission.id;
+  }
+  if (!failed) {
+    // One of the mission's Wingmen, still running in the mission's worktree, beside the ended sessions.
+    // A listed agent with no live pid reads as down, so it borrows this check's own.
+    const agents = join(harbor.claudeDir, "agents.json");
+    writeFileSync(agents, JSON.stringify([...JSON.parse(readFileSync(agents, "utf8")), {
+      id: "crew0", sessionId: "crew-session-0", kind: "background", cwd: join(harbor.repo, "worktrees", `${missionId}-m1-t1-root`), state: "running", pid: process.pid,
+      name: `${MISSION} · ${CREW}`, startedAt: Date.now() - 600_000,
+    }]), "utf8");
   }
   if (!failed) {
     const walked = execFileSync(process.execPath, [join(root, "tools", "cdp.mjs"), `${harbor.url}${WORKSPACE}`, "--eval", walk, "--w", "1280", "--h", "800", "--wait", "500"], { encoding: "utf8" }).trim();

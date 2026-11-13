@@ -75,6 +75,7 @@ test("a mission with nothing merged has an empty diffstat, and nothing to ask wh
   assert.equal(m.diffstat, "");
   assert.equal(m.word, "working");
   assert.deepEqual(m.questions, []);
+  assert.equal(m.leadBusy, false, "its formation's lead seat says whether the Strike Lead is mid-turn");
 });
 
 test("a task that merged a sibling counts only its own lines, as the mission page's result does", async () => {

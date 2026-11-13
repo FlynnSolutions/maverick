@@ -112,6 +112,12 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 - **An agent holding a live mission shows inside it.** A mission whose agent is stopped at a prompt
   reads `waiting for you` and sits in Needs you (Cory, 2026-11-04), one row: the reason, what the
   agent last said, and `open that session`.
+- **A mission's own sessions sit with it** (`.cc-crew`, `.strip.crew`). Its running Wingmen, RIOs
+  and walkthroughs are 40px lines under its one lifted row, the name stepped in off an elbow so
+  every column keeps its x; in the archive they follow its row, or its name when the row is not
+  there. Loose beside it, three strips carrying its name read as three more things (2026-11-04).
+- **A mission's formation seats its Strike Lead.** It talks a turn at a time, so between turns
+  no session is listed for the seat; Oversight still names it (`.strip.seat`, opens nothing).
 - **One word per fact.** The state column says `working`, `waiting for you`, `idle`; the verb that
   ends a live session is `end`, in every place. `land and close` is the mission's: it ships work.
 - **Racks are ordered by who needs you, projects included.** A project holding a waiting session
