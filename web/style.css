@@ -356,7 +356,8 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .mono { font-family: var(--mono); font-size: 12px; }
 .small { font-size: 11px; }
 
-.board-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.board-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 10px; margin-bottom: 10px; }
+.board-title .board-find { align-self: center; flex: 1 1 220px; margin-left: auto; }
 .board-title h2 { font-family: var(--display); font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
 .board-title code { font-family: var(--mono); font-size: 11px; color: var(--ink-ghost); }
 
@@ -386,9 +387,13 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .lane.collapsed .lane-title .fold { writing-mode: horizontal-tb; }
 .lane.collapsed .lane-title .label { flex: 0; }
 .group-name { font-size: 11px; color: var(--ink-ghost); margin: 10px 0 4px; padding-left: 2px; }
-.quick-add { display: flex; gap: 8px; margin: 0 0 8px; }
+.quick-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.quick-add input[aria-invalid="true"], .cal-ships input[aria-invalid="true"] { box-shadow: 0 0 0 1px var(--caution); }
+.add-said { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--ink-soft); }
+.add-said:empty { display: none; }
 .quick-add input { flex: 1; min-width: 0; }
 .lane-empty { margin: 0 0 8px; padding-left: 2px; }
+.lane-empty .rack-verb { margin-top: 6px; }
 .items { min-height: 32px; border-radius: var(--radius-m); transition: background 120ms var(--ease-out), box-shadow 120ms var(--ease-out); }
 .items.over { background: var(--accent-dim); box-shadow: inset 0 0 0 1px var(--accent-glow), 0 0 24px var(--accent-dim); }
 
@@ -455,13 +460,15 @@ input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .runway .card .num { color: var(--ink-soft); }
 /* The title is the card's button, dressed as its text. */
 .card .title { grid-area: title; display: flex; align-items: center; padding: 0; border: 0; background: none; box-shadow: none; color: inherit; font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
-.card .title span { line-height: 1.35; overflow-wrap: anywhere; }
+/* Wraps at words; only a token too long for the card (an identifier, a path) breaks inside itself, so it never runs past the card. */
+.card .title span { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
 .card .title:hover { background: none; color: var(--ink); }
 .card .meta { grid-area: meta; display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
 .card .meta .tag { color: var(--accent); opacity: 0.8; }
 .card .spawn { grid-area: spawn; align-self: start; margin-left: 8px; color: var(--ink-faint); }
 .card .spawn:hover, .card .spawn:focus-visible { color: var(--accent-hot); }
-.lane.done .card, .card.checked { opacity: 0.6; cursor: default; }
+/* Done sits a surface lower, not faded: opacity took its chips under 4.5:1. */
+.lane.done .card, .card.checked { background: var(--gunmetal); cursor: default; }
 .lane.done .card .num { display: none; }
 .card.checked .title { color: var(--ink-soft); }
 @keyframes settle { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
@@ -808,7 +815,13 @@ body.ask-open { overflow: hidden; }
 }
 .cal-cell.today .cal-day { color: var(--accent-hot); }
 /* An event is a button: a control tall, the full cell wide, its words cut with the whole of them in its title. */
-.cal-event { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: var(--control); line-height: 1.3; padding: 0 10px; margin-bottom: 8px; border: 0; border-radius: var(--radius-s); background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.cal-event { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: var(--control); line-height: 1.3; padding: 0 10px; margin-bottom: 8px; border: 0; border-radius: var(--radius-s); background: var(--panel); color: var(--ink); text-align: left; cursor: pointer; overflow-wrap: break-word; }
+/* An event wraps at its words and stops at three lines, the whole title in its tooltip, so one long
+   title cannot stretch its week below the first screen. Its icon sits in the first line rather
+   than in a column of its own, so a day's narrow cell gives the words its whole width. */
+.cal-event > span { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.cal-event > span > .icon { display: inline-block; margin-right: 4px; vertical-align: -1px; }
+.cal-grid .cal-event { padding: 4px 6px; }
 .cal-event .icon, .cal-key .icon { flex: none; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .cal-event:hover { box-shadow: 0 0 0 1px var(--seam-strong); }
 .cal-event.release, .cal-key.release { background: var(--panel); color: var(--ink); box-shadow: inset 3px 0 0 var(--info); font-family: var(--display); font-weight: 600; letter-spacing: 0.03em; }
@@ -853,7 +866,11 @@ body.ask-open { overflow: hidden; }
 /* ---------- release planning on the calendar ---------- */
 
 .strip-title { grid-column: 1 / -1; font-family: var(--display); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin: 8px 0 0; }
-.releases { grid-column: 1 / -1; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+/* The strip runs past the edge once there are a few releases. A card is sized off the strip, so
+   wherever the edge falls the next one shows a third of itself before the fade, which is what reads
+   as "more this way"; the end padding keeps the last card clear of the fade. */
+.releases { grid-column: 1 / -1; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.releases::after { content: ""; flex: 0 0 22px; }
 .release-card {
   flex: 0 0 260px;
   min-height: 90px;
@@ -1102,6 +1119,12 @@ body.ask-open { overflow: hidden; }
 .card .since, .cal-day, .group-name, .release-list li .key, .ws-bar span, .hovercard-hint, .dispatch li.empty, .board-title code, .lane-title .count, .row .age, .status { color: var(--ink-faint); }
 /* Stat labels must fit at the legibility floor: wider cards, tighter tile padding, full words. */
 .release-card, .release-card.slot { flex-basis: 284px; }
+/* Wherever the strip's edge falls, the next card shows about two fifths of itself before the fade,
+   which is what says "more this way": the cards are sized off the strip, never under 284px. */
+.board-releases, .calendar { container-type: inline-size; }
+@container (min-width: 640px) { .releases > .release-card:not(.add) { flex-basis: calc((100cqw - 24px) / 2.4); } }
+@container (min-width: 1000px) { .releases > .release-card:not(.add) { flex-basis: calc((100cqw - 36px) / 3.4); } }
+@container (min-width: 1360px) { .releases > .release-card:not(.add) { flex-basis: calc((100cqw - 48px) / 4.4); } }
 
 /* ---------- ship wizard: scrolls, live view, runway with the jet as the marker ---------- */
 
@@ -1299,8 +1322,11 @@ body.ask-open { overflow: hidden; }
 .rack-head > h2 { grid-column: 1 / span 2; margin-left: -14px; }
 .rack-col, .cc-missions > span, .archive-formations > span, .archive-when { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
 .rack-find { max-width: 360px; }
+/* A find's way out stands right beside its field, a target of its own. */
+.find-box { display: flex; gap: 8px; max-width: 360px; }
+.find-box .rack-find { flex: 1; min-width: 0; max-width: none; }
 .rack.archive > button.rack-verb { align-self: flex-start; }
-.archive-tools, .archive-formations { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.archive-tools, .archive-formations, .lane-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .archive-formations > span, .archive-when { margin: 8px 0 0; }
 /* A finished row carries no signal: no live colour on the lamp, and no role chip taking the name's room. */
 .rack.archive .lamp { display: none; }
@@ -1587,6 +1613,8 @@ button.icon-btn { position: relative; width: 44px; min-width: 44px; height: var(
 
 ::selection { background: var(--accent-dim); color: var(--ink); }
 input, textarea { caret-color: var(--accent); }
+/* A placeholder is text a person reads: the browser's gray was 3.6:1 on a light field. */
+::placeholder { color: var(--ink-faint); opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   .cu-panel, .cc-full, .ask { animation: none !important; }
   .strip, .cu-meter i { transition: none !important; }
