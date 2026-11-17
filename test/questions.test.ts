@@ -26,6 +26,7 @@ test("a handed-back task asks retry or accept, and quotes the first blocker when
   assert.deepEqual(q.answers, [
     { label: "send it out again", method: "POST", path: "tasks/m1-t1/retry", primary: true },
     { label: "accept it over the RIO", method: "POST", path: "tasks/m1-t1/accept", body: ["note"] },
+    { label: "ask the Strike Lead", go: "lead-m1-t1", link: true },
   ]);
   // Without findings the task's own note is the reason.
   assert.match(questionsOf(base({ milestones: [ms(1, [task])] }))[0].body, /: the RIO failed it$/);
@@ -76,10 +77,10 @@ test("only what the server takes is offered: a landing hold lands again, never r
   const flying = questionsOf(base({ status: "blocked", milestones }));
   assert.deepEqual(flying.find((q) => q.id === "hold:2")!.answers, [{ label: "try landing again", method: "POST", path: "land", primary: true }]);
   const qs = questionsOf(base({ status: "paused", milestones }));
-  assert.deepEqual(qs.find((q) => q.id === "task:a")!.answers, [{ label: "accept it over the RIO", method: "POST", path: "tasks/a/accept", body: ["note"], primary: true }]);
+  assert.deepEqual(qs.find((q) => q.id === "task:a")!.answers, [{ label: "accept it over the RIO", method: "POST", path: "tasks/a/accept", body: ["note"], primary: true }, { label: "ask the Strike Lead", go: "lead-a", link: true }]);
   assert.deepEqual(qs.find((q) => q.id === "hold:2")!.answers, []);
   assert.equal(qs.filter((q) => q.answers.some((a) => a.path === "resume")).length, 1, "resume is offered once, by the paused question");
-  for (const q of qs) assert.ok(!q.answers.some((a) => a.path === "land" || a.path.endsWith("/retry")), q.id);
+  for (const q of qs) assert.ok(!q.answers.some((a) => "path" in a && (a.path === "land" || a.path.endsWith("/retry"))), q.id);
 });
 
 test("questions come oldest first, every one has at most one primary answer, first, and a unique id", () => {
@@ -196,14 +197,15 @@ test("statusWord follows the questions: done, waiting for you, error and working
   assert.equal(statusWord(base({ status: "blocked", trouble: "the proof failed after milestone 2 merged: 1 failing", milestones: [ms(2, [], { merged: "m", hold: { kind: "proof", reason: "1 failing", at: "a" } })] })), "waiting for you");
 });
 
-test("a task that never launched says so and offers only to send it out again: there is no work to accept", () => {
+test("a task that never launched says so and offers only to send it out again, or to ask the Strike Lead: there is no work to accept", () => {
   const task = t("m1-t1", "handed-back", { attempts: 0, claudeId: undefined, note: "could not launch: claude --bg did not start in /w: Workspace not trusted.", started: "2026-10-02T00:00:00.000Z" });
   const [q] = questionsOf(base({ milestones: [ms(1, [task])] }));
   assert.equal(q.title, "title m1-t1 never started");
   assert.match(q.body, /Workspace not trusted/);
-  assert.deepEqual(q.answers.map((a) => a.path), ["tasks/m1-t1/retry"]);
+  const ask = { label: "ask the Strike Lead", go: "lead-m1-t1", link: true };
+  assert.deepEqual(q.answers, [{ label: "send it out again", method: "POST", path: "tasks/m1-t1/retry", primary: true }, ask]);
   assert.equal(primaries(q).length, 1);
-  assert.deepEqual(questionsOf(base({ status: "paused", milestones: [ms(1, [task])] })).find((x) => x.kind === "handed-back")!.answers, [], "paused: resume first");
+  assert.deepEqual(questionsOf(base({ status: "paused", milestones: [ms(1, [task])] })).find((x) => x.kind === "handed-back")!.answers, [ask], "paused: resume first, and the Strike Lead can still be asked");
 });
 
 test("a round of questions the Strike Lead is waiting on is a question for you, answered on its card", () => {

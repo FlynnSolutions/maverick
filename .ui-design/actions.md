@@ -50,7 +50,7 @@ otherwise; an error toast stays until it is closed.
 | Milestone | Walk the walkthrough | The walkthrough under its step; answers save as they are given | "last saved" line under the frame | none | GitHub viewed checkbox |
 | Milestone | Waive the walk | A note and `waive it` under the walkthrough | Toast | none | GitHub admin merge, with a reason |
 | Task | Retry or accept a handed-back task | The question's buttons in `#now`, and the same row under the task in Plan | Toast | as Question | Buildkite retry, GitHub re-run |
-| Task | Open its agent's session | `open the session` on a live task's row; `stop watching` closes it | The terminal mounts under the row | none | Buildkite live log, Devin shell |
+| Task | Open its agent's session | `open its Wingman's session` (`its RIO's` while reviewing) on a live task's row; `stop watching` closes it | The terminal mounts under the row, headed as that agent's, saying what is typed goes to it and not the Strike Lead, with `write to the Strike Lead` beside it | none | Buildkite live log, Devin shell |
 | Task | See every attempt | The task's card in Progress, one line per attempt with its verdict linked to its findings | n/a | Lines rise as they land | GitHub Actions attempt selector |
 | Task | See every automatic move | `show every move` under each milestone in Progress | n/a | none | Buildkite step log |
 | Finding | Read why | The finding's head row opens its detail | n/a | none | GitHub review thread |
@@ -62,10 +62,12 @@ otherwise; an error toast stays until it is closed.
 | Finding | Jump from a chip | A verdict chip in Progress or a severity chip on a file row unfolds the finding and focuses it | Focus ring on the card | Scrolls into view | GitHub file tree counts |
 | Finding | Group by severity, then area | Built: three buckets, fix first, an area heading inside each | n/a | n/a | Linear group by |
 | Summary | Ask for the three things to read | `summarize` (`summarize again` once written) | Toast; the button says `summarizing...` until it lands | none | n/a |
-| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept | The entry rises into the thread | Devin chat |
+| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept; sending nothing says so under the box and puts the focus in it | The entry rises into the thread | Devin chat |
+| Chat | Go to the Strike Lead from anywhere | `write to the Strike Lead` in the rail, under the four anchors (sticky at 1280, above the anchors at 390) | The composer, headed "To the Strike Lead", is marked and its box takes focus; `back` (or Escape) returns to the press; a second press lands again | Scrolls there and back; reduced motion jumps | Linear "comment" shortcut, GitHub "go to thread" |
+| Chat | Ask the Strike Lead about a blocked task | `ask the Strike Lead` on a handed-back task's question (in `#now`, in Plan, and in the inbox, which opens the page there) | As above, with "About <task id>: " in an empty box and `back to the question` | As above | Buildkite "ask in Slack" |
 | Chat | Answer a round of interview questions | The option buttons and an own-words field per question, then `send answers` | The round folds into "N questions asked" | none | Devin plan questions |
 | Chat | Read the history | `the earlier conversation` unfolds it; a long message folds to its opening with `the whole message` | n/a | none | Linear comments |
-| Chat | Open the Strike Lead's raw session | `open its session in a terminal` | The terminal mounts in place | none | Devin shell |
+| Chat | Open the Strike Lead's raw session | `open its session in a terminal` | The terminal mounts in place, headed as the Strike Lead's own session | none | Devin shell |
 | Plan document | Read it | `read the plan document` opens the file | n/a | none | GitHub file view |
 | Diff by file | See what merged | `the files, by task` unfolds the tree: per task, its files or their directories, lines changed | n/a | none | GitHub file tree |
 | Report | Read it | `the report` unfolds it; `raw markdown` opens the file | A load error says so in place | none | Buildkite annotations |
@@ -149,9 +151,11 @@ to the tracker file, the same write whichever control made it.
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words | The new card settles in | Linear quick add, Trello add a card |
+| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words; the new card is on show (a find that would hide it is cleared, and the toast says so); an empty add marks the field invalid, says what it wants in a line under it, and the next keystroke takes that back | The new card settles in | Linear quick add, Trello add a card |
 | Item | Open | Its title (a button), Enter or a click anywhere on the card | The drawer opens with its heading focused; Escape or the close icon gives focus back | The drawer slides in | Linear issue peek |
-| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move` | Toast with `undo`; the board repaints from the file | The list it landed in flares | Trello, Linear |
+| Item | Find one | `find on the board` over the lanes; it reads each card's title, tags and description and its group's name | Once the typing pauses, each lane draws only its matches and its head reads `14 of 323`; a lane with none says `Nothing in <lane> says "..."` with `clear the find` | none | the Archive's find, Trello filter |
+| Item | Leave a find | The clear control beside the field, Escape in the field, or a lane's `clear the find` | The whole board is back from its first page, the focus in the field | none | GitHub, Linear filter clear |
+| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move`. Under a page or a find a drop lands just before the card it is dropped on, or just after the last one drawn, and only among what is on show: picking a card up never moves the targets. A group the find hid all of is reached by the drawer's `lane` select, or by leaving the find | Toast with `undo`; the board repaints from the file, keeping the find and the pages, and the lane draws far enough to show the moved card (a find that would hide it is cleared, and the toast says so) | The list it landed in flares | Trello, Linear |
 | Item | Reorder in its group (the runway) | Drag; or the drawer's `move up` and `move down` | Toast with `undo` | as above | Trello, Jira rank |
 | Item | Plan for a release | Drag onto a release card; or the drawer's `release` select | Toast with `undo` | The card flares | Linear cycles |
 | Item | Set or clear a deadline | The drawer's date and `set` or `clear`; or drag onto a calendar day | Toast with `undo` | none | Linear due date |
@@ -160,13 +164,15 @@ to the tracker file, the same write whichever control made it.
 | Item | Remove | `remove`, with the reason asked for | Toast; it moves to the tracker's Removed section with the date and reason | none | Linear archive with reason |
 | Item | Plan it, spawn on it | `plan it` (the primary on an unplanned item), `spawn` (the primary on a planned one, or on the card) | The session opens in the workspace | none | Linear "start working" |
 | Lane | Fold or unfold | The chevron beside its name; remembered | The chevron turns | The chevron turns | GitHub projects |
+| Lane | See the rest of a long one | It draws 20 cards; `show more` under it draws 20 more, beside `20 shown`. The head says how many the lane holds, so the foot shows only while there is more | The next cards are added below and the focus stays on `show more`; it leaves when the lane is all on show | none | the Archive's `show more`, GitHub "load more" |
 | Group | Delete when empty | The close icon beside an empty group's name, then confirm | Toast | none | Trello archive list |
+| Board | Read it again | The refresh icon in the bar | Toast "Read <project> again."; a read that fails says why in the bar | none | Linear refresh |
 | Board | Loading, failing, empty | A lane with nothing in it says what goes there; a board that cannot be read says why in the bar | n/a | none | Linear empty states |
 
 ### Floor rows left out, and why
 
-- **Bulk select and act**: the board is a runway of a few dozen items moved one at a time; the tracker file is where bulk edits are made.
-- **Search and filter**: the lanes are the filter, and the tracker is a file the person's editor already searches.
+- **Bulk select and act**: items are moved one at a time, even on a backlog of hundreds; the tracker file is where bulk edits are made.
+- **Filter by field (tag, size, date)**: the lanes are the filter, and the find reads the tags, so `ops` or `large` finds those cards; a filter panel is more than a runway needs.
 - **Undo for remove**: remove asks for a reason first and keeps the item in the Removed section, where it can be moved back.
 
 ## The calendar (`web/index.html?view=calendar`, `web/app.js`)
@@ -175,11 +181,11 @@ The same items by deadline, with the ship days and the releases. Its question: w
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Month | Go to another, or today | The chevrons either side of the month, `today` | The grid redraws | none | Google Calendar |
+| Month | Go to another, or today | The chevrons either side of the month, `today` (resting while this month is shown) | The grid redraws | none | Google Calendar |
 | Item | Open | Its event on the day (a button) | The item drawer | The drawer slides in | Google Calendar |
 | Item | Set or clear a deadline | Drag onto a day, or onto "without a deadline"; or the drawer | Toast with `undo` | The day flares | Linear due date |
 | Ship day | Open, move, mark shipped, undo, cancel | Its event opens its drawer: `mark shipped`, a date and `move`, `put it back`, `cancel this ship day` (confirmed) | Toast naming the day; the drawer closes only when the write went through | none | Google Calendar event |
-| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast | none | Google Calendar repeat |
+| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast; a one-off with no day marks the date field and says so under the row until a day is picked | none | Google Calendar repeat |
 | Release | Open its slot | Its deploy event | The release drawer | The drawer slides in | Linear cycle |
 | Calendar | On a phone | The days that hold something, as a list, today always among them | n/a | none | Google Calendar schedule view |
 
