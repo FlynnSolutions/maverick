@@ -3075,7 +3075,7 @@ export const missionView = async (project: Project, id: string): Promise<Mission
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */
-export type WorkspaceMission = Mission & { word: StatusWord; questions: Question[]; diffstat: string };
+export type WorkspaceMission = Mission & { word: StatusWord; questions: Question[]; diffstat: string; leadBusy: boolean };
 
 /** A task's stat read the way the result page reads it: its totals line, and each file with its changed lines. */
 type ReadStat = { order: number; plus: number; minus: number; files: Array<{ path: string; changes: number | null }> };
@@ -3133,8 +3133,9 @@ export const workspaceMissions = async (project: Project): Promise<WorkspaceMiss
   Promise.all((await listMissions(project.id)).map(async (mission) => {
     const { diffstat, questions, word } = await asked(mission, askedAbout(mission));
     // A row draws none of the chat, and the workspace polls; the conversation stays on the mission page.
+    // Whether the Strike Lead is mid-turn is worked out for its formation's lead seat; an ended mission's never is.
     const { chat: _chat, lead: _lead, ...row } = mission;
-    return { ...row, word, questions, diffstat: mergedStat(mission, diffstat) };
+    return { ...row, word, questions, diffstat: mergedStat(mission, diffstat), leadBusy: !over(mission) && leadBusy(mission) };
   }));
 
 /** What a mission asks, and nothing else: no sweep, no git, findings only for what is handed back. The notification poll reads this. */
