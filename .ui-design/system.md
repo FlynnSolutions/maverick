@@ -110,6 +110,27 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   without a verdict sits in Needs you, one still running in Working, never in the archive, never
   greyed, and with no `remove` (it would drop the review). A blocked review's `open` reaches its RIO,
   the thing at the prompt, and the RIO is not drawn again as a row of its own (2026-11-10).
+- **A long lane is paged the way the Archive is.** Each lane draws 20 cards, and `show more` under it
+  draws 20 more beside `20 shown`; the foot is there only while there is more. `find on the board`
+  over the lanes draws only the matches (title, tags, description, group name), and the lane's head
+  says how many: `14 of 323`. A find always has its way out: the clear control beside the field, Escape,
+  and `clear the find` on a lane it matched nothing in. The pager, the find box and the match rule
+  live in `web/paged-find.js`, and the Archive moves onto it next. Display only: the tracker is
+  untouched, and the pages and the find survive a write's repaint. A write never hides the card it
+  placed: the lane's page is raised to reach it, and a find that would hide it is cleared, said in
+  the write's own toast so its undo is not pushed off by a second one. A card carries its place in
+  its group's full list, so a drop under a page or a find lands on the card it was aimed at. **A drop
+  lands only among what is on show**: a group the find hid is not drawn, before or during a drag,
+  because a target that appears when a card is picked up moves every target under the pointer (the
+  judge measured lanes growing from 2,727 to 4,540px at dragstart). It is reached from the drawer's
+  `lane` select, or by leaving the find. Done is paged like Backlog. The heaviest real tracker drew
+  55,000px and 1,015 focus stops; paged it is about 4,300px and 200 (2026-11-09).
+- **The four lanes are one row, and a title wraps at its words** (Cory, 2026-11-12): at 1280 with
+  the sessions rail open, In progress is on the first screen. Card titles and calendar events wrap
+  at spaces (`overflow-wrap: break-word`), so only a word too long for its line breaks inside it. No
+  `<wbr>`: a break point inserted in the text splits the name a screen reader reads ("SRQ_ RELEVANT_").
+  A calendar event stops at three lines with the whole title in its tooltip, and its icon sits in the
+  first line, so one long title cannot push today's week below the first screen.
 - **Missions have a way back on the first screen**: `.cc-missions` (`web/mission-links.js`), one link
   per live mission the tab does not already draw as a strip (the Rack draws every one, a crew tab its
   own), on every tab but the archive, with the verbs that start a mission or a brainstorm (labelled
@@ -129,6 +150,12 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   agent last said, and `open that session`. Only there does the mission's row speak for its agents;
   in Working and on a crew tab the agent has its own row (a strip in Needs you, a Flight row), so
   the mission's row keeps its own word and does not say them again (2026-11-10).
+- **A mission's own sessions sit with it** (`.cc-crew`, `.strip.crew`). Its running Wingmen, RIOs
+  and walkthroughs are 40px lines under its one lifted row, the name stepped in off an elbow so
+  every column keeps its x; in the archive they follow its row, or its name when the row is not
+  there. Loose beside it, three strips carrying its name read as three more things (2026-11-04).
+- **A mission's formation seats its Strike Lead.** It talks a turn at a time, so between turns
+  no session is listed for the seat; Oversight still names it (`.strip.seat`, opens nothing).
 - **One word per fact.** The state column says `working`, `waiting for you`, `idle`; the verb that
   ends a live session is `end`, in every place. `land and close` is the mission's: it ships work.
   A row says each fact once: an ended session whose review is still owed reads the review
@@ -408,7 +435,7 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 
 ## Browser surfaces
 
-`::selection` accent-dim; caret accent; thin scrollbars in `--cold`; underline offset 2px on
+`::selection` accent-dim; caret accent; placeholders in `--ink-faint` (4.9:1 light, 6.4:1 dark), never the browser gray; thin scrollbars in `--cold`; underline offset 2px on
 markdown links; `prefers-reduced-motion` silences lamps, panel entrances and meter transitions
 (the jet flyby is the one authored moment that stays).
 
@@ -485,3 +512,8 @@ sheet; grids go single column with `minmax(0, 1fr)`; secondary buttons reach 44p
   It wraps at its spaces only: each word may be an identifier read by its exact spelling, so a word
   is never split (`MAVERICK_STAGING_DEPL` / `OY_TOKEN`, 2026-11-10), and the longest word is the
   column's floor.
+- **Writing to an agent says which one.** The Strike Lead's box is headed "To the Strike Lead"; a
+  Wingman's or RIO's screen is headed as that agent's and says what is typed goes to it, with the way
+  to the Strike Lead beside it. The way to the box is one press from the rail (`#lead`) and from a
+  blocked task's question (`#lead-<task>`, the task named in an empty box), and it lands as a
+  show-me trip with the way back.
