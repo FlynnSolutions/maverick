@@ -4,10 +4,13 @@
 import { jetSvg } from "./jet.js";
 import { PROJECT_PROPS, applyProjectTheme } from "./theme.js";
 import { strike, loading, missile, flares, flyby } from "./afterburner.js";
-import { finished, mountCommandCenter } from "./command.js";
+import { mountCommandCenter } from "./command.js";
+import { finished, reviewOwed } from "./session-word.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { icon } from "./icons.js";
 import { lamp } from "./lamp.js";
+import { missionLinks } from "./mission-links.js";
+import { isEnded } from "./mission/state.js";
 import { findBox, matches, pager, query } from "./paged-find.js";
 import { attempt, failed, leave, toast } from "./toast.js";
 import * as claudeUsage from "./providers/claude.js";
@@ -663,6 +666,11 @@ const renderBoard = (tracker) => {
 };
 
 let lastTrackers = [];
+let missions = []; // every mission's status and word, for the board's and calendar's links
+let missionsFailed = null;
+// Read again only when this old, so folding a lane or turning a month does not re-read every mission.
+const MISSIONS_FRESH_MS = 15000;
+let missionsAt = 0;
 /** The view on show is marked on its button, and at once on a press: the view's data can take seconds to arrive. */
 const markView = () => {
   for (const b of document.querySelectorAll("#view-toggle button")) {
@@ -681,16 +689,28 @@ const loadBoard = async () => {
     if ($("#status").textContent === "loading") { $("#status").textContent = ""; $("#status").classList.remove("loading"); }
     // The workspace does not need releases (a GitHub round trip); the board and calendar do.
     if (!releasesData && view !== "workspace") releasesData = await api(`/api/releases?project=${encodeURIComponent(projectId)}`);
-    // Every view carries the ship-day banner, so the schedule is not calendar-only.
-    [ships, shipDays] = await Promise.all([api(`/api/ships?project=${encodeURIComponent(projectId)}`), api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`)]);
+    // Every view carries the ship-day banner, so the schedule is not calendar-only. The board and
+    // the calendar also carry the way to each live mission (the light read: no sweep, no git); the
+    // workspace draws its own.
+    const stale = view !== "workspace" && (missionsFailed || Date.now() - missionsAt > MISSIONS_FRESH_MS);
+    if (stale) missionsFailed = null;
+    [ships, shipDays, missions] = await Promise.all([
+      api(`/api/ships?project=${encodeURIComponent(projectId)}`),
+      api(`/api/ship-schedule?project=${encodeURIComponent(projectId)}`),
+      view === "workspace" ? [] : !stale ? missions
+        : api(`/api/questions?project=${encodeURIComponent(projectId)}`).then((q) => { missionsAt = Date.now(); return q.missions; }, (err) => { missionsFailed = err; return []; }),
+    ]);
     $("#project").classList.toggle("workspace-view", view === "workspace");
     // The workspace draws its own h1; the board and the calendar name themselves for a screen reader.
     $("#page-title").hidden = view === "workspace";
     $("#page-title").textContent = `${project.name}: ${view}`;
     $("#boards").replaceChildren(
+      // The calendar carries the links beside its grid, so no line above the month pushes this week down.
+      ...missionsTrouble(),
+      ...(view === "calendar" ? [] : liveMissions()),
       ...shipDayBanner(trackers),
       ...(view === "calendar"
-        ? [renderCalendar(trackers)]
+        ? [renderCalendar(trackers, liveMissions())]
         : view === "workspace"
           ? [await renderWorkspace()]
           : [releasesSection(trackers), ...trackers.map(renderBoard)]),
@@ -1290,6 +1310,15 @@ const shipDayBanner = (trackers) => {
   )];
 };
 
+/**
+ * The way to every live mission, above the board and the calendar. The app reopens on the last
+ * view, so a mission in the air has to be one press away from here, not only from the workspace.
+ */
+const liveMissions = () => (missions.some((m) => !isEnded(m.status)) ? [missionLinks(el, projectId, missions)] : []);
+const missionsTrouble = () => (missionsFailed ? [el("div", { class: "cc-trouble", role: "alert" },
+  el("p", {}, `The missions could not be read: ${missionsFailed.message}. A mission in the air is not shown here.`),
+  btn("try again", () => loadBoard()))] : []);
+
 /** The cadence control, under the calendar head: how often this project means to ship. */
 const shipCadenceRow = () => {
   const cadence = shipDays?.schedule?.cadence ?? null;
@@ -1329,7 +1358,7 @@ const shipCadenceRow = () => {
   );
 };
 
-const renderCalendar = (trackers) => {
+const renderCalendar = (trackers, links = []) => {
   const [y, m] = calendarMonth.split("-").map(Number);
   const first = new Date(Date.UTC(y, m - 1, 1));
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -1363,6 +1392,12 @@ const renderCalendar = (trackers) => {
     el("span", { class: "spacer" }),
     el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, or a ship day to move it"),
   );
+  // Beside the grid: the missions, the releases, the ship days and the key, over the undated items,
+  // so the month starts under its head and every week of it is on the first screen at 1280x800.
+  // On a phone the column folds away and the page keeps its stacked order (style.css).
+  const key = (cls, words, iconName) => el("span", { class: `cal-key ${cls}` }, iconName ? icon(iconName) : null, words);
+  const aside = el("div", { class: "cal-side" }, ...links, releasesSection(trackers), shipCadenceRow(),
+    el("div", { class: "cal-legend" }, key("item done", "done", "decision"), key("item overdue", "overdue", "finding"), key("item soon", "due within a week"), key("item", "due later"), key("release", "a release deploys"), key("ship", "ship day"), key("ship now", "ship day, today")));
   const grid = el("div", { class: "cal-grid" });
   const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (const d of WEEKDAYS) grid.append(el("div", { class: "cal-dow" }, d));
@@ -1402,17 +1437,8 @@ const renderCalendar = (trackers) => {
       : el("p", { class: "lane-empty muted small" }, "Nothing on the roadmap yet. Items are added on the ", el("a", { href: `/?project=${encodeURIComponent(projectId)}&view=board` }, "board"), ", and dated in their drawer or by dragging them here."));
   dropZone(side, calendarDrag((d) => d.type === "item" && Boolean(d.item.fields.due)), (d) => setDue(d.tracker, d.item, ""));
   for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(calEvent("item undated", i.title, "", () => openDrawer(t.index, i)), t, i, s));
-  const key = (cls, words, iconName) => el("span", { class: `cal-key ${cls}` }, iconName ? icon(iconName) : null, words);
-  return el(
-    "section",
-    { class: "calendar" },
-    releasesSection(trackers),
-    shipCadenceRow(),
-    head,
-    el("div", { class: "cal-legend" }, key("item done", "done", "decision"), key("item overdue", "overdue", "finding"), key("item soon", "due within a week"), key("item", "due later"), key("release", "a release deploys"), key("ship", "ship day"), key("ship now", "ship day, today")),
-    grid,
-    side,
-  );
+  aside.append(side);
+  return el("section", { class: "calendar" }, head, grid, aside);
 };
 
 
@@ -1733,7 +1759,7 @@ const renderSessions = (records, live) => {
       for (const c of children) {
         const v = c.auditView ?? { verdict: "none" };
         const agent = live.backgroundAgents.find((a) => a.id === c.claudeId);
-        const chip = el("span", { class: `verdict ${v.verdict}${v.decision ? ` ${v.decision}` : ""}` }, v.verdict === "none" ? "not audited" : v.verdict === "pending" ? `auditing (${v.agentState ?? "…"})` : `${v.verdict}${v.decision ? ` · ${v.decision}` : ""}`);
+        const chip = el("span", { class: `verdict ${v.verdict}${v.decision ? ` ${v.decision}` : ""}` }, v.verdict === "none" ? "not audited" : v.verdict === "pending" ? reviewOwed(c) : `${v.verdict}${v.decision ? ` · ${v.decision}` : ""}`);
         ul.append(
           sessionRow(
             agent?.state ?? c.status,
@@ -2039,6 +2065,7 @@ const boot = async () => {
   reload.replaceChildren(icon("refresh"));
   // A refresh that finds nothing new still says it looked; one that fails says why on the bar.
   reload.addEventListener("click", async () => {
+    missionsAt = 0;
     const [read] = await Promise.all([loadBoard(), loadRail(true)]);
     if (read) toast(`Read ${project.name} again.`);
   });

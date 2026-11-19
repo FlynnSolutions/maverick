@@ -10,6 +10,9 @@ export const atReview = (status) => status === "review";
 /** The word a mission shows. A stopped mission is not a finished one: "done" in the good colour is for work that landed. */
 export const missionWord = (m) => (m.status === "abandoned" && m.word !== "error" ? "stopped" : m.word ?? "working");
 
+/** The plan as written now can fly: there, nothing in it stops a Wingman, and no check refuses it. The gate's own test. */
+export const flyable = (doc) => Boolean(doc?.found && !doc.parsed?.problems?.length && !doc.preflight?.some((c) => c.refuses));
+
 /** The session a task's "open" opens, and whose it is: its RIO's while one reviews it, else its Wingman's. Null with neither. */
 export const sessionOf = (task) => {
   const claudeId = task?.status === "reviewing" ? task.review?.claudeId : task?.claudeId ?? task?.review?.claudeId;
