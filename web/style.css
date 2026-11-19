@@ -801,11 +801,16 @@ body.ask-open { overflow: hidden; }
 .cal-cell.today { box-shadow: 0 0 0 1px var(--accent-glow), 0 0 18px var(--accent-dim); }
 .cal-day { font-family: var(--mono); font-size: 11px; color: var(--ink-ghost); margin-bottom: 4px; }
 .cal-wd { display: none; }
-/* The missions beside the grid: one to a line, the whole name and its word, over the undated items. */
+/* The side column: the missions one to a line, the releases stacked, the ship days and the key,
+   over the undated items. The month starts under its head, so every week is on the first screen. */
 @media (min-width: 721px) {
   .cal-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .cal-side .cc-missions { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
   .cal-side .cc-mission b { max-width: none; flex: 1; }
+  .cal-side .releases { flex-direction: column; overflow-x: visible; padding-bottom: 0; mask-image: none; }
+  .cal-side .releases > .release-card:not(.add) { flex-basis: auto; }
+  .cal-side .cal-legend { margin: 0; }
+  .calendar .cal-head { margin-top: 0; }
 }
 .cal-head .month-prev .icon { transform: rotate(90deg); }
 .cal-head .month-next .icon { transform: rotate(-90deg); }
@@ -814,9 +819,12 @@ body.ask-open { overflow: hidden; }
   .calendar { grid-template-columns: minmax(0, 1fr); }
   .cal-head h2 { min-width: 0; }
   .cal-head > .muted { display: none; }
-  /* The side column folds into the page: the missions lead it, the undated items stay last. */
+  /* The side column folds into the page in its stacked order: the missions, the releases and the
+     ship days, the month's head and its key, the month, and the undated items last. */
   .cal-side { display: contents; }
-  .cal-side .cc-missions { order: -1; }
+  .cal-side .cc-missions { order: -3; }
+  .cal-side > .board-releases, .cal-side > .cal-ships { order: -2; }
+  .cal-head, .cal-side > .cal-legend { order: -1; }
   .cal-grid { grid-template-columns: minmax(0, 1fr); }
   .cal-dow, .cal-cell.pad, .cal-cell:not(.today):not(:has(.cal-event)) { display: none; }
   .cal-cell { min-height: 0; }
@@ -1078,9 +1086,8 @@ body.ask-open { overflow: hidden; }
 .ship-cta { display: none; }
 .board-releases { margin-bottom: 20px; }
 .board-releases .strip-title, .calendar .strip-title { margin: 0 0 8px; }
-.calendar > .releases { margin-bottom: 4px; }
-/* Inside the calendar its grid gap is the spacing; the board's margin on top of it cost this week its last row. */
-.calendar > .board-releases { grid-column: 1 / -1; margin-bottom: 0; }
+/* Inside the calendar the column's gap is the spacing; the board's margin on top of it cost this week its last row. */
+.cal-side > .board-releases { grid-column: 1 / -1; margin-bottom: 0; }
 .cal-head { margin-top: 12px; }
 
 /* ---------- 8px rhythm audit (HIG layout.md: align, group, consistent margins) ---------- */

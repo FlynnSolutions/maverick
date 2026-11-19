@@ -143,8 +143,10 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   label reads `Missions · N`; on a pointer's width the chips wrap, each name cut at 20ch with the
   whole of it and its word in the title and the lamp saying which want you, so four take one line at
   1280; on a phone it is one scrolling line with the next chip cut by the edge. On the Calendar the
-  missions are a column over the undated items, not a line above the month, so the current week is
-  whole on the first screen at 1280x800; on a phone they lead the page.
+  missions, the releases, the ship days and the key are a column over the undated items, and the
+  month starts under its head, so every week of it is whole on the first screen at 1280x800, a
+  sixth week too (Cory, 2026-11-18: with the releases above it, today's fourth week fell below the
+  fold). On a phone the page keeps its stacked order: missions, releases, ship days, the month.
 - **An agent holding a live mission shows inside it.** A mission whose agent is stopped at a prompt
   reads `waiting for you` and sits in Needs you (Cory, 2026-11-04), one row: the reason, what the
   agent last said, and `open that session`. Only there does the mission's row speak for its agents;

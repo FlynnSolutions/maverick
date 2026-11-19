@@ -1392,9 +1392,12 @@ const renderCalendar = (trackers, links = []) => {
     el("span", { class: "spacer" }),
     el("span", { class: "muted small mono" }, "drag an item onto a day to set its deadline, or a ship day to move it"),
   );
-  // Beside the grid, over the undated items: on the first screen at 1280 without a line of its own
-  // above the month. On a phone the column folds away and the row leads the page (style.css).
-  const aside = el("div", { class: "cal-side" }, ...links);
+  // Beside the grid: the missions, the releases, the ship days and the key, over the undated items,
+  // so the month starts under its head and every week of it is on the first screen at 1280x800.
+  // On a phone the column folds away and the page keeps its stacked order (style.css).
+  const key = (cls, words, iconName) => el("span", { class: `cal-key ${cls}` }, iconName ? icon(iconName) : null, words);
+  const aside = el("div", { class: "cal-side" }, ...links, releasesSection(trackers), shipCadenceRow(),
+    el("div", { class: "cal-legend" }, key("item done", "done", "decision"), key("item overdue", "overdue", "finding"), key("item soon", "due within a week"), key("item", "due later"), key("release", "a release deploys"), key("ship", "ship day"), key("ship now", "ship day, today")));
   const grid = el("div", { class: "cal-grid" });
   const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (const d of WEEKDAYS) grid.append(el("div", { class: "cal-dow" }, d));
@@ -1435,17 +1438,7 @@ const renderCalendar = (trackers, links = []) => {
   dropZone(side, calendarDrag((d) => d.type === "item" && Boolean(d.item.fields.due)), (d) => setDue(d.tracker, d.item, ""));
   for (const { t, i, s } of undated.slice(0, 60)) side.append(draggableItem(calEvent("item undated", i.title, "", () => openDrawer(t.index, i)), t, i, s));
   aside.append(side);
-  const key = (cls, words, iconName) => el("span", { class: `cal-key ${cls}` }, iconName ? icon(iconName) : null, words);
-  return el(
-    "section",
-    { class: "calendar" },
-    releasesSection(trackers),
-    shipCadenceRow(),
-    head,
-    el("div", { class: "cal-legend" }, key("item done", "done", "decision"), key("item overdue", "overdue", "finding"), key("item soon", "due within a week"), key("item", "due later"), key("release", "a release deploys"), key("ship", "ship day"), key("ship now", "ship day, today")),
-    grid,
-    aside,
-  );
+  return el("section", { class: "calendar" }, head, grid, aside);
 };
 
 
