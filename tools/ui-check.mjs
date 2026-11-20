@@ -245,6 +245,8 @@ const writeReach = (want) => writeFileSync(reach, `(async () => {
   const crew = new URLSearchParams(location.search).has("formation");
   const at = await until(() => document.querySelector(crew ? ".rack.crew-mission .strip" : ".boards .cc-missions .cc-mission"), 15000);
   if (!at) return "error: no mission on " + location.search;
+  // Its crew has nothing running between waves, and the tab is still on the row, marked as the one on show.
+  if (crew && !document.querySelector(".forms button.on[aria-current]")?.textContent.includes(${JSON.stringify(MISSION)} + " crew")) return "error: the crew tab is not on the tab row while its mission is open";
   if (!at.textContent.includes(${JSON.stringify(MISSION)})) return "error: the mission shown is not the live one: " + at.textContent;
   if (at.getBoundingClientRect().bottom > innerHeight) return "error: the mission is below the first screen on " + location.search;
   // Every mission is shown or counted: the label says how many the row holds, however many it scrolls past.
