@@ -105,7 +105,8 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   and closed formations, newest first under calendar headings, with find, and in the URL (`?archive=1`). By default it
   lists the person's own sessions; what the missions spawned is one toggle away, and find searches
   both. Rows are drawn only while it shows. A formation with nothing live leaves the tab row for
-  it. Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
+  it, except a crew whose mission is open: between waves of Wingmen its tab stays, with a count of 0,
+  as the way to the mission (Cory, 2026-11-12). Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
   An ended session whose review is still owed has not ended: a review stopped at a prompt or gone
   without a verdict sits in Needs you, one still running in Working, never in the archive, never
   greyed, and with no `remove` (it would drop the review). A blocked review's `open` reaches its RIO,

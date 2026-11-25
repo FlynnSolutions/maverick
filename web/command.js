@@ -616,8 +616,8 @@ export const mountCommandCenter = (root, ctx) => {
     return el("div", { class: "forms" },
       // With the list unreadable there is no count to give, so none is shown rather than a zero.
       tab(null, "Rack", sessionsFailed ? null : mySessions().filter((s) => !settled(s, s.record)).length + missions.filter((m) => !isEnded(m.status)).length),
-      ...formations.filter((f) => liveSlots(f)).map((f) => tab(f.id, missions.some((m) => m.formation === f.id && !isEnded(m.status)) ? `${f.name} crew` : f.name, liveSlots(f), f)),
-      sessionsFailed ? null : el("button", { type: "button", class: `archive-tab${archiveOpen || (activeFormation && formations.some((f) => f.id === activeFormation && !liveSlots(f))) ? " on" : ""}`, ...(archiveOpen ? { "aria-current": "true" } : {}), title: "everything that has ended in this project", onclick: () => { setArchive(true); activeFormation = null; paint(); } }, "Archive", el("b", {}, String(archived.done.length + archived.over.length + archived.closed.length))),
+      ...formations.filter(onTabRow).map((f) => tab(f.id, crewMissionOf(f) ? `${f.name} crew` : f.name, liveSlots(f), f)),
+      sessionsFailed ? null : el("button", { type: "button", class: `archive-tab${archiveOpen || (activeFormation && formations.some((f) => f.id === activeFormation && !onTabRow(f))) ? " on" : ""}`, ...(archiveOpen ? { "aria-current": "true" } : {}), title: "everything that has ended in this project", onclick: () => { setArchive(true); activeFormation = null; paint(); } }, "Archive", el("b", {}, String(archived.done.length + archived.over.length + archived.closed.length))),
       el("button", { type: "button", class: "new shell", title: "open a shell in this project", onclick: async () => {
         try {
           const t = await post("/api/terminals", { project: ctx.projectId, kind: "shell", cols: 120, rows: 34 });
@@ -666,6 +666,8 @@ export const mountCommandCenter = (root, ctx) => {
     const live = new Set(mySessions().filter((s) => s.sessionId && !settled(s, s.record)).map((s) => s.sessionId));
     return [f.lead, ...f.members].filter((id) => live.has(id)).length + (f.pending?.length ?? 0);
   };
+  /** A formation keeps its tab while anything in it runs, and a crew's while its mission is open: between waves of Wingmen it is still the way to the mission (Cory, 2026-11-12). */
+  const onTabRow = (f) => liveSlots(f) > 0 || Boolean(crewMissionOf(f));
   /** Leave the archive for a formation's tab, or for the rack with none. */
   const showFormation = (id) => {
     setArchive(false);
@@ -761,11 +763,12 @@ export const mountCommandCenter = (root, ctx) => {
         writeOpen();
       }
     }
-    // Nothing left running: a record of who flew, with nothing offering to start more of it.
+    // Nothing left running: a record of who flew, with nothing offering to start more of it. Keyed on
+    // what runs, not on the tab row: a crew between waves keeps its tab and shows this record.
     if (!liveSlots(f)) {
       const crew = [...(lead ? [lead] : []), ...flight];
       return el("section", { class: "cc-project" },
-        el("div", {}, el("h2", { class: "archive-formation-name" }, f.name), el("p", { class: "muted small" }, mission && !isEnded(mission.status) ? "Every session in this formation has ended; its Strike Lead is still on the mission." : "Everything in this formation has ended.")),
+        el("div", {}, el("h2", { class: "archive-formation-name" }, f.name), el("p", { class: "muted small" }, crewMissionOf(f) ? "Every session in this formation has ended; its Strike Lead is still on the mission." : "Everything in this formation has ended.")),
         el("section", { class: "rack archive", "aria-label": f.name },
           rackHead(el("span", { class: "rack-col name" }, "Session")),
           el("div", { class: "rack-strips" }, strikeLead, ...crew.map((s) => strip(s, model.byClaudeId.get(s.claudeId), false, "done")))));
@@ -882,7 +885,7 @@ export const mountCommandCenter = (root, ctx) => {
     const find = el("input", { type: "text", class: "rack-find", placeholder: "find in the archive", "aria-label": "find in the archive", value: archiveQuery,
       oninput: (e) => { archiveQuery = e.target.value; archiveShown = ARCHIVE_PAGE; show(); } });
     // A live mission's formation is its crew between agents, not finished work.
-    const dead = formations.filter((f) => !liveSlots(f) && !missions.some((m) => m.formation === f.id && !isEnded(m.status)));
+    const dead = formations.filter((f) => !onTabRow(f));
     show();
     return el("section", { class: "cc-project" },
       el("div", { class: "archive-tools" }, find, showAgents, said),
