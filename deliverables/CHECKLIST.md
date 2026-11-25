@@ -603,6 +603,18 @@ format: checklist
 
 ## 📋 Backlog
 
+- [ ] `[ENG]` `[M]` **Ask about a highlighted passage in a side thread that never touches the main session**
+  - created: 2026-11-25
+  - source: Cory, 2026-11-25, after losing his place in long terminal replies
+  - kind: feature
+  Highlight part of a long reply, right-click, "Discuss", and a small pop-up opens beside it. The quick follow-up runs there, with the passage as its context, and closing it puts Cory back where he was: no scrolling back, and nothing from the side thread lands in the main session's context. Open question: whether the side thread forks the main session's context (read-only) or starts fresh with only the passage.
+
+- [ ] `[ENG]` `[M]` **Investigate prompt caching, then build it into how Maverick runs sessions**
+  - created: 2026-11-25
+  - source: Cory, 2026-11-25
+  - kind: research, then feature
+  Find out how prompt caching works for the sessions Maverick launches (what Claude Code already caches, the TTLs, what breaks a cache hit, what it saves in cost and latency), measure it on a real mission, then decide what Maverick should change, for example keeping a Wingman's prefix stable across tasks.
+
 - [ ] `[ENG]` `[L]` **Composable workflows: Maverick runs any process from a saved template**
   - created: 2026-11-04
   - source: Cory, 2026-11-04, decided after reading Archon's code: build inside Maverick and borrow its ideas
@@ -619,13 +631,13 @@ format: checklist
   - created: 2026-11-09
   - source: workflow-templates-m2 would not open; the cause was mammoth-rental's rental-watch record, torn on 2026-11-05 at 22:40 and repaired by hand on 2026-11-09 (backup kept)
   - kind: bug
-  Three faults in a chain. `writeMission` (`src/missions.ts`) writes the record in place, so two writes that overlap can leave the tail of the longer one after the shorter, which is what happened (rev 806, 79 stray bytes). `readPace` reads every project's records for the gate's estimate, so one bad file fails every mission view. `measuredPace` caches the rejected promise for five minutes, so the failure outlives the repair. Fix shape: write to a temp file and rename, skip and report a record that will not parse, and cache only a successful read. The rental-watch mission could not be read from 2026-11-05 to 2026-11-09, so it has not been swept since then.
+  Three faults in a chain. `writeMission` (`src/missions.ts`) writes the record in place, so two writes that overlap can leave the tail of the longer one after the shorter, which is what happened (rev 806, 79 stray bytes). `readPace` reads every project's records for the gate's estimate, so one bad file fails every mission view. `measuredPace` caches the rejected promise for five minutes, so the failure outlives the repair. Fix shape: write to a temp file and rename, skip and report a record that will not parse, and cache only a successful read. Likely cause of the tear, found 2026-11-12: a second Maverick server (`node server.ts` from the main checkout, port 8767, started 2026-10-16 by a session and never stopped) was sweeping the same records with October's code, so two processes wrote one file. Stopped 2026-11-12. Nothing stops two servers sharing one records folder; a lock file in `console-sessions/` would. The rental-watch mission could not be read from 2026-11-05 to 2026-11-09, so it has not been swept since then.
 
 - [ ] `[ENG]` `[S]` **A failed proof keeps only its last 4000 characters, so it loses which tests failed**
   - created: 2026-11-05
   - source: mission workflow-templates-m1, 2026-11-05: proof reported 2 of 294 failing, the names were gone, and two clean reruns could not name them
   - kind: bug
-  `runProof` in `src/missions.ts` keeps the tail of the output, and the test reporter prints each failure where it happens, so a long run leaves only the summary. Keep every failing test's block, or write the full output to a file beside the mission record.
+  `runProof` in `src/missions.ts` keeps the tail of the output, and the test reporter prints each failure where it happens, so a long run leaves only the summary. Keep every failing test's block, or write the full output to a file beside the mission record. Cause of both overnight proof failures, found 2026-11-12: the second server above ran every proof a second time at once, doubling the duration (about 150s to over 300s) and tripping time-sensitive tests. With it stopped, the proof passed 359 of 359 in 147s.
 
 - [ ] `[ENG]` `[S]` **Study Archon's test suite and see what Maverick's should learn from it**
   - created: 2026-11-04
