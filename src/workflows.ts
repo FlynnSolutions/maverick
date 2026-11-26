@@ -32,6 +32,8 @@ export interface TemplateChoice {
   description?: string;
   source: "built-in" | "project";
   unverified: boolean;
+  /** the verifying stages this template leaves out, in order; empty when it verifies. */
+  leftOut: string[];
   template?: Workflow;
   error?: string;
 }
@@ -183,15 +185,19 @@ export const defaultWorkflow = (): Workflow => (builtIn ??= load(MISSION_TEMPLAT
 /** the templates that ship with maverick, mission first. each is the one cached, frozen copy. */
 export const builtInWorkflows = (): Workflow[] => [defaultWorkflow(), (light ??= load(LIGHT_TEMPLATE))];
 
-/** a template that leaves out review, proof or walk is unverified. this is the only place that asks. */
-export const unverified = (w: Workflow): boolean => !["review", "proof", "walk"].every((id) => hasStage(w, id));
+/** the stages that make a template verified, in the order they are named, that this one leaves out. this is the only place that asks. */
+export const leftOut = (w: Workflow): string[] => ["review", "proof", "walk"].filter((id) => !hasStage(w, id));
 
-const choiceOf = (w: Workflow, source: TemplateChoice["source"]): TemplateChoice => ({
+/** a template that leaves out review, proof or walk is unverified. */
+export const unverified = (w: Workflow): boolean => leftOut(w).length > 0;
+
+export const choiceOf = (w: Workflow, source: TemplateChoice["source"]): TemplateChoice => ({
   id: w.id,
   name: w.name ?? w.id,
   ...(w.description !== undefined && { description: w.description }),
   source,
   unverified: unverified(w),
+  leftOut: leftOut(w),
   template: w,
 });
 
@@ -206,17 +212,12 @@ const projectChoice = async (dir: string, file: string): Promise<TemplateChoice>
     throw new Error(`cannot read ${path}: ${(err as Error).message}`);
   }
   try {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(text);
-    } catch (err) {
-      throw new Error(`not JSON: ${(err as Error).message}`);
-    }
-    const w = validateWorkflow(raw);
+    const w = validateWorkflow(JSON.parse(text));
     if (w.id !== id) throw new Error(`its id is "${w.id}", and it must be its file name, "${id}"`);
     return choiceOf(w, "project");
   } catch (err) {
-    return { id, name: id, source: "project", unverified: false, error: `${file}: ${(err as Error).message}` };
+    const why = err instanceof SyntaxError ? `not JSON: ${err.message}` : (err as Error).message;
+    return { id, name: id, source: "project", unverified: false, leftOut: [], error: `${file}: ${why}` };
   }
 };
 

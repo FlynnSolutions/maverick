@@ -12,11 +12,9 @@ const walkState = (view, m) => view.walk?.[m.n]?.state ?? "none";
 const branchOf = (view) => [...new Set((view.repos ?? []).map((r) => r.branch))].join(", ") || "the mission branch";
 /** A template without review, proof or the walk: nothing checked the work, so it stays on its mission branch and has no summary, walk or proof to show. */
 const unverifiedOf = (view) => Boolean(view.workflow?.unverified);
-/** What the template leaves out, named from its flight; a view with no flight names all three. */
-const CHECKS = [["review", "review"], ["proof", "proof"], ["walk", "the walk"]];
+/** What the template leaves out, as the server counts it. */
 const leftOut = (view) => {
-  const ran = new Set((view.workflow?.flight ?? []).map((s) => s.id));
-  const out = CHECKS.filter(([id]) => !ran.has(id) || !ran.size).map(([, name]) => name);
+  const out = (view.workflow?.leftOut ?? []).map((id) => (id === "walk" ? "the walk" : id));
   return out.length > 1 ? `${out.slice(0, -1).join(", ")} and ${out.at(-1)}` : out.join("");
 };
 
@@ -646,8 +644,8 @@ export const mount = (host, view, ctx) => {
     readTools.hidden = !readings.length || !checked;
     readings.forEach(paint);
     for (const t of tallies) t.paint();
-    patch(walks, closing ? [unverifiedOf(v), v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired])] : [], () => (closing ? drawWalks(v) : []));
-    walks.setAttribute("aria-label", unverifiedOf(v) ? "Milestones: what merged" : "Milestones: walkthroughs and proofs");
+    patch(walks, closing ? [!checked, v.milestones.filter((m) => m.merged).map((m) => [m.n, m.title, v.walk?.[m.n], m.proof, m.mergeShas, v.proofRequired])] : [], () => (closing ? drawWalks(v) : []));
+    walks.setAttribute("aria-label", !checked ? "Milestones: what merged" : "Milestones: walkthroughs and proofs");
     walks.hidden = !closing;
     patch(gate, closing ? [v.status, v.finished, v.repos, v.walk, v.milestones.flatMap((m) => m.tasks).map((t) => t.status), v.workflow] : null, () => drawGate(v));
     toClose();

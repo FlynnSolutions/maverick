@@ -495,7 +495,7 @@ const flown = () => mission.workflow ?? { id: "mission", name: "Mission", unveri
 const templateLine = () => {
   const w = flown();
   return el("p", { class: "mv-ask-meta mv-template" }, "runs ",
-    el("a", { href: `/workflow.html?project=${encodeURIComponent(projectId)}&mission=${encodeURIComponent(missionId)}`, title: `the ${w.name} template, as this mission pinned it` }, w.id),
+    el("a", { href: `/workflow.html?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(w.id)}&mission=${encodeURIComponent(missionId)}`, title: `the ${w.name} template, as this mission pinned it` }, w.id),
     w.unverified ? " · unverified: stays on its mission branch" : null);
 };
 let askKey = "";

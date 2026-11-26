@@ -95,14 +95,14 @@ test("missionView carries the workflow it flies, and never the template", async 
   const light = await missionView((await started("view-light", "light")).project, "view-light");
   assert.equal("template" in light, false);
   assert.deepEqual({ ...light.workflow, flight: light.workflow.flight.map((s) => s.id) }, {
-    id: "light", name: "Light", unverified: true,
+    id: "light", name: "Light", unverified: true, leftOut: ["review", "proof", "walk"],
     flight: ["interview", "plan-gate", "preflight", "build", "merge", "land", "close"],
   });
   assert.equal(light.workflow.flight[0].state, "now");
   const full = await missionView((await started("view-full")).project, "view-full");
   assert.equal("template" in full, false);
   assert.deepEqual({ ...full.workflow, flight: full.workflow.flight.map((s) => s.label) }, {
-    id: "mission", name: "Mission", unverified: false,
+    id: "mission", name: "Mission", unverified: false, leftOut: [],
     flight: ["Interview", "Plan gate", "Preflight", "Build", "Review", "Merge", "Proof", "Land", "Walk", "Close"],
   });
   assert.deepEqual(full.workflow.flight, flightOf((await readMission("p-view-full", "view-full"))!));
@@ -232,7 +232,7 @@ test("POST /api/missions starts from the template named, and the mission= route 
   assert.equal(((await get("/api/workflows/dockside?project=harbor")).json as TemplateChoice).description, "as it is now", "the project's file did change");
   const pinned = await get("/api/workflows/dockside?project=harbor&mission=quay");
   assert.equal(pinned.status, 200, JSON.stringify(pinned.json));
-  assert.deepEqual(pinned.json, { id: "dockside", name: "Dockside", description: "as it was", source: "project", unverified: true, template: dockside("as it was") });
+  assert.deepEqual(pinned.json, { id: "dockside", name: "Dockside", description: "as it was", source: "project", unverified: true, leftOut: ["review", "proof", "walk"], template: dockside("as it was"), mission: { id: "quay", name: "quay" } });
 
   rmSync(harborFile("dockside"));
   assert.equal((await get("/api/workflows/dockside?project=harbor")).status, 404, "the project no longer offers it");

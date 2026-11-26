@@ -1,13 +1,14 @@
 // The template page: one workflow template, read-only. The order of the work and who does each
 // part, drawn left to right with wires, each for-each a box whose tasks splay and rejoin. A stage
 // the template leaves out is not drawn; that it is unverified is said in words, above the flow.
-// `?project=&id=` reads a template the project offers, `?project=&mission=` the copy a mission
+// `?project=&id=` reads a template the project offers, `?project=&id=&mission=` the copy a mission
 // pinned when it started.
 
 import { applyProjectTheme, recall } from "./theme.js";
 import { jetSvg } from "./jet.js";
 import { mountDevBadge } from "./dev-badge.js";
 import { cannotOpen as cannotOpenPage } from "./page.js";
+import { missionHref } from "./mission-links.js";
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -96,12 +97,11 @@ const legend = () => el("p", { class: "wf-legend" }, ...LEGEND.map(([k, l]) => e
 
 /* ---------- the page ---------- */
 
-const has = (stages, id) => stages.some((s) => s.id === id || has(s.stages ?? [], id));
 const list = (items) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 
-/** Only what this template actually leaves out of the three that verify the work. */
-const unverifiedLine = (w) => {
-  const out = [["review", "review"], ["proof", "proof"], ["walk", "the walk"]].filter(([id]) => !has(w.stages, id)).map(([, say]) => say);
+/** Only what this template actually leaves out of the three that verify the work, as the server counts them. */
+const unverifiedLine = (leftOut) => {
+  const out = leftOut.map((id) => (id === "walk" ? "the walk" : id));
   return el("p", { class: "wf-unv" }, el("b", {}, "Unverified."), ` It leaves out ${list(out)}, so a mission it runs stays on its mission branch, and you take the work from there by hand.`);
 };
 
@@ -109,11 +109,12 @@ const sourceLine = (choice, pinned) => el("p", { class: "wf-src" },
   choice.source === "built-in" ? `built-in · src/workflows/${choice.id}.json` : `the project's file · .maverick/workflows/${choice.id}.json`,
   pinned ? " · the copy this mission pinned when it started" : null);
 
-const render = (project, choice, mission) => {
+const render = (project, choice) => {
+  const { mission } = choice;
   const workspace = `/?project=${q(project.id)}&view=workspace`;
   const crumb = el("p", { class: "wf-crumb" },
     el("a", { href: workspace }, project.name), " · ",
-    mission ? el("a", { href: `/mission.html?project=${q(project.id)}&mission=${q(missionId)}` }, mission.name) : "Templates",
+    mission ? el("a", { href: missionHref(project.id, mission) }, mission.name) : "Templates",
     ` · ${choice.id}`);
   const w = choice.template;
   const section = $("#template");
@@ -122,7 +123,7 @@ const render = (project, choice, mission) => {
     crumb,
     el("h1", {}, choice.name),
     choice.description ? el("p", { class: "wf-desc" }, choice.description) : null,
-    w && choice.unverified ? unverifiedLine(w) : null,
+    w && choice.unverified ? unverifiedLine(choice.leftOut) : null,
     sourceLine(choice, Boolean(mission)),
     ...(w ? [flow(w), legend()] : [el("p", { class: "mv-fail" }, `This template can't be used: ${choice.error ?? "the server sent no template and no reason"}`)]),
   ].filter(Boolean));
@@ -135,7 +136,7 @@ const cannotOpen = (why, href = "/?pick=1", label = "pick a project") => cannotO
 const boot = async () => {
   void mountDevBadge();
   $("#brand-mark").replaceChildren(jetSvg("jet-glyph mark"));
-  if (!projectId || (!templateId && !missionId)) return cannotOpen("The link names no project, or neither a template nor a mission: open a template from its mission's page, which writes both.");
+  if (!projectId || !templateId) return cannotOpen("The link names no project or no template: open a template from its mission's page, which writes both.");
   const project = (await api("/api/projects")).find((p) => p.id === projectId);
   if (!project) return cannotOpen(`There is no project "${projectId}" on this machine; it may have been removed from the registry.`);
   applyTheme(project.theme);
@@ -145,11 +146,8 @@ const boot = async () => {
   $("#board-link").href = workspace;
   $("#back").href = workspace;
   try {
-    // A mission's view names the template it pinned; an older one, from before templates, ran mission.
-    const mission = missionId ? await api(`/api/missions/${q(missionId)}?project=${q(projectId)}`) : null;
-    const id = mission ? mission.workflow?.id ?? "mission" : templateId;
-    const choice = await api(`/api/workflows/${q(id)}?project=${q(projectId)}${mission ? `&mission=${q(missionId)}` : ""}`);
-    render(project, choice, mission);
+    // With a mission, the server answers the copy it pinned and the mission's name for the crumb.
+    render(project, await api(`/api/workflows/${q(templateId)}?project=${q(projectId)}${missionId ? `&mission=${q(missionId)}` : ""}`));
   } catch (err) {
     cannotOpen(err.message, workspace, "back to the workspace");
   }

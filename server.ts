@@ -26,7 +26,7 @@ import { abandonMission, acceptTask, answerLead, approveMission, closeMission, l
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
-import { builtInWorkflows, templatesFor, unverified, workflowOf, type TemplateChoice } from "./src/workflows.ts";
+import { builtInWorkflows, choiceOf, templatesFor, workflowOf } from "./src/workflows.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
 import { focusApp, parentChain, processHome } from "./src/processes.ts";
@@ -654,8 +654,9 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       if (!mission) return sendJson(res, 404, { error: `no mission ${missionId}` });
       const w = workflowOf(mission);
       if (w.id !== id) return sendJson(res, 404, { error: `${mission.name} flies template ${w.id}, not ${id}` });
-      const pinned: TemplateChoice = { id: w.id, name: w.name ?? w.id, ...(w.description !== undefined && { description: w.description }), source: builtInWorkflows().some((b) => b.id === w.id) ? "built-in" : "project", unverified: unverified(w), template: w };
-      return sendJson(res, 200, pinned);
+      // The record keeps the template, not where it came from, so a built-in's id reads as the built-in.
+      const source = builtInWorkflows().some((b) => b.id === w.id) ? "built-in" : "project";
+      return sendJson(res, 200, { ...choiceOf(w, source), mission: { id: mission.id, name: mission.name } });
     }
     const choice = (await templatesFor(project.path)).find((c) => c.id === id);
     if (!choice) return sendJson(res, 404, { error: `no template ${id}` });

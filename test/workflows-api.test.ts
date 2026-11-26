@@ -65,7 +65,7 @@ test("GET /api/workflows lists the built-ins first, then the project's files, th
 test("GET /api/workflows/<id> answers that one choice with its template", async () => {
   const { status, json } = await get("/api/workflows/dockside?project=harbor");
   assert.equal(status, 200, JSON.stringify(json));
-  assert.deepEqual(json, { id: "dockside", name: "Dockside", description: DOCKSIDE.description, source: "project", unverified: true, template: DOCKSIDE });
+  assert.deepEqual(json, { id: "dockside", name: "Dockside", description: DOCKSIDE.description, source: "project", unverified: true, leftOut: ["review", "proof", "walk"], template: DOCKSIDE });
 });
 
 test("GET /api/workflows/<id> answers a broken file as its choice with the error, not a failure", async () => {

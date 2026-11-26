@@ -167,9 +167,7 @@ export interface PreflightInput {
   also?: string[];
   /** The repos that land by pushing or a pull request: each needs a git remote, and the mission needs `gh`. */
   remote: Array<{ label: string; path: string; land?: "pr" | "push" }>;
-  /** The mission's template leaves out review, proof or walk, so its work stays on its mission branch and no repo in `remote` may land. */
-  unverified?: boolean;
-  /** What that template leaves out, for the line that says so. */
+  /** What the mission's template leaves out of review, proof and walk. Any at all makes it unverified: its work stays on its mission branch and no repo in `remote` may land. */
   leftOut?: string[];
 }
 
@@ -204,8 +202,8 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
         : remotes ? remotes.split("\n").join(", ")
           : `${repo.label} is set to land by a pull request or a push, but ${repo.path} has no git remote; add one, or set its land to merge in maverick.json` });
     // Landing is unverified work leaving its branch, so the gate refuses it here rather than the close finding it after the flight.
-    if (input.unverified) push({ kind: "landing", name: `unverified landing for ${repo.label}`, status: "fail",
-      detail: `${repo.label} is set to land by ${repo.land ?? "pr or push"}, but this mission's template leaves out ${input.leftOut?.join(", ") ?? "review, proof or walk"}, so its work stays on its mission branch; set ${repo.label}'s land to merge in maverick.json, or choose a template that verifies` });
+    if (input.leftOut?.length) push({ kind: "landing", name: `unverified landing for ${repo.label}`, status: "fail",
+      detail: `${repo.label} is set to land by ${repo.land ?? "pr or push"}, but this mission's template leaves out ${input.leftOut.join(", ")}, so its work stays on its mission branch; set ${repo.label}'s land to merge in maverick.json, or choose a template that verifies` });
   }
   for (const repo of input.repoPaths) {
     // `.nvmrc` first, then `engines.node`; a repo that pins nothing says nothing.

@@ -115,8 +115,8 @@ test("a project with no templates folder has the built-ins only, mission first",
   const dir = await project(t);
   const choices = await templatesFor(dir);
   assert.deepEqual(choices, [
-    { id: "mission", name: "Mission", description: MISSION_DESCRIPTION, source: "built-in", unverified: false, template: defaultWorkflow() },
-    { id: "light", name: "Light", description: LIGHT_DESCRIPTION, source: "built-in", unverified: true, template: builtInWorkflows()[1] },
+    { id: "mission", name: "Mission", description: MISSION_DESCRIPTION, source: "built-in", unverified: false, leftOut: [], template: defaultWorkflow() },
+    { id: "light", name: "Light", description: LIGHT_DESCRIPTION, source: "built-in", unverified: true, leftOut: ["review", "proof", "walk"], template: builtInWorkflows()[1] },
   ]);
   const empty = await project(t, {});
   assert.deepEqual(await templatesFor(empty), choices, "an empty folder is the same");
@@ -130,9 +130,9 @@ test("project files follow the built-ins by id, a same id replaces in place, and
   const dir = await project(t, { "quick.json": json(quick), "deep.json": json(deep), "deep-2.json": json(deeper), "mission.json": json(own), "notes.md": "not a template" });
   const choices = await templatesFor(dir);
   assert.deepEqual(choices.map((c) => [c.id, c.source]), [["mission", "project"], ["light", "built-in"], ["deep", "project"], ["deep-2", "project"], ["quick", "project"]]);
-  assert.deepEqual(choices[0], { id: "mission", name: "Our mission", description: MISSION_DESCRIPTION, source: "project", unverified: false, template: own });
-  assert.deepEqual(choices[2], { id: "deep", name: "deep", source: "project", unverified: false, template: deep }, "a file with no name is named by its id");
-  assert.deepEqual(choices[4], { id: "quick", name: "Quick", description: LIGHT_DESCRIPTION, source: "project", unverified: true, template: quick });
+  assert.deepEqual(choices[0], { id: "mission", name: "Our mission", description: MISSION_DESCRIPTION, source: "project", unverified: false, leftOut: [], template: own });
+  assert.deepEqual(choices[2], { id: "deep", name: "deep", source: "project", unverified: false, leftOut: [], template: deep }, "a file with no name is named by its id");
+  assert.deepEqual(choices[4], { id: "quick", name: "Quick", description: LIGHT_DESCRIPTION, source: "project", unverified: true, leftOut: ["review", "proof", "walk"], template: quick });
 });
 
 test("a broken file and a mismatched id are listed with their messages and no template", async (t) => {
@@ -147,10 +147,10 @@ test("a broken file and a mismatched id are listed with their messages and no te
   const broken = choices[2];
   assert.equal(broken.template, undefined);
   assert.match(broken.error ?? "", /^broken\.json: not JSON: /);
-  assert.deepEqual({ ...broken, error: undefined }, { id: "broken", name: "broken", source: "project", unverified: false, error: undefined });
-  assert.deepEqual(choices[4], { id: "wrong", name: "wrong", source: "project", unverified: false, error: 'wrong.json: its id is "other", and it must be its file name, "wrong"' });
-  assert.deepEqual(choices[3], { id: "reordered", name: "reordered", source: "project", unverified: false, error: 'reordered.json: stage "milestones": out of order, it comes before "close"' });
-  assert.deepEqual(choices[1], { id: "light", name: "light", source: "project", unverified: false, error: 'light.json: workflow "light": unknown field "owner"' }, "a broken override still takes the built-in's place");
+  assert.deepEqual({ ...broken, error: undefined }, { id: "broken", name: "broken", source: "project", unverified: false, leftOut: [], error: undefined });
+  assert.deepEqual(choices[4], { id: "wrong", name: "wrong", source: "project", unverified: false, leftOut: [], error: 'wrong.json: its id is "other", and it must be its file name, "wrong"' });
+  assert.deepEqual(choices[3], { id: "reordered", name: "reordered", source: "project", unverified: false, leftOut: [], error: 'reordered.json: stage "milestones": out of order, it comes before "close"' });
+  assert.deepEqual(choices[1], { id: "light", name: "light", source: "project", unverified: false, leftOut: [], error: 'light.json: workflow "light": unknown field "owner"' }, "a broken override still takes the built-in's place");
 });
 
 test("a templates path that cannot be read as a folder throws, naming it", async (t) => {
