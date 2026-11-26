@@ -45,6 +45,10 @@ a.mv-word[href]:focus-visible { outline: 2px solid var(--accent); outline-offset
 .mv-trouble { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: -6px 0 14px; }
 .mv-trouble:empty { display: none; }
 .mv-trouble .mv-warn { margin: 0; padding: 8px 10px; overflow-wrap: anywhere; }
+/* The way to the Strike Lead, under the anchors and sticky with them, so writing to it is one press from anywhere on the page. A link, since it goes there. */
+.mv-rail a.mv-to-lead { display: flex; align-items: center; min-height: var(--control); margin-top: 14px; padding: 0 10px; border-radius: 5px; font: 500 13.5px var(--sans); color: var(--accent-hot); text-decoration: underline; text-underline-offset: 3px; }
+.mv-rail a.mv-to-lead:hover { background: var(--steel); }
+.mv-rail a.mv-to-lead:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mv-controls { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 18px; padding: 0 10px; }
 .mv-controls:empty { display: none; }
 .mv-controls p { margin: 0; }
@@ -58,9 +62,9 @@ input.mv-note { align-self: stretch; height: var(--control); padding: 0 10px; ba
 .mv-note[aria-invalid="true"] { border-color: var(--caution); }
 
 /* The answer a question wants first is the needs-you colour, wherever a question draws it:
-   the answer row, a walk's row, the pointer to an interview round. */
-.mv-opts button.primary, .prog-walks button.primary, button.lead-to-round { background: var(--caution); color: var(--carbon); border-color: transparent; }
-.mv-opts button.primary:hover, .prog-walks button.primary:hover, button.lead-to-round:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
+   the answer row and a walk's row. */
+.mv-opts button.primary, .prog-walks button.primary { background: var(--caution); color: var(--carbon); border-color: transparent; }
+.mv-opts button.primary:hover, .prog-walks button.primary:hover { background: var(--caution); box-shadow: 0 1px 2px var(--shade); filter: brightness(1.08); }
 
 /* The answer row a question draws wherever it sits (web/answers.js): the buttons in the feed's
    caution dress, then the note and the hint on a line of their own. */
@@ -105,7 +109,8 @@ html { scroll-padding-top: 70px; }
 /* A session opened from a module's row: the shell's well, under whatever the module passed. */
 .mv-session { margin-top: 8px; background: var(--carbon); border-radius: var(--radius-s); overflow: hidden; padding: 6px; box-shadow: inset 0 0 0 1px var(--seam-soft); }
 .mv-session-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 0 6px; }
-.mv-session-head button { padding: 0 10px; }
+.mv-session-who { margin: 0; padding: 0 4px; font-size: 13px; line-height: 1.5; color: var(--ink); }
+.mv-session-head button { flex: none; padding: 0 10px; }
 .mv-session .term { height: 34vh; min-height: 260px; }
 
 /* One column below 900px, and the order is the page's question, not the markup's: the word, then
@@ -119,6 +124,8 @@ html { scroll-padding-top: 70px; }
   .mv-now { order: 2; }
   .mv-anchors { order: 3; flex-direction: row; flex-wrap: wrap; margin: 0 0 24px; }
   .mv-rail a.mv-nav { flex: 1 1 140px; background: var(--steel); }
+  .mv-anchors:has(+ .mv-to-lead:not([hidden])) { margin-bottom: 8px; }
+  .mv-rail a.mv-to-lead { order: 3; margin: 0 0 24px; padding: 0; justify-self: start; }
   .mv-content > section { order: 4; }
   .mv-controls { order: 5; margin: 8px 0 0; padding: 0; }
 }
@@ -149,11 +156,12 @@ html { scroll-padding-top: 70px; }
 .mv-problems li::marker { color: var(--threat); }
 .mv-overlaps { margin: 10px 0 0; padding-left: 18px; max-width: var(--measure); color: var(--caution); font-size: 13px; }
 .mv-overlaps li { margin: 2px 0; }
-/* One grid for the list, each row on it, so every detail starts at the same x however long its name. */
-.mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; display: grid; grid-template-columns: 42px auto minmax(0, 1fr); gap: 3px 8px; }
+/* One grid for the list, each row on it, so every detail starts at the same x. The name column is
+   as wide as the names up to a cap: past it a long name wraps in its cell rather than pushing every
+   detail out and leaving a gap after each short one. */
+.mv-preflight ul { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 13px; display: grid; grid-template-columns: 42px fit-content(22ch) minmax(0, 1fr); gap: 3px 8px; }
 .mv-preflight li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
-.mv-preflight li strong { white-space: nowrap; }
-.mv-preflight .pf-detail { max-width: 48ch; }
+.mv-preflight .pf-detail { max-width: 48ch; overflow-wrap: anywhere; }
 .mv-preflight .pf-status { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
 .mv-preflight .pf-fail .pf-status { color: var(--threat); }
 .mv-preflight .pf-warn .pf-status { color: var(--caution); }
@@ -206,7 +214,7 @@ html { scroll-padding-top: 70px; }
 .mv-warn { margin: 10px 0 0; padding: 8px 12px; font-size: 12.5px; color: var(--caution); max-width: 74ch; background: var(--carbon); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--caution); }
 
 /* ---------- what waits on you, first: the open questions sit above the ask (ctx.now) ---------- */
-.mv-now:has(.prog-pins:not([hidden]), .mv-trouble:not(:empty)) { margin: 0 0 32px; }
+.mv-now:has(.prog-pins:not([hidden]), .mv-trouble:not(:empty), .lead-now:not([hidden]), .lead-card:not([hidden])) { margin: 0 0 32px; }
 /* The reason behind the word is waiting on you as much as a question is, so it leads the slot too. */
 .mv-now .mv-trouble { margin: 0 0 16px; }
 .mv-now .mv-trouble .mv-warn { max-width: none; font-size: 13.5px; }
@@ -236,11 +244,8 @@ html { scroll-padding-top: 70px; }
 .mv-page.unopened .mv-anchors, .mv-page.unopened #plan, .mv-page.unopened #progress, .mv-page.unopened #result { display: none; }
 .mv-page.unopened .mv-ask .button-link { height: var(--control); }
 
-/* The slot's own order, whichever module mounted first: the reason, the questions, then what to fix or decide. */
+/* The slot is read in its DOM order, which the shell sets once the sections have mounted (mission.js boot). */
 .mv-now { display: flex; flex-direction: column; }
-.mv-now > .prog-pins, .mv-now > .lead-now { order: 1; }
-.mv-now > .rs-now { order: 2; }
-.mv-now:has(.lead-now:not([hidden])) { margin: 0 0 32px; }
 
 /* A failure is threat, never caution: it is not waiting on you, it broke. It says what still works beside what did not. */
 .mv-fail { margin: 10px 0 0; padding: 8px 12px; font-size: 13px; color: var(--ink); max-width: 74ch; background: var(--threat-dim); border-radius: var(--radius-s); box-shadow: inset 0 0 0 1px var(--threat); overflow-wrap: anywhere; }
@@ -255,9 +260,10 @@ html { scroll-padding-top: 70px; }
 .mv-skel i:nth-child(3) { width: 64%; }
 .mv-skel-block { height: 88px; margin-top: 32px; border-radius: var(--radius-m); background: var(--steel); }
 
-/* On a phone the bar is one line: the jet and the way back. The mission's name is the page's own heading right under it. */
+/* On a phone the bar is one line: the jet, the mission's name and the way back. What is being asked can push the page's own heading off the first screen. */
 @media (max-width: 600px) {
-  .bar .crumb { display: none; }
+  .bar .crumb { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .bar .crumb-path { display: none; }
   /* A phone has no height to give a bar that follows the page; the word and #now are right under it. */
   .bar { position: static; }
   html { scroll-padding-top: 8px; }

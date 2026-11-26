@@ -46,7 +46,10 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, cleared, onSave
     const answered = cases.filter((c) => state[c.id]?.v);
     const pct = cases.length ? (answered.length / cases.length) * 100 : 0;
     bar.style.setProperty("--p", String(pct));
-    count.textContent = cases.length ? `${answered.length} of ${cases.length} cases answered` : "no cases found in the document";
+    count.textContent = cases.length ? `${answered.length} of ${cases.length} cases answered` : "This document has no cases to answer, or it did not load. Open it in its own tab to check.";
+    count.classList.toggle("wt-empty", !cases.length);
+    // Nothing to read in it, so it takes no room saying so.
+    frame.classList.toggle("wt-blank", !cases.length);
     const byPillar = new Map();
     for (const c of cases) {
       const p = byPillar.get(c.pillar) ?? { total: 0, done: 0, verdicts: {} };
@@ -158,7 +161,7 @@ export const walkthroughPanel = ({ el, fmtTime, url, doc, saved, cleared, onSave
   timer = window.setInterval(save, 4000);
 
   return el("section", { class: "panel walkthrough-panel" },
-    el("h2", {}, "Walkthrough", el("span", { class: "spacer" }), count, el("a", { href: url, target: "_blank", class: "mono small" }, "open in its own tab ↗")),
+    el("h2", {}, "Walkthrough", el("span", { class: "spacer" }), count, el("a", { href: url, target: "_blank", class: "mono small" }, "open in its own tab")),
     el("div", { class: "wt-progress" }, bar),
     saved ? el("div", { class: "muted small mono" }, `last saved ${fmtTime(saved.updatedAt)} · ${saved.answered} of ${saved.total}`) : null,
     pillars,

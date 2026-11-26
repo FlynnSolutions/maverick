@@ -139,3 +139,6 @@
   .rs-files li { grid-template-columns: minmax(0, 1fr) auto; }
   .rs-files li > .n { display: none; }
 }
+
+/* The report's fold and the links under it are separate targets. */
+.rs-gate > details { margin-bottom: 8px; }

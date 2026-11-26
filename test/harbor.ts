@@ -45,6 +45,21 @@ export const TRACKER = `# Harbor checklist
   - created: 2026-09-20
 `;
 
+/**
+ * The checklist at the weight a real project's reaches: `cards` in the backlog, in groups of 25,
+ * and the roadmap and the done lane in the proportion the heaviest real tracker holds them.
+ */
+const heavyTracker = (cards: number): string => {
+  const item = (box: string, tag: string, title: string) => `- [${box}] \`[${tag}]\` **${title}**\n  - created: 2026-10-05\n`;
+  const numbered = (n: number, make: (i: number) => string) => Array.from({ length: n }, (_, i) => make(i + 1)).join("\n");
+  const backlog = Array.from({ length: Math.ceil(cards / 25) }, (_, g) =>
+    `### Survey run ${g + 1}\n\n${numbered(Math.min(25, cards - g * 25), (i) => item(" ", i % 4 ? "ENG" : "OPS", `Sound berth ${g * 25 + i} and log its depth`))}`).join("\n");
+  return TRACKER
+    .replace("## 🚧 In progress", `${numbered(Math.round(cards / 5), (i) => item(" ", "ENG", `Light pier ${i} for night arrivals`))}\n## 🚧 In progress`)
+    .replace("## ✅ Shipped", `${backlog}\n## ✅ Shipped`)
+    .replace(/\n$/, `\n\n${numbered(Math.round(cards * 0.45), (i) => item("x", "ENG", `Paint bollard ${i}`))}`);
+};
+
 export interface Harbor {
   url: string;
   repo: string;
@@ -99,7 +114,7 @@ const endedAgents = (n: number, cwd: string): object[] =>
     name: `${["", "RIO · ", "Wingman · "][i % 3]}Survey berth ${i + 1} and record its depth`, startedAt: Date.now() - (i + 1) * 3_600_000,
   }));
 
-export const startHarbor = async ({ ended = 0 } = {}): Promise<Harbor> => {
+export const startHarbor = async ({ ended = 0, cards = 0 } = {}): Promise<Harbor> => {
   const scratch = mkdtempSync(join(tmpdir(), "mv-harbor-"));
   const home = join(scratch, "home");
   const consoleHome = join(home, ".claude", "session-console");
@@ -116,7 +131,7 @@ export const startHarbor = async ({ ended = 0 } = {}): Promise<Harbor> => {
   const { dir: repo, git } = tempRepo("mv-harbor-repo-with-a-deliberately-long-unbroken-folder-name-for-the-picker");
   const tracker = join(repo, "deliverables", "CHECKLIST.md");
   mkdirSync(dirname(tracker), { recursive: true });
-  writeFileSync(tracker, TRACKER, "utf8");
+  writeFileSync(tracker, cards ? heavyTracker(cards) : TRACKER, "utf8");
   git("add", ".");
   git("commit", "-q", "-m", "harbor: the checklist");
   if (ended) writeFileSync(join(claudeDir, "agents.json"), JSON.stringify(endedAgents(ended, repo)), "utf8");
@@ -155,7 +170,7 @@ export const startHarbor = async ({ ended = 0 } = {}): Promise<Harbor> => {
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const harbor = await startHarbor({ ended: Number(process.env.HARBOR_ENDED ?? 0) });
+  const harbor = await startHarbor({ ended: Number(process.env.HARBOR_ENDED ?? 0), cards: Number(process.env.HARBOR_CARDS ?? 0) });
   console.log(`harbor: ${harbor.url}/?project=harbor`);
   console.log(`  repo: ${harbor.repo}`);
   const stop = () => { harbor.stop().then(() => process.exit(0)); };

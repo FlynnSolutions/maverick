@@ -8,6 +8,12 @@
 /* The open questions: pinned above everything, each the one lifted card, in a caution ring. */
 .prog-pins { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 0 0 24px; }
 .mv-card.prog-q { background: var(--caution-dim); box-shadow: 0 0 0 1px var(--caution); }
+.prog-flying { margin: 0 0 16px; font-size: 14px; color: var(--ink); }
+.prog-q .card-head { flex-wrap: nowrap; }
+.prog-q .card-toggle { min-width: 0; }
+.prog-q .card-title { font: 600 15px var(--display); color: var(--ink); }
+/* A time, not a control: it has no dress to mistake for the buttons beside it. */
+.prog-q .card-chips .chip { padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--ink-soft); }
 .prog-ask { margin: 0; color: var(--ink); }
 .prog-q .mv-answers { margin-top: 8px; }
 

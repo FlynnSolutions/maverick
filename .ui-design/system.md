@@ -105,15 +105,65 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
   and closed formations, newest first under calendar headings, with find, and in the URL (`?archive=1`). By default it
   lists the person's own sessions; what the missions spawned is one toggle away, and find searches
   both. Rows are drawn only while it shows. A formation with nothing live leaves the tab row for
-  it. Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
-- **Missions have a way back on the first screen**: `.cc-missions`, one link per live mission on
-  every tab but the archive, with the verbs that start a mission or a brainstorm. A formation sharing a mission's
-  name reads `<name> crew`, because its tab is not the mission's page.
+  it, except a crew whose mission is open: between waves of Wingmen its tab stays, with a count of 0,
+  as the way to the mission (Cory, 2026-11-12). Cory, 2026-11-04: 132 finished rows buried the page. Tab counts are what is still running.
+  An ended session whose review is still owed has not ended: a review stopped at a prompt or gone
+  without a verdict sits in Needs you, one still running in Working, never in the archive, never
+  greyed, and with no `remove` (it would drop the review). A blocked review's `open` reaches its RIO,
+  the thing at the prompt, and the RIO is not drawn again as a row of its own (2026-11-10).
+- **A long lane is paged the way the Archive is.** Each lane draws 20 cards, and `show more` under it
+  draws 20 more beside `20 shown`; the foot is there only while there is more. `find on the board`
+  over the lanes draws only the matches (title, tags, description, group name), and the lane's head
+  says how many: `14 of 323`. A find always has its way out: the clear control beside the field, Escape,
+  and `clear the find` on a lane it matched nothing in. The pager, the find box and the match rule
+  live in `web/paged-find.js`, and the Archive moves onto it next. Display only: the tracker is
+  untouched, and the pages and the find survive a write's repaint. A write never hides the card it
+  placed: the lane's page is raised to reach it, and a find that would hide it is cleared, said in
+  the write's own toast so its undo is not pushed off by a second one. A card carries its place in
+  its group's full list, so a drop under a page or a find lands on the card it was aimed at. **A drop
+  lands only among what is on show**: a group the find hid is not drawn, before or during a drag,
+  because a target that appears when a card is picked up moves every target under the pointer (the
+  judge measured lanes growing from 2,727 to 4,540px at dragstart). It is reached from the drawer's
+  `lane` select, or by leaving the find. Done is paged like Backlog. The heaviest real tracker drew
+  55,000px and 1,015 focus stops; paged it is about 4,300px and 200 (2026-11-09).
+- **The four lanes are one row, and a title wraps at its words** (Cory, 2026-11-12): at 1280 with
+  the sessions rail open, In progress is on the first screen. Card titles and calendar events wrap
+  at spaces (`overflow-wrap: break-word`), so only a word too long for its line breaks inside it. No
+  `<wbr>`: a break point inserted in the text splits the name a screen reader reads ("SRQ_ RELEVANT_").
+  A calendar event stops at three lines with the whole title in its tooltip, and its icon sits in the
+  first line, so one long title cannot push today's week below the first screen.
+- **Missions have a way back on the first screen**: `.cc-missions` (`web/mission-links.js`), one link
+  per live mission the tab does not already draw as a strip (the Rack draws every one, a crew tab its
+  own), on every tab but the archive, with the verbs that start a mission or a brainstorm (labelled
+  `Start` when no link is left to label), and the same row, without the verbs, above the Board and
+  beside the Calendar's grid, because the app reopens on
+  the last view (Cory, 2026-11-04: nothing there said a mission was flying). A formation sharing a mission's
+  name reads `<name> crew`, because its tab is not the mission's page, and it opens on that mission's
+  own strip, in a Mission rack above Oversight: the tab is named after it, so it is what a person came for.
+  Every mission is shown or counted (2026-11-10, after a one-line row hid one under a fade): the
+  label reads `Missions · N`; on a pointer's width the chips wrap, each name cut at 20ch with the
+  whole of it and its word in the title and the lamp saying which want you, so four take one line at
+  1280; on a phone it is one scrolling line with the next chip cut by the edge. On the Calendar the
+  missions, the releases, the ship days and the key are a column over the undated items, and the
+  month starts under its head, so every week of it is whole on the first screen at 1280x800, a
+  sixth week too (Cory, 2026-11-18: with the releases above it, today's fourth week fell below the
+  fold). On a phone the page keeps its stacked order: missions, releases, ship days, the month.
 - **An agent holding a live mission shows inside it.** A mission whose agent is stopped at a prompt
   reads `waiting for you` and sits in Needs you (Cory, 2026-11-04), one row: the reason, what the
-  agent last said, and `open that session`.
+  agent last said, and `open that session`. Only there does the mission's row speak for its agents;
+  in Working and on a crew tab the agent has its own row (a strip in Needs you, a Flight row), so
+  the mission's row keeps its own word and does not say them again (2026-11-10).
+- **A mission's own sessions sit with it** (`.cc-crew`, `.strip.crew`). Its running Wingmen, RIOs
+  and walkthroughs are 40px lines under its one lifted row, the name stepped in off an elbow so
+  every column keeps its x; in the archive they follow its row, or its name when the row is not
+  there. Loose beside it, three strips carrying its name read as three more things (2026-11-04).
+- **A mission's formation seats its Strike Lead.** It talks a turn at a time, so between turns
+  no session is listed for the seat; Oversight still names it (`.strip.seat`, opens nothing).
 - **One word per fact.** The state column says `working`, `waiting for you`, `idle`; the verb that
   ends a live session is `end`, in every place. `land and close` is the mission's: it ships work.
+  A row says each fact once: an ended session whose review is still owed reads the review
+  (`review blocked`), never `ended` beside an `auditing (blocked)` chip, which read as done and
+  stuck at once (2026-11-04).
 - **Racks are ordered by who needs you, projects included.** A project holding a waiting session
   is drawn before one that is merely busy, and an empty project draws nothing. The page's focal
   element is whatever waits on the pilot, wherever it lives.
@@ -388,7 +438,7 @@ to 14px. Mono JetBrains Mono 11.5px for meta lines; every dynamic number is mono
 
 ## Browser surfaces
 
-`::selection` accent-dim; caret accent; thin scrollbars in `--cold`; underline offset 2px on
+`::selection` accent-dim; caret accent; placeholders in `--ink-faint` (4.9:1 light, 6.4:1 dark), never the browser gray; thin scrollbars in `--cold`; underline offset 2px on
 markdown links; `prefers-reduced-motion` silences lamps, panel entrances and meter transitions
 (the jet flyby is the one authored moment that stays).
 
@@ -474,3 +524,31 @@ with the template page's flow drawn per `.ui-design/mockups/workflow-editor-roun
 - **A left-out stage is never drawn, not even as a ghost** (28 and 39 over 29 and 40), so a Light
   mission's strip and page are shorter. That a template is unverified is said in words, in the
   same plain voice in all four places, and no colour carries it.
+
+## Asks (2026-11-06)
+
+- **A question is answered where it is asked.** The Strike Lead's open round is a card in `#now`:
+  the question as its heading, its context, the options, own words, send. Nothing on the page
+  points at it instead, and the thread's message says only that the question is at the top. The
+  inbox's "answer it" and the lamp land on the card with its first control focused.
+- **A jump is dressed as a link** (`button.lead-link`). The primary commits something.
+- **Evidence is one press away, with the way back** (`web/show-me.js`): the conversation opens, the
+  message is marked in the caution colour until the way back is taken, and the back button sits bottom
+  left, clear of the toasts, with room under the page's end while it is up.
+- **A picked option is ringed, not filled.** Filled is the primary's dress, and send is the one primary.
+- **Names (Cory, 2026-11-09):** the rail's first anchor is "The brief", so it is not read as the Strike Lead's
+  question; the summary at review is "What you must read", in the voice the page speaks in.
+- **A fixed send-back is history (2026-11-09).** Maverick's "cannot be flown" message carries where it
+  stands beside its name: `not fixed yet` in threat while the plan still fails, `checked again below`
+  once a later one replaced it or the mission ended, `fixed` in hud once the plan passes, folded to one line. Cory read an
+  old list of problems over the Fire button as Maverick offering to fire a plan that could not fly.
+- **A table's label column has a cap.** The preflight's name column is `fit-content(22ch)`: one long
+  name wraps in its cell instead of pushing every detail out and leaving a gap after each short one.
+  It wraps at its spaces only: each word may be an identifier read by its exact spelling, so a word
+  is never split (`MAVERICK_STAGING_DEPL` / `OY_TOKEN`, 2026-11-10), and the longest word is the
+  column's floor.
+- **Writing to an agent says which one.** The Strike Lead's box is headed "To the Strike Lead"; a
+  Wingman's or RIO's screen is headed as that agent's and says what is typed goes to it, with the way
+  to the Strike Lead beside it. The way to the box is one press from the rail (`#lead`) and from a
+  blocked task's question (`#lead-<task>`, the task named in an empty box), and it lands as a
+  show-me trip with the way back.

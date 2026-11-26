@@ -305,7 +305,7 @@ a mission into main**: the ship wizard does, with you in it phase by phase.
 ### What you see while it flies
 
 A mission has its own page with four fixed anchors down the left, the same before, during and
-after the flight: **The ask** (what you asked for), **Plan** (one step per milestone, a row per
+after the flight: **The brief** (what you asked for), **Plan** (one step per milestone, a row per
 task with what it is for), **Progress** (what has happened, read from the ledger as a feed) and
 **Result** (the merged diff first, task by task, then the second gate). Above them is one word for
 where the mission stands: **working**, **waiting for you**, **error** or **done**. The page
@@ -316,7 +316,9 @@ Anything the mission needs from you is a **question**: a task handed back, a mil
 plan at the gate, a pause. It is pinned at the top of Progress with its answers as buttons,
 repeated as a strip in the Workspace's **Needs you** group, and, in the app, shown as a macOS
 notification that opens the mission when you click it. You answer it where you see it; there is
-no prompt dialog. The chat with the Strike Lead carries on at the bottom of Progress, with
+no prompt dialog. The chat with the Strike Lead carries on at the bottom of Progress, one press
+away from **write to the Strike Lead** in the rail and from **ask the Strike Lead** on a task that
+came back; its box is headed as the Strike Lead's, and a Wingman's screen as that Wingman's. It has
 Maverick's own lines in it as the flight moves (a task out, passed or back for you, a milestone on
 the mission branch): ask it why something is waiting and it answers from a snapshot of the
 mission, and what you say is also written to the ledger as a decision. The plan says the same

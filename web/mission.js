@@ -54,10 +54,11 @@ import { lamp } from "./lamp.js";
 import { applyProjectTheme, recall } from "./theme.js";
 import { jetSvg } from "./jet.js";
 import { mountDevBadge } from "./dev-badge.js";
-import { inline, render as renderMarkdown } from "./markdown.js";
+import { inline, inlineNode, render as renderMarkdown } from "./markdown.js";
 import { leadThread } from "./mission/lead.js";
-import { atReview, isEnded, missionWord } from "./mission/state.js";
+import { atReview, isEnded, missionWord, sessionOf } from "./mission/state.js";
 import { toast } from "./toast.js";
+import { showMe } from "./show-me.js";
 import { foldable } from "./card.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -222,11 +223,17 @@ const reapSessions = () => {
   for (const [claudeId, held] of watching) if (held !== true && !held.term.element?.isConnected) stopWatching(claudeId);
 };
 
+/** A link that lands again on a second press: the hash already names its place, so the browser fires nothing. */
+const landsAgain = (a) => {
+  a.addEventListener("click", () => { if (a.getAttribute("href") === location.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  return a;
+};
+
 /** ctx.openSession: the task's session under the element the module passes, with its own way to close. */
 const allTasks = () => mission.milestones.flatMap((m) => m.tasks);
 const openSession = (taskId, under) => {
   const task = allTasks().find((t) => t.id === taskId);
-  const claudeId = task?.status === "reviewing" ? task.review?.claudeId : task?.claudeId ?? task?.review?.claudeId;
+  const { claudeId, role } = sessionOf(task) ?? {};
   if (!claudeId) {
     toast(`${task?.title ?? taskId} has no session to open`, { error: true });
     return;
@@ -236,8 +243,13 @@ const openSession = (taskId, under) => {
     return;
   }
   const screen = el("div", { class: "term" });
+  // Typed into, this is the agent's own prompt: headed as whose it is, so a word meant for the Strike Lead is not given to a Wingman.
+  const who = `${taskId}'s ${role}`;
   const well = el("div", { class: "mv-session" },
-    el("div", { class: "mv-session-head" }, el("span", { class: "muted small mono" }, `session ${claudeId}`), btn("stop watching", () => { stopWatching(claudeId); well.remove(); }, "ghost")),
+    el("div", { class: "mv-session-head" },
+      el("p", { class: "mv-session-who" }, el("b", {}, who), el("span", { class: "muted small mono" }, ` session ${claudeId}`), el("br"),
+        el("span", { class: "muted small" }, `What you type here goes to ${who}, not the Strike Lead. `), landsAgain(el("a", { href: `#lead-${taskId}` }, "write to the Strike Lead"))),
+      btn("stop watching", () => { stopWatching(claudeId); well.remove(); }, "ghost")),
     screen);
   under.append(well);
   watchSession(screen, claudeId, task.title);
@@ -245,7 +257,7 @@ const openSession = (taskId, under) => {
 
 /* ---------- data ---------- */
 /** What each action is called when it fails, so the toast says which one did not go through. */
-const ACTION_NAMES = [[/^approve$/, "approve the plan"], [/^pause$/, "pause the mission"], [/^resume$/, "resume the mission"], [/^abandon$/, "stop the mission"], [/^close$/, "close the mission"], [/^land$/, "land the work"], [/^summarize$/, "ask for the summary"], [/\/retry$/, "send the task out again"], [/\/accept$/, "accept the task"], [/\/release$/, "release the milestone"], [/\/readings$/, "mark the finding"], [/\/walkthrough$/, "save the walk"]];
+const ACTION_NAMES = [[/^approve$/, "send the mission out"], [/^pause$/, "pause the mission"], [/^resume$/, "resume the mission"], [/^abandon$/, "stop the mission"], [/^close$/, "close the mission"], [/^land$/, "land the work"], [/^summarize$/, "ask for the summary"], [/\/retry$/, "send the task out again"], [/\/accept$/, "accept the task"], [/\/release$/, "release the milestone"], [/\/readings$/, "mark the finding"], [/\/walkthrough$/, "save the walk"]];
 const READING = { read: "mark the findings read", unread: "mark the finding unread", later: "put the finding on the checklist" };
 const actionName = (action, body) => (/readings$/.test(action) && READING[body?.state]) || ACTION_NAMES.find(([re]) => re.test(action))?.[1] || action;
 /** Posts an action and says what it did; returns whether it went through, for a caller that holds a state until then. */
@@ -284,28 +296,40 @@ const WORD = {
   working: { cls: "", lamp: ["busy", "work"] },
 };
 /** `#gate` (where the lamp points before approval) lands on the gate with its verb focused, as `#round` lands on a round. */
-const toGate = () => {
-  const verb = location.hash === "#gate" ? document.querySelector("#gate .mv-confirm button") : null;
-  if (!verb) return;
-  // The verb, not the gate's top, comes into view: the gate is taller than a phone's screen.
+const toGate = (jumped) => {
+  if (location.hash === "#now") {
+    // After the frame: the browser's own landing on the hash would otherwise take the focus back.
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0 });
+      document.querySelector("#now .prog-pins button")?.focus({ preventScroll: true });
+    });
+    return;
+  }
+  if (location.hash !== "#gate" && location.hash !== "#close") return;
+  const gate = document.querySelector(location.hash);
+  const verb = location.hash === "#gate" ? gate?.querySelector(".mv-confirm button") : null;
+  const from = document.activeElement;
+  // The verb, not the gate's top, comes into view: the gate is taller than a phone's screen. A gate
+  // with no verb yet (a plan with problems) still comes into view, to say why. A jump can go back.
   requestAnimationFrame(() => {
-    verb.scrollIntoView({ block: "center" });
-    verb.focus({ preventScroll: true });
+    if (jumped && showMe(verb ?? gate, { from, home: $("#now"), back: "back to what is waiting" })) return;
+    (verb ?? gate)?.scrollIntoView({ block: verb ? "center" : "start" });
+    verb?.focus({ preventScroll: true });
   });
 };
 
 /** What waits on the person: the server's questions, an open interview round and the gate among them. */
-const waiting = () => mission.questions?.length ?? 0;
+const waiting = () => (mission.questions ?? []).reduce((n, q) => n + (q.count ?? 1), 0);
 const renderWord = () => {
   const word = missionWord(mission);
   const look = WORD[word] ?? WORD.working;
   const open = waiting();
   const chip = $("#word");
   chip.className = `mv-word ${look.cls}`;
-  // The loudest thing on the page goes to what it is loud about: the first question's own place when it
-  // names one, the gate's verb before approval, the questions slot after it. Any other word is only a word.
+  // The loudest thing on the page goes to what it is loud about: a round's card, the gate's verb
+  // before approval, the questions at the top otherwise. Any other word is only a word.
   const go = mission.questions?.[0]?.answers?.find((a) => a.go)?.go;
-  if (open) chip.setAttribute("href", `#${go ?? (mission.approved ? "now" : "gate")}`);
+  if (open) chip.setAttribute("href", `#${go === "round" || go === "gate" ? go : mission.approved ? "now" : "gate"}`);
   else chip.removeAttribute("href");
   chip.replaceChildren(lamp(...look.lamp), text(word === "waiting for you" && open ? `${word} · ${open}` : word));
   // From another tab the title is the only thing that shows, so what waits is counted there too.
@@ -377,7 +401,7 @@ const renderCounts = () => {
     const n = mission.feed?.length ?? 0;
     count("progress", `${n} ${n === 1 ? "entry" : "entries"}`);
   }
-  else count("progress", open ? `${open} question${open === 1 ? "" : "s"}` : "live", open > 0);
+  else count("progress", "live");
   // A finding Cory has marked, read or later, is off the count: later is already on the checklist.
   // Fix is his to act on at review; in flight it is the RIO's word on work still moving.
   const unread = (mission.readings ?? []).filter((r) => !r.state);
@@ -480,7 +504,7 @@ const renderAsk = () => {
   const key = JSON.stringify([mission.name, mission.brief, mission.created, mission.approved, mission.planCommit, w.id, w.name, w.unverified]);
   if (key === askKey) return;
   askKey = key;
-  $("#crumb").replaceChildren(text(`${projectName} · Mission `), el("b", {}, mission.name));
+  $("#crumb").replaceChildren(el("span", { class: "crumb-path" }, `${projectName} · Mission `), el("b", {}, mission.name));
   $("#ask").removeAttribute("aria-busy");
   fill($("#ask"),
     el("h1", {}, mission.name),
@@ -511,22 +535,28 @@ const reposBand = (repos) => {
 };
 
 /** A check's detail as the markdown sets it: a `backticked` command reads as code. */
-const pfDetail = (detail) => {
-  const span = el("span", { class: "pf-detail" });
-  span.innerHTML = inline(detail, { project: projectId });
-  return span;
-};
+const pfDetail = (detail) => inlineNode("span", detail, { project: projectId, attrs: { class: "pf-detail" } });
+
+/**
+ * A check's name keeps the column's 22ch cap: it wraps at its spaces and after an identifier's own
+ * separators (_ - / .), so MAVERICK_STAGING_DEPLOY_TOKEN breaks as MAVERICK_STAGING_ / DEPLOY_TOKEN,
+ * never mid-word.
+ */
+const breakable = (name) => name.split(/(?<=[_\-/.])/).flatMap((part, i) => [i ? el("wbr") : null, part]);
 
 /** What the host can and cannot give the mission, checked before the person approves and leaves. */
 const preflightBand = (checks) => {
   if (!checks?.length) return null;
   const failed = checks.filter((c) => c.status === "fail").length;
-  const warned = checks.filter((c) => c.status === "warn").length;
+  const warned = checks.filter((c) => c.status === "warn");
+  const yours = checks.filter((c) => c.status === "human").length;
   const refusing = checks.some((c) => c.refuses);
+  // The lines this check leaves to you, said in the number there are, and not at all when there are none.
+  const confirm = yours ? ` ${yours === 1 ? "The line marked yours is" : "The lines marked yours are"} for you to confirm.` : "";
   return el("div", { class: "mv-preflight" },
     // The warning itself is said once, beside the button (failingNote, or the refusal in its place); here it is the list's heading.
-    el("p", { class: failed || warned ? "cost-note" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned ? `${plural(warned, "thing")} this check cannot settle; read them before approving. The lines marked yours are for you to confirm.` : "The host has what the plan says it needs; the lines marked yours are for you to confirm."),
-    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, c.name), pfDetail(c.detail)))));
+    el("p", { class: failed || warned.length ? "cost-note" : "muted small" }, refusing ? `${plural(failed, "thing")} the mission cannot run without ${failed === 1 ? "is" : "are"} not there; approving is refused until ${failed === 1 ? "it is" : "they are"}.` : failed ? `${plural(failed, "thing")} the plan needs ${failed === 1 ? "is" : "are"} not there. Settle ${failed === 1 ? "it" : "them"} before approving, or expect the Wingmen to find out at 2 a.m.` : warned.length ? `This check cannot settle ${warned.map((c) => c.name).join(", ")}: read ${warned.length === 1 ? "it" : "them"} before approving.${confirm}` : `The host has what the plan says it needs.${confirm}`),
+    el("ul", {}, ...checks.map((c) => el("li", { class: `pf-${c.status}` }, el("span", { class: "pf-status" }, c.status === "human" ? "yours" : c.status), el("strong", {}, ...breakable(c.name)), pfDetail(c.detail)))));
 };
 
 const costBand = (cost, estimate) => el("div", { class: "mv-band" },
@@ -590,7 +620,7 @@ const gateBlocks = () => {
       // The verb sits under what it costs; where each repo lands, the host checks and the notes follow as the fine print.
       el("div", { class: "gate-actions" },
         doc.preflight?.some((c) => c.refuses) ? el("p", { class: "mv-warn" }, "Approving is refused until the tool, runtime or agent it needs is there.") : approveButton(doc),
-        el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document ↗")),
+        el("a", { class: "button-link", target: "_blank", href: `/files?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(mission.plan)}` }, "read the plan document")),
       failingNote(doc.preflight, "below", "approve"),
       reposBand(doc.repos ?? []),
       preflightBand(doc.preflight),
@@ -609,11 +639,11 @@ const gateBlocks = () => {
     blocks.push(el("section", {}, el("h2", {}, "The plan"),
       ...parsed.milestones.map((m) => el("div", { class: "mv-milestone" },
         el("h3", {}, el("span", {}, `Milestone ${m.n}: ${m.title}`)),
-        el("p", { class: "done" }, m.done ? `Done when ${m.done}.` : "No done criterion."),
+        inlineNode("p", m.done ? `Done when ${m.done}.` : "No done criterion.", { project: projectId, attrs: { class: "done" } }),
         ...m.tasks.map((t) => el("div", { class: "mv-plan-task" },
           el("h4", {}, t.title, t.repo ? el("span", { class: "mv-repo" }, t.repo) : null),
           t.needs?.length || t.touches?.length ? el("p", { class: "muted small" }, [t.needs?.length ? `starts after ${t.needs.join(", ")}` : null, t.touches?.length ? `owns ${t.touches.join(", ")}` : null].filter(Boolean).join(" · ")) : null,
-          el("p", {}, t.intent)))))));
+          inlineNode("p", t.intent, { project: projectId })))))));
   } else if (doc.text) {
     blocks.push(el("section", {}, el("h2", {}, "The document as written"), renderMarkdown(doc.text, { project: projectId })));
   }
@@ -684,6 +714,8 @@ const paint = () => {
   renderCounts();
   renderControls();
   renderAsk();
+  // An ended mission's Strike Lead takes nothing more, so nothing offers the way to write to it.
+  $("#to-lead").hidden = ended();
   if (!mission.approved) return renderGate();
   if (!modulesUp) return mountModules();
   updateModules();
@@ -781,15 +813,18 @@ const boot = async () => {
     return cannotOpen(err.message, workspace);
   }
   await modulesUp;
+  // The top slot is read and tabbed in one order: what is being asked, then what else waits, then what to read.
+  ctx.now.append(...[".lead-card", ".lead-now", ".prog-pins", ".prog-flying", ".rs-now"].map((part) => ctx.now.querySelector(`:scope > ${part}`)).filter(Boolean));
   // What is on the page now was there on arrival; only what lands after this rises in.
   requestAnimationFrame(() => $("#page").classList.add("settled"));
   // The sections were empty when the browser tried the hash; now they have their height.
   const target = location.hash.slice(1);
   if (["ask", "plan", "progress", "result"].includes(target)) document.getElementById(target).scrollIntoView();
-  toGate();
-  window.addEventListener("hashchange", toGate);
-  // A second press on the lamp names the hash already there, which fires nothing; it should land again.
-  $("#word").addEventListener("click", () => { if ($("#word").getAttribute("href") === location.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  toGate(false);
+  window.addEventListener("hashchange", () => toGate(true));
+  landsAgain($("#word"));
+  landsAgain($("#to-lead"));
+  ctx.thread.land();
   listen();
 };
 boot().catch((err) => setStatus(err.message, true));

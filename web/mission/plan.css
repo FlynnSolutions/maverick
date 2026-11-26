@@ -30,6 +30,8 @@
 .step .tasks .lamp { width: 18px; height: 18px; }
 .step .tasks .t { font: 500 13.5px var(--sans); color: var(--ink); overflow-wrap: anywhere; }
 /* An intent is the Wingman's whole brief, read in full on an open step: a step folds, the brief does not. */
+.step .tasks .i summary { display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none; }
+.step .tasks .i p { margin: 6px 0 0; }
 .step .tasks .i { min-width: 0; overflow-wrap: anywhere; grid-column: 2; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); max-width: 64ch; }
 .step .tasks .w { grid-column: 3; grid-row: 1 / span 2; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; text-align: right; }
 .step .tasks .w b { font-weight: 500; color: var(--ink-soft); }

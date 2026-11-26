@@ -14,14 +14,17 @@ the Strike Lead, and the plan document stays the source.
 |---|---|---|---|---|---|
 | Plan | Approve and fly | "approve and fly" in the gate, then "yes, approve" | First press says what it writes and spawns and moves focus to "not yet"; the second fires and the status line says the first milestone is out | None; the confirm replaces the button in place | GitHub merge confirm, Vercel promote |
 | Plan | Fire from the chat | "Fire mission" under the Strike Lead's ready message, then "yes, fire" | Same two presses as the gate, same message | None | (same action as above, at the other place it is read) |
-| Plan | Go to it from the top | "read the terms and fire" in `#now` while the plan is ready; "answer them" while a round is open | The gate's verb, or the round's first option, takes focus | Scrolls into view | Linear inbox |
+| Plan | Go to it from the top | "read the terms and fire", a link in `#now`, while the plan is ready | The gate's verb takes focus | Scrolls into view | Linear inbox |
 | Plan | Back out of firing | "not yet" | The arm button returns and takes focus | None | GitHub, Vercel |
 | Plan | Read the whole document | "read the plan document" | Opens the file in Files, in a new tab | None | GitHub "view file" |
 | Plan | Change it | Write to the Strike Lead (box, Enter or "send") | The message lands in the thread; "the Strike Lead is reading and writing back" while it works; the gate redraws when the plan changes | New messages are placed in time order, nothing else moves | Linear AI, Copilot chat |
-| Strike Lead's questions | Answer a round | Option buttons (toggle), "or in your own words", then "send answers" | The picked option shows pressed; the round folds to "N questions asked" once sent | None | Claude, Perplexity follow-ups |
+| Strike Lead's questions | Answer a round | On its card at the top of the page: option buttons (toggle), "or in your own words", then "send answer" | The picked option shows pressed; sending nothing says what is missing and moves there; a refusal keeps the answer; once sent the card says where it went, with the way to the conversation | None | Claude, Perplexity follow-ups |
+| Strike Lead's questions | See what led to one | "the message that led to this" on the card | The conversation opens, the message is marked and takes focus, and a "back to the question" button (or Escape) returns | Scrolls there and back; reduced motion jumps | Figma comments, GitHub "go to thread" |
 | Strike Lead | Open its session | "open its session in a terminal" | A live terminal opens under the thread | None | Claude Code, Codex |
 | Mission | Go to what is waiting | The "waiting for you" lamp in the rail | Lands on it with its control focused: the gate's approve before approval, an open round's first option, the questions after; a second press lands again | Scroll into view, nothing else moves | Linear inbox, GitHub notifications |
 | Plan with problems | Have them fixed | Nothing to press: the problems go to the Strike Lead; the person can write to it if it stalls | The problems list in the gate, with what each one needs | None | (Maverick's own) |
+| Plan sent back | Read where it stands | Nothing to press: Maverick's send-back in the thread says "not fixed yet" while the plan still fails, "checked again below" once a later one replaced it, "not fixed before it ended" on an ended mission, and "fixed" once the plan passes; a settled one folds to one line, and the line opens its list | The tag beside "Maverick", and the problems out of sight above the fire once they are fixed | None; the bubble redraws in place when the plan changes | GitHub "outdated" review comment, Linear resolved thread |
+| Plan preflight | Read the host checks | The list under the gate's approve: status, name, detail | Every detail starts at one x; a name past the column's cap wraps in its cell rather than pushing every detail out | None | GitHub checks list |
 
 Undo: approving is not undoable (it writes the tracker and spawns agents), so it is guarded by
 the second press instead; a message to the Strike Lead is answered rather than retracted.
@@ -48,8 +51,8 @@ otherwise; an error toast stays until it is closed.
 | Milestone | Release a hold | The hold's question in `#now`, with a note | Toast | as Question | Buildkite unblock |
 | Milestone | Walk the walkthrough | The walkthrough under its step; answers save as they are given | "last saved" line under the frame | none | GitHub viewed checkbox |
 | Milestone | Waive the walk | A note and `waive it` under the walkthrough | Toast | none | GitHub admin merge, with a reason |
-| Task | Retry or accept a handed-back task | The question's buttons in `#now`, and the same row under the task in Plan | Toast | as Question | Buildkite retry, GitHub re-run |
-| Task | Open its agent's session | `open the session` on a live task's row; `stop watching` closes it | The terminal mounts under the row | none | Buildkite live log, Devin shell |
+| Task | Retry or accept a handed-back task | The question's buttons in `#now`, and the same row under the task in Plan. Only a handed-back task is asked; a task in the air (flying, built, reviewing) offers `open its Wingman's session` (`its RIO's` while reviewing) on its row instead, and the server refuses a retry on it before anything is stopped | Toast; a press on a task already in the air is an error toast saying to open its session | as Question | Buildkite retry, GitHub re-run |
+| Task | Open its agent's session | `open its Wingman's session` (`its RIO's` while reviewing) on a live task's row; `stop watching` closes it | The terminal mounts under the row, headed as that agent's, saying what is typed goes to it and not the Strike Lead, with `write to the Strike Lead` beside it | none | Buildkite live log, Devin shell |
 | Task | See every attempt | The task's card in Progress, one line per attempt with its verdict linked to its findings | n/a | Lines rise as they land | GitHub Actions attempt selector |
 | Task | See every automatic move | `show every move` under each milestone in Progress | n/a | none | Buildkite step log |
 | Finding | Read why | The finding's head row opens its detail | n/a | none | GitHub review thread |
@@ -61,10 +64,13 @@ otherwise; an error toast stays until it is closed.
 | Finding | Jump from a chip | A verdict chip in Progress or a severity chip on a file row unfolds the finding and focuses it | Focus ring on the card | Scrolls into view | GitHub file tree counts |
 | Finding | Group by severity, then area | Built: three buckets, fix first, an area heading inside each | n/a | n/a | Linear group by |
 | Summary | Ask for the three things to read | `summarize` (`summarize again` once written) | Toast; the button says `summarizing...` until it lands | none | n/a |
-| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept | The entry rises into the thread | Devin chat |
+| Chat | Write to the Strike Lead | The composer; Enter sends, Shift+Enter is a new line | The button says `sending`; an error stays under the box with the text kept; sending nothing says so under the box and puts the focus in it | The entry rises into the thread | Devin chat |
+| Chat | Go to the Strike Lead from anywhere | `write to the Strike Lead` in the rail, under the four anchors (sticky at 1280, above the anchors at 390) | The composer, headed "To the Strike Lead", is marked and its box takes focus; `back` (or Escape) returns to the press; a second press lands again | Scrolls there and back; reduced motion jumps | Linear "comment" shortcut, GitHub "go to thread" |
+| Chat | Ask the Strike Lead about a blocked task | `ask the Strike Lead` on a handed-back task's question (in `#now`, in Plan, and in the inbox, which opens the page there) | As above, with "About <task id>: " in an empty box and `back to the question` | As above | Buildkite "ask in Slack" |
 | Chat | Answer a round of interview questions | The option buttons and an own-words field per question, then `send answers` | The round folds into "N questions asked" | none | Devin plan questions |
+| Chat | Read a round the mission moved past | Built: it folds into "N questions asked, overtaken" with what passed it; unfolded, its questions and, while the composer is there, that writing to the Strike Lead is the way to answer it anyway | n/a | none | GitHub "Outdated" review comments |
 | Chat | Read the history | `the earlier conversation` unfolds it; a long message folds to its opening with `the whole message` | n/a | none | Linear comments |
-| Chat | Open the Strike Lead's raw session | `open its session in a terminal` | The terminal mounts in place | none | Devin shell |
+| Chat | Open the Strike Lead's raw session | `open its session in a terminal` | The terminal mounts in place, headed as the Strike Lead's own session | none | Devin shell |
 | Plan document | Read it | `read the plan document` opens the file | n/a | none | GitHub file view |
 | Diff by file | See what merged | `the files, by task` unfolds the tree: per task, its files or their directories, lines changed | n/a | none | GitHub file tree |
 | Report | Read it | `the report` unfolds it; `raw markdown` opens the file | A load error says so in place | none | Buildkite annotations |
@@ -92,14 +98,20 @@ brainstorms. A session or a mission is one strip in one group. What an action di
 | Mission | Answer its question where it sits | The answer buttons under the question in its strip, primary first, the same routes the mission page posts | Toast naming the mission and the answer; an error toast stays until closed | A strip new since the last paint rises in | Linear inbox, GitHub notifications |
 | Mission | Answer with a note | The note field above the answers; an answer that needs one refuses empty and says so | Hint under the answers | none | Buildkite block step |
 | Mission | Open it | `open` in its row, a click anywhere on the strip, or Enter on it | The mission page | none | Linear |
+| Mission | Open it from its crew tab | The tab named `<name> crew` opens on the mission's own strip, in a Mission rack above Oversight; `open`, a click on it, or Enter | The mission page | none | GitHub Actions run's "view workflow" |
+| Mission | Open it from any tab | Its strip on the Rack and on its crew tab; its link in the Missions row of any other crew tab | The mission page | none | Linear sidebar |
 | Mission | Open where an answer acts | An answer with a place (walk, close, answer the interview) opens the mission page there | The mission page at that place | none | GitHub "review changes" |
 | Mission | Start one | `open a mission` under the racks: a name, then the line, in two asks | The mission page, on its interview | none | Devin new session |
+| Mission | See its own sessions | Nothing to press: a live mission's running Wingmen, RIOs and walkthroughs are lines under its row, named in off an elbow, in whichever group the mission sits; in the archive, shown agents sit under their mission's row or, without one, under its name | Each line opens its session as any strip does | A crew line new since the last paint rises in | GitHub Actions jobs under a run |
+| Formation | See who leads a mission's formation | Nothing to press: Oversight seats the Strike Lead, `working` while it writes in the mission's chat and `idle` between turns; it opens nothing here, its conversation is the mission's chat | The seat's state | none | Linear project lead |
 | Session | Open it | A click on its strip, or Enter: full screen in the rack, in place inside a formation | The conversation and composer | none | Warp, iTerm tabs |
 | Session | Rename it | `rename`, in place; Enter or blur keeps it, Escape restores, empty hands back Claude Code's own title | The new name at once, and a toast | none | Linear inline edit |
 | Session | Close, stop or remove it | `close` (asks first), `stop`, `remove`, each naming its object | Toast; the strip leaves on the next paint | none | GitHub Actions cancel |
 | Session | Answer a permission prompt | The prompt's choices as buttons in its open pane, the terminal still under it | The pane clears the card | none | Claude Code |
 | Session | Write to it | The composer in its open pane; Enter sends | Toast "sent"; an error toast names what failed | The turn lands in the conversation | Claude desktop |
 | Session | Start one, or a shell | `New session` in the bar; the terminal icon beside the tabs | The new strip rises in | Rises in | Warp |
+| Session | See where its review stands | The State column: once the session has ended with its review still owed, the review is the state (`in review`, `review blocked`, `review gave no verdict`); while it runs, the review is the note beside its own word. A verdict chip appears only once the verdict is written | The word changes on the next paint | none | GitHub checks on a merged PR |
+| Session | Reach a blocked review | The Wingman's row in Needs you reads `review blocked`, `its RIO is at a prompt`, with what the RIO asked under it; `open`, a click or Enter opens the RIO. No `remove` while the review is owed | The RIO's conversation, full screen | none | GitHub "re-run failed jobs" |
 | Formation | Group sessions | Drag a strip onto a tab; every drag also has its right-click menu path | Toast naming where it went | none | Linear move to |
 | Formation | Make, rename, disband, pop out | `+` beside the tabs; the tab's own right-click menu | Toast; disband asks first | none | Chrome tab groups |
 | Brainstorm | Start one, open one | `brainstorm` on its heading; `open` in its row | The breakdown page | none | n/a |
@@ -146,9 +158,11 @@ to the tracker file, the same write whichever control made it.
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words | The new card settles in | Linear quick add, Trello add a card |
+| Item | Add | The field at the top of each lane (not Done), Enter or `add` | Toast "Added ..."; the field keeps the focus for the next one; a refusal keeps the words; the new card is on show (a find that would hide it is cleared, and the toast says so); an empty add marks the field invalid, says what it wants in a line under it, and the next keystroke takes that back | The new card settles in | Linear quick add, Trello add a card |
 | Item | Open | Its title (a button), Enter or a click anywhere on the card | The drawer opens with its heading focused; Escape or the close icon gives focus back | The drawer slides in | Linear issue peek |
-| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move` | Toast with `undo`; the board repaints from the file | The list it landed in flares | Trello, Linear |
+| Item | Find one | `find on the board` over the lanes; it reads each card's title, tags and description and its group's name | Once the typing pauses, each lane draws only its matches and its head reads `14 of 323`; a lane with none says `Nothing in <lane> says "..."` with `clear the find` | none | the Archive's find, Trello filter |
+| Item | Leave a find | The clear control beside the field, Escape in the field, or a lane's `clear the find` | The whole board is back from its first page, the focus in the field | none | GitHub, Linear filter clear |
+| Item | Move to another lane or group | Drag the card; or the drawer's `lane` select and `move`. Under a page or a find a drop lands just before the card it is dropped on, or just after the last one drawn, and only among what is on show: picking a card up never moves the targets. A group the find hid all of is reached by the drawer's `lane` select, or by leaving the find | Toast with `undo`; the board repaints from the file, keeping the find and the pages, and the lane draws far enough to show the moved card (a find that would hide it is cleared, and the toast says so) | The list it landed in flares | Trello, Linear |
 | Item | Reorder in its group (the runway) | Drag; or the drawer's `move up` and `move down` | Toast with `undo` | as above | Trello, Jira rank |
 | Item | Plan for a release | Drag onto a release card; or the drawer's `release` select | Toast with `undo` | The card flares | Linear cycles |
 | Item | Set or clear a deadline | The drawer's date and `set` or `clear`; or drag onto a calendar day | Toast with `undo` | none | Linear due date |
@@ -157,13 +171,17 @@ to the tracker file, the same write whichever control made it.
 | Item | Remove | `remove`, with the reason asked for | Toast; it moves to the tracker's Removed section with the date and reason | none | Linear archive with reason |
 | Item | Plan it, spawn on it | `plan it` (the primary on an unplanned item), `spawn` (the primary on a planned one, or on the card) | The session opens in the workspace | none | Linear "start working" |
 | Lane | Fold or unfold | The chevron beside its name; remembered | The chevron turns | The chevron turns | GitHub projects |
+| Lane | See the rest of a long one | It draws 20 cards; `show more` under it draws 20 more, beside `20 shown`. The head says how many the lane holds, so the foot shows only while there is more | The next cards are added below and the focus stays on `show more`; it leaves when the lane is all on show | none | the Archive's `show more`, GitHub "load more" |
 | Group | Delete when empty | The close icon beside an empty group's name, then confirm | Toast | none | Trello archive list |
+| Mission | See one is live, and open it | Its link in the Missions row above the releases, `Missions · N`: lamp and name (cut at 20ch, the whole and the word in its title), chips that wrap; on a phone one line that scrolls, the next chip cut by the edge; nothing is drawn when no mission is live | The mission page | none | Linear sidebar, GitHub Actions "in progress" |
+| Mission | The missions cannot be read | A red line naming why, with `try again`; the board still draws | The board reloads | none | n/a |
+| Board | Read it again | The refresh icon in the bar | Toast "Read <project> again."; a read that fails says why in the bar | none | Linear refresh |
 | Board | Loading, failing, empty | A lane with nothing in it says what goes there; a board that cannot be read says why in the bar | n/a | none | Linear empty states |
 
 ### Floor rows left out, and why
 
-- **Bulk select and act**: the board is a runway of a few dozen items moved one at a time; the tracker file is where bulk edits are made.
-- **Search and filter**: the lanes are the filter, and the tracker is a file the person's editor already searches.
+- **Bulk select and act**: items are moved one at a time, even on a backlog of hundreds; the tracker file is where bulk edits are made.
+- **Filter by field (tag, size, date)**: the lanes are the filter, and the find reads the tags, so `ops` or `large` finds those cards; a filter panel is more than a runway needs.
 - **Undo for remove**: remove asks for a reason first and keeps the item in the Removed section, where it can be moved back.
 
 ## The calendar (`web/index.html?view=calendar`, `web/app.js`)
@@ -172,12 +190,13 @@ The same items by deadline, with the ship days and the releases. Its question: w
 
 | Object | Action | Trigger | Feedback | Motion | Seen in |
 |---|---|---|---|---|---|
-| Month | Go to another, or today | The chevrons either side of the month, `today` | The grid redraws | none | Google Calendar |
+| Month | Go to another, or today | The chevrons either side of the month, `today` (resting while this month is shown) | The grid redraws | none | Google Calendar |
 | Item | Open | Its event on the day (a button) | The item drawer | The drawer slides in | Google Calendar |
 | Item | Set or clear a deadline | Drag onto a day, or onto "without a deadline"; or the drawer | Toast with `undo` | The day flares | Linear due date |
 | Ship day | Open, move, mark shipped, undo, cancel | Its event opens its drawer: `mark shipped`, a date and `move`, `put it back`, `cancel this ship day` (confirmed) | Toast naming the day; the drawer closes only when the write went through | none | Google Calendar event |
-| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast | none | Google Calendar repeat |
+| Ship days | Set the cadence, add a one-off | The cadence select and its first day; the one-off date and `add a one-off` | Toast; a one-off with no day marks the date field and says so under the row until a day is picked | none | Google Calendar repeat |
 | Release | Open its slot | Its deploy event | The release drawer | The drawer slides in | Linear cycle |
+| Mission | See one is live, and open it | The same links, one to a line with their words, beside the grid over the undated items; on a phone they lead the page | The mission page | none | Linear sidebar |
 | Calendar | On a phone | The days that hold something, as a list, today always among them | n/a | none | Google Calendar schedule view |
 
 ### Floor rows left out, and why

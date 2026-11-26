@@ -17,6 +17,8 @@ export const inline = (md, { project } = {}) => {
     return `<code>${code}</code>`;
   });
   out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // Not a glob: an opening star follows a space or the start, never a slash or a letter.
+  out = out.replace(/(^|[\s(])\*([^\s*][^*]*?)\*(?![\w*])/g, "$1<em>$2</em>");
   out = out.replace(/(^|[\s(])_([^_\n]+)_(?=[\s.,;:)]|$)/g, "$1<em>$2</em>");
   out = out.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank">$1</a>');
   out = out.replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g, '$1<a href="$2" target="_blank">$2</a>');
@@ -27,6 +29,14 @@ export const inline = (md, { project } = {}) => {
  * Render a markdown document. `checks` is {key: boolean}; `onCheck(key, text, done)` is called
  * when a checkbox changes. Keys are `<section>:<n>` so they survive re-renders and edits.
  */
+/** One line of markdown as an element: a `backticked` path or command reads as code. */
+export const inlineNode = (tag, md, { project, attrs = {} } = {}) => {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  node.innerHTML = inline(md ?? "", { project });
+  return node;
+};
+
 export const render = (md, { project, checks = {}, onCheck } = {}) => {
   const root = document.createElement("div");
   root.className = "md";

@@ -3,9 +3,11 @@
 // The page keeps a stream open and calls update() on every event, so nothing here rebuilds: rows
 // are patched by id, and a session opened under a row is still open after the next event.
 
+import { inline, inlineNode } from "../markdown.js";
+import { showMe } from "../show-me.js";
 import { answerControls } from "../answers.js";
 import { stopWalkthrough, walkthroughPanel } from "../walkthrough.js";
-import { isEnded } from "./state.js";
+import { isEnded, sessionOf } from "./state.js";
 
 /** The task's lamp and word, the map in /mockups/mission.html; Progress draws the same lamp on its cards. `built` is between the two: the Wingman is done and its RIO is on the way. */
 export const LAMP = { passed: ["done", "work"], flying: ["busy", "work"], built: ["busy", "action"], reviewing: ["busy", "action"], "handed-back": ["blocked", "work"], pending: ["idle", "stale"] };
@@ -54,11 +56,24 @@ export const mount = (host, view, ctx) => {
     answerControls(question, { el, btn, submit: (a, body) => act(a.path, body, `${task.title}: ${a.label}`) }).node);
 
   /* ---------- a task row ---------- */
+  /** A task's intent can be its whole build prompt, so past a few lines it folds to its first sentence and the page stays readable. */
+  const LONG_INTENT = 280;
+  const paintIntent = (r, intent) => {
+    r.intent.hidden = !intent;
+    if (r.intentText === intent) return;
+    r.intentText = intent;
+    if (intent.length <= LONG_INTENT) return r.intent.replaceChildren(inlineNode("span", intent, { project: projectId }));
+    const [first] = intent.split(/(?<=\.)\s/);
+    const opening = first.length > LONG_INTENT ? `${first.slice(0, first.lastIndexOf(" ", LONG_INTENT))}...` : first;
+    // A summary is a control, so nothing in it can be one: its paths are not links until it opens.
+    r.intent.replaceChildren(el("details", {}, el("summary", {}, el("span", { class: "chev" }), el("span", {}, opening.replaceAll("`", ""))), inlineNode("p", intent, { project: projectId })));
+  };
+
   const makeRow = (task) => {
     const r = {
       lamp: el("span", { class: "plan-lamp" }),
       title: el("span", { class: "t" }),
-      intent: el("span", { class: "i" }),
+      intent: el("div", { class: "i" }),
       word: el("span", { class: "w" }),
       why: el("span", { class: "why" }),
       answers: el("div", { class: "plan-q" }),
@@ -76,23 +91,21 @@ export const mount = (host, view, ctx) => {
     swapLamp(r.lamp, LAMP[task.status] ?? LAMP.pending);
     r.title.textContent = task.title;
     r.title.title = task.title;
-    r.intent.textContent = task.intent ?? "";
-    r.intent.title = task.intent ?? "";
-    r.intent.hidden = !task.intent;
+    paintIntent(r, task.intent ?? "");
     // Why it has not started, worked out by the server by the rules it starts tasks by.
     const why = current.waiting?.tasks?.[task.id] ?? "";
     r.why.textContent = why;
     r.why.hidden = !why;
     // Only with an agent behind it: a task that never started has no screen, and a link to one is the dead end it was.
-    const agent = task.claudeId || task.review?.claudeId;
+    const agent = sessionOf(task);
     // The word is rebuilt only when it would read differently, the way the lamp is swapped.
-    const wordKey = JSON.stringify([task.status, task.attempts, Boolean(agent)]);
+    const wordKey = JSON.stringify([task.status, task.attempts, agent?.role]);
     if (wordKey !== r.wordKey) {
       r.wordKey = wordKey;
       r.word.replaceChildren(
         el("b", { class: task.status === "handed-back" ? "needs" : task.status === "passed" ? "ok" : "" }, WORD[task.status] ?? task.status),
         task.attempts ? ` · attempt ${task.attempts}` : "",
-        ...(LIVE.has(task.status) && agent ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, "open the session")] : []));
+        ...(LIVE.has(task.status) && agent ? [el("br"), el("a", { href: "#", onclick: (e) => { e.preventDefault(); openSession(task.id, r.session); } }, `open its ${agent.role}'s session`)] : []));
     }
     // The answers are rebuilt only when the question itself changes, so a half-written note survives the next event.
     const question = task.status === "handed-back" ? (current.questions ?? []).find((q) => q.taskId === task.id) : null;
@@ -232,7 +245,10 @@ export const mount = (host, view, ctx) => {
     s.n.textContent = `Milestone ${m.n}`;
     s.title.textContent = m.title;
     s.word.textContent = stepWord(m, state);
-    s.gives.textContent = m.done ? `Done when ${m.done}` : "";
+    if (s.doneText !== m.done) {
+      s.doneText = m.done;
+      s.gives.innerHTML = m.done ? inline(`Done when ${m.done}`, { project: projectId }) : "";
+    }
     s.gives.hidden = !m.done;
     const why = current.waiting?.milestones?.[m.n] ?? "";
     s.why.textContent = why ? `Not sent yet: ${why}.` : "";
@@ -277,8 +293,12 @@ export const mount = (host, view, ctx) => {
     const s = steps.get(Number(id.match(/^milestone-(\d+)$/)?.[1]));
     if (!s || id === scrolledTo) return;
     scrolledTo = id;
+    const from = document.activeElement;
     s.details.open = true;
+    patchWalk(s);
     requestAnimationFrame(() => {
+      // Where a walk is done, not the top of its milestone: a milestone's tasks can run screens long.
+      if (!s.walk.hidden) return showMe(s.walk, { from, home: ctx.now, back: "back to what is waiting" });
       s.li.scrollIntoView({ block: "start" });
       // A keyboard answer would otherwise leave the focus on a button that is now far above.
       s.details.querySelector("summary").focus({ preventScroll: true });

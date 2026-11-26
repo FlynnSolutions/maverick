@@ -12,3 +12,6 @@
 @media (max-width: 600px) {
   .bar { position: static; }
 }
+
+/* A text button's words line up with the text it sits under; its height is the target. */
+.mv-rail button.ghost, .rs-tools button.ghost, .rs-marks button.rs-mark { padding-inline: 0; justify-content: flex-start; text-align: left; }

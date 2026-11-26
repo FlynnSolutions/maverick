@@ -209,6 +209,24 @@ export const mount = (host, view, ctx) => {
     });
   };
 
+  /* ---------- what is flying ---------- */
+  /** Named on the first screen, so a person opening a mission in flight sees what it is doing without reading the plan. */
+  const flyingNow = el("p", { class: "prog-flying", hidden: true });
+  const paintFlying = () => {
+    let first = null;
+    let more = 0;
+    if (current.status === "flying") {
+      for (const m of current.milestones) for (const t of m.tasks) {
+        if (t.status !== "flying" && t.status !== "reviewing") continue;
+        if (first) more += 1;
+        else first = { m, t };
+      }
+    }
+    flyingNow.hidden = !first;
+    const said = first ? `Now in milestone ${first.m.n}: ${first.t.title}${more ? `, and ${more} more` : ""}` : "";
+    if (flyingNow.textContent !== said) flyingNow.textContent = said;
+  };
+
   /* ---------- the open questions ---------- */
   /** The answer row, posted through the shell's `act`. `kept` is a note carried over from the row this replaces. */
   const controls = (q, kept) => {
@@ -269,6 +287,10 @@ export const mount = (host, view, ctx) => {
       on.handle = card(spec, ctx);
       on.handle.node.id = anchorOf(q);
       on.handle.node.classList.add("prog-q");
+      // What is being asked is the card's heading, for anyone reading by headings as for the eye.
+      const title = on.handle.node.querySelector(".card-title");
+      title.setAttribute("role", "heading");
+      title.setAttribute("aria-level", "2");
     }
     if (pins.children[i] !== on.handle.node) pins.insertBefore(on.handle.node, pins.children[i] ?? null);
   };
@@ -292,7 +314,8 @@ export const mount = (host, view, ctx) => {
   };
 
   const settleQuestions = () => {
-    const questions = current.questions ?? [];
+    // The Strike Lead's round is asked in its own card (lead.js), where it is answered.
+    const questions = (current.questions ?? []).filter((q) => q.kind !== "lead");
     const ids = new Set(questions.map((q) => q.id));
     for (const [id, on] of asked) {
       if (ids.has(id)) continue;
@@ -346,6 +369,7 @@ export const mount = (host, view, ctx) => {
     append(feed.slice(shown), shown);
     shown = Math.max(shown, feed.length);
     settleQuestions();
+    paintFlying();
     const over = isEnded(next.status);
     count.textContent = over ? `${shown} entries` : `${shown} entries · live`;
     live.hidden = over;
@@ -355,7 +379,7 @@ export const mount = (host, view, ctx) => {
 
   // The same thread the interview was held in, moved here by node, so "why is this one waiting?" gets an answer.
   // The open questions lead the page, above the ask, not part way down Progress: what waits on you comes first.
-  ctx.now.append(pins);
+  ctx.now.append(pins, flyingNow);
   host.append(el("h2", { class: "prog-head" }, "Progress", count), board, live, ctx.thread.node);
   // A hidden tab has no one reading the clock; it catches up on the next tick that is seen.
   setInterval(() => { if (!document.hidden) tick(); }, 1000);
