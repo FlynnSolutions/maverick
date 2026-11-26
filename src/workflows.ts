@@ -4,6 +4,8 @@
  * state, spawns nothing, and knows a mission only by the one field `workflowOf` asks for.
  */
 import { readFileSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AGENT } from "./project-config.ts";
 
@@ -18,11 +20,33 @@ export interface Stage {
 
 export interface Workflow {
   id: string;
+  name?: string;
+  description?: string;
   stages: Stage[];
 }
 
-/** where the built-in template lives. the packed app carries `src/**` as plain files. */
+/** one template a person may pick, or a project file that could not be one, with why in `error`. */
+export interface TemplateChoice {
+  id: string;
+  name: string;
+  description?: string;
+  source: "built-in" | "project";
+  unverified: boolean;
+  /** the verifying stages this template leaves out, in order; empty when it verifies. */
+  leftOut: string[];
+  template?: Workflow;
+  error?: string;
+}
+
+/** where the built-in templates live. the packed app carries `src/**` as plain files. */
 const MISSION_TEMPLATE = fileURLToPath(new URL("./workflows/mission.json", import.meta.url));
+const LIGHT_TEMPLATE = fileURLToPath(new URL("./workflows/light.json", import.meta.url));
+
+/** an id names a file and reaches a url, so it is lowercase letters, digits and dashes. */
+const ID = /^[a-z0-9][a-z0-9-]*$/;
+
+/** the fields a workflow may carry at the top. */
+const TOP = new Set(["id", "name", "description", "stages"]);
 
 /** the fields a stage may carry, so a misspelt `agnet` is refused and not quietly ignored. */
 const FIELDS = new Set(["id", "kind", "over", "stages", "slot", "agent"]);
@@ -53,7 +77,7 @@ const TODAY: Rule[] = [
         over: "tasks",
         stages: [
           { id: "build", kind: "agent", slot: "wingmanAgent", named: true },
-          { id: "review", kind: "agent", slot: "rioAgent", named: true },
+          { id: "review", kind: "agent", slot: "rioAgent", optional: true, named: true },
         ],
       },
       { id: "merge", kind: "merge" },
@@ -125,8 +149,12 @@ export const hasStage = (w: Workflow, id: string): boolean => findStage(w.stages
 export const validateWorkflow = (raw: unknown): Workflow => {
   if (!isObject(raw)) throw new Error("a workflow must be an object");
   if (typeof raw.id !== "string" || !raw.id) throw new Error("a workflow needs an id");
+  if (!ID.test(raw.id)) throw new Error(`workflow ${JSON.stringify(raw.id)}: an id is lowercase letters, digits and dashes`);
   for (const key of Object.keys(raw)) {
-    if (key !== "id" && key !== "stages") throw new Error(`workflow "${raw.id}": unknown field ${JSON.stringify(key)}`);
+    if (!TOP.has(key)) throw new Error(`workflow "${raw.id}": unknown field ${JSON.stringify(key)}`);
+  }
+  for (const key of ["name", "description"]) {
+    if (raw[key] !== undefined && typeof raw[key] !== "string") throw new Error(`workflow "${raw.id}": ${key} must be a string`);
   }
   checkStages(raw.stages, TODAY, `workflow "${raw.id}"`);
   const w = raw as unknown as Workflow;
@@ -142,15 +170,88 @@ const deepFreeze = <T>(value: T): T => {
   return Object.freeze(value);
 };
 
+const load = (file: string): Workflow => deepFreeze(validateWorkflow(JSON.parse(readFileSync(file, "utf8"))));
+
 let builtIn: Workflow | undefined;
+let light: Workflow | undefined;
 
 /**
  * the built-in template, synchronous so the pure gates can call it. every caller shares the one
  * cached copy, so it is frozen: a caller that changes it fails loud instead of changing the flow
  * for everyone else.
  */
-export const defaultWorkflow = (): Workflow =>
-  (builtIn ??= deepFreeze(validateWorkflow(JSON.parse(readFileSync(MISSION_TEMPLATE, "utf8")))));
+export const defaultWorkflow = (): Workflow => (builtIn ??= load(MISSION_TEMPLATE));
+
+/** the templates that ship with maverick, mission first. each is the one cached, frozen copy. */
+export const builtInWorkflows = (): Workflow[] => [defaultWorkflow(), (light ??= load(LIGHT_TEMPLATE))];
+
+/** the stages that make a template verified, in the order they are named, that this one leaves out. this is the only place that asks. */
+export const leftOut = (w: Workflow): string[] => ["review", "proof", "walk"].filter((id) => !hasStage(w, id));
+
+/** a template that leaves out review, proof or walk is unverified. */
+export const unverified = (w: Workflow): boolean => leftOut(w).length > 0;
+
+export const choiceOf = (w: Workflow, source: TemplateChoice["source"]): TemplateChoice => ({
+  id: w.id,
+  name: w.name ?? w.id,
+  ...(w.description !== undefined && { description: w.description }),
+  source,
+  unverified: unverified(w),
+  leftOut: leftOut(w),
+  template: w,
+});
+
+/** one project file as a choice. a file that is not a template is still listed, with `error` saying why. */
+const projectChoice = async (dir: string, file: string): Promise<TemplateChoice> => {
+  const id = file.slice(0, -".json".length);
+  const path = join(dir, file);
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (err) {
+    throw new Error(`cannot read ${path}: ${(err as Error).message}`);
+  }
+  try {
+    const w = validateWorkflow(JSON.parse(text));
+    if (w.id !== id) throw new Error(`its id is "${w.id}", and it must be its file name, "${id}"`);
+    return choiceOf(w, "project");
+  } catch (err) {
+    const why = err instanceof SyntaxError ? `not JSON: ${err.message}` : (err as Error).message;
+    return { id, name: id, source: "project", unverified: false, leftOut: [], error: `${file}: ${why}` };
+  }
+};
+
+/**
+ * the templates a project can start a mission from: the built-ins first, then the project's own
+ * `.maverick/workflows/*.json` by id. a project file with a built-in's id takes its place in the
+ * list. a missing folder is no project templates; any other failure to read it throws.
+ */
+export const templatesFor = async (projectPath: string): Promise<TemplateChoice[]> => {
+  const dir = join(projectPath, ".maverick", "workflows");
+  let files: string[];
+  try {
+    files = (await readdir(dir)).filter((f) => f.endsWith(".json"));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") files = [];
+    else throw new Error(`cannot read ${dir}: ${(err as Error).message}`);
+  }
+  const choices = builtInWorkflows().map((w) => choiceOf(w, "built-in"));
+  const project = await Promise.all(files.map((f) => projectChoice(dir, f)));
+  for (const choice of project.sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    const at = choices.findIndex((c) => c.id === choice.id);
+    if (at >= 0) choices[at] = choice;
+    else choices.push(choice);
+  }
+  return choices;
+};
+
+/** the template a mission starts from. a broken project file refuses the start, never falling back to the built-in. */
+export const chooseTemplate = async (projectPath: string, id = "mission"): Promise<Workflow> => {
+  const choice = (await templatesFor(projectPath)).find((c) => c.id === id);
+  if (!choice) throw new Error(`no template ${id}`);
+  if (!choice.template) throw new Error(choice.error ?? `no template ${id}`);
+  return choice.template;
+};
 
 /** the pinned copy, else the default. an older record has no copy, and reads as the default. */
 export const workflowOf = (m: { template?: Workflow }): Workflow => m.template ?? defaultWorkflow();

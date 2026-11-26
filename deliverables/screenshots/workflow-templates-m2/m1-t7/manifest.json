@@ -1,0 +1,181 @@
+{
+  "base": "http://127.0.0.1:47371",
+  "routes": [
+    {
+      "id": "full-flying",
+      "path": "/mission.html?project=harbor&mission=dredge",
+      "states": [
+        {
+          "id": "dark",
+          "steps": [
+            {
+              "eval": "localStorage.setItem(\"mv.theme\", \"dark\")"
+            },
+            {
+              "goto": "/mission.html?project=harbor&mission=dredge"
+            },
+            {
+              "waitFor": ".mv-template",
+              "timeout": 15000
+            },
+            {
+              "wait": 1200
+            }
+          ],
+          "expect": ".mv-template"
+        },
+        {
+          "id": "light",
+          "steps": [
+            {
+              "eval": "localStorage.setItem(\"mv.theme\", \"light\")"
+            },
+            {
+              "goto": "/mission.html?project=harbor&mission=dredge"
+            },
+            {
+              "waitFor": ".mv-template",
+              "timeout": 15000
+            },
+            {
+              "wait": 1200
+            }
+          ],
+          "expect": ".mv-template"
+        }
+      ]
+    },
+    {
+      "id": "light-flying",
+      "path": "/mission.html?project=harbor&mission=buoys",
+      "states": [
+        {
+          "id": "dark",
+          "steps": [
+            {
+              "eval": "localStorage.setItem(\"mv.theme\", \"dark\")"
+            },
+            {
+              "goto": "/mission.html?project=harbor&mission=buoys"
+            },
+            {
+              "waitFor": ".mv-template",
+              "timeout": 15000
+            },
+            {
+              "wait": 1200
+            }
+          ],
+          "expect": ".mv-template"
+        },
+        {
+          "id": "light",
+          "steps": [
+            {
+              "eval": "localStorage.setItem(\"mv.theme\", \"light\")"
+            },
+            {
+              "goto": "/mission.html?project=harbor&mission=buoys"
+            },
+            {
+              "waitFor": ".mv-template",
+              "timeout": 15000
+            },
+            {
+              "wait": 1200
+            }
+          ],
+          "expect": ".mv-template"
+        }
+      ]
+    },
+    {
+      "id": "light-review",
+      "path": "/mission.html?project=harbor&mission=moorings",
+      "states": [
+        {
+          "id": "dark",
+          "steps": [
+            {
+              "eval": "localStorage.setItem(\"mv.theme\", \"dark\")"
+            },
+            {
+              "goto": "/mission.html?project=harbor&mission=moorings"
+            },
+            {
+              "waitFor": ".mv-template",
+              "timeout": 15000
+            },
+            {
+              "wait": 1200
+            }
+          ],
+          "expect": ".mv-template"
+        },
+        {
+          "id": "light",
+          "steps": [
+            {
+              "eval": "localStorage.setItem(\"mv.theme\", \"light\")"
+            },
+            {
+              "goto": "/mission.html?project=harbor&mission=moorings"
+            },
+            {
+              "waitFor": ".mv-template",
+              "timeout": 15000
+            },
+            {
+              "wait": 1200
+            }
+          ],
+          "expect": ".mv-template"
+        }
+      ]
+    },
+    {
+      "id": "older",
+      "path": "/mission.html?project=harbor&mission=tide",
+      "states": [
+        {
+          "id": "dark",
+          "steps": [
+            {
+              "eval": "localStorage.setItem(\"mv.theme\", \"dark\")"
+            },
+            {
+              "goto": "/mission.html?project=harbor&mission=tide"
+            },
+            {
+              "waitFor": ".mv-template",
+              "timeout": 15000
+            },
+            {
+              "wait": 1200
+            }
+          ],
+          "expect": ".mv-template"
+        },
+        {
+          "id": "light",
+          "steps": [
+            {
+              "eval": "localStorage.setItem(\"mv.theme\", \"light\")"
+            },
+            {
+              "goto": "/mission.html?project=harbor&mission=tide"
+            },
+            {
+              "waitFor": ".mv-template",
+              "timeout": 15000
+            },
+            {
+              "wait": 1200
+            }
+          ],
+          "expect": ".mv-template"
+        }
+      ]
+    }
+  ]
+}

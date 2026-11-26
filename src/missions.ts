@@ -43,7 +43,7 @@ import { reportFor } from "./report.ts";
 import { failingCases, lastCleared, openFix, openRound, over, owesWalk, questionsOf, retryable, roundsOf, statusWord, walkthroughState, type Question, type RoundState, type StatusWord } from "./questions.ts";
 import { feedOf, updatesOf, type FeedEntry } from "./feed.ts";
 import { threeBullets } from "./summary.ts";
-import { agentFor, agentsLaunched, defaultWorkflow, hasStage, workflowOf, type Workflow } from "./workflows.ts";
+import { agentFor, agentsLaunched, chooseTemplate, hasStage, leftOut, unverified, workflowOf, type Workflow } from "./workflows.ts";
 import { countCarried, keyOf, parseFinding, triage, type Finding } from "./findings.ts";
 
 /** How many times a task is handed back to a fresh Wingman before it becomes Cory's problem. */
@@ -600,8 +600,11 @@ export const overlapsIn = (milestones: Milestone[]): string[] =>
     return shared.length ? [`milestone ${m.n}: ${a.id} and ${b.id} both touch ${shared.join(", ")}`] : [];
   })));
 
-/** Parse the Strike Lead's plan document. Reuses the tracker parser, because the plan is written in its shape. */
-export const parsePlan = (text: string, repos: string[] = [], shared: string[] = []): { name: string; intro: string; milestones: Milestone[]; contracts: Contract[]; components: Component[]; mockups?: string; requirements: Requirement[]; log: string[]; problems: string[]; overlaps: string[]; warnings: string[] } => {
+/**
+ * Parse the Strike Lead's plan document. Reuses the tracker parser, because the plan is written in its shape.
+ * `walk: false` is a template with no walk, whose milestones need no `_walk:_` line.
+ */
+export const parsePlan = (text: string, repos: string[] = [], shared: string[] = [], opts: { walk?: boolean } = {}): { name: string; intro: string; milestones: Milestone[]; contracts: Contract[]; components: Component[]; mockups?: string; requirements: Requirement[]; log: string[]; problems: string[]; overlaps: string[]; warnings: string[] } => {
   const lines = text.split("\n");
   const { title: name, intro } = documentHead(text, /^#\s*Mission:\s*(.+)$/m);
   const problems: string[] = [];
@@ -658,7 +661,7 @@ export const parsePlan = (text: string, repos: string[] = [], shared: string[] =
     const done = lineOf(DONE_LINE);
     if (!done) problems.push(`milestone ${n} has no "_done when: ..._" line`);
     const walk = listField(lineOf(WALK_LINE), /;/);
-    if (!walk.length) problems.push(`milestone ${n} has no "_walk: <case>; <case>_" line: the cases walked at its end`);
+    if (!walk.length && opts.walk !== false) problems.push(`milestone ${n} has no "_walk: <case>; <case>_" line: the cases walked at its end`);
     const only = repos.length === 1 ? repos[0] : "";
     const tasks = section.groups.flatMap((g) => g.items).map((item, i) => {
       const { status, attempt, verdict, commit, touches, needs, deploys, repo, cells } = item.fields;
@@ -745,9 +748,11 @@ export const preflightFor = (project: Project, cfg: MissionConfig, choices: Arra
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
   const mine = choices.filter((r) => named.has(r.label));
   const w = workflowOf(mission);
-  const rioAgent = agentFor(w, "review", cfg) ?? cfg.rioAgent;
+  // A template with no review launches no RIO, so a project with no rio.md is not refused for one.
+  const rioAgent = hasStage(w, "review") ? agentFor(w, "review", cfg) ?? cfg.rioAgent : undefined;
   const wingmanAgent = agentFor(w, "build", cfg);
-  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent, rioAgent, also: agentsLaunched(w, cfg).filter((a) => a !== rioAgent && a !== wingmanAgent), remote: mine.filter((r) => r.land !== "merge").map(({ label, path }) => ({ label, path })) });
+  const remote = mine.flatMap(({ label, path, land }) => (land === "merge" ? [] : [{ label, path, land }]));
+  return preflight({ projectPath: project.path, repoPaths: mine.map((r) => r.path), requirements: parsed.requirements, wingmanAgent, ...(rioAgent ? { rioAgent } : {}), also: agentsLaunched(w, cfg).filter((a) => a !== rioAgent && a !== wingmanAgent), remote, leftOut: leftOut(w) });
 };
 
 /* ---------- the plan as the ledger ---------- */
@@ -914,19 +919,19 @@ export interface Cost {
   tasks: number;
   /** How many of the project's repos the plan touches. */
   repos: number;
-  /** Two background sessions per task: the Wingman, then the RIO in its back seat. */
+  /** Two background sessions per task, the Wingman then the RIO in its back seat, or one where the template has no review. */
   sessions: number;
   /** Factory's published numbers for the equivalent feature, quoted as theirs, not measured here. */
   reference: string;
 }
 
-export const costOf = (milestones: Milestone[]): Cost => {
+export const costOf = (milestones: Milestone[], opts: { review?: boolean } = {}): Cost => {
   const tasks = milestones.reduce((n, m) => n + m.tasks.length, 0);
   return {
     milestones: milestones.length,
     tasks,
     repos: new Set(milestones.flatMap((m) => m.tasks.map((t) => t.repo)).filter(Boolean)).size,
-    sessions: tasks * 2,
+    sessions: tasks * (opts.review === false ? 1 : 2),
     reference: "Factory's published numbers for a mission: a median of about 2 hours against 8 minutes for a normal session, roughly 12x the tokens, and 14% still running past 24 hours.",
   };
 };
@@ -942,27 +947,32 @@ export const DEFAULT_LINK_MINUTES = 15;
  * last attempt, its Wingman from `started` to `ended` and its RIO from `review.started` to when
  * the RIO's findings file was last written. The retry rate is the share of those tasks that
  * took more than one attempt. Null with nothing measured. The gate polls and the answer moves only
- * when a task passes, so a reading is kept for a few minutes per records folder.
+ * when a task passes, so a reading is kept for a few minutes per records folder. With `review`
+ * false it is the Wingman alone, for a template with no review, from every passed task.
  */
 const PACE_TTL_MS = 5 * 60_000;
 const paceRead = new Map<string, { at: number; pace: Promise<Pace | null> }>();
-export const measuredPace = (maxAgeMs = PACE_TTL_MS): Promise<Pace | null> => {
-  const key = config.sessionsDir;
+export const measuredPace = (maxAgeMs = PACE_TTL_MS, review = true): Promise<Pace | null> => {
+  const key = review ? config.sessionsDir : `${config.sessionsDir} (build only)`;
   const hit = paceRead.get(key);
   if (hit && Date.now() - hit.at < maxAgeMs) return hit.pace;
-  const pace = readPace();
+  const pace = readPace(review);
   paceRead.set(key, { at: Date.now(), pace });
   // Only a reading is kept: a failure kept for the TTL outlived its repair by five minutes.
   pace.catch(() => { if (paceRead.get(key)?.pace === pace) paceRead.delete(key); });
   return pace;
 };
-const readPace = async (): Promise<Pace | null> => {
+const readPace = async (review: boolean): Promise<Pace | null> => {
   const projects = await readdir(join(config.sessionsDir, "missions"), { withFileTypes: true }).catch(() => []);
   const missions = (await Promise.all(projects.filter((d) => d.isDirectory()).map((d) => listMissions(d.name)))).flat();
-  const done = missions.flatMap((m) => m.milestones.flatMap((x) => x.tasks)).filter((t) => t.status === "passed" && t.started && t.ended && t.review?.started);
+  const done = missions.flatMap((m) => m.milestones.flatMap((x) => x.tasks)).filter((t) => t.status === "passed" && t.started && t.ended && (!review || t.review?.started));
   const took = (await Promise.all(done.map(async (t) => {
-    const reviewed = await stat(t.review!.file).then((s) => s.mtimeMs, () => null);
-    const ms = reviewed === null ? 0 : Date.parse(t.ended!) - Date.parse(t.started!) + reviewed - Date.parse(t.review!.started);
+    const built = Date.parse(t.ended!) - Date.parse(t.started!);
+    let ms = built;
+    if (review) {
+      const reviewed = await stat(t.review!.file).then((s) => s.mtimeMs, () => null);
+      ms = reviewed === null ? 0 : built + reviewed - Date.parse(t.review!.started);
+    }
     return ms > 0 ? [{ minutes: ms / 60_000, retried: t.attempts > 1 }] : [];
   }))).flat();
   if (!took.length) return null;
@@ -985,22 +995,24 @@ export interface Estimate {
  * `needs` chain inside it times the measured minutes per task, plus the measured retry rate
  * times those minutes. With no history, a fixed figure per chain link, said to be a default.
  * A milestone builds on the one before it, which it waits to see walked, and on any earlier
- * milestone a task of it names in `needs`.
+ * milestone a task of it names in `needs`. With `review` false there is no RIO to send a task
+ * back, so no retry is counted, and the pace given should be the Wingman's alone.
  */
-export const estimateOf = (milestones: Milestone[], pace: Pace | null): Estimate => {
+export const estimateOf = (milestones: Milestone[], pace: Pace | null, opts: { review?: boolean } = {}): Estimate => {
+  const retryRate = opts.review === false ? 0 : (pace?.retryRate ?? 0);
   const home = new Map(milestones.flatMap((m) => m.tasks.map((t) => [t.id, m.n] as const)));
   const rows = milestones.map((m, i) => {
     const chain = longestChain(m);
     const links = Math.max(1, chain.length);
     const needed = m.tasks.flatMap((t) => (t.needs ?? []).map((id) => home.get(id))).filter((n): n is number => n !== undefined && n !== m.n);
     const buildsOn = [...new Set([...(i > 0 ? [milestones[i - 1].n] : []), ...needed])].sort((a, b) => a - b);
-    const raw = pace ? (links + pace.retryRate) * pace.minutesPerTask : links * DEFAULT_LINK_MINUTES;
+    const raw = pace ? (links + retryRate) * pace.minutesPerTask : links * DEFAULT_LINK_MINUTES;
     return { n: m.n, title: m.title, walk: m.walk ?? [], buildsOn, chain, minutes: roughly(raw) };
   });
   return {
     milestones: rows,
     minutes: rows.reduce((n, r) => n + r.minutes, 0),
-    basis: pace ? { measured: true, tasks: pace.tasks, minutesPerTask: Math.round(pace.minutesPerTask), retryRate: Math.round(pace.retryRate * 100) / 100 } : { measured: false, linkMinutes: DEFAULT_LINK_MINUTES },
+    basis: pace ? { measured: true, tasks: pace.tasks, minutesPerTask: Math.round(pace.minutesPerTask), retryRate: Math.round(retryRate * 100) / 100 } : { measured: false, linkMinutes: DEFAULT_LINK_MINUTES },
   };
 };
 
@@ -1060,7 +1072,28 @@ export const INTERVIEW_PROBES = [
   "  - for every element the mockups draw, the existing component it resembles (or none, found by searching the code) and whether it is reused as it is, the shared component restyled everywhere, or a new one built for this; asked per element, citing the cells, for every one the mockup rounds did not already settle",
 ];
 
-export const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing): string => [
+/**
+ * What the Strike Lead is told about the template its mission runs: its name, its stages and
+ * where the work ends up. Nothing for the full `mission`, whose prompt stays as it always was.
+ * Under an unverified template, what it leaves out, that the plan promises none of it, and that a
+ * repo landing by pull request or push is refused at the gate, which Cory hears in the first round.
+ */
+const templateLines = (w: Workflow, repos: Array<{ label: string; land: Landing }>, branch?: string): string[] => {
+  if (w.id === "mission" && !unverified(w)) return [];
+  const runs = FLIGHT.filter((s) => hasStage(w, s.id)).map((s) => s.label);
+  const head = `This mission runs the template "${w.name ?? w.id}" (${w.id}), whose stages are, in order: ${runs.join(", ")}. Nothing else runs.`;
+  if (!unverified(w)) return ["", `${head} Where its work ends up is per repo, as above.`];
+  const left = leftOut(w);
+  const leaving = left.length > 1 ? `${left.slice(0, -1).join(", ")} or ${left.at(-1)}` : left[0];
+  const refused = repos.filter((r) => r.land !== "merge");
+  return ["",
+    `${head} It is unverified: it has no ${leaving}${left.includes("review") ? ", so no RIO reads a task and a task passes when its Wingman finishes" : ""}. Its work stays on ${branch ? `the mission branch ${branch}` : "its mission branch"}, and Cory takes it from there by hand.`,
+    `So the plan promises no ${leaving}${left.includes("walk") ? ", and no milestone has a `_walk:_` line: leave it out, though the format above shows it" : ""}. Where the format and the rules above speak of a review, a proof, a walkthrough or a walk, this template decides.`,
+    `Under this template a repo set to land by \`pr\` or \`push\` is refused at the plan gate, because unverified work never leaves its mission branch. ${refused.length ? `Here that is ${refused.map((r) => `${r.label} (${r.land})`).join(" and ")}: tell Cory` : "Tell Cory that"} in your first round of questions, so he can set its land to merge in maverick.json or choose a template that verifies.`,
+  ];
+};
+
+export const interviewPrompt = (project: Project, mission: Mission, planPath: string, repos: Array<{ label: string; base: string; land: Landing }>, land: Landing, branch?: string): string => [
   `You are the Strike Lead for a mission in the project at ${project.path}. A strike lead plans the package, briefs it and sends it; it does not fly every jet in it. Your entire job in this session is the interview and the plan.`,
   "",
   mission.from ? `This mission came out of the breakdown of ${join(project.path, mission.from)}, as the item "${mission.brief}". Read that document first; it holds the reasoning.` : `Cory opened this mission with one line: "${mission.brief}"`,
@@ -1092,14 +1125,15 @@ export const interviewPrompt = (project: Project, mission: Mission, planPath: st
     ...repos.map((r) => `  - ${r.label}: ${r.land === "pr" ? `a pull request against ${r.base}, merged by nobody but Cory` : r.land === "push" ? `${r.base} is advanced to it and pushed, because this repo's own process says its work lands there directly` : `left on the mission branch for Cory to take from there`}`),
     "Plan for that. Work that ends in a pull request has to stand up as a reviewable one, not just as a green branch.",
   ].join("\n"),
+  ...templateLines(workflowOf(mission), repos, branch),
   "",
   "You may read anything and run anything read-only. You may not edit product code, create branches or worktrees, spawn any agent, or touch the trackers: the plan document is the only file you write. Maverick writes the plan into the tracker and dispatches the Wingmen itself, and only after Cory has approved it in the console.",
   "",
   CHAT_RULES,
 ].join("\n");
 
-/** Open a mission: the record, and the Strike Lead's first turn, which reads the repo and asks its first round. */
-export const startMission = async (project: Project, name: string, brief: string, trackerIndex = 0, from?: string): Promise<{ mission: Mission }> => {
+/** Open a mission: the record, pinned to the template chosen (`mission` when none is), and the Strike Lead's first turn, which reads the repo and asks its first round. */
+export const startMission = async (project: Project, name: string, brief: string, trackerIndex = 0, from?: string, template?: string): Promise<{ mission: Mission }> => {
   if (!name.trim()) throw new Error("a mission needs a name");
   if (!brief.trim()) throw new Error("a mission needs the line you would have opened a session with");
   const id = slug(name);
@@ -1108,6 +1142,8 @@ export const startMission = async (project: Project, name: string, brief: string
   const cfg = await missionConfigFor(project.path);
   // Refused here rather than on the first turn: a project with no repository cannot hold a mission.
   await repoChoices(project, cfg);
+  // A broken project template refuses the start with the validator's reason; it never falls back to the built-in.
+  const pinned = await chooseTemplate(project.path, template);
   const plan = join("deliverables", "missions", `${id}.md`);
   const mission: Mission = {
     id,
@@ -1122,7 +1158,7 @@ export const startMission = async (project: Project, name: string, brief: string
     land: cfg.land,
     trackerIndex,
     milestones: [],
-    template: defaultWorkflow(),
+    template: pinned,
   };
   if (!project.trackers[trackerIndex]) throw new Error(`project "${project.id}" has no tracker at index ${trackerIndex}`);
   await mkdir(join(project.path, "deliverables", "missions"), { recursive: true });
@@ -1156,7 +1192,8 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
   }
   const cfg = await missionConfigFor(project.path);
   const choices = await repoChoices(project, cfg);
-  const parsed = parsePlan(text, choices.map((r) => r.label), cfg.shared);
+  const w = workflowOf(mission);
+  const parsed = parsePlan(text, choices.map((r) => r.label), cfg.shared, { walk: hasStage(w, "walk") });
   if (!parsed.problems.length && mission.status === "interviewing") {
     mission.status = "planned";
     mission.milestones = parsed.milestones;
@@ -1164,7 +1201,8 @@ export const previewPlan = async (project: Project, id: string): Promise<{ found
   }
   // Only the repos the plan names, so the gate shows what this mission will actually touch.
   const named = new Set(parsed.milestones.flatMap((m) => m.tasks.map((t) => t.repo)));
-  return { found: true, text, parsed, wingmanAgent: agentFor(workflowOf(mission), "build", cfg), cost: costOf(parsed.milestones), estimate: estimateOf(parsed.milestones, await measuredPace()), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })), preflight: parsed.problems.length ? [] : await preflightFor(project, cfg, choices, parsed, mission) };
+  const review = hasStage(w, "review");
+  return { found: true, text, parsed, wingmanAgent: agentFor(w, "build", cfg), cost: costOf(parsed.milestones, { review }), estimate: estimateOf(parsed.milestones, await measuredPace(undefined, review), { review }), repos: choices.filter((r) => named.has(r.label)).map(({ label, base, land }) => ({ label, base, land })), preflight: parsed.problems.length ? [] : await preflightFor(project, cfg, choices, parsed, mission) };
 };
 
 /* ---------- the blessing, and the tracker write ---------- */
@@ -1217,7 +1255,7 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
   });
   const cfg = await missionConfigFor(project.path);
   const choices = await repoChoices(project, cfg);
-  const parsed = parsePlan(text, choices.map((r) => r.label), cfg.shared);
+  const parsed = parsePlan(text, choices.map((r) => r.label), cfg.shared, { walk: hasStage(workflowOf(mission), "walk") });
   if (parsed.problems.length) throw new Error(`the plan cannot be flown as written: ${parsed.problems.join("; ")}`);
   // A tool or an agent the mission cannot run without is refused here; a credential, a pin or a
   // human step is shown at the gate for the person to settle, and approving is their answer.
@@ -1257,7 +1295,7 @@ const approveOnce = async (project: Project, id: string): Promise<Mission> => {
 /** The proof this mission runs: the project's command, read at use, unless the mission's template leaves the stage out. */
 const proofCommand = (mission: Pick<Mission, "template">, cfg: Pick<MissionConfig, "proof">): string | undefined => (hasStage(workflowOf(mission), "proof") ? cfg.proof : undefined);
 
-const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, cfg: Pick<MissionConfig, "shared" | "proof">): BriefContext => ({ projectPath: project.path, shared: cfg.shared, proof: proofCommand(mission, cfg), mission, milestone: m, task, repo });
+const briefContext = (project: Project, mission: Mission, m: Milestone, task: MissionTask, repo: MissionRepo, cfg: Pick<MissionConfig, "shared" | "proof">): BriefContext => ({ projectPath: project.path, shared: cfg.shared, proof: proofCommand(mission, cfg), review: hasStage(workflowOf(mission), "review"), mission, milestone: m, task, repo });
 
 /**
  * A review's findings file. Keyed on a counter that only ever goes up, never on `attempts`:
@@ -2155,9 +2193,17 @@ const recordFinished = async (project: Project, mission: Mission, agents: Map<st
 
 /** Step two: act on what step one recorded. Every spawn claims the record first; every merge or landing writes the record first as its brake. Not run while paused. */
 const actOn = async (project: Project, mission: Mission, cfg: MissionConfig): Promise<void> => {
+  const reviewed = hasStage(workflowOf(mission), "review");
   for (const m of mission.milestones) {
     if (inTheAir(m)) for (const task of m.tasks) {
       if (task.status !== "built") continue;
+      // A template with no review settles a built task as passed, with no RIO and no verdict, and its note says so, so no line claims a review.
+      // With no RIO to catch it, a run that committed nothing goes back to Cory rather than merging as done.
+      if (!reviewed) {
+        if (task.commits?.length) [task.status, task.note] = ["passed", "no review in this template"];
+        else [task.status, task.note] = ["handed-back", "its Wingman committed nothing"];
+        continue;
+      }
       if (task.verdict) {
         const findings = task.review ? await readFile(task.review.file, "utf8").catch(() => "") : "";
         const outcome = settleReview(task, findings, task.verdict);
@@ -2458,11 +2504,14 @@ export const landAgain = async (project: Project, id: string): Promise<{ mission
     if (mission.status === "closed" || mission.status === "abandoned") throw new Error(`${mission.name} is ${mission.status}; there is nothing left to land`);
     if (mission.status === "paused") throw new Error(`${mission.name} is paused; landing pushes, so resume it first`);
     // A landing that failed is often fixed in the project's own config (a repo with no remote set to merge); try it as the project now says.
+    const remote = new Set(mission.repos.filter((r) => r.land !== "merge").map((r) => r.label));
     changed = followLanding(mission, cfg);
+    // A repo the project now merges has nothing left to push: following it there is the recovery, even when nothing else lands.
+    const freed = mission.repos.some((r) => remote.has(r.label) && r.land === "merge");
     ({ landed, failed } = await landTheWork(mission));
     if (failed.length) {
       mission.trouble = `still could not land: ${failed.join(" · ")}`;
-    } else if (!landed.length) {
+    } else if (!landed.length && !freed) {
       // Nothing landed and nothing failed: every repo either has work still moving or has
       // already landed. Saying "recovered" here would be a lie that puts the mission back in
       // the air on the strength of having done nothing.
@@ -2607,7 +2656,7 @@ const leadPrompt = async (project: Project, mission: Mission, first: boolean, he
     // A mission approved before the Strike Lead was a chat has no session yet; its first turn is in flight.
     parts.push(mission.approved
       ? `You are the Strike Lead for the mission "${mission.name}" in the project at ${project.path}. Cory opened it with: "${mission.brief}"\n\n${flightRules(join(project.path, mission.plan), ledgerPath(project, mission) ?? undefined)}`
-      : interviewPrompt(project, mission, join(project.path, mission.plan), await repoChoices(project, cfg), cfg.land));
+      : interviewPrompt(project, mission, join(project.path, mission.plan), await repoChoices(project, cfg), cfg.land, `${cfg.branchPrefix}${mission.id}`));
   }
   if (heard.length) parts.push(heard.map((e) => `${e.who === "you" ? "Cory" : e.who}: ${e.text}`).join("\n\n"));
   if (mission.approved) {
@@ -2720,11 +2769,17 @@ const landTheWork = async (mission: Mission): Promise<{ landed: string[]; failed
   const opened: string[] = [];
   const failed: string[] = [];
   const all = mission.milestones.flatMap((m) => m.tasks);
+  const w = workflowOf(mission);
   for (const repo of mission.repos) {
    try {
     if (repo.land === "merge") continue;
     if (repo.landed) {
       opened.push(repo.landed);
+      continue;
+    }
+    // Unverified work never leaves its mission branch, whatever maverick.json came to say after the gate: nothing is pushed or opened.
+    if (unverified(w)) {
+      failed.push(`${repo.label}: it is set to land by ${repo.land}, but this mission's template leaves out ${leftOut(w).join(", ")}, so its work stays on its mission branch; set its land to merge in maverick.json and land again`);
       continue;
     }
     const mine = all.filter((t) => t.repo === repo.label);
@@ -2880,8 +2935,68 @@ export type Reading = Finding & { key: string; taskId: string; taskTitle: string
  */
 export type Move = { taskId: string; attempt: number; out?: string; built?: string; reviewed?: string; ended?: string; end?: "passed" | "handed-back" | "retry"; verdict?: string; counts?: FeedEntry["counts"] };
 
-/** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. */
-export type MissionView = Mission & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; rounds: Array<RoundState | undefined>; feed: FeedEntry[]; readings: Reading[]; moves: Move[] };
+/** The JSON of `GET /api/missions/:id`, and what its stream sends on every change. `workflow` says which template the mission flies and where it is in it; the template itself is never sent. */
+export type MissionView = Omit<Mission, "template"> & { findings: Record<string, string>; diffstat: Record<string, string>; walk: Record<number, WalkView>; summaryState: ReturnType<typeof summaryState>; word: StatusWord; questions: Question[]; rounds: Array<RoundState | undefined>; feed: FeedEntry[]; readings: Reading[]; moves: Move[]; workflow: { id: string; name: string; unverified: boolean; leftOut: string[]; flight: Array<{ id: string; label: string; state: "done" | "now" | "next"; count?: string }> } };
+
+/** The stages the strip draws, in order. The walkthrough is drawn as part of Walk, and the summary, written on demand, is not drawn. */
+const FLIGHT: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "interview", label: "Interview" },
+  { id: "plan-gate", label: "Plan gate" },
+  { id: "preflight", label: "Preflight" },
+  { id: "build", label: "Build" },
+  { id: "review", label: "Review" },
+  { id: "merge", label: "Merge" },
+  { id: "proof", label: "Proof" },
+  { id: "land", label: "Land" },
+  { id: "walk", label: "Walk" },
+  { id: "close", label: "Close" },
+];
+
+/** A repo whose work leaves the mission branch and has not left it yet. */
+const landing = (mission: Pick<Mission, "repos">): boolean => mission.repos.some((r) => r.land !== "merge" && !r.landed);
+
+/** Where a milestone still in the air stands, as the stage it waits on, among the stages its template has. */
+const stageOf = (mission: Mission, w: Workflow, m: Milestone): string => {
+  if (m.tasks.some((t) => t.status === "pending" || t.status === "flying" || t.status === "handed-back")) return "build";
+  if (m.tasks.some((t) => t.status !== "passed")) return hasStage(w, "review") ? "review" : "build";
+  if (!m.merged) return "merge";
+  if (m.hold?.kind === "landing") return "land";
+  if (!proved(mission, m)) return hasStage(w, "proof") ? "proof" : "land";
+  // Proved and not done is owing a walk, which comes after the landing.
+  return landing(mission) ? "land" : "walk";
+};
+
+/**
+ * The strip's stages for this mission's pinned template, each done, now or next, read from the
+ * record alone. A mission in the air is where its first milestone not done is, or at Land once
+ * every milestone is done and a repo has not landed. Build and Review count that milestone's
+ * tasks, or the whole mission's once none is left in the air. A mission abandoned before approval
+ * reads as stopped in its interview.
+ */
+export const flightOf = (mission: Mission): MissionView["workflow"]["flight"] => {
+  const w = workflowOf(mission);
+  const drawn = FLIGHT.filter((s) => hasStage(w, s.id));
+  const current = mission.milestones.find((m) => !done(mission, m));
+  const now = mission.status === "interviewing" ? "interview"
+    : mission.status === "planned" ? "plan-gate"
+    : mission.status === "review" ? "close"
+    : mission.status === "closed" ? undefined
+    : !mission.approved ? "interview"
+    : current ? stageOf(mission, w, current)
+    : landing(mission) ? "land"
+    : "close";
+  const at = now === undefined ? drawn.length : drawn.findIndex((s) => s.id === now);
+  const tasks = current ? current.tasks : mission.milestones.flatMap((m) => m.tasks);
+  const counted = (id: string): string | undefined => {
+    if (!tasks.length) return undefined;
+    const past = tasks.filter((t) => (id === "build" ? ["built", "reviewing", "passed"] : ["passed"]).includes(t.status)).length;
+    return `${past} of ${tasks.length}`;
+  };
+  return drawn.map((s, i) => {
+    const count = s.id === "build" || s.id === "review" ? counted(s.id) : undefined;
+    return { id: s.id, label: s.label, state: i < at ? "done" : i === at ? "now" : "next", ...(count ? { count } : {}) };
+  });
+};
 
 /**
  * A task's findings as keyed records: every carried line, and for a handed-back task its findings
@@ -3110,9 +3225,11 @@ export const missionView = async (project: Project, id: string): Promise<Mission
   const [{ findings, diffstat, questions, word }, log] = await Promise.all([asked(mission), ledgerLog(project, mission)]);
   const walk = Object.fromEntries(mission.milestones.map((m) => [m.n, { state: walkthroughState(m), needed: owesWalk(mission, m) }]));
   const feed = feedOf(log, mission);
-  // The page never reads the pinned template, so it stays on the record and out of every view.
+  // The page never reads the pinned template, so it stays on the record and out of every view; `workflow` says what the page needs of it.
   const { template: _template, ...shown } = mission;
-  return { ...shown, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, rounds: roundsOf(mission), feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
+  const w = workflowOf(mission);
+  const workflow = { id: w.id, name: w.name ?? w.id, unverified: unverified(w), leftOut: leftOut(w), flight: flightOf(mission) };
+  return { ...shown, workflow, findings, diffstat, walk, summaryState: summaryState(mission), word, questions, rounds: roundsOf(mission), feed, readings: readingsOf(mission, findings), moves: movesOf(feed, mission), leadBusy: leadBusy(mission), waiting: waitingOn(mission), proved: mission.milestones.filter((m) => proved(mission, m)).map((m) => m.n), updates: updatesOf(feed, mission) };
 };
 
 /** A mission as the workspace lists it: the record, what it asks, its word, and its merged diff as one line. */

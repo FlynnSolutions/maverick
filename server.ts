@@ -22,10 +22,11 @@ import { assignParent, auditView, createParent, recordDecision, runAudit, sweep 
 import { releasesFor, writeSlot, type ReleaseSlot, type SlotName } from "./src/releases.ts";
 import { defaultWindow, markDay, occurrences, readSchedule, setCadence, type Cadence, type DayAction } from "./src/ship-schedule.ts";
 import { createShip, listShips, readShip, runStep, sweepShips, updateStep, type StepStatus } from "./src/ships.ts";
-import { abandonMission, acceptTask, answerLead, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, missionPath, missionQuestions, missionReport, missionView, openLeadTerminal, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, resumeMission, retryTask, sayToStrikeLead, startMission, summarizeMission, sweepMissions, sweepSoon, tidyWorktrees, watchEndings, workspaceMissions, type WalkthroughPatch, type WorkspaceMission, markReadings } from "./src/missions.ts";
+import { abandonMission, acceptTask, answerLead, approveMission, closeMission, landAgain, ledgerPath, listMissions, markReading, missionPath, missionQuestions, missionReport, missionView, openLeadTerminal, readMission, pauseMission, previewPlan, recordWalkthrough, releaseMilestone, resumeMission, retryTask, sayToStrikeLead, startMission, summarizeMission, sweepMissions, sweepSoon, tidyWorktrees, watchEndings, workspaceMissions, type WalkthroughPatch, type WorkspaceMission, markReadings } from "./src/missions.ts";
 import { CAG_TOOLS, brainstormPrompt, commitPlanFields, planFileFor, planOf, planPrompt } from "./src/plans.ts";
 import { approveBreakdown, listBrainstorms, proposeItems } from "./src/breakdowns.ts";
 import { themeFor } from "./src/theme.ts";
+import { builtInWorkflows, choiceOf, templatesFor, workflowOf } from "./src/workflows.ts";
 import { usage } from "./src/usage.ts";
 import { readTranscript, transcriptPath } from "./src/transcript-view.ts";
 import { focusApp, parentChain, processHome } from "./src/processes.ts";
@@ -638,6 +639,29 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
     const body = await readJson<{ project: string; file: string; tracker?: number }>(req);
     return sendJson(res, 200, await approveBreakdown(await projectById(body.project), body.file, body.tracker ?? 0));
   }
+  // The templates a project offers: the built-ins, then its own files. One is found in that list by
+  // id, never by a path built from the URL; a broken file is a choice with its error, not a 500.
+  if (method === "GET" && path === "/api/workflows") return sendJson(res, 200, await templatesFor((await requireProject(url)).path));
+  const workflowId = path.match(/^\/api\/workflows\/([^/]+)$/);
+  if (method === "GET" && workflowId) {
+    const project = await requireProject(url);
+    const id = decodeURIComponent(workflowId[1]);
+    // With a mission, the copy it pinned when it started: a project file edited or deleted since changes nothing it flies.
+    const missionId = url.searchParams.get("mission");
+    if (missionId) {
+      // The id names a file, so it is held to the missions route's own pattern before it is read.
+      const mission = /^[a-z0-9-]+$/.test(missionId) ? await readMission(project.id, missionId) : null;
+      if (!mission) return sendJson(res, 404, { error: `no mission ${missionId}` });
+      const w = workflowOf(mission);
+      if (w.id !== id) return sendJson(res, 404, { error: `${mission.name} flies template ${w.id}, not ${id}` });
+      // The record keeps the template, not where it came from, so a built-in's id reads as the built-in.
+      const source = builtInWorkflows().some((b) => b.id === w.id) ? "built-in" : "project";
+      return sendJson(res, 200, { ...choiceOf(w, source), mission: { id: mission.id, name: mission.name } });
+    }
+    const choice = (await templatesFor(project.path)).find((c) => c.id === id);
+    if (!choice) return sendJson(res, 404, { error: `no template ${id}` });
+    return sendJson(res, 200, choice);
+  }
   if (path === "/api/missions") {
     const project = await requireProject(url);
     if (method === "GET") {
@@ -645,8 +669,8 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 200, (await listMissions(project.id)).map(({ chat: _chat, lead: _lead, ...m }) => m));
     }
     if (method === "POST") {
-      const body = await readJson<{ name: string; brief: string; tracker?: number }>(req);
-      return sendJson(res, 200, await startMission(project, body.name, body.brief, body.tracker ?? 0));
+      const body = await readJson<{ name: string; brief: string; tracker?: number; template?: string }>(req);
+      return sendJson(res, 200, await startMission(project, body.name, body.brief, body.tracker ?? 0, undefined, body.template));
     }
   }
   const missionAction = path.match(/^\/api\/missions\/([a-z0-9-]+)(?:\/(approve|interview|close|abandon|tidy|land|pause|resume|readings|report|say|stream|summarize))?$/);

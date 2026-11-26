@@ -16,6 +16,8 @@ export interface BriefContext {
   shared?: string[];
   /** The project's proof command, from its maverick.json, which the Wingman runs before it stops. */
   proof?: string;
+  /** False when the mission's template leaves review out, so no RIO is promised. Absent reads as reviewed. */
+  review?: boolean;
   mission: Pick<Mission, "id" | "name" | "plan" | "repos" | "milestones" | "contracts" | "components" | "mockups">;
   milestone: Pick<Milestone, "n" | "title" | "done" | "tasks">;
   task: MissionTask;
@@ -142,9 +144,10 @@ const ownership = (ctx: BriefContext): string[] => {
     // A task starts when what it needs has passed, so the need is either merged on the mission
     // branch (its milestone landed) or still on its own branch, passed and no longer changing.
     const what = `It builds on ${need}${target ? ` (${target.title})` : ""}`;
+    const passed = ctx.review === false ? "has passed" : "has passed its review";
     if (where?.merged) out.push(`${what}, already merged on ${home.branch} and checked out at ${home.integration}.`);
-    else if (home.label === repo.label) out.push(`${what}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. Merge that branch into yours (\`git merge ${home.branch}-${need}\`) so you build and test against it; its files are the owner's, not yours to change.`);
-    else out.push(`${what}, which has passed its review and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. It is in another repo, so read it there and take its shape from the contracts.`);
+    else if (home.label === repo.label) out.push(`${what}, which ${passed} and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. Merge that branch into yours (\`git merge ${home.branch}-${need}\`) so you build and test against it; its files are the owner's, not yours to change.`);
+    else out.push(`${what}, which ${passed} and sits on branch ${home.branch}-${need} in ${home.path}, not yet merged. It is in another repo, so read it there and take its shape from the contracts.`);
   }
   // Every contract the task does not own is one it may use, and the owner may be flying beside
   // it right now: that parallel consumer is the case the contracts step exists for.
@@ -168,6 +171,7 @@ const otherRepos = (ctx: BriefContext): string[] =>
 /** The Wingman's brief; with `retry`, the brief for the fresh Wingman that follows a RIO's rejection. */
 export const wingmanBrief = (ctx: BriefContext, findings?: string): string => {
   const { mission, milestone: m, task, repo } = ctx;
+  const reviewed = ctx.review !== false;
   return [
     `You are a Wingman on the mission "${mission.name}" in the project at ${ctx.projectPath}. You own one task and nothing else.`,
     "",
@@ -194,11 +198,13 @@ export const wingmanBrief = (ctx: BriefContext, findings?: string): string => {
     "Standing orders:",
     ...list([...STANDING_ORDERS, ...BUILDER_ORDERS]),
     "",
-    "A RIO that is not you will check the work against this list; check it yourself first, so its review confirms rather than discovers:",
+    reviewed
+      ? "A RIO that is not you will check the work against this list; check it yourself first, so its review confirms rather than discovers:"
+      : "No RIO reviews this mission: its template leaves review out, so what you commit is merged as you leave it. Check the list yourself.",
     ...list(RIO_CHECKLIST),
     "",
     `Before you stop, run \`git -C ${task.worktree} diff --name-only ${repo.branch}...HEAD\` (three dots: your branch since it left the mission branch) and make sure every file in it belongs to this task${task.touches?.length ? ", which means inside: " + task.touches.join(", ") : ""}.`,
-    `Then run this task's own proof in your worktree, before your last commit: every command the task above names to prove it${ctx.proof ? `, then the project's proof from its maverick.json, \`${ctx.proof}\`` : ""}. Put each command with its result (whether it passed, and the lines of output that say so) in that commit's message and in your final message; the RIO reads the commit. Report it; do not grade it. The RIO judges.`,
+    `Then run this task's own proof in your worktree, before your last commit: every command the task above names to prove it${ctx.proof ? `, then the project's proof from its maverick.json, \`${ctx.proof}\`` : ""}. Put each command with its result (whether it passed, and the lines of output that say so) in that commit's message and in your final message${reviewed ? "; the RIO reads the commit" : ""}. Report it; do not grade it.${reviewed ? " The RIO judges." : ""}`,
     "",
     "Do not write to the project's trackers; Maverick owns those for this mission. Do not open a pull request. Do not spawn other agents.",
     "",

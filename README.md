@@ -347,10 +347,27 @@ project's `maverick.json`, but whatever they are named has to exist in `~/.claud
 Without it Claude Code warns `no agent named …` and falls back to the default template, which is
 a Wingman with none of its boundaries, or a RIO that can edit, which is the one thing it must not.
 
-A mission's flow is written down as a template, `src/workflows/mission.json`, and a mission keeps
-its own copy from when it starts (`docs/03-decisions.md`, M32). `maverick.json` works as before:
-these agents and the proof command are still read from it while a mission flies. There is one
-template, and a person cannot pick another yet.
+A mission's flow is written down as a template, and a mission keeps its own copy from when it
+starts (`docs/03-decisions.md`, M32 and M33). `maverick.json` works as before: these agents and the
+proof command are still read from it while a mission flies.
+
+You pick the template when you open the mission: the dialog that asks what you want done shows one
+card per template under the line you type, with **Mission** already chosen, so pressing Enter
+opens a mission exactly as before. Two are built in: **Mission** (`src/workflows/mission.json`, every
+task reviewed by a RIO, the proof on the merged tree and a walk) and **Light**
+(`src/workflows/light.json`, build and merge with no review, proof or walk). A project can add its
+own, written by hand as JSON, at `<project>/.maverick/workflows/<id>.json`, where the file name is
+the template's `id`; a file with a built-in's id replaces it for that project. It keeps Mission's
+stages in Mission's order and may leave out only review, proof, the summary, and the walkthrough
+with the walk; a file that breaks that is shown as a disabled card with the reason, and cannot be
+picked. The mission page says which template it runs under its title, and the name opens a
+read-only page drawing that template as the mission pinned it.
+
+A template that leaves out review, proof or the walk is **unverified**, and its work stays on its
+mission branch: it never lands by pull request or push. The plan gate refuses a plan whose repo is
+set to land by `pr` or `push` in `maverick.json`, and landing refuses it again if the project
+changes mid-flight. Set that repo's `land` to `merge`, or pick a template that verifies; from the
+mission branch, the work is yours to take by hand.
 
 ### The protocol from a terminal
 

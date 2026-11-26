@@ -161,11 +161,14 @@ export interface PreflightInput {
   repoPaths: string[];
   requirements: Requirement[];
   wingmanAgent?: string;
-  rioAgent: string;
+  /** Absent when the mission's template has no review. */
+  rioAgent?: string;
   /** Any other agent the mission's template will launch. */
   also?: string[];
   /** The repos that land by pushing or a pull request: each needs a git remote, and the mission needs `gh`. */
-  remote: Array<{ label: string; path: string }>;
+  remote: Array<{ label: string; path: string; land?: "pr" | "push" }>;
+  /** What the mission's template leaves out of review, proof and walk. Any at all makes it unverified: its work stays on its mission branch and no repo in `remote` may land. */
+  leftOut?: string[];
 }
 
 export const preflight = async (input: PreflightInput): Promise<Check[]> => {
@@ -179,7 +182,7 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
     push({ kind: "tool", name: tool, status: path ? "ok" : "fail", detail: path ?? `not on PATH; every ${tool === "python3" ? "embedded terminal" : "agent"} needs it` });
   }
   if (checks.some((c) => c.name === "claude" && c.status === "ok")) push(claudeLogin(await claudeAuth(), hours));
-  for (const agent of [input.rioAgent, ...(input.wingmanAgent ? [input.wingmanAgent] : []), ...(input.also ?? [])]) {
+  for (const agent of [...(input.rioAgent ? [input.rioAgent] : []), ...(input.wingmanAgent ? [input.wingmanAgent] : []), ...(input.also ?? [])]) {
     const ok = await agentResolves(agent, input.projectPath);
     push({ kind: "agent", name: `agent ${agent}`, status: ok ? "ok" : "fail", detail: ok ? "installed" : `no ${agent}.md in ~/.claude/agents or the project's .claude/agents; the session would run without its standing orders (the README says how to install it)` });
   }
@@ -198,6 +201,9 @@ export const preflight = async (input: PreflightInput): Promise<Check[]> => {
       detail: remotes instanceof Error ? `could not read ${repo.path}'s remotes: ${whyFailed(remotes)}`
         : remotes ? remotes.split("\n").join(", ")
           : `${repo.label} is set to land by a pull request or a push, but ${repo.path} has no git remote; add one, or set its land to merge in maverick.json` });
+    // Landing is unverified work leaving its branch, so the gate refuses it here rather than the close finding it after the flight.
+    if (input.leftOut?.length) push({ kind: "landing", name: `unverified landing for ${repo.label}`, status: "fail",
+      detail: `${repo.label} is set to land by ${repo.land ?? "pr or push"}, but this mission's template leaves out ${input.leftOut.join(", ")}, so its work stays on its mission branch; set ${repo.label}'s land to merge in maverick.json, or choose a template that verifies` });
   }
   for (const repo of input.repoPaths) {
     // `.nvmrc` first, then `engines.node`; a repo that pins nothing says nothing.

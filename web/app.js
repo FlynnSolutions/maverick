@@ -55,8 +55,11 @@ const setStatus = (msg, isError = false) => {
  * `field` it resolves the trimmed text, or null on cancel. Escape and the backdrop cancel, the
  * page behind goes inert, and focus returns where it was. A dangerous question focuses cancel,
  * so a reflex Enter cannot destroy anything; Enter in a field submits, as a form does.
+ * With `choices` ({ items: [{ value, name, description?, note?, error? }], selected }) it draws
+ * one card per item under the field, as a radio group, and resolves { text, choice }, or null on
+ * cancel. A card with `error` is drawn with its message and cannot be chosen.
  */
-const ask = ({ title, body, confirm, danger = false, field = null }) =>
+const ask = ({ title, body, confirm, danger = false, field = null, choices = null }) =>
   new Promise((resolve) => {
     const before = document.activeElement;
     // A drawer under the ask has already made the page inert; closing the ask gives back only what it took.
@@ -69,7 +72,7 @@ const ask = ({ title, body, confirm, danger = false, field = null }) =>
       before?.focus?.();
       resolve(value);
     };
-    const bail = () => finish(field ? null : false);
+    const bail = () => finish(field || choices ? null : false);
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
@@ -79,16 +82,52 @@ const ask = ({ title, body, confirm, danger = false, field = null }) =>
     const input = field ? el("input", { type: "text", placeholder: field.placeholder ?? "", value: field.value ?? "", "aria-label": title }) : null;
     const ok = el("button", { type: "submit", class: danger ? "danger" : "primary" }, confirm);
     const no = btn("cancel", bail, "ghost");
-    if (input) {
-      ok.disabled = !input.value.trim();
-      input.addEventListener("input", () => { ok.disabled = !input.value.trim(); });
-    }
+    // A chosen card that cannot be used chooses nothing, so the dialog waits for a card that can.
+    let choice = choices?.items.some((c) => c.value === choices.selected && !c.error) ? choices.selected : null;
+    const ready = () => { ok.disabled = (input ? !input.value.trim() : false) || (choices ? choice === null : false); };
+    if (input) input.addEventListener("input", ready);
+    const cards = choices ? choices.items.map((c) => el("div", { class: "ask-choice", role: "radio", "aria-checked": "false", ...(c.error ? { "aria-disabled": "true" } : {}), "data-value": c.value, onclick: () => { if (!c.error) pick(c.value); } },
+      el("span", { class: "ask-choice-name" }, c.name),
+      c.error ? el("span", { class: "ask-choice-error" }, `can't be used: ${c.error}`) : c.description ? el("span", { class: "ask-choice-says" }, c.description) : null,
+      c.note && !c.error ? el("span", { class: "ask-choice-note" }, c.note) : null)) : [];
+    // One Tab stop, on the chosen card or else the first that can be chosen; the arrows move and choose, as a radio group does.
+    const paint = () => {
+      const stop = choice ?? choices?.items.find((c) => !c.error)?.value;
+      for (const card of cards) {
+        card.setAttribute("aria-checked", String(card.dataset.value === choice));
+        card.tabIndex = card.dataset.value === stop ? 0 : -1;
+      }
+      ready();
+    };
+    const pick = (value) => { choice = value; paint(); };
+    const group = choices ? el("div", { class: "ask-choices", role: "radiogroup", "aria-labelledby": "ask-choices-label", onkeydown: (e) => {
+      const usable = cards.filter((card) => !card.hasAttribute("aria-disabled"));
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (!ok.disabled) form.querySelector("form").requestSubmit();
+        return;
+      }
+      if (e.key === " ") {
+        e.preventDefault();
+        if (usable.includes(document.activeElement)) pick(document.activeElement.dataset.value);
+        return;
+      }
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!step || !usable.length) return;
+      e.preventDefault();
+      const next = usable[(usable.indexOf(document.activeElement) + step + usable.length) % usable.length];
+      pick(next.dataset.value);
+      next.focus();
+    } }, ...cards) : null;
+    paint();
     // The dialog is the box; the form inside it only carries Enter. A form may not take the dialog role.
     const form = el("div", { class: "ask", role: "dialog", "aria-modal": "true", "aria-labelledby": "ask-title", ...(body ? { "aria-describedby": "ask-body" } : {}) },
-      el("form", { class: "ask-form", onsubmit: (e) => { e.preventDefault(); finish(field ? input.value.trim() : true); } },
+      el("form", { class: "ask-form", onsubmit: (e) => { e.preventDefault(); finish(choices ? { text: field ? input.value.trim() : null, choice } : field ? input.value.trim() : true); } },
         el("h2", { id: "ask-title" }, title),
         body ? el("p", { id: "ask-body" }, body) : null,
         input,
+        group ? el("div", { class: "ask-label", id: "ask-choices-label" }, "Template") : null,
+        group,
         el("div", { class: "ask-actions" }, no, ok)));
     const backdrop = el("div", { class: "ask-backdrop", onclick: (e) => { if (e.target === backdrop) bail(); } }, form);
     for (const n of page) n.inert = true;
